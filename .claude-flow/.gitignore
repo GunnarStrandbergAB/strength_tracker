@@ -5,3 +5,12 @@ sessions/
 neural/
 *.log
 *.tmp
+
+# Runtime state (ephemeral, regenerated each session)
+agents.json
+agents/
+daemon-state.json
+daemon.pid
+hive-mind/
+metrics/
+security/
