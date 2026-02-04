@@ -1,0 +1,119 @@
+name: StrengthTracker
+options:
+  bundleIdPrefix: com.strengthtracker
+  deploymentTarget:
+    iOS: "17.0"
+    watchOS: "10.0"
+  xcodeVersion: "15.0"
+  generateEmptyDirectories: true
+  groupSortPosition: top
+
+packages:
+  StrengthTrackerPackage:
+    path: .
+
+targets:
+  StrengthTracker:
+    type: application
+    platform: iOS
+    sources:
+      - path: iOS
+        excludes:
+          - "**/.placeholder.swift"
+    dependencies:
+      - package: StrengthTrackerPackage
+        product: StrengthTrackerShared
+    settings:
+      base:
+        INFOPLIST_FILE: iOS/Resources/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        PRODUCT_BUNDLE_IDENTIFIER: com.strengthtracker.ios
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: true
+    info:
+      path: iOS/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: StrengthTracker
+        CFBundleName: StrengthTracker
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+
+  StrengthTrackerWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - path: WatchApp
+        excludes:
+          - "**/.placeholder.swift"
+    dependencies:
+      - package: StrengthTrackerPackage
+        product: StrengthTrackerShared
+    settings:
+      base:
+        INFOPLIST_FILE: WatchApp/Resources/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        PRODUCT_BUNDLE_IDENTIFIER: com.strengthtracker.ios.watchkitapp
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        WATCHOS_DEPLOYMENT_TARGET: "10.0"
+    info:
+      path: WatchApp/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: StrengthTracker
+        CFBundleName: StrengthTracker Watch
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: com.strengthtracker.ios
+
+  StrengthTrackerTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+        excludes:
+          - "**/.placeholder.swift"
+    dependencies:
+      - package: StrengthTrackerPackage
+        product: StrengthTrackerShared
+      - target: StrengthTracker
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.strengthtracker.tests
+        SWIFT_VERSION: "6.0"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/StrengthTracker.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/StrengthTracker"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  StrengthTracker:
+    build:
+      targets:
+        StrengthTracker: all
+        StrengthTrackerWatch: all
+        StrengthTrackerTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - StrengthTrackerTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

@@ -1,0 +1,711 @@
+import Foundation
+
+enum ExerciseSeedData {
+    static let allExercises: [Exercise] = [
+        // MARK: - Chest Exercises
+        Exercise(
+            id: UUID(),
+            name: "Barbell Bench Press",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.triceps, .shoulders],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Lie on bench, lower bar to chest, press up to full extension",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Incline Barbell Bench Press",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.triceps, .shoulders],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Set bench to 30-45 degrees, press barbell from upper chest",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Dumbbell Bench Press",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.triceps, .shoulders],
+            category: .dumbbell,
+            exerciseType: .weightedReps,
+            instructions: "Press dumbbells from chest to full extension with controlled motion",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Incline Dumbbell Press",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.triceps, .shoulders],
+            category: .dumbbell,
+            exerciseType: .weightedReps,
+            instructions: "Press dumbbells on incline bench targeting upper chest",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Dumbbell Chest Fly",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.shoulders],
+            category: .dumbbell,
+            exerciseType: .weightedReps,
+            instructions: "Lower dumbbells in wide arc until chest stretch, return to center",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Push-Up",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.triceps, .shoulders, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Lower body until chest nearly touches ground, push back up",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Cable Crossover",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.shoulders],
+            category: .cable,
+            exerciseType: .weightedReps,
+            instructions: "Pull cable handles together in front of chest with slight bend in elbows",
+            isCustom: false,
+            isArchived: false
+        ),
+
+        // MARK: - Back Exercises
+        Exercise(
+            id: UUID(),
+            name: "Conventional Deadlift",
+            primaryMuscleGroup: .back,
+            secondaryMuscleGroups: [.hamstrings, .glutes, .traps, .core],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Lift barbell from floor by extending hips and knees to full stand",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Barbell Row",
+            primaryMuscleGroup: .back,
+            secondaryMuscleGroups: [.biceps, .traps],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Pull barbell to lower chest while bent at hips, squeeze shoulder blades",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Pull-Up",
+            primaryMuscleGroup: .back,
+            secondaryMuscleGroups: [.biceps, .lats],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Pull body up until chin clears bar, lower with control",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Lat Pulldown",
+            primaryMuscleGroup: .lats,
+            secondaryMuscleGroups: [.biceps, .back],
+            category: .cable,
+            exerciseType: .weightedReps,
+            instructions: "Pull bar down to upper chest, squeeze shoulder blades together",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Seated Cable Row",
+            primaryMuscleGroup: .back,
+            secondaryMuscleGroups: [.biceps, .traps],
+            category: .cable,
+            exerciseType: .weightedReps,
+            instructions: "Pull handle to torso while keeping back straight, squeeze shoulders back",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "T-Bar Row",
+            primaryMuscleGroup: .back,
+            secondaryMuscleGroups: [.biceps, .traps],
+            category: .landmine,
+            exerciseType: .weightedReps,
+            instructions: "Pull T-bar to chest while maintaining hip hinge position",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "One-Arm Dumbbell Row",
+            primaryMuscleGroup: .back,
+            secondaryMuscleGroups: [.biceps, .traps],
+            category: .dumbbell,
+            exerciseType: .weightedReps,
+            instructions: "Pull dumbbell to hip while bracing on bench, keep back flat",
+            isCustom: false,
+            isArchived: false
+        ),
+
+        // MARK: - Shoulder Exercises
+        Exercise(
+            id: UUID(),
+            name: "Overhead Press",
+            primaryMuscleGroup: .shoulders,
+            secondaryMuscleGroups: [.triceps, .core],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Press barbell overhead from shoulders to full lockout",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Dumbbell Shoulder Press",
+            primaryMuscleGroup: .shoulders,
+            secondaryMuscleGroups: [.triceps],
+            category: .dumbbell,
+            exerciseType: .weightedReps,
+            instructions: "Press dumbbells overhead from shoulder height to full extension",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Lateral Raise",
+            primaryMuscleGroup: .shoulders,
+            secondaryMuscleGroups: [],
+            category: .dumbbell,
+            exerciseType: .weightedReps,
+            instructions: "Raise dumbbells to sides until arms parallel with floor",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Front Raise",
+            primaryMuscleGroup: .shoulders,
+            secondaryMuscleGroups: [],
+            category: .dumbbell,
+            exerciseType: .weightedReps,
+            instructions: "Raise dumbbells to front until arms parallel with floor",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Face Pull",
+            primaryMuscleGroup: .shoulders,
+            secondaryMuscleGroups: [.traps],
+            category: .cable,
+            exerciseType: .weightedReps,
+            instructions: "Pull rope attachment to face, externally rotate shoulders at end",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Reverse Pec Deck Fly",
+            primaryMuscleGroup: .shoulders,
+            secondaryMuscleGroups: [.back],
+            category: .machine,
+            exerciseType: .weightedReps,
+            instructions: "Pull handles apart targeting rear deltoids, squeeze shoulder blades",
+            isCustom: false,
+            isArchived: false
+        ),
+
+        // MARK: - Biceps Exercises
+        Exercise(
+            id: UUID(),
+            name: "Barbell Curl",
+            primaryMuscleGroup: .biceps,
+            secondaryMuscleGroups: [.forearms],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Curl barbell from thighs to shoulders, keep elbows stationary",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Dumbbell Curl",
+            primaryMuscleGroup: .biceps,
+            secondaryMuscleGroups: [.forearms],
+            category: .dumbbell,
+            exerciseType: .weightedReps,
+            instructions: "Curl dumbbells alternating or together, supinate wrists at top",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Hammer Curl",
+            primaryMuscleGroup: .biceps,
+            secondaryMuscleGroups: [.forearms],
+            category: .dumbbell,
+            exerciseType: .weightedReps,
+            instructions: "Curl dumbbells with neutral grip, targeting brachialis",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Preacher Curl",
+            primaryMuscleGroup: .biceps,
+            secondaryMuscleGroups: [.forearms],
+            category: .ezBar,
+            exerciseType: .weightedReps,
+            instructions: "Curl EZ bar on preacher bench, isolating biceps",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Cable Curl",
+            primaryMuscleGroup: .biceps,
+            secondaryMuscleGroups: [.forearms],
+            category: .cable,
+            exerciseType: .weightedReps,
+            instructions: "Curl cable attachment with constant tension throughout movement",
+            isCustom: false,
+            isArchived: false
+        ),
+
+        // MARK: - Triceps Exercises
+        Exercise(
+            id: UUID(),
+            name: "Tricep Pushdown",
+            primaryMuscleGroup: .triceps,
+            secondaryMuscleGroups: [],
+            category: .cable,
+            exerciseType: .weightedReps,
+            instructions: "Push cable attachment down until arms fully extended, control return",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Skull Crusher",
+            primaryMuscleGroup: .triceps,
+            secondaryMuscleGroups: [],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Lower bar to forehead by bending elbows, extend back to start",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Overhead Tricep Extension",
+            primaryMuscleGroup: .triceps,
+            secondaryMuscleGroups: [],
+            category: .dumbbell,
+            exerciseType: .weightedReps,
+            instructions: "Extend dumbbell overhead from behind head, keep elbows in",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Dips",
+            primaryMuscleGroup: .triceps,
+            secondaryMuscleGroups: [.chest, .shoulders],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Lower body by bending elbows, push back up to full extension",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Close-Grip Bench Press",
+            primaryMuscleGroup: .triceps,
+            secondaryMuscleGroups: [.chest, .shoulders],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Press barbell with hands shoulder-width apart, emphasizing triceps",
+            isCustom: false,
+            isArchived: false
+        ),
+
+        // MARK: - Quadriceps Exercises
+        Exercise(
+            id: UUID(),
+            name: "Barbell Back Squat",
+            primaryMuscleGroup: .quadriceps,
+            secondaryMuscleGroups: [.glutes, .hamstrings, .core],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Squat down with bar on back until thighs parallel, drive up through heels",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Front Squat",
+            primaryMuscleGroup: .quadriceps,
+            secondaryMuscleGroups: [.glutes, .core],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Squat with bar on front shoulders, keep torso upright",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Goblet Squat",
+            primaryMuscleGroup: .quadriceps,
+            secondaryMuscleGroups: [.glutes, .core],
+            category: .dumbbell,
+            exerciseType: .weightedReps,
+            instructions: "Hold dumbbell at chest, squat down keeping elbows inside knees",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Leg Press",
+            primaryMuscleGroup: .quadriceps,
+            secondaryMuscleGroups: [.glutes, .hamstrings],
+            category: .machine,
+            exerciseType: .weightedReps,
+            instructions: "Press platform away by extending knees and hips to full extension",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Leg Extension",
+            primaryMuscleGroup: .quadriceps,
+            secondaryMuscleGroups: [],
+            category: .machine,
+            exerciseType: .weightedReps,
+            instructions: "Extend knees to raise pad, squeeze quads at top, lower with control",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Walking Lunge",
+            primaryMuscleGroup: .quadriceps,
+            secondaryMuscleGroups: [.glutes, .hamstrings],
+            category: .dumbbell,
+            exerciseType: .weightedReps,
+            instructions: "Step forward into lunge, drive through front heel to next step",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Bulgarian Split Squat",
+            primaryMuscleGroup: .quadriceps,
+            secondaryMuscleGroups: [.glutes],
+            category: .dumbbell,
+            exerciseType: .weightedReps,
+            instructions: "Squat with rear foot elevated on bench, front leg does the work",
+            isCustom: false,
+            isArchived: false
+        ),
+
+        // MARK: - Hamstring Exercises
+        Exercise(
+            id: UUID(),
+            name: "Romanian Deadlift",
+            primaryMuscleGroup: .hamstrings,
+            secondaryMuscleGroups: [.glutes, .back],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Hinge at hips lowering bar down legs, feel hamstring stretch, return",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Lying Leg Curl",
+            primaryMuscleGroup: .hamstrings,
+            secondaryMuscleGroups: [],
+            category: .machine,
+            exerciseType: .weightedReps,
+            instructions: "Curl pad toward glutes by flexing knees, squeeze hamstrings",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Seated Leg Curl",
+            primaryMuscleGroup: .hamstrings,
+            secondaryMuscleGroups: [],
+            category: .machine,
+            exerciseType: .weightedReps,
+            instructions: "Curl pad down by flexing knees while seated, focus on hamstrings",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Good Morning",
+            primaryMuscleGroup: .hamstrings,
+            secondaryMuscleGroups: [.glutes, .back],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Hinge at hips with bar on back, maintain straight back throughout",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Nordic Curl",
+            primaryMuscleGroup: .hamstrings,
+            secondaryMuscleGroups: [],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Lower body forward with knees anchored, use hamstrings to control descent",
+            isCustom: false,
+            isArchived: false
+        ),
+
+        // MARK: - Glute Exercises
+        Exercise(
+            id: UUID(),
+            name: "Hip Thrust",
+            primaryMuscleGroup: .glutes,
+            secondaryMuscleGroups: [.hamstrings],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Thrust hips up from bench with bar on hips, squeeze glutes at top",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Glute Bridge",
+            primaryMuscleGroup: .glutes,
+            secondaryMuscleGroups: [.hamstrings],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Thrust hips up from floor with bar on hips, squeeze glutes at top",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Cable Pull-Through",
+            primaryMuscleGroup: .glutes,
+            secondaryMuscleGroups: [.hamstrings],
+            category: .cable,
+            exerciseType: .weightedReps,
+            instructions: "Pull cable between legs by extending hips, squeeze glutes forward",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Cable Kickback",
+            primaryMuscleGroup: .glutes,
+            secondaryMuscleGroups: [],
+            category: .cable,
+            exerciseType: .weightedReps,
+            instructions: "Kick leg back against cable resistance, squeeze glute at extension",
+            isCustom: false,
+            isArchived: false
+        ),
+
+        // MARK: - Core Exercises
+        Exercise(
+            id: UUID(),
+            name: "Plank",
+            primaryMuscleGroup: .core,
+            secondaryMuscleGroups: [.shoulders],
+            category: .bodyweight,
+            exerciseType: .duration,
+            instructions: "Hold body straight from head to heels on forearms, engage core",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Ab Rollout",
+            primaryMuscleGroup: .core,
+            secondaryMuscleGroups: [.back, .shoulders],
+            category: .other,
+            exerciseType: .weightedReps,
+            instructions: "Roll wheel forward extending body, pull back with core engaged",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Cable Crunch",
+            primaryMuscleGroup: .core,
+            secondaryMuscleGroups: [],
+            category: .cable,
+            exerciseType: .weightedReps,
+            instructions: "Crunch down bringing elbows to knees, squeeze abs at bottom",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Hanging Leg Raise",
+            primaryMuscleGroup: .core,
+            secondaryMuscleGroups: [],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Raise legs to parallel or higher while hanging, control descent",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Russian Twist",
+            primaryMuscleGroup: .core,
+            secondaryMuscleGroups: [],
+            category: .plate,
+            exerciseType: .weightedReps,
+            instructions: "Rotate torso side to side with plate, keep core engaged throughout",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Dead Bug",
+            primaryMuscleGroup: .core,
+            secondaryMuscleGroups: [],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Alternate extending opposite arm and leg while maintaining flat back",
+            isCustom: false,
+            isArchived: false
+        ),
+
+        // MARK: - Calves Exercises
+        Exercise(
+            id: UUID(),
+            name: "Standing Calf Raise",
+            primaryMuscleGroup: .calves,
+            secondaryMuscleGroups: [],
+            category: .machine,
+            exerciseType: .weightedReps,
+            instructions: "Raise up on toes while standing, squeeze calves at top, full stretch at bottom",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Seated Calf Raise",
+            primaryMuscleGroup: .calves,
+            secondaryMuscleGroups: [],
+            category: .machine,
+            exerciseType: .weightedReps,
+            instructions: "Raise heels while seated with weight on knees, full range of motion",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Calf Press on Leg Press",
+            primaryMuscleGroup: .calves,
+            secondaryMuscleGroups: [],
+            category: .machine,
+            exerciseType: .weightedReps,
+            instructions: "Press platform with toes only, full extension and stretch",
+            isCustom: false,
+            isArchived: false
+        ),
+
+        // MARK: - Trap Exercises
+        Exercise(
+            id: UUID(),
+            name: "Barbell Shrug",
+            primaryMuscleGroup: .traps,
+            secondaryMuscleGroups: [],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Shrug shoulders straight up toward ears with barbell, squeeze at top",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Dumbbell Shrug",
+            primaryMuscleGroup: .traps,
+            secondaryMuscleGroups: [],
+            category: .dumbbell,
+            exerciseType: .weightedReps,
+            instructions: "Shrug shoulders up with dumbbells at sides, hold peak contraction",
+            isCustom: false,
+            isArchived: false
+        ),
+
+        // MARK: - Full Body / Compound Exercises
+        Exercise(
+            id: UUID(),
+            name: "Clean and Press",
+            primaryMuscleGroup: .fullBody,
+            secondaryMuscleGroups: [.shoulders, .back, .quadriceps, .core],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Clean bar to shoulders, then press overhead in one fluid motion",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Thruster",
+            primaryMuscleGroup: .fullBody,
+            secondaryMuscleGroups: [.quadriceps, .shoulders, .core],
+            category: .barbell,
+            exerciseType: .weightedReps,
+            instructions: "Front squat transitioning into overhead press in one movement",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Burpee",
+            primaryMuscleGroup: .fullBody,
+            secondaryMuscleGroups: [.chest, .core, .quadriceps],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Drop to push-up, perform push-up, jump feet to hands, jump up",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Kettlebell Swing",
+            primaryMuscleGroup: .fullBody,
+            secondaryMuscleGroups: [.glutes, .hamstrings, .shoulders, .core],
+            category: .kettlebell,
+            exerciseType: .weightedReps,
+            instructions: "Swing kettlebell from between legs to shoulder height using hip power",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: UUID(),
+            name: "Man Maker",
+            primaryMuscleGroup: .fullBody,
+            secondaryMuscleGroups: [.chest, .back, .shoulders, .core],
+            category: .dumbbell,
+            exerciseType: .weightedReps,
+            instructions: "Push-up with dumbbells, row each arm, clean to squat, press overhead",
+            isCustom: false,
+            isArchived: false
+        )
+    ]
+}

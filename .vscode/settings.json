@@ -1,0 +1,17 @@
+{
+    "swift.path": "/usr/local/bin",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 4,
+    "[swift]": {
+        "editor.defaultFormatter": "sswg.swift-lang",
+        "editor.tabSize": 4
+    },
+    "files.exclude": {
+        "**/.build": true,
+        "**/.swiftpm": true
+    },
+    "search.exclude": {
+        "**/.build": true,
+        "**/.swiftpm": true
+    }
+}
