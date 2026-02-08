@@ -2,6 +2,7 @@
 import ActivityKit
 import SwiftUI
 import WidgetKit
+import StrengthTrackerShared
 
 struct RestTimerLiveActivity: Widget {
     var body: some WidgetConfiguration {

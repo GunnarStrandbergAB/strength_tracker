@@ -1,6 +1,7 @@
 #if canImport(WidgetKit)
 import WidgetKit
 import SwiftUI
+import StrengthTrackerShared
 
 struct StreakEntry: TimelineEntry {
     let date: Date

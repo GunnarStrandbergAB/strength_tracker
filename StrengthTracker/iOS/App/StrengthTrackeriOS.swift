@@ -28,8 +28,9 @@ struct StrengthTrackeriOSApp: App {
             }
             #endif
 
+            let exerciseRepo = container.exerciseRepository
             Task { @MainActor in
-                let seeder = ExerciseSeeder(exerciseRepository: container.exerciseRepository)
+                let seeder = ExerciseSeeder(exerciseRepository: exerciseRepo)
                 await seeder.seedIfNeeded()
             }
         } catch {

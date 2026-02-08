@@ -1,5 +1,6 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import StrengthTrackerShared
 
 struct SettingsView: View {
     @State private var preferencesService: UserPreferencesService

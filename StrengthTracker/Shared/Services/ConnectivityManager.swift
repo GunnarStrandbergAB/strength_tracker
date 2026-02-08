@@ -109,28 +109,30 @@ public final class ConnectivityManager: NSObject, @unchecked Sendable {
 // MARK: - WCSessionDelegate
 #if canImport(WatchConnectivity)
 extension ConnectivityManager: WCSessionDelegate {
-    nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+    nonisolated public func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        let reachable = session.isReachable
         Task { @MainActor in
-            self.isReachable = session.isReachable
+            self.isReachable = reachable
         }
     }
 
     // iOS only
     #if os(iOS)
-    nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
-    nonisolated func sessionDidDeactivate(_ session: WCSession) {
+    nonisolated public func sessionDidBecomeInactive(_ session: WCSession) {}
+    nonisolated public func sessionDidDeactivate(_ session: WCSession) {
         session.activate()
     }
     #endif
 
-    nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
+    nonisolated public func sessionReachabilityDidChange(_ session: WCSession) {
+        let reachable = session.isReachable
         Task { @MainActor in
-            self.isReachable = session.isReachable
+            self.isReachable = reachable
         }
     }
 
     // Receive applicationContext (exercises, settings)
-    nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+    nonisolated public func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         guard let message = SyncMessage.from(dictionary: applicationContext) else { return }
         let decoder = JSONDecoder()
 
@@ -153,7 +155,7 @@ extension ConnectivityManager: WCSessionDelegate {
     }
 
     // Receive transferUserInfo (completed workouts)
-    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+    nonisolated public func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
         guard let message = SyncMessage.from(dictionary: userInfo) else { return }
         let decoder = JSONDecoder()
 
@@ -169,7 +171,7 @@ extension ConnectivityManager: WCSessionDelegate {
     }
 
     // Receive real-time messages
-    nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+    nonisolated public func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
         // Handle real-time set updates on the receiving side
         Task { @MainActor in
             self.lastSyncDate = Date()

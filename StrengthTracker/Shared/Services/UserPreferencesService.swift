@@ -4,6 +4,8 @@ import Observation
 @MainActor
 @Observable
 public final class UserPreferencesService {
+    public init() {}
+
     /// The user's preferred weight unit (kg or lbs)
     public var weightUnit: WeightUnit {
         get {

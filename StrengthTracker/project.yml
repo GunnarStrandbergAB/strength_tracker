@@ -20,6 +20,7 @@ targets:
       - path: iOS
         excludes:
           - "**/.placeholder.swift"
+          - "WidgetExtension/**"
     dependencies:
       - package: StrengthTrackerPackage
         product: StrengthTrackerShared

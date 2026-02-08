@@ -1,5 +1,6 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import StrengthTrackerShared
 #if canImport(UIKit)
 import UIKit
 #endif

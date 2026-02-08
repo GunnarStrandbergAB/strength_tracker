@@ -12,6 +12,8 @@ public final class RestTimerService {
     public var isRunning: Bool = false
     public var totalSeconds: Int = 90  // default rest time
 
+    public init() {}
+
     nonisolated(unsafe) private var timer: Timer?
 
     #if canImport(ActivityKit)
@@ -69,7 +71,7 @@ public final class RestTimerService {
     }
 
     /// Reset the timer to initial state
-    func reset() {
+    public func reset() {
         stop()
         remainingSeconds = totalSeconds
     }
@@ -170,10 +172,5 @@ public final class RestTimerService {
 
     deinit {
         timer?.invalidate()
-        #if canImport(ActivityKit)
-        if currentActivity != nil {
-            endLiveActivity()
-        }
-        #endif
     }
 }

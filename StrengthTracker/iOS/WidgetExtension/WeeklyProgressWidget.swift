@@ -1,6 +1,7 @@
 #if canImport(WidgetKit)
 import WidgetKit
 import SwiftUI
+import StrengthTrackerShared
 
 struct WeeklyProgressEntry: TimelineEntry {
     let date: Date

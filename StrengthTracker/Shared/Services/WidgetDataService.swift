@@ -5,6 +5,8 @@ import WidgetKit
 #endif
 
 public final class WidgetDataService: Sendable {
+    public init() {}
+
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
