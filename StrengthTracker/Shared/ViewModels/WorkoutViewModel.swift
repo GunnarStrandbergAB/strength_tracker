@@ -12,13 +12,20 @@ final class WorkoutViewModel {
     var currentWorkout: Workout? = nil
     var isActive = false
     var errorMessage: String? = nil
+    var lastPR: PersonalRecord? = nil
 
     private let workoutRepository: any WorkoutRepository
     private let templateRepository: any TemplateRepository
+    private let personalRecordService: PersonalRecordService?
 
-    init(workoutRepository: any WorkoutRepository, templateRepository: any TemplateRepository) {
+    init(
+        workoutRepository: any WorkoutRepository,
+        templateRepository: any TemplateRepository,
+        personalRecordService: PersonalRecordService? = nil
+    ) {
         self.workoutRepository = workoutRepository
         self.templateRepository = templateRepository
+        self.personalRecordService = personalRecordService
     }
 
     func startWorkout(name: String, from template: WorkoutTemplate? = nil) async {
@@ -52,6 +59,11 @@ final class WorkoutViewModel {
             workout = try await workoutRepository.save(workout)
             currentWorkout = workout
             isActive = true
+
+            // Update template usage stats
+            if let template = template {
+                try? await templateRepository.incrementUsage(template.id)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -98,7 +110,55 @@ final class WorkoutViewModel {
         )
 
         workout.exercises[exerciseIndex].sets.append(newSet)
+        workout = try await workoutRepository.save(workout)
         currentWorkout = workout
+
+        // Check for personal records
+        if let prService = personalRecordService {
+            let exercise = workout.exercises[exerciseIndex].exercise
+            if let pr = try? await prService.checkForPR(exercise: exercise, set: newSet) {
+                lastPR = pr
+            }
+        }
+    }
+
+    func removeSet(exerciseId: UUID, setId: UUID) async {
+        guard var workout = currentWorkout else { return }
+        guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }) else { return }
+        workout.exercises[exerciseIndex].sets.removeAll { $0.id == setId }
+        // Re-number set orders
+        for i in workout.exercises[exerciseIndex].sets.indices {
+            workout.exercises[exerciseIndex].sets[i].order = i + 1
+        }
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            currentWorkout = workout
+        }
+    }
+
+    func removeExercise(exerciseId: UUID) async {
+        guard var workout = currentWorkout else { return }
+        workout.exercises.removeAll { $0.id == exerciseId }
+        // Re-number orders
+        for i in workout.exercises.indices {
+            workout.exercises[i].order = i + 1
+        }
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            currentWorkout = workout
+        }
+    }
+
+    func updateNotes(_ notes: String) async {
+        guard var workout = currentWorkout else { return }
+        workout.notes = notes.isEmpty ? nil : notes
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            currentWorkout = workout
+        }
     }
 
     func completeWorkout() async throws {
@@ -109,6 +169,82 @@ final class WorkoutViewModel {
         workout.completedAt = Date()
         let saved = try await workoutRepository.save(workout)
         currentWorkout = saved
+        isActive = false
+    }
+
+    // MARK: - Inline Editing Methods
+
+    /// Add an empty (incomplete) set to an exercise for the inline editing workflow.
+    func addEmptySet(exerciseId: UUID) async {
+        guard var workout = currentWorkout else { return }
+
+        guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }) else {
+            return
+        }
+
+        let setOrder = workout.exercises[exerciseIndex].sets.count + 1
+        let newSet = ExerciseSet(
+            id: UUID(),
+            order: setOrder,
+            setType: .normal,
+            weight: nil,
+            reps: nil,
+            durationSeconds: nil,
+            distanceMeters: nil,
+            rpe: nil,
+            isCompleted: false,
+            isPersonalRecord: false,
+            completedAt: nil
+        )
+
+        workout.exercises[exerciseIndex].sets.append(newSet)
+        currentWorkout = workout
+    }
+
+    /// Update the weight of a specific set within an exercise.
+    func updateSetWeight(exerciseId: UUID, setId: UUID, weight: Double?) async {
+        guard var workout = currentWorkout else { return }
+
+        guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              let setIndex = workout.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setId }) else {
+            return
+        }
+
+        workout.exercises[exerciseIndex].sets[setIndex].weight = weight
+        currentWorkout = workout
+    }
+
+    /// Update the reps of a specific set within an exercise.
+    func updateSetReps(exerciseId: UUID, setId: UUID, reps: Int?) async {
+        guard var workout = currentWorkout else { return }
+
+        guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              let setIndex = workout.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setId }) else {
+            return
+        }
+
+        workout.exercises[exerciseIndex].sets[setIndex].reps = reps
+        currentWorkout = workout
+    }
+
+    /// Toggle the completion status of a specific set.
+    func toggleSetCompletion(exerciseId: UUID, setId: UUID) async {
+        guard var workout = currentWorkout else { return }
+
+        guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              let setIndex = workout.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setId }) else {
+            return
+        }
+
+        let wasCompleted = workout.exercises[exerciseIndex].sets[setIndex].isCompleted
+        workout.exercises[exerciseIndex].sets[setIndex].isCompleted = !wasCompleted
+        workout.exercises[exerciseIndex].sets[setIndex].completedAt = wasCompleted ? nil : Date()
+        currentWorkout = workout
+    }
+
+    /// Cancel the current workout without saving completion.
+    func cancelWorkout() async {
+        currentWorkout = nil
         isActive = false
     }
 }

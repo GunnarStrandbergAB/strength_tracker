@@ -4,6 +4,7 @@ import StrengthTrackerShared
 
 struct TemplateEditorView: View {
     @State private var viewModel: TemplateViewModel
+    let exerciseListViewModel: ExerciseListViewModel
     @Environment(\.dismiss) private var dismiss
 
     let template: WorkoutTemplate?
@@ -14,8 +15,9 @@ struct TemplateEditorView: View {
     @State private var showingExercisePicker = false
     @State private var editingExerciseIndex: Int? = nil
 
-    init(viewModel: TemplateViewModel, template: WorkoutTemplate?) {
+    init(viewModel: TemplateViewModel, exerciseListViewModel: ExerciseListViewModel, template: WorkoutTemplate?) {
         self._viewModel = State(initialValue: viewModel)
+        self.exerciseListViewModel = exerciseListViewModel
         self.template = template
         self._name = State(initialValue: template?.name ?? "")
         self._notes = State(initialValue: template?.notes ?? "")
@@ -85,7 +87,7 @@ struct TemplateEditorView: View {
                 }
             }
             .sheet(isPresented: $showingExercisePicker) {
-                ExercisePickerView { exercise in
+                ExercisePickerView(viewModel: exerciseListViewModel) { exercise in
                     addExercise(exercise)
                     showingExercisePicker = false
                 }
@@ -183,42 +185,6 @@ private struct TemplateExerciseEditorRowView: View {
             }
         }
         .padding(.vertical, 2)
-    }
-}
-
-private struct ExercisePickerView: View {
-    let onSelect: (Exercise) -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    // Mock exercises for now - in real implementation, this would use ExerciseListViewModel
-    @State private var exercises: [Exercise] = []
-
-    var body: some View {
-        NavigationStack {
-            List(exercises) { exercise in
-                Button {
-                    onSelect(exercise)
-                } label: {
-                    VStack(alignment: .leading) {
-                        Text(exercise.name)
-                            .font(.body)
-                        Text(exercise.primaryMuscleGroup.rawValue.capitalized)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .foregroundStyle(.primary)
-            }
-            .navigationTitle("Add Exercise")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
-        }
     }
 }
 

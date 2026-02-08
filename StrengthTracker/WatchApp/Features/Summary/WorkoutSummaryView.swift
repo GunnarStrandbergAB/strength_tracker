@@ -1,57 +1,165 @@
 import SwiftUI
 import StrengthTrackerShared
+#if os(watchOS)
+import WatchKit
+#endif
 
 struct WorkoutSummaryView: View {
     let workout: Workout
+    @State private var viewModel: WatchWorkoutViewModel
+    @State private var showCheckmark = false
+
+    init(workout: Workout, viewModel: WatchWorkoutViewModel) {
+        self.workout = workout
+        self._viewModel = State(initialValue: viewModel)
+    }
+
+    private let primaryYellow = Color(red: 0.949, green: 0.800, blue: 0.051)
+    private let cardBackground = Color.white.opacity(0.1)
+    private let secondaryText = Color.white.opacity(0.6)
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.green)
+            VStack(spacing: 10) {
+                // Large checkmark with animation
+                ZStack {
+                    Circle()
+                        .fill(Color.green.opacity(0.15))
+                        .frame(width: 56, height: 56)
 
-                Text("Workout Complete")
-                    .font(.headline)
-
-                Text(workout.name)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                Divider()
-
-                VStack(spacing: 8) {
-                    if let duration = workout.duration {
-                        Label(formatDuration(duration), systemImage: "clock")
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.green)
+                        .scaleEffect(showCheckmark ? 1.0 : 0.5)
+                        .opacity(showCheckmark ? 1.0 : 0.3)
+                }
+                .onAppear {
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
+                        showCheckmark = true
                     }
+                }
 
-                    Label(
-                        "\(workout.exercises.count) exercises",
-                        systemImage: "figure.strengthtraining.traditional"
+                Text("Finish Workout?")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+
+                // Stats grid
+                VStack(spacing: 6) {
+                    // Duration
+                    statRow(
+                        icon: "clock.fill",
+                        label: "Duration",
+                        value: formatElapsedTime(viewModel.elapsedTime)
                     )
 
-                    let totalSets = workout.exercises.reduce(0) { $0 + $1.sets.count }
-                    Label("\(totalSets) sets", systemImage: "repeat")
+                    // Exercises
+                    statRow(
+                        icon: "figure.strengthtraining.traditional",
+                        label: "Exercises",
+                        value: "\(workout.exercises.count)"
+                    )
 
+                    // Total sets
+                    let totalSets = workout.exercises.reduce(0) { $0 + $1.sets.count }
+                    statRow(
+                        icon: "repeat",
+                        label: "Sets",
+                        value: "\(totalSets)"
+                    )
+
+                    // Volume
                     if workout.totalVolume > 0 {
-                        Label(
-                            String(format: "%.0f kg", workout.totalVolume),
-                            systemImage: "scalemass"
+                        statRow(
+                            icon: "scalemass.fill",
+                            label: "Volume",
+                            value: String(format: "%.0f kg", workout.totalVolume)
                         )
                     }
                 }
-                .font(.caption)
+                .padding(8)
+                .background(cardBackground)
+                .cornerRadius(12)
+
+                // Notes indicator (Task 5.2)
+                if let notes = workout.notes, !notes.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "note.text")
+                            .font(.system(size: 10))
+                            .foregroundStyle(primaryYellow)
+                        Text("Has notes")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(secondaryText)
+                    }
+                } else if !viewModel.workoutNotes.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "note.text")
+                            .font(.system(size: 10))
+                            .foregroundStyle(primaryYellow)
+                        Text("Notes added")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(secondaryText)
+                    }
+                }
+
+                // Done button
+                Button {
+                    #if os(watchOS)
+                    WKInterfaceDevice.current().play(.success)
+                    #endif
+                    Task {
+                        try? await viewModel.completeWorkout()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("DONE")
+                            .font(.system(size: 14, weight: .black))
+                            .tracking(1)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    .foregroundStyle(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(primaryYellow)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
             }
-            .padding()
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
         }
-        .navigationTitle("Summary")
     }
 
-    private func formatDuration(_ interval: TimeInterval) -> String {
-        let minutes = Int(interval) / 60
-        if minutes >= 60 {
-            return "\(minutes / 60)h \(minutes % 60)m"
+    @ViewBuilder
+    private func statRow(icon: String, label: String, value: String) -> some View {
+        HStack {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundStyle(primaryYellow)
+                .frame(width: 20)
+
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(secondaryText)
+
+            Spacer()
+
+            Text(value)
+                .font(.system(size: 12, weight: .bold))
+                .monospacedDigit()
+                .foregroundStyle(.white)
         }
-        return "\(minutes)m"
+    }
+
+    private func formatElapsedTime(_ interval: TimeInterval) -> String {
+        let totalSeconds = Int(interval)
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let seconds = totalSeconds % 60
+
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }

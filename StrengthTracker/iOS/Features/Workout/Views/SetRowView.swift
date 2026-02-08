@@ -37,6 +37,17 @@ struct SetRowView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if let rpe = exerciseSet.rpe {
+                Text("RPE \(Int(rpe))")
+                    .font(.caption2)
+                    .fontWeight(.medium)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.2))
+                    .foregroundStyle(.orange)
+                    .clipShape(Capsule())
+            }
+
             Image(systemName: exerciseSet.isCompleted ? "checkmark.circle.fill" : "circle")
                 .foregroundStyle(exerciseSet.isCompleted ? .green : .secondary)
         }

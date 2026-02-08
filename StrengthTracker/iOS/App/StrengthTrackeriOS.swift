@@ -10,6 +10,10 @@ struct StrengthTrackeriOSApp: App {
     init() {
         do {
             container = try AppContainer()
+            Task { @MainActor in
+                let seeder = ExerciseSeeder(exerciseRepository: container.exerciseRepository)
+                await seeder.seedIfNeeded()
+            }
         } catch {
             fatalError("Failed to initialize app: \(error)")
         }
@@ -18,10 +22,13 @@ struct StrengthTrackeriOSApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(
+                dashboardViewModel: container.makeDashboardViewModel(),
                 exerciseListViewModel: container.makeExerciseListViewModel(),
+                progressViewModel: container.makeProgressViewModel(),
                 workoutViewModel: container.makeWorkoutViewModel(),
                 historyViewModel: container.makeHistoryViewModel(),
-                templateViewModel: container.makeTemplateViewModel()
+                templateViewModel: container.makeTemplateViewModel(),
+                userPreferencesService: container.userPreferencesService
             )
         }
         .modelContainer(container.modelContainer)

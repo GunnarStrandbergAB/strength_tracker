@@ -7,6 +7,7 @@ final class HistoryViewModel {
     var workouts: [Workout] = []
     var selectedWorkout: Workout? = nil
     var isLoading = false
+    var errorMessage: String? = nil
 
     private let workoutRepository: any WorkoutRepository
 
@@ -16,10 +17,12 @@ final class HistoryViewModel {
 
     func loadHistory() async {
         isLoading = true
+        errorMessage = nil
         do {
             let all = try await workoutRepository.fetchAll()
             workouts = all.filter { $0.completedAt != nil }
         } catch {
+            errorMessage = error.localizedDescription
             workouts = []
         }
         isLoading = false

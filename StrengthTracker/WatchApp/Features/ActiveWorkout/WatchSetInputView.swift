@@ -15,46 +15,139 @@ struct WatchSetInputView: View {
         self._viewModel = State(initialValue: viewModel)
     }
 
+    private let primaryYellow = Color(red: 0.949, green: 0.800, blue: 0.051)
+    private let cardBackground = Color.white.opacity(0.1)
+    private let labelColor = Color.white.opacity(0.4)
+    private let secondaryText = Color.white.opacity(0.6)
+
     var body: some View {
-        VStack(spacing: 4) {
-            HStack {
-                VStack {
-                    Text(String(format: "%.1f", weight))
-                        .font(.title3)
-                        .monospacedDigit()
-                        .foregroundStyle(focusedField == .weight ? .green : .primary)
-                    Text("kg")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                .onTapGesture { focusedField = .weight }
+        VStack(spacing: 6) {
+            // Set counter
+            Text("Set \(viewModel.currentSetNumber)")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(secondaryText)
+
+            // Weight / Reps grid
+            HStack(spacing: 8) {
+                // Weight card
+                inputCard(
+                    label: "WEIGHT",
+                    value: String(format: "%.0f", weight),
+                    isFocused: focusedField == .weight,
+                    onTap: { focusedField = .weight },
+                    onDecrement: { weight = max(0, weight - 2.5) },
+                    onIncrement: { weight += 2.5 }
+                )
                 .focusable(focusedField == .weight)
                 .digitalCrownRotation($weight, from: 0, through: 500, by: 2.5)
 
-                Text("\u{00D7}")
-                    .foregroundStyle(.secondary)
-
-                VStack {
-                    Text("\(Int(reps))")
-                        .font(.title3)
-                        .monospacedDigit()
-                        .foregroundStyle(focusedField == .reps ? .green : .primary)
-                    Text("reps")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                .onTapGesture { focusedField = .reps }
+                // Reps card
+                inputCard(
+                    label: "REPS",
+                    value: "\(Int(reps))",
+                    isFocused: focusedField == .reps,
+                    onTap: { focusedField = .reps },
+                    onDecrement: { reps = max(1, reps - 1) },
+                    onIncrement: { reps += 1 }
+                )
                 .focusable(focusedField == .reps)
                 .digitalCrownRotation($reps, from: 1, through: 100, by: 1)
             }
 
-            Button("Log Set") {
+            // Rest timer indicator (shows when resting)
+            if viewModel.isResting {
+                HStack(spacing: 4) {
+                    Image(systemName: "timer")
+                        .font(.system(size: 11))
+                        .foregroundStyle(primaryYellow)
+                    Text("REST: \(viewModel.restTimerText)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.8))
+                        .tracking(2)
+                        .textCase(.uppercase)
+                }
+                .padding(.vertical, 2)
+            }
+
+            Spacer(minLength: 0)
+
+            // Finish Set button
+            Button {
                 Task {
                     try? await viewModel.logSet(weight: weight, reps: Int(reps))
                 }
+            } label: {
+                HStack(spacing: 6) {
+                    Text("FINISH SET")
+                        .font(.system(size: 14, weight: .black))
+                        .tracking(-0.5)
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14, weight: .bold))
+                }
+                .foregroundStyle(.black)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(primaryYellow)
+                .clipShape(Capsule())
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.blue)
+            .buttonStyle(.plain)
         }
+    }
+
+    @ViewBuilder
+    private func inputCard(
+        label: String,
+        value: String,
+        isFocused: Bool,
+        onTap: @escaping () -> Void,
+        onDecrement: @escaping () -> Void,
+        onIncrement: @escaping () -> Void
+    ) -> some View {
+        VStack(spacing: 4) {
+            Text(label)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(labelColor)
+                .tracking(1.5)
+
+            HStack(spacing: 0) {
+                // Minus button
+                Button(action: onDecrement) {
+                    Image(systemName: "minus")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+
+                Spacer(minLength: 2)
+
+                // Value display
+                Text(value)
+                    .font(.system(size: 20, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundStyle(isFocused ? primaryYellow : .white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                Spacer(minLength: 2)
+
+                // Plus button
+                Button(action: onIncrement) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(8)
+        .background(cardBackground)
+        .cornerRadius(16)
+        .onTapGesture(perform: onTap)
     }
 }

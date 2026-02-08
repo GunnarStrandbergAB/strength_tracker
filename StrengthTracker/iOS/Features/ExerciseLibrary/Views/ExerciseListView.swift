@@ -3,9 +3,11 @@ import StrengthTrackerShared
 
 struct ExerciseListView: View {
     @State private var viewModel: ExerciseListViewModel
+    let progressViewModel: ProgressViewModel
 
-    init(viewModel: ExerciseListViewModel) {
+    init(viewModel: ExerciseListViewModel, progressViewModel: ProgressViewModel) {
         self._viewModel = State(initialValue: viewModel)
+        self.progressViewModel = progressViewModel
     }
 
     var body: some View {
@@ -42,7 +44,7 @@ struct ExerciseListView: View {
                 }
             }
             .navigationDestination(for: Exercise.self) { exercise in
-                ExerciseDetailView(exercise: exercise)
+                ExerciseDetailView(exercise: exercise, progressViewModel: progressViewModel)
             }
             .overlay {
                 if viewModel.isLoading {
@@ -57,6 +59,14 @@ struct ExerciseListView: View {
             }
             .task {
                 await viewModel.loadExercises()
+            }
+            .alert("Error", isPresented: .init(
+                get: { viewModel.errorMessage != nil },
+                set: { if !$0 { viewModel.errorMessage = nil } }
+            )) {
+                Button("OK") { viewModel.errorMessage = nil }
+            } message: {
+                Text(viewModel.errorMessage ?? "")
             }
         }
     }

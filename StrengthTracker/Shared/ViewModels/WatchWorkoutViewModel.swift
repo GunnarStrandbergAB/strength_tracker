@@ -8,11 +8,66 @@ final class WatchWorkoutViewModel {
     var currentExerciseIndex: Int = 0
     var isActive = false
 
+    // Rest timer state
+    var isResting = false
+    var restTimeRemaining: TimeInterval = 0
+    var restDuration: TimeInterval = 90
+
+    // Notes
+    var workoutNotes: String = ""
+
     private let workoutRepository: any WorkoutRepository
+    private var restTimer: Timer?
 
     init(workoutRepository: any WorkoutRepository) {
         self.workoutRepository = workoutRepository
     }
+
+    // MARK: - Computed Properties
+
+    var currentExercise: WorkoutExercise? {
+        guard let workout = activeWorkout,
+              currentExerciseIndex < workout.exercises.count else {
+            return nil
+        }
+        return workout.exercises[currentExerciseIndex]
+    }
+
+    var currentSetNumber: Int {
+        guard let exercise = currentExercise else { return 1 }
+        return exercise.sets.count + 1
+    }
+
+    var plannedSets: Int {
+        4 // Default planned sets per exercise
+    }
+
+    var currentExerciseVolume: Double {
+        currentExercise?.exerciseVolume ?? 0
+    }
+
+    var totalSetsCompleted: Int {
+        guard let workout = activeWorkout else { return 0 }
+        return workout.exercises.reduce(0) { $0 + $1.sets.count }
+    }
+
+    var elapsedTime: TimeInterval {
+        guard let workout = activeWorkout else { return 0 }
+        return Date().timeIntervalSince(workout.startedAt)
+    }
+
+    var restTimerText: String {
+        let minutes = Int(restTimeRemaining) / 60
+        let seconds = Int(restTimeRemaining) % 60
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
+
+    var restProgress: Double {
+        guard restDuration > 0 else { return 0 }
+        return 1.0 - (restTimeRemaining / restDuration)
+    }
+
+    // MARK: - Workout Lifecycle
 
     func startWorkout(name: String, exercises: [Exercise]) async {
         let workoutExercises = exercises.enumerated().map { index, exercise in
@@ -42,14 +97,13 @@ final class WatchWorkoutViewModel {
             currentExerciseIndex = 0
             isActive = true
         } catch {
-            // Offline-ready: still set workout locally even if save fails
             activeWorkout = workout
             currentExerciseIndex = 0
             isActive = true
         }
     }
 
-    func logSet(weight: Double?, reps: Int?) async throws {
+    func logSet(weight: Double?, reps: Int?, rpe: Double? = nil) async throws {
         guard var workout = activeWorkout else {
             throw WorkoutError.noActiveWorkout
         }
@@ -67,7 +121,7 @@ final class WatchWorkoutViewModel {
             reps: reps,
             durationSeconds: nil,
             distanceMeters: nil,
-            rpe: nil,
+            rpe: rpe,
             isCompleted: true,
             isPersonalRecord: false,
             completedAt: Date()
@@ -75,7 +129,47 @@ final class WatchWorkoutViewModel {
 
         workout.exercises[currentExerciseIndex].sets.append(newSet)
         activeWorkout = workout
+
+        // Auto-start rest timer after logging a set
+        startRestTimer()
     }
+
+    func removeSet(at exerciseIndex: Int, setIndex: Int) {
+        guard var workout = activeWorkout,
+              exerciseIndex < workout.exercises.count,
+              setIndex < workout.exercises[exerciseIndex].sets.count else {
+            return
+        }
+
+        workout.exercises[exerciseIndex].sets.remove(at: setIndex)
+
+        // Re-order remaining sets
+        for i in 0..<workout.exercises[exerciseIndex].sets.count {
+            workout.exercises[exerciseIndex].sets[i].order = i + 1
+        }
+
+        activeWorkout = workout
+    }
+
+    func removeSetFromCurrentExercise(at setIndex: Int) {
+        removeSet(at: currentExerciseIndex, setIndex: setIndex)
+    }
+
+    func completeWorkout() async throws {
+        guard var workout = activeWorkout else {
+            throw WorkoutError.noActiveWorkout
+        }
+
+        workout.completedAt = Date()
+        if !workoutNotes.isEmpty {
+            workout.notes = workoutNotes
+        }
+        activeWorkout = try await workoutRepository.save(workout)
+        stopRestTimer()
+        isActive = false
+    }
+
+    // MARK: - Navigation
 
     func nextExercise() {
         guard let workout = activeWorkout else { return }
@@ -90,13 +184,33 @@ final class WatchWorkoutViewModel {
         }
     }
 
-    func completeWorkout() async throws {
-        guard var workout = activeWorkout else {
-            throw WorkoutError.noActiveWorkout
-        }
+    // MARK: - Rest Timer
 
-        workout.completedAt = Date()
-        activeWorkout = try await workoutRepository.save(workout)
-        isActive = false
+    func startRestTimer() {
+        stopRestTimer()
+        isResting = true
+        restTimeRemaining = restDuration
+
+        restTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                if self.restTimeRemaining > 0 {
+                    self.restTimeRemaining -= 1
+                } else {
+                    self.stopRestTimer()
+                }
+            }
+        }
+    }
+
+    func stopRestTimer() {
+        restTimer?.invalidate()
+        restTimer = nil
+        isResting = false
+        restTimeRemaining = 0
+    }
+
+    func skipRestTimer() {
+        stopRestTimer()
     }
 }

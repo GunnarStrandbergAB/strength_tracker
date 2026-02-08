@@ -5,12 +5,16 @@ import StrengthTrackerShared
 struct TemplateDetailView: View {
     let template: WorkoutTemplate
     @State private var viewModel: TemplateViewModel
+    let exerciseListViewModel: ExerciseListViewModel
+    let workoutViewModel: WorkoutViewModel
     @State private var showingEditor = false
     @Environment(\.dismiss) private var dismiss
 
-    init(template: WorkoutTemplate, viewModel: TemplateViewModel) {
+    init(template: WorkoutTemplate, viewModel: TemplateViewModel, exerciseListViewModel: ExerciseListViewModel, workoutViewModel: WorkoutViewModel) {
         self.template = template
         self._viewModel = State(initialValue: viewModel)
+        self.exerciseListViewModel = exerciseListViewModel
+        self.workoutViewModel = workoutViewModel
     }
 
     var body: some View {
@@ -56,7 +60,10 @@ struct TemplateDetailView: View {
 
             Section {
                 Button {
-                    // TODO: Start workout from template
+                    Task {
+                        await workoutViewModel.startWorkout(name: template.name, from: template)
+                    }
+                    dismiss()
                 } label: {
                     Label("Start Workout", systemImage: "play.circle.fill")
                         .frame(maxWidth: .infinity)
@@ -78,7 +85,7 @@ struct TemplateDetailView: View {
             }
         }
         .sheet(isPresented: $showingEditor) {
-            TemplateEditorView(viewModel: viewModel, template: template)
+            TemplateEditorView(viewModel: viewModel, exerciseListViewModel: exerciseListViewModel, template: template)
         }
     }
 }

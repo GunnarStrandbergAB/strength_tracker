@@ -1,5 +1,8 @@
 #if canImport(SwiftUI)
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct RestTimerView: View {
     @Environment(\.dismiss) private var dismiss
@@ -129,7 +132,6 @@ struct RestTimerView: View {
 
     private func triggerCompletionHaptic() {
         #if canImport(UIKit)
-        import UIKit
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
         #endif

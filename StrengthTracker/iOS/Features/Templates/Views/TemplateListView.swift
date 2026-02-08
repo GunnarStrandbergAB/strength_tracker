@@ -4,10 +4,14 @@ import StrengthTrackerShared
 
 struct TemplateListView: View {
     @State private var viewModel: TemplateViewModel
+    let exerciseListViewModel: ExerciseListViewModel
+    let workoutViewModel: WorkoutViewModel
     @State private var showingEditor = false
 
-    init(viewModel: TemplateViewModel) {
+    init(viewModel: TemplateViewModel, exerciseListViewModel: ExerciseListViewModel, workoutViewModel: WorkoutViewModel) {
         self._viewModel = State(initialValue: viewModel)
+        self.exerciseListViewModel = exerciseListViewModel
+        self.workoutViewModel = workoutViewModel
     }
 
     var body: some View {
@@ -38,10 +42,10 @@ struct TemplateListView: View {
                 }
             }
             .navigationDestination(for: WorkoutTemplate.self) { template in
-                TemplateDetailView(template: template, viewModel: viewModel)
+                TemplateDetailView(template: template, viewModel: viewModel, exerciseListViewModel: exerciseListViewModel, workoutViewModel: workoutViewModel)
             }
             .sheet(isPresented: $showingEditor) {
-                TemplateEditorView(viewModel: viewModel, template: nil)
+                TemplateEditorView(viewModel: viewModel, exerciseListViewModel: exerciseListViewModel, template: nil)
             }
             .overlay {
                 if viewModel.isLoading {
@@ -56,6 +60,14 @@ struct TemplateListView: View {
             }
             .task {
                 await viewModel.loadTemplates()
+            }
+            .alert("Error", isPresented: .init(
+                get: { viewModel.errorMessage != nil },
+                set: { if !$0 { viewModel.errorMessage = nil } }
+            )) {
+                Button("OK") { viewModel.errorMessage = nil }
+            } message: {
+                Text(viewModel.errorMessage ?? "")
             }
         }
     }

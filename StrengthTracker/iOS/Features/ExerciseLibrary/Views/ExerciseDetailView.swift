@@ -3,6 +3,7 @@ import StrengthTrackerShared
 
 struct ExerciseDetailView: View {
     let exercise: Exercise
+    var progressViewModel: ProgressViewModel? = nil
 
     var body: some View {
         List {
@@ -27,6 +28,16 @@ struct ExerciseDetailView: View {
             if let instructions = exercise.instructions {
                 Section("Instructions") {
                     Text(instructions)
+                }
+            }
+
+            if let progressVM = progressViewModel {
+                Section("Progress") {
+                    NavigationLink {
+                        ExerciseProgressView(viewModel: progressVM, exercise: exercise)
+                    } label: {
+                        Label("View Progress Chart", systemImage: "chart.line.uptrend.xyaxis")
+                    }
                 }
             }
         }
