@@ -37,7 +37,6 @@ targets:
       path: iOS/Resources/StrengthTracker.entitlements
       properties:
         com.apple.developer.healthkit: true
-        com.apple.developer.healthkit.access: []
         com.apple.security.application-groups:
           - group.com.strengthtracker.shared
     info:
@@ -81,7 +80,6 @@ targets:
       path: WatchApp/Resources/StrengthTrackerWatch.entitlements
       properties:
         com.apple.developer.healthkit: true
-        com.apple.developer.healthkit.access: []
         com.apple.security.application-groups:
           - group.com.strengthtracker.shared
     info:
