@@ -16,6 +16,7 @@ struct ContentView: View {
         TabView(selection: $selectedTab) {
             DashboardView(
                 viewModel: dashboardViewModel,
+                userPreferencesService: userPreferencesService,
                 onStartWorkout: {
                     selectedTab = 1
                 },

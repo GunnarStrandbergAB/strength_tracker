@@ -262,7 +262,11 @@ public final class WorkoutViewModel {
         )
 
         workout.exercises[exerciseIndex].sets.append(newSet)
-        currentWorkout = workout
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            currentWorkout = workout
+        }
     }
 
     /// Update the weight of a specific set within an exercise.
@@ -275,7 +279,11 @@ public final class WorkoutViewModel {
         }
 
         workout.exercises[exerciseIndex].sets[setIndex].weight = weight
-        currentWorkout = workout
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            currentWorkout = workout
+        }
     }
 
     /// Update the reps of a specific set within an exercise.
@@ -288,7 +296,11 @@ public final class WorkoutViewModel {
         }
 
         workout.exercises[exerciseIndex].sets[setIndex].reps = reps
-        currentWorkout = workout
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            currentWorkout = workout
+        }
     }
 
     /// Toggle the completion status of a specific set.
@@ -303,7 +315,11 @@ public final class WorkoutViewModel {
         let wasCompleted = workout.exercises[exerciseIndex].sets[setIndex].isCompleted
         workout.exercises[exerciseIndex].sets[setIndex].isCompleted = !wasCompleted
         workout.exercises[exerciseIndex].sets[setIndex].completedAt = wasCompleted ? nil : Date()
-        currentWorkout = workout
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            currentWorkout = workout
+        }
     }
 
     /// Cancel the current workout without saving completion.

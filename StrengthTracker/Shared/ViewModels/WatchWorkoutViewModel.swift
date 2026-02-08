@@ -20,6 +20,7 @@ public final class WatchWorkoutViewModel {
     private let healthKitService: any HealthKitServiceProtocol
     private let connectivityManager: ConnectivityManager
     private var restTimer: Timer?
+    private var restStartDate: Date?
 
     public init(
         workoutRepository: any WorkoutRepository,
@@ -213,13 +214,17 @@ public final class WatchWorkoutViewModel {
         stopRestTimer()
         isResting = true
         restTimeRemaining = restDuration
+        restStartDate = Date()
 
         restTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self else { return }
-                if self.restTimeRemaining > 0 {
-                    self.restTimeRemaining -= 1
+                guard let self, let start = self.restStartDate else { return }
+                let elapsed = Date().timeIntervalSince(start)
+                let remaining = self.restDuration - elapsed
+                if remaining > 0 {
+                    self.restTimeRemaining = remaining
                 } else {
+                    self.restTimeRemaining = 0
                     self.stopRestTimer()
                 }
             }
@@ -229,6 +234,7 @@ public final class WatchWorkoutViewModel {
     public func stopRestTimer() {
         restTimer?.invalidate()
         restTimer = nil
+        restStartDate = nil
         isResting = false
         restTimeRemaining = 0
     }

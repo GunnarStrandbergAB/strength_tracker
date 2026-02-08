@@ -14,6 +14,7 @@ struct TemplateEditorView: View {
     @State private var exercises: [TemplateExercise]
     @State private var showingExercisePicker = false
     @State private var editingExerciseIndex: Int? = nil
+    @State private var showingExerciseConfig = false
 
     init(viewModel: TemplateViewModel, exerciseListViewModel: ExerciseListViewModel, template: WorkoutTemplate?) {
         self._viewModel = State(initialValue: viewModel)
@@ -37,6 +38,7 @@ struct TemplateEditorView: View {
                     ForEach(exercises.indices, id: \.self) { index in
                         Button {
                             editingExerciseIndex = index
+                            showingExerciseConfig = true
                         } label: {
                             TemplateExerciseEditorRowView(templateExercise: exercises[index])
                         }
@@ -92,15 +94,17 @@ struct TemplateEditorView: View {
                     showingExercisePicker = false
                 }
             }
-            .sheet(item: $editingExerciseIndex) { index in
-                if exercises.indices.contains(index) {
+            .sheet(isPresented: $showingExerciseConfig) {
+                if let index = editingExerciseIndex, exercises.indices.contains(index) {
                     TemplateExerciseConfigView(
                         templateExercise: exercises[index],
                         onSave: { updated in
                             exercises[index] = updated
+                            showingExerciseConfig = false
                             editingExerciseIndex = nil
                         },
                         onCancel: {
+                            showingExerciseConfig = false
                             editingExerciseIndex = nil
                         }
                     )
@@ -327,8 +331,4 @@ private struct TemplateExerciseConfigView: View {
     }
 }
 
-// Extension to make Int identifiable for sheet presentation
-extension Int: Identifiable {
-    public var id: Int { self }
-}
 #endif

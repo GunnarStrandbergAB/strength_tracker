@@ -46,14 +46,12 @@ public enum ExerciseMapper {
 
     // MARK: - Private Helpers
 
-    private static func encodeSecondaryMuscleGroups(_ groups: [MuscleGroup]) -> String {
-        groups.map { $0.rawValue }.joined(separator: ",")
+    private static func encodeSecondaryMuscleGroups(_ groups: [MuscleGroup]) -> [String] {
+        groups.map { $0.rawValue }
     }
 
-    private static func decodeSecondaryMuscleGroups(_ encoded: String) -> [MuscleGroup] {
-        guard !encoded.isEmpty else { return [] }
-        return encoded.split(separator: ",")
-            .compactMap { MuscleGroup(rawValue: String($0)) }
+    private static func decodeSecondaryMuscleGroups(_ encoded: [String]) -> [MuscleGroup] {
+        encoded.compactMap { MuscleGroup(rawValue: $0) }
     }
 }
 #endif

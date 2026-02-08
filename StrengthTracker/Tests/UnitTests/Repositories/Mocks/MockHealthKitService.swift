@@ -39,6 +39,10 @@ final class MockHealthKitService: HealthKitServiceProtocol, @unchecked Sendable 
         }
     }
 
+    func startWorkoutSession() async throws {}
+
+    func endWorkoutSession(_ workout: Workout) async throws {}
+
     func fetchRecentWorkouts(limit: Int) async -> [HealthKitWorkoutSummary] {
         fetchRecentWorkoutsCalled = true
         fetchLimit = limit

@@ -7,6 +7,8 @@ struct ActiveWorkoutView: View {
     @State private var restTimerService = RestTimerService()
     @State private var showingExercisePicker = false
     @State private var showingCancelConfirmation = false
+    @State private var showingFinishError = false
+    @State private var finishErrorMessage = ""
     @State private var showingNotes = false
     @State private var notesText = ""
 
@@ -54,6 +56,11 @@ struct ActiveWorkoutView: View {
                 Button("OK") { viewModel.errorMessage = nil }
             } message: {
                 Text(viewModel.errorMessage ?? "")
+            }
+            .alert("Failed to Save Workout", isPresented: $showingFinishError) {
+                Button("OK") {}
+            } message: {
+                Text(finishErrorMessage)
             }
         }
     }
@@ -192,7 +199,12 @@ struct ActiveWorkoutView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     Task {
-                        try? await viewModel.completeWorkout()
+                        do {
+                            try await viewModel.completeWorkout()
+                        } catch {
+                            finishErrorMessage = error.localizedDescription
+                            showingFinishError = true
+                        }
                     }
                 } label: {
                     Text("Finish")

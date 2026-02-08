@@ -18,6 +18,12 @@ public protocol HealthKitServiceProtocol: Sendable {
     /// - Parameter limit: Maximum number of workouts to fetch
     /// - Returns: Array of workout summaries
     func fetchRecentWorkouts(limit: Int) async -> [HealthKitWorkoutSummary]
+
+    /// Start an active workout session (used on watchOS)
+    func startWorkoutSession() async throws
+
+    /// End an active workout session (used on watchOS)
+    func endWorkoutSession(_ workout: Workout) async throws
 }
 
 // MARK: - Data Models
@@ -104,6 +110,14 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked
         try await healthStore.save(hkWorkout)
     }
 
+    public func startWorkoutSession() async throws {
+        // Workout sessions on watchOS are managed by WatchHealthKitManager
+    }
+
+    public func endWorkoutSession(_ workout: Workout) async throws {
+        // Workout sessions on watchOS are managed by WatchHealthKitManager
+    }
+
     public func fetchRecentWorkouts(limit: Int) async -> [HealthKitWorkoutSummary] {
         await withCheckedContinuation { continuation in
             let workoutType = HKObjectType.workoutType()
@@ -149,6 +163,10 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol {
 
     public func saveWorkout(_ workout: Workout) async throws {}
 
+    public func startWorkoutSession() async throws {}
+
+    public func endWorkoutSession(_ workout: Workout) async throws {}
+
     public func fetchRecentWorkouts(limit: Int) async -> [HealthKitWorkoutSummary] {
         []
     }
@@ -168,6 +186,10 @@ public final class NoOpHealthKitService: HealthKitServiceProtocol {
     }
 
     public func saveWorkout(_ workout: Workout) async throws {}
+
+    public func startWorkoutSession() async throws {}
+
+    public func endWorkoutSession(_ workout: Workout) async throws {}
 
     public func fetchRecentWorkouts(limit: Int) async -> [HealthKitWorkoutSummary] {
         []

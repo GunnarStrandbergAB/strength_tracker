@@ -48,12 +48,12 @@ private struct StatCard: View {
         VStack(alignment: .leading, spacing: 4) {
             Image(systemName: icon)
                 .font(.system(size: 18))
-                .foregroundStyle(DashboardColors.primaryBlue)
+                .foregroundStyle(STColors.primary)
                 .padding(.bottom, 2)
 
             Text(label)
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(DashboardColors.textSecondary)
+                .foregroundStyle(STColors.textSecondary)
                 .tracking(0.3)
 
             HStack(alignment: .firstTextBaseline, spacing: 2) {
@@ -64,14 +64,14 @@ private struct StatCard: View {
                 if let unit = unit {
                     Text(unit)
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(DashboardColors.textTertiary)
+                        .foregroundStyle(STColors.textTertiary)
                 }
             }
             .padding(.top, 2)
         }
         .frame(minWidth: 130, alignment: .leading)
         .padding(16)
-        .background(DashboardColors.statCardBackground)
+        .background(STColors.surface)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)

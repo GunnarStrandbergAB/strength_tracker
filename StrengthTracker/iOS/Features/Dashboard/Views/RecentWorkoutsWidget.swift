@@ -20,7 +20,7 @@ struct RecentWorkoutsWidget: View {
                 Button(action: onHistoryTapped) {
                     Text("HISTORY")
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(DashboardColors.primaryBlue)
+                        .foregroundStyle(STColors.primary)
                         .tracking(0.5)
                 }
             }
@@ -31,11 +31,11 @@ struct RecentWorkoutsWidget: View {
                 VStack(spacing: 8) {
                     Image(systemName: "figure.strengthtraining.traditional")
                         .font(.system(size: 28))
-                        .foregroundStyle(DashboardColors.textTertiary)
+                        .foregroundStyle(STColors.textTertiary)
 
                     Text("No completed workouts yet")
                         .font(.system(size: 14))
-                        .foregroundStyle(DashboardColors.textTertiary)
+                        .foregroundStyle(STColors.textTertiary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 32)
@@ -71,14 +71,14 @@ private struct RecentWorkoutCard: View {
 
                     Text(viewModel.formatWorkoutDate(workout))
                         .font(.system(size: 12))
-                        .foregroundStyle(DashboardColors.textTertiary)
+                        .foregroundStyle(STColors.textTertiary)
                 }
 
                 Spacer()
 
                 Image(systemName: "ellipsis")
                     .font(.system(size: 16))
-                    .foregroundStyle(DashboardColors.textTertiary)
+                    .foregroundStyle(STColors.textTertiary)
             }
             .padding(.bottom, 14)
 
@@ -107,7 +107,7 @@ private struct RecentWorkoutCard: View {
             }
         }
         .padding(16)
-        .background(DashboardColors.card)
+        .background(STColors.surface)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -126,7 +126,7 @@ private struct WorkoutStatItem: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(DashboardColors.textTertiary)
+                .foregroundStyle(STColors.textTertiary)
                 .tracking(0.3)
 
             Text(value)

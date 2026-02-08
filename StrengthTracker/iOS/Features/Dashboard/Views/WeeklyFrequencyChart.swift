@@ -18,7 +18,7 @@ struct WeeklyFrequencyChart: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("WEEKLY FREQUENCY")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(DashboardColors.textSecondary)
+                        .foregroundStyle(STColors.textSecondary)
                         .tracking(0.8)
 
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -28,7 +28,7 @@ struct WeeklyFrequencyChart: View {
 
                         Text("WORKOUTS")
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(DashboardColors.textTertiary)
+                            .foregroundStyle(STColors.textTertiary)
                     }
                 }
 
@@ -55,14 +55,14 @@ struct WeeklyFrequencyChart: View {
 
                         Text(dayLabels[index])
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(DashboardColors.textTertiary)
+                            .foregroundStyle(STColors.textTertiary)
                     }
                     .frame(maxWidth: .infinity)
                 }
             }
         }
         .padding(20)
-        .background(DashboardColors.card)
+        .background(STColors.surface)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(
             RoundedRectangle(cornerRadius: 16)
@@ -91,13 +91,13 @@ private struct BarView: View {
             ZStack(alignment: .bottom) {
                 // Background bar
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(DashboardColors.barBackground)
+                    .fill(STColors.border.opacity(0.5))
                     .frame(height: totalHeight)
 
                 // Filled portion
                 if value > 0 {
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(DashboardColors.primaryBlue)
+                        .fill(STColors.primary)
                         .frame(height: max(fillHeight, minFillHeight))
                 }
             }
@@ -119,11 +119,11 @@ private struct TrendBadge: View {
             Text(value)
                 .font(.system(size: 12, weight: .bold))
         }
-        .foregroundStyle(isPositive ? DashboardColors.trendPositive : DashboardColors.trendNegative)
+        .foregroundStyle(isPositive ? STColors.success : STColors.danger)
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(
-            (isPositive ? DashboardColors.trendPositive : DashboardColors.trendNegative)
+            (isPositive ? STColors.success : STColors.danger)
                 .opacity(0.12)
         )
         .clipShape(Capsule())
