@@ -20,9 +20,13 @@
 	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>StrengthTracker reads your workout data to show exercise history and personal records.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>StrengthTracker saves your workouts to Apple Health.</string>
 	<key>WKApplication</key>
 	<true/>
 	<key>WKCompanionAppBundleIdentifier</key>
-	<string>com.strengthtracker.ios</string>
+	<string>com.gunnar.strengthtracker.ios</string>
 </dict>
 </plist>
