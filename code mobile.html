@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Strong iPhone Workout Log</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#f2cc0d",
+                        "background-light": "#f8f8f5",
+                        "background-dark": "#121212",
+                        "surface-dark": "#1e1e1a",
+                        "border-dark": "#333129",
+                    },
+                    fontFamily: {
+                        "display": ["Lexend", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<style>body {
+    font-family: "Lexend", sans-serif;
+    -webkit-tap-highlight-color: transparent
+    }
+.hide-scrollbar::-webkit-scrollbar {
+    display: none
+    }
+input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0
+    }
+.checkbox-custom:checked {
+    background-image: url(https://lh3.googleusercontent.com/aida-public/AB6AXuBD3glG9ovo3pEoLIV19F0eMsXeIsakQToqGr0xXgtAvqp2fNQGoOtgKi8seXsA6p8PphhgrUhpT-Dw3psgtz4kOCHw8DEetkQNidkB0kBWoKar9GBn3AL1tnH6hZ2sQYBP4eiT13U0ASoWuv8ktDZrG7W-fzL2TOnygfMLrZYWP4-d_0xdP4tAlohVTut_DfdgcivZEpBK0vXSyVUS6H7fl-SKmKMvBEPHj8e1BRIKgKWwef6pWkiUcJOR4B0F8LYyAWcK6l67IQk)
+    }</style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen flex flex-col">
+<!-- Top AppBar -->
+<header class="sticky top-0 z-50 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-slate-200 dark:border-border-dark px-4 py-3">
+<div class="flex items-center justify-between">
+<button class="text-slate-500 dark:text-slate-400">
+<span class="material-symbols-outlined">close</span>
+</button>
+<div class="flex flex-col items-center">
+<h1 class="text-base font-bold leading-tight">Leg Day (A)</h1>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px] text-primary">watch</span>
+<span class="text-[10px] uppercase tracking-widest text-slate-400 font-medium">Apple Watch Synced</span>
+</div>
+</div>
+<button class="bg-primary text-black px-4 py-1.5 rounded-full text-sm font-bold shadow-lg shadow-primary/20">
+                Finish
+            </button>
+</div>
+</header>
+<main class="flex-1 overflow-y-auto px-4 py-6 pb-32 space-y-6">
+<!-- Exercise 1: Squat -->
+<section class="bg-white dark:bg-surface-dark rounded-xl border border-slate-200 dark:border-border-dark overflow-hidden shadow-sm">
+<div class="p-4 flex items-center justify-between border-b border-slate-100 dark:border-border-dark">
+<div>
+<h2 class="text-primary font-bold text-lg">Squat (Barbell)</h2>
+<p class="text-xs text-slate-500 dark:text-slate-400">Quads, Glutes</p>
+</div>
+<div class="flex gap-2">
+<button class="p-2 text-slate-400 hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-xl">history</span>
+</button>
+<button class="p-2 text-slate-400">
+<span class="material-symbols-outlined text-xl">more_horiz</span>
+</button>
+</div>
+</div>
+<div class="px-4 py-2">
+<div class="grid grid-cols-12 gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+<div class="col-span-1 text-center">Set</div>
+<div class="col-span-4">Previous</div>
+<div class="col-span-3 text-center">kg</div>
+<div class="col-span-2 text-center">Reps</div>
+<div class="col-span-2 text-right">Done</div>
+</div>
+<!-- Set 1 (Completed) -->
+<div class="grid grid-cols-12 gap-2 items-center py-2 border-b border-slate-50 dark:border-border-dark/50 bg-primary/5 -mx-4 px-4">
+<div class="col-span-1 text-center font-bold text-sm text-primary">1</div>
+<div class="col-span-4 text-xs text-slate-500 italic">100 kg × 5</div>
+<div class="col-span-3">
+<input class="w-full h-9 text-center bg-slate-100 dark:bg-background-dark border-none rounded-lg text-sm font-display focus:ring-1 focus:ring-primary" placeholder="105" type="number" value="105"/>
+</div>
+<div class="col-span-2 text-center">
+<input class="w-full h-9 text-center bg-slate-100 dark:bg-background-dark border-none rounded-lg text-sm font-display focus:ring-1 focus:ring-primary" placeholder="5" type="number" value="5"/>
+</div>
+<div class="col-span-2 flex justify-end">
+<input checked="" class="checkbox-custom h-7 w-7 rounded-lg border-2 border-primary bg-primary text-black focus:ring-0" type="checkbox"/>
+</div>
+</div>
+<!-- Set 2 (Current) -->
+<div class="grid grid-cols-12 gap-2 items-center py-2 border-b border-slate-50 dark:border-border-dark/50">
+<div class="col-span-1 text-center font-bold text-sm text-slate-400">2</div>
+<div class="col-span-4 text-xs text-slate-500 italic">100 kg × 5</div>
+<div class="col-span-3">
+<input class="w-full h-9 text-center bg-slate-100 dark:bg-background-dark border-none rounded-lg text-sm font-display focus:ring-1 focus:ring-primary" placeholder="105" type="number"/>
+</div>
+<div class="col-span-2 text-center">
+<input class="w-full h-9 text-center bg-slate-100 dark:bg-background-dark border-none rounded-lg text-sm font-display focus:ring-1 focus:ring-primary" placeholder="5" type="number"/>
+</div>
+<div class="col-span-2 flex justify-end">
+<input class="h-7 w-7 rounded-lg border-2 border-slate-300 dark:border-slate-600 bg-transparent text-primary focus:ring-0" type="checkbox"/>
+</div>
+</div>
+<!-- Set 3 -->
+<div class="grid grid-cols-12 gap-2 items-center py-2">
+<div class="col-span-1 text-center font-bold text-sm text-slate-400">3</div>
+<div class="col-span-4 text-xs text-slate-500 italic">100 kg × 5</div>
+<div class="col-span-3">
+<input class="w-full h-9 text-center bg-slate-100 dark:bg-background-dark border-none rounded-lg text-sm font-display focus:ring-1 focus:ring-primary" placeholder="105" type="number"/>
+</div>
+<div class="col-span-2 text-center">
+<input class="w-full h-9 text-center bg-slate-100 dark:bg-background-dark border-none rounded-lg text-sm font-display focus:ring-1 focus:ring-primary" placeholder="5" type="number"/>
+</div>
+<div class="col-span-2 flex justify-end">
+<input class="h-7 w-7 rounded-lg border-2 border-slate-300 dark:border-slate-600 bg-transparent text-primary focus:ring-0" type="checkbox"/>
+</div>
+</div>
+</div>
+<button class="w-full py-3 text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-primary transition-colors flex items-center justify-center gap-2 border-t border-slate-100 dark:border-border-dark">
+<span class="material-symbols-outlined text-sm">add</span>
+                Add Set
+            </button>
+</section>
+<!-- Exercise 2: Bench Press -->
+<section class="bg-white dark:bg-surface-dark rounded-xl border border-slate-200 dark:border-border-dark overflow-hidden shadow-sm opacity-90">
+<div class="p-4 flex items-center justify-between border-b border-slate-100 dark:border-border-dark">
+<div>
+<h2 class="text-white font-bold text-lg">Bench Press (Dumbbell)</h2>
+<p class="text-xs text-slate-500 dark:text-slate-400">Chest, Triceps</p>
+</div>
+<div class="flex gap-2">
+<button class="p-2 text-slate-400">
+<span class="material-symbols-outlined text-xl">history</span>
+</button>
+<button class="p-2 text-slate-400">
+<span class="material-symbols-outlined text-xl">more_horiz</span>
+</button>
+</div>
+</div>
+<div class="px-4 py-2">
+<div class="grid grid-cols-12 gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+<div class="col-span-1 text-center">Set</div>
+<div class="col-span-4">Previous</div>
+<div class="col-span-3 text-center">kg</div>
+<div class="col-span-2 text-center">Reps</div>
+<div class="col-span-2 text-right">Done</div>
+</div>
+<div class="grid grid-cols-12 gap-2 items-center py-2">
+<div class="col-span-1 text-center font-bold text-sm text-slate-400">1</div>
+<div class="col-span-4 text-xs text-slate-500 italic">32 kg × 10</div>
+<div class="col-span-3">
+<input class="w-full h-9 text-center bg-slate-100 dark:bg-background-dark border-none rounded-lg text-sm font-display focus:ring-1 focus:ring-primary" placeholder="32" type="number"/>
+</div>
+<div class="col-span-2 text-center">
+<input class="w-full h-9 text-center bg-slate-100 dark:bg-background-dark border-none rounded-lg text-sm font-display focus:ring-1 focus:ring-primary" placeholder="10" type="number"/>
+</div>
+<div class="col-span-2 flex justify-end">
+<input class="h-7 w-7 rounded-lg border-2 border-slate-300 dark:border-slate-600 bg-transparent text-primary focus:ring-0" type="checkbox"/>
+</div>
+</div>
+</div>
+<button class="w-full py-3 text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center justify-center gap-2 border-t border-slate-100 dark:border-border-dark">
+<span class="material-symbols-outlined text-sm">add</span>
+                Add Set
+            </button>
+</section>
+<!-- Global Actions -->
+<div class="flex flex-col gap-3 py-4">
+<button class="w-full bg-slate-200 dark:bg-surface-dark text-slate-700 dark:text-slate-200 py-4 rounded-xl font-bold flex items-center justify-center gap-2 border border-slate-300 dark:border-border-dark">
+<span class="material-symbols-outlined">add_circle</span>
+                Add Exercise
+            </button>
+<button class="w-full text-red-500 py-3 text-sm font-medium">
+                Cancel Workout
+            </button>
+</div>
+</main>
+<!-- Rest Timer Sticky Footer -->
+<footer class="fixed bottom-0 left-0 right-0 z-50 p-4">
+<div class="max-w-md mx-auto bg-black/90 dark:bg-primary/95 backdrop-blur-xl rounded-2xl p-4 shadow-2xl flex items-center justify-between text-white dark:text-black">
+<div class="flex items-center gap-4">
+<div class="relative size-10">
+<svg class="size-full -rotate-90" viewbox="0 0 36 36">
+<circle class="stroke-slate-700 dark:stroke-black/10" cx="18" cy="18" fill="none" r="16" stroke-width="3"></circle>
+<circle class="stroke-primary dark:stroke-black" cx="18" cy="18" fill="none" r="16" stroke-dasharray="100" stroke-dashoffset="35" stroke-linecap="round" stroke-width="3"></circle>
+</svg>
+<div class="absolute inset-0 flex items-center justify-center">
+<span class="material-symbols-outlined text-lg">timer</span>
+</div>
+</div>
+<div>
+<p class="text-[10px] uppercase font-bold tracking-widest opacity-70">Resting</p>
+<p class="text-xl font-display font-bold tabular-nums">01:34</p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="bg-white/10 dark:bg-black/10 px-3 py-2 rounded-lg text-xs font-bold border border-white/10 dark:border-black/10">
+                    +15s
+                </button>
+<button class="bg-primary dark:bg-black text-black dark:text-white px-4 py-2 rounded-lg text-xs font-bold">
+                    Skip
+                </button>
+</div>
+</div>
+</footer>
+</body></html>

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Apple Watch Workout Log</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#f2cc0d",
+                        "background-dark": "#000000",
+                    },
+                    fontFamily: {
+                        "display": ["Lexend", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "apple-watch": "2.25rem"
+                    },
+                },
+            },
+        }
+    </script>
+<style type="text/tailwindcss">
+        body {
+            font-family: 'Lexend', sans-serif;
+            background-color: #000;
+        }.watch-container {
+            width: 320px;
+            height: 390px;
+            margin: 20px auto;
+            background: #000;
+            border: 8px solid #1a1a1a;
+            border-radius: 4.5rem;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            padding: 12px 16px;
+        }
+        .touch-target {
+            min-height: 44px;
+            min-width: 44px;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-black text-white antialiased flex items-center justify-center min-h-screen">
+<div class="watch-container shadow-2xl">
+<div class="flex justify-between items-center px-4 pt-4 mb-2">
+<span class="text-[12px] font-bold text-primary">09:41</span>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-green-500 fill-1">bolt</span>
+</div>
+</div>
+<header class="text-center mb-3">
+<h1 class="text-[15px] font-bold text-primary truncate leading-tight">Bench Press</h1>
+<p class="text-[12px] font-medium text-white/60">Set 2 of 4</p>
+</header>
+<main class="flex-1 flex flex-col gap-2">
+<div class="grid grid-cols-2 gap-2">
+<div class="bg-white/10 rounded-2xl p-2 flex flex-col items-center justify-between">
+<span class="text-[9px] uppercase font-bold text-white/40 tracking-wider">Weight</span>
+<div class="flex items-center justify-between w-full">
+<button class="touch-target flex items-center justify-center bg-white/10 rounded-lg active:bg-primary active:text-black">
+<span class="material-symbols-outlined text-lg">remove</span>
+</button>
+<span class="text-xl font-bold">225</span>
+<button class="touch-target flex items-center justify-center bg-white/10 rounded-lg active:bg-primary active:text-black">
+<span class="material-symbols-outlined text-lg">add</span>
+</button>
+</div>
+</div>
+<div class="bg-white/10 rounded-2xl p-2 flex flex-col items-center justify-between">
+<span class="text-[9px] uppercase font-bold text-white/40 tracking-wider">Reps</span>
+<div class="flex items-center justify-between w-full">
+<button class="touch-target flex items-center justify-center bg-white/10 rounded-lg active:bg-primary active:text-black">
+<span class="material-symbols-outlined text-lg">remove</span>
+</button>
+<span class="text-xl font-bold">8</span>
+<button class="touch-target flex items-center justify-center bg-white/10 rounded-lg active:bg-primary active:text-black">
+<span class="material-symbols-outlined text-lg">add</span>
+</button>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-center gap-2 py-1">
+<span class="material-symbols-outlined text-primary text-sm">timer</span>
+<span class="text-[11px] font-medium text-white/80 tracking-widest uppercase">Rest: 01:30</span>
+</div>
+</main>
+<footer class="mt-auto flex flex-col gap-2 pb-2">
+<button class="touch-target flex w-full items-center justify-center gap-2 rounded-full bg-primary py-3 transition-all active:scale-95">
+<span class="text-[14px] font-black uppercase tracking-tight text-black">Finish Set</span>
+<span class="material-symbols-outlined text-black font-bold text-base">done_all</span>
+</button>
+<div class="hidden">
+<img alt="" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBMoDNeWtudWt_dr5-ACUSEvs_NamdjOF7ia8z4BaEwDMw1VSpOn8LMNe-yHlDLUobNdshX22Esu9xLdWDG-s07QNWJZwVKDE95Pjqm1x-2V0G5sUBIEu9QY4Q9qPoqI1P5dCxzf5C4GC7DjHYdYzWFEHBDO6CTuQAYRnvH7Nja5IWER-BeENVsYz1Y76Iqv4loG3drkjFj14xcqizs_31kXs-NLhCf_y8C3ZUyRzERBS_ZsuF0eqAAnuUMEn3ZHnQ7_TVIb5hg2d8"/>
+</div>
+</footer>
+</div>
+
+</body></html>
