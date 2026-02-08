@@ -1,9 +1,9 @@
 #if canImport(SwiftData)
 import Foundation
 
-enum WorkoutMapper {
+public enum WorkoutMapper {
     /// Converts a WorkoutEntity (SwiftData) to a Workout (domain model)
-    static func toDomain(_ entity: WorkoutEntity) -> Workout {
+    public static func toDomain(_ entity: WorkoutEntity) -> Workout {
         Workout(
             id: entity.id,
             name: entity.name,
@@ -17,7 +17,7 @@ enum WorkoutMapper {
     }
 
     /// Converts a Workout (domain model) to a WorkoutEntity (SwiftData)
-    static func toEntity(_ domain: Workout) -> WorkoutEntity {
+    public static func toEntity(_ domain: Workout) -> WorkoutEntity {
         let entity = WorkoutEntity(
             id: domain.id,
             name: domain.name,
@@ -32,7 +32,7 @@ enum WorkoutMapper {
     }
 
     /// Updates an existing WorkoutEntity with values from a Workout domain model
-    static func updateEntity(_ entity: WorkoutEntity, from domain: Workout) {
+    public static func updateEntity(_ entity: WorkoutEntity, from domain: Workout) {
         entity.name = domain.name
         entity.startedAt = domain.startedAt
         entity.completedAt = domain.completedAt
@@ -45,12 +45,24 @@ enum WorkoutMapper {
     }
 }
 
-enum WorkoutExerciseMapper {
+public enum WorkoutExerciseMapper {
     /// Converts a WorkoutExerciseEntity to a WorkoutExercise (domain model)
-    static func toDomain(_ entity: WorkoutExerciseEntity) -> WorkoutExercise {
-        WorkoutExercise(
+    public static func toDomain(_ entity: WorkoutExerciseEntity) -> WorkoutExercise {
+        let exercise = Exercise(
+            id: entity.exerciseId,
+            name: entity.exerciseName,
+            primaryMuscleGroup: MuscleGroup(rawValue: entity.primaryMuscleGroup) ?? .other,
+            secondaryMuscleGroups: entity.secondaryMuscleGroups.compactMap { MuscleGroup(rawValue: $0) },
+            category: ExerciseCategory(rawValue: entity.category) ?? .other,
+            exerciseType: ExerciseType(rawValue: entity.exerciseType) ?? .weightedReps,
+            instructions: entity.instructions,
+            isCustom: entity.isCustom,
+            isArchived: entity.isArchived
+        )
+
+        return WorkoutExercise(
             id: entity.id,
-            exercise: ExerciseMapper.toDomain(entity.exercise),
+            exercise: exercise,
             order: entity.order,
             supersetGroup: entity.supersetGroup,
             notes: entity.notes,
@@ -60,10 +72,18 @@ enum WorkoutExerciseMapper {
     }
 
     /// Converts a WorkoutExercise (domain model) to a WorkoutExerciseEntity
-    static func toEntity(_ domain: WorkoutExercise) -> WorkoutExerciseEntity {
+    public static func toEntity(_ domain: WorkoutExercise) -> WorkoutExerciseEntity {
         let entity = WorkoutExerciseEntity(
             id: domain.id,
-            exercise: ExerciseMapper.toEntity(domain.exercise),
+            exerciseId: domain.exercise.id,
+            exerciseName: domain.exercise.name,
+            primaryMuscleGroup: domain.exercise.primaryMuscleGroup.rawValue,
+            secondaryMuscleGroups: domain.exercise.secondaryMuscleGroups.map { $0.rawValue },
+            category: domain.exercise.category.rawValue,
+            exerciseType: domain.exercise.exerciseType.rawValue,
+            instructions: domain.exercise.instructions,
+            isCustom: domain.exercise.isCustom,
+            isArchived: domain.exercise.isArchived,
             order: domain.order,
             supersetGroup: domain.supersetGroup,
             notes: domain.notes,
@@ -74,8 +94,16 @@ enum WorkoutExerciseMapper {
     }
 
     /// Updates an existing WorkoutExerciseEntity with values from a WorkoutExercise domain model
-    static func updateEntity(_ entity: WorkoutExerciseEntity, from domain: WorkoutExercise) {
-        ExerciseMapper.updateEntity(entity.exercise, from: domain.exercise)
+    public static func updateEntity(_ entity: WorkoutExerciseEntity, from domain: WorkoutExercise) {
+        entity.exerciseId = domain.exercise.id
+        entity.exerciseName = domain.exercise.name
+        entity.primaryMuscleGroup = domain.exercise.primaryMuscleGroup.rawValue
+        entity.secondaryMuscleGroups = domain.exercise.secondaryMuscleGroups.map { $0.rawValue }
+        entity.category = domain.exercise.category.rawValue
+        entity.exerciseType = domain.exercise.exerciseType.rawValue
+        entity.instructions = domain.exercise.instructions
+        entity.isCustom = domain.exercise.isCustom
+        entity.isArchived = domain.exercise.isArchived
         entity.order = domain.order
         entity.supersetGroup = domain.supersetGroup
         entity.notes = domain.notes
@@ -86,9 +114,9 @@ enum WorkoutExerciseMapper {
     }
 }
 
-enum ExerciseSetMapper {
+public enum ExerciseSetMapper {
     /// Converts an ExerciseSetEntity to an ExerciseSet (domain model)
-    static func toDomain(_ entity: ExerciseSetEntity) -> ExerciseSet {
+    public static func toDomain(_ entity: ExerciseSetEntity) -> ExerciseSet {
         ExerciseSet(
             id: entity.id,
             order: entity.order,
@@ -105,7 +133,7 @@ enum ExerciseSetMapper {
     }
 
     /// Converts an ExerciseSet (domain model) to an ExerciseSetEntity
-    static func toEntity(_ domain: ExerciseSet) -> ExerciseSetEntity {
+    public static func toEntity(_ domain: ExerciseSet) -> ExerciseSetEntity {
         ExerciseSetEntity(
             id: domain.id,
             order: domain.order,
@@ -122,7 +150,7 @@ enum ExerciseSetMapper {
     }
 
     /// Updates an existing ExerciseSetEntity with values from an ExerciseSet domain model
-    static func updateEntity(_ entity: ExerciseSetEntity, from domain: ExerciseSet) {
+    public static func updateEntity(_ entity: ExerciseSetEntity, from domain: ExerciseSet) {
         entity.order = domain.order
         entity.setType = domain.setType.rawValue
         entity.weight = domain.weight

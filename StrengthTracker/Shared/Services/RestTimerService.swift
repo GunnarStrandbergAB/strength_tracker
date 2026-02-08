@@ -7,10 +7,10 @@ import ActivityKit
 
 @MainActor
 @Observable
-final class RestTimerService {
-    var remainingSeconds: Int = 0
-    var isRunning: Bool = false
-    var totalSeconds: Int = 90  // default rest time
+public final class RestTimerService {
+    public var remainingSeconds: Int = 0
+    public var isRunning: Bool = false
+    public var totalSeconds: Int = 90  // default rest time
 
     nonisolated(unsafe) private var timer: Timer?
 
@@ -27,7 +27,7 @@ final class RestTimerService {
     ///   - seconds: Optional duration in seconds. If nil, uses the current totalSeconds value
     ///   - exerciseName: Name of the exercise for Live Activity
     ///   - setNumber: Set number for Live Activity
-    func start(seconds: Int? = nil, exerciseName: String? = nil, setNumber: Int? = nil) {
+    public func start(seconds: Int? = nil, exerciseName: String? = nil, setNumber: Int? = nil) {
         stop() // Stop any existing timer
 
         if let seconds = seconds {
@@ -61,7 +61,7 @@ final class RestTimerService {
     }
 
     /// Stop the timer without resetting values
-    func stop() {
+    public func stop() {
         timer?.invalidate()
         timer = nil
         isRunning = false
@@ -75,20 +75,20 @@ final class RestTimerService {
     }
 
     /// Progress from 0.0 (start) to 1.0 (complete)
-    var progress: Double {
+    public var progress: Double {
         guard totalSeconds > 0 else { return 0 }
         return Double(totalSeconds - remainingSeconds) / Double(totalSeconds)
     }
 
     /// Formatted time remaining as MM:SS
-    var formattedTime: String {
+    public var formattedTime: String {
         let minutes = remainingSeconds / 60
         let seconds = remainingSeconds % 60
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
     /// Check if timer has completed
-    var isCompleted: Bool {
+    public var isCompleted: Bool {
         remainingSeconds == 0 && !isRunning
     }
 

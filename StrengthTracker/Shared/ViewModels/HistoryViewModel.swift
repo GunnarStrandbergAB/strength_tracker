@@ -3,19 +3,19 @@ import Observation
 
 @MainActor
 @Observable
-final class HistoryViewModel {
-    var workouts: [Workout] = []
-    var selectedWorkout: Workout? = nil
-    var isLoading = false
-    var errorMessage: String? = nil
+public final class HistoryViewModel {
+    public var workouts: [Workout] = []
+    public var selectedWorkout: Workout? = nil
+    public var isLoading = false
+    public var errorMessage: String? = nil
 
     private let workoutRepository: any WorkoutRepository
 
-    init(workoutRepository: any WorkoutRepository) {
+    public init(workoutRepository: any WorkoutRepository) {
         self.workoutRepository = workoutRepository
     }
 
-    func loadHistory() async {
+    public func loadHistory() async {
         isLoading = true
         errorMessage = nil
         do {
@@ -28,11 +28,11 @@ final class HistoryViewModel {
         isLoading = false
     }
 
-    func selectWorkout(_ workout: Workout) {
+    public func selectWorkout(_ workout: Workout) {
         selectedWorkout = workout
     }
 
-    func exerciseProgression(for exerciseId: UUID) -> [(date: Date, weight: Double, reps: Int)] {
+    public func exerciseProgression(for exerciseId: UUID) -> [(date: Date, weight: Double, reps: Int)] {
         var results: [(date: Date, weight: Double, reps: Int)] = []
 
         for workout in workouts {

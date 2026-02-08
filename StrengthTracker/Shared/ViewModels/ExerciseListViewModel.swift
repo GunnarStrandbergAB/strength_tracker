@@ -3,15 +3,15 @@ import Observation
 
 @MainActor
 @Observable
-final class ExerciseListViewModel {
-    var exercises: [Exercise] = []
-    var searchText: String = ""
-    var selectedCategory: ExerciseCategory? = nil
-    var selectedMuscleGroup: MuscleGroup? = nil
-    var isLoading = false
-    var errorMessage: String? = nil
+public final class ExerciseListViewModel {
+    public var exercises: [Exercise] = []
+    public var searchText: String = ""
+    public var selectedCategory: ExerciseCategory? = nil
+    public var selectedMuscleGroup: MuscleGroup? = nil
+    public var isLoading = false
+    public var errorMessage: String? = nil
 
-    var filteredExercises: [Exercise] {
+    public var filteredExercises: [Exercise] {
         var result = exercises
 
         if !searchText.isEmpty {
@@ -32,11 +32,11 @@ final class ExerciseListViewModel {
 
     private let exerciseRepository: any ExerciseRepository
 
-    init(exerciseRepository: any ExerciseRepository) {
+    public init(exerciseRepository: any ExerciseRepository) {
         self.exerciseRepository = exerciseRepository
     }
 
-    func loadExercises() async {
+    public func loadExercises() async {
         isLoading = true
         errorMessage = nil
         do {

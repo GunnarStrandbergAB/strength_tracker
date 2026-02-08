@@ -3,21 +3,21 @@ import Observation
 
 @MainActor
 @Observable
-final class TemplateViewModel {
-    var templates: [WorkoutTemplate] = []
-    var selectedTemplate: WorkoutTemplate? = nil
-    var isLoading = false
-    var errorMessage: String? = nil
+public final class TemplateViewModel {
+    public var templates: [WorkoutTemplate] = []
+    public var selectedTemplate: WorkoutTemplate? = nil
+    public var isLoading = false
+    public var errorMessage: String? = nil
 
     private let templateRepository: any TemplateRepository
     private let exerciseRepository: any ExerciseRepository
 
-    init(templateRepository: any TemplateRepository, exerciseRepository: any ExerciseRepository) {
+    public init(templateRepository: any TemplateRepository, exerciseRepository: any ExerciseRepository) {
         self.templateRepository = templateRepository
         self.exerciseRepository = exerciseRepository
     }
 
-    func loadTemplates() async {
+    public func loadTemplates() async {
         isLoading = true
         errorMessage = nil
         do {
@@ -28,7 +28,7 @@ final class TemplateViewModel {
         isLoading = false
     }
 
-    func saveTemplate(_ template: WorkoutTemplate) async {
+    public func saveTemplate(_ template: WorkoutTemplate) async {
         errorMessage = nil
         do {
             let saved = try await templateRepository.save(template)
@@ -42,7 +42,7 @@ final class TemplateViewModel {
         }
     }
 
-    func deleteTemplate(_ template: WorkoutTemplate) async {
+    public func deleteTemplate(_ template: WorkoutTemplate) async {
         errorMessage = nil
         do {
             try await templateRepository.delete(template)
@@ -52,7 +52,7 @@ final class TemplateViewModel {
         }
     }
 
-    func createTemplate(name: String, exercises: [TemplateExercise]) async {
+    public func createTemplate(name: String, exercises: [TemplateExercise]) async {
         let template = WorkoutTemplate(
             id: UUID(),
             name: name,

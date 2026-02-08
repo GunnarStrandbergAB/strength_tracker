@@ -3,7 +3,7 @@ import Foundation
 // MARK: - Protocol (always available for cross-platform compatibility)
 
 /// Protocol for HealthKit integration. Available on all platforms for compilation compatibility.
-protocol HealthKitServiceProtocol: Sendable {
+public protocol HealthKitServiceProtocol: Sendable {
     /// Request authorization to read and write health data
     func requestAuthorization() async throws
 
@@ -23,12 +23,20 @@ protocol HealthKitServiceProtocol: Sendable {
 // MARK: - Data Models
 
 /// Summary of a HealthKit workout
-struct HealthKitWorkoutSummary: Sendable, Identifiable {
-    let id: UUID
-    let startDate: Date
-    let endDate: Date
-    let totalEnergyBurned: Double? // kcal
-    let duration: TimeInterval
+public struct HealthKitWorkoutSummary: Sendable, Identifiable {
+    public let id: UUID
+    public let startDate: Date
+    public let endDate: Date
+    public let totalEnergyBurned: Double? // kcal
+    public let duration: TimeInterval
+
+    public init(id: UUID, startDate: Date, endDate: Date, totalEnergyBurned: Double?, duration: TimeInterval) {
+        self.id = id
+        self.startDate = startDate
+        self.endDate = endDate
+        self.totalEnergyBurned = totalEnergyBurned
+        self.duration = duration
+    }
 }
 
 // MARK: - Platform-Specific Implementation
@@ -37,10 +45,12 @@ struct HealthKitWorkoutSummary: Sendable, Identifiable {
 import HealthKit
 
 /// Default HealthKit service implementation for platforms that support HealthKit
-final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked Sendable {
+public final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked Sendable {
     private let healthStore = HKHealthStore()
 
-    func requestAuthorization() async throws {
+    public init() {}
+
+    public func requestAuthorization() async throws {
         let typesToShare: Set<HKSampleType> = [
             HKObjectType.workoutType()
         ]
@@ -54,12 +64,12 @@ final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked Sendab
         try await healthStore.requestAuthorization(toShare: typesToShare, read: typesToRead)
     }
 
-    func isAuthorized() -> Bool {
+    public func isAuthorized() -> Bool {
         let status = healthStore.authorizationStatus(for: HKObjectType.workoutType())
         return status == .sharingAuthorized
     }
 
-    func saveWorkout(_ workout: Workout) async throws {
+    public func saveWorkout(_ workout: Workout) async throws {
         guard let startDate = Optional(workout.startedAt),
               let endDate = workout.completedAt else {
             return
@@ -94,7 +104,7 @@ final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked Sendab
         try await healthStore.save(hkWorkout)
     }
 
-    func fetchRecentWorkouts(limit: Int) async -> [HealthKitWorkoutSummary] {
+    public func fetchRecentWorkouts(limit: Int) async -> [HealthKitWorkoutSummary] {
         await withCheckedContinuation { continuation in
             let workoutType = HKObjectType.workoutType()
             let predicate = HKQuery.predicateForWorkouts(with: .traditionalStrengthTraining)
@@ -128,16 +138,18 @@ final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked Sendab
 
 #if !canImport(HealthKit)
 /// Fallback implementation for platforms without HealthKit support
-final class DefaultHealthKitService: HealthKitServiceProtocol {
-    func requestAuthorization() async throws {}
+public final class DefaultHealthKitService: HealthKitServiceProtocol {
+    public init() {}
 
-    func isAuthorized() -> Bool {
+    public func requestAuthorization() async throws {}
+
+    public func isAuthorized() -> Bool {
         false
     }
 
-    func saveWorkout(_ workout: Workout) async throws {}
+    public func saveWorkout(_ workout: Workout) async throws {}
 
-    func fetchRecentWorkouts(limit: Int) async -> [HealthKitWorkoutSummary] {
+    public func fetchRecentWorkouts(limit: Int) async -> [HealthKitWorkoutSummary] {
         []
     }
 }
@@ -146,16 +158,18 @@ final class DefaultHealthKitService: HealthKitServiceProtocol {
 // MARK: - No-Op Implementation
 
 /// No-op implementation for testing or when HealthKit is disabled
-final class NoOpHealthKitService: HealthKitServiceProtocol {
-    func requestAuthorization() async throws {}
+public final class NoOpHealthKitService: HealthKitServiceProtocol {
+    public init() {}
 
-    func isAuthorized() -> Bool {
+    public func requestAuthorization() async throws {}
+
+    public func isAuthorized() -> Bool {
         false
     }
 
-    func saveWorkout(_ workout: Workout) async throws {}
+    public func saveWorkout(_ workout: Workout) async throws {}
 
-    func fetchRecentWorkouts(limit: Int) async -> [HealthKitWorkoutSummary] {
+    public func fetchRecentWorkouts(limit: Int) async -> [HealthKitWorkoutSummary] {
         []
     }
 }

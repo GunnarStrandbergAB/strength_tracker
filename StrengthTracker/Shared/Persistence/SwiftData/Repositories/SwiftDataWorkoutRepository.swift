@@ -3,14 +3,14 @@ import SwiftData
 import Foundation
 
 @MainActor
-final class SwiftDataWorkoutRepository: WorkoutRepository, Sendable {
+public final class SwiftDataWorkoutRepository: WorkoutRepository, Sendable {
     private let modelContext: ModelContext
 
-    init(modelContext: ModelContext) {
+    public init(modelContext: ModelContext) {
         self.modelContext = modelContext
     }
 
-    func fetchAll() async throws -> [Workout] {
+    public func fetchAll() async throws -> [Workout] {
         let descriptor = FetchDescriptor<WorkoutEntity>(
             sortBy: [SortDescriptor(\.startedAt, order: .reverse)]
         )
@@ -18,7 +18,7 @@ final class SwiftDataWorkoutRepository: WorkoutRepository, Sendable {
         return entities.map { WorkoutMapper.toDomain($0) }
     }
 
-    func fetchActive() async throws -> Workout? {
+    public func fetchActive() async throws -> Workout? {
         let descriptor = FetchDescriptor<WorkoutEntity>(
             predicate: #Predicate { entity in
                 entity.completedAt == nil
@@ -30,7 +30,7 @@ final class SwiftDataWorkoutRepository: WorkoutRepository, Sendable {
         return entities.first.map { WorkoutMapper.toDomain($0) }
     }
 
-    func fetchByDateRange(_ start: Date, _ end: Date) async throws -> [Workout] {
+    public func fetchByDateRange(_ start: Date, _ end: Date) async throws -> [Workout] {
         let descriptor = FetchDescriptor<WorkoutEntity>(
             predicate: #Predicate { entity in
                 entity.startedAt >= start && entity.startedAt <= end
@@ -41,7 +41,7 @@ final class SwiftDataWorkoutRepository: WorkoutRepository, Sendable {
         return entities.map { WorkoutMapper.toDomain($0) }
     }
 
-    func save(_ workout: Workout) async throws -> Workout {
+    public func save(_ workout: Workout) async throws -> Workout {
         let descriptor = FetchDescriptor<WorkoutEntity>(
             predicate: #Predicate { entity in
                 entity.id == workout.id
@@ -59,7 +59,7 @@ final class SwiftDataWorkoutRepository: WorkoutRepository, Sendable {
         return workout
     }
 
-    func complete(_ workoutId: UUID) async throws {
+    public func complete(_ workoutId: UUID) async throws {
         let descriptor = FetchDescriptor<WorkoutEntity>(
             predicate: #Predicate { entity in
                 entity.id == workoutId
@@ -72,7 +72,7 @@ final class SwiftDataWorkoutRepository: WorkoutRepository, Sendable {
         }
     }
 
-    func delete(_ workout: Workout) async throws {
+    public func delete(_ workout: Workout) async throws {
         let descriptor = FetchDescriptor<WorkoutEntity>(
             predicate: #Predicate { entity in
                 entity.id == workout.id

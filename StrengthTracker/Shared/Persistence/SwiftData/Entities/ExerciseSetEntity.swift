@@ -3,23 +3,23 @@ import SwiftData
 import Foundation
 
 @Model
-final class ExerciseSetEntity {
-    @Attribute(.unique) var id: UUID
-    var order: Int
-    var setType: String
-    var weight: Double?
-    var reps: Int?
-    var durationSeconds: Int?
-    var distanceMeters: Double?
-    var rpe: Double?
-    var isCompleted: Bool
-    var isPersonalRecord: Bool
-    var completedAt: Date?
+public final class ExerciseSetEntity {
+    @Attribute(.unique) public var id: UUID
+    public var order: Int
+    public var setType: String
+    public var weight: Double?
+    public var reps: Int?
+    public var durationSeconds: Int?
+    public var distanceMeters: Double?
+    public var rpe: Double?
+    public var isCompleted: Bool
+    public var isPersonalRecord: Bool
+    public var completedAt: Date?
 
     @Relationship(deleteRule: .nullify, inverse: \WorkoutExerciseEntity.sets)
-    var workoutExercise: WorkoutExerciseEntity?
+    public var workoutExercise: WorkoutExerciseEntity?
 
-    init(
+    public init(
         id: UUID,
         order: Int,
         setType: String,

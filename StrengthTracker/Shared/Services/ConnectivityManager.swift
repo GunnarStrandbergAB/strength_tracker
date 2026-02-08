@@ -7,15 +7,15 @@ import WatchConnectivity
 
 @Observable
 @MainActor
-final class ConnectivityManager: NSObject, @unchecked Sendable {
-    var isReachable: Bool = false
-    var lastSyncDate: Date?
-    var pendingTransfers: Int = 0
+public final class ConnectivityManager: NSObject, @unchecked Sendable {
+    public var isReachable: Bool = false
+    public var lastSyncDate: Date?
+    public var pendingTransfers: Int = 0
 
     // Callbacks for received data
-    var onExercisesReceived: (([Exercise]) -> Void)?
-    var onWorkoutReceived: ((Workout) -> Void)?
-    var onSettingsReceived: (([String: Any]) -> Void)?
+    public var onExercisesReceived: (([Exercise]) -> Void)?
+    public var onWorkoutReceived: ((Workout) -> Void)?
+    public var onSettingsReceived: (([String: Any]) -> Void)?
 
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -25,7 +25,7 @@ final class ConnectivityManager: NSObject, @unchecked Sendable {
     }
 
     /// Activate WCSession - call from app entry point
-    func activate() {
+    public func activate() {
         #if canImport(WatchConnectivity)
         guard WCSession.isSupported() else { return }
         let session = WCSession.default
@@ -37,7 +37,7 @@ final class ConnectivityManager: NSObject, @unchecked Sendable {
     // MARK: - Send Methods
 
     /// Sync exercise library to Watch (iPhone → Watch via applicationContext)
-    func syncExercises(_ exercises: [Exercise]) {
+    public func syncExercises(_ exercises: [Exercise]) {
         #if canImport(WatchConnectivity)
         guard WCSession.default.activationState == .activated else { return }
 
@@ -52,7 +52,7 @@ final class ConnectivityManager: NSObject, @unchecked Sendable {
     }
 
     /// Send completed workout to iPhone (Watch → iPhone via transferUserInfo)
-    func sendWorkoutCompleted(_ workout: Workout) {
+    public func sendWorkoutCompleted(_ workout: Workout) {
         #if canImport(WatchConnectivity)
         guard WCSession.default.activationState == .activated else { return }
 
@@ -70,7 +70,7 @@ final class ConnectivityManager: NSObject, @unchecked Sendable {
     }
 
     /// Send real-time set update (Watch → iPhone via sendMessage)
-    func sendSetUpdate(exerciseId: UUID, setId: UUID, weight: Double?, reps: Int?, isCompleted: Bool) {
+    public func sendSetUpdate(exerciseId: UUID, setId: UUID, weight: Double?, reps: Int?, isCompleted: Bool) {
         #if canImport(WatchConnectivity)
         guard WCSession.default.isReachable else { return }
 
@@ -90,7 +90,7 @@ final class ConnectivityManager: NSObject, @unchecked Sendable {
     }
 
     /// Sync settings to Watch (iPhone → Watch)
-    func syncSettings(_ settings: [String: Any]) {
+    public func syncSettings(_ settings: [String: Any]) {
         #if canImport(WatchConnectivity)
         guard WCSession.default.activationState == .activated else { return }
 

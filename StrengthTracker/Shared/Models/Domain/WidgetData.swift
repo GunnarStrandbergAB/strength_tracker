@@ -1,18 +1,18 @@
 import Foundation
 
 /// Data shared between the main app and widgets via App Groups
-struct WidgetData: Codable, Sendable {
-    let lastWorkoutDate: Date?
-    let lastWorkoutName: String?
-    let lastWorkoutExerciseCount: Int
-    let lastWorkoutDuration: TimeInterval?
-    let weeklyWorkoutCount: Int
-    let weeklyGoal: Int
-    let currentStreak: Int
-    let totalWorkoutsAllTime: Int
-    let updatedAt: Date
+public struct WidgetData: Codable, Sendable {
+    public let lastWorkoutDate: Date?
+    public let lastWorkoutName: String?
+    public let lastWorkoutExerciseCount: Int
+    public let lastWorkoutDuration: TimeInterval?
+    public let weeklyWorkoutCount: Int
+    public let weeklyGoal: Int
+    public let currentStreak: Int
+    public let totalWorkoutsAllTime: Int
+    public let updatedAt: Date
 
-    static let empty = WidgetData(
+    public static let empty = WidgetData(
         lastWorkoutDate: nil,
         lastWorkoutName: nil,
         lastWorkoutExerciseCount: 0,
@@ -25,8 +25,20 @@ struct WidgetData: Codable, Sendable {
     )
 
     /// Key used for App Group UserDefaults
-    static let userDefaultsKey = "widget_data"
+    public static let userDefaultsKey = "widget_data"
 
     /// App Group identifier
-    static let appGroupId = "group.com.strengthtracker.shared"
+    public static let appGroupId = "group.com.strengthtracker.shared"
+
+    public init(lastWorkoutDate: Date?, lastWorkoutName: String?, lastWorkoutExerciseCount: Int, lastWorkoutDuration: TimeInterval?, weeklyWorkoutCount: Int, weeklyGoal: Int, currentStreak: Int, totalWorkoutsAllTime: Int, updatedAt: Date) {
+        self.lastWorkoutDate = lastWorkoutDate
+        self.lastWorkoutName = lastWorkoutName
+        self.lastWorkoutExerciseCount = lastWorkoutExerciseCount
+        self.lastWorkoutDuration = lastWorkoutDuration
+        self.weeklyWorkoutCount = weeklyWorkoutCount
+        self.weeklyGoal = weeklyGoal
+        self.currentStreak = currentStreak
+        self.totalWorkoutsAllTime = totalWorkoutsAllTime
+        self.updatedAt = updatedAt
+    }
 }

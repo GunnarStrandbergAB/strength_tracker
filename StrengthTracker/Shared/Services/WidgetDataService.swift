@@ -4,12 +4,12 @@ import Foundation
 import WidgetKit
 #endif
 
-final class WidgetDataService: Sendable {
+public final class WidgetDataService: Sendable {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
     /// Write widget data to shared App Group UserDefaults
-    func updateWidgetData(_ data: WidgetData) {
+    public func updateWidgetData(_ data: WidgetData) {
         guard let defaults = UserDefaults(suiteName: WidgetData.appGroupId) else { return }
         if let encoded = try? encoder.encode(data) {
             defaults.set(encoded, forKey: WidgetData.userDefaultsKey)
@@ -20,7 +20,7 @@ final class WidgetDataService: Sendable {
     }
 
     /// Read widget data from shared App Group UserDefaults
-    func readWidgetData() -> WidgetData {
+    public func readWidgetData() -> WidgetData {
         guard let defaults = UserDefaults(suiteName: WidgetData.appGroupId),
               let data = defaults.data(forKey: WidgetData.userDefaultsKey),
               let widgetData = try? decoder.decode(WidgetData.self, from: data) else {

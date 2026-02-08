@@ -1,7 +1,7 @@
 import Foundation
 
 /// Messages exchanged between iPhone and Watch via WatchConnectivity
-enum SyncMessageType: String, Codable, Sendable {
+public enum SyncMessageType: String, Codable, Sendable {
     case exerciseSync       // iPhone → Watch: sync exercise library
     case templateSync       // iPhone → Watch: sync templates
     case settingsSync       // iPhone → Watch: sync user settings
@@ -9,19 +9,19 @@ enum SyncMessageType: String, Codable, Sendable {
     case workoutInProgress  // Watch → iPhone: real-time set updates
 }
 
-struct SyncMessage: Codable, Sendable {
-    let type: SyncMessageType
-    let timestamp: Date
-    let payload: Data  // JSON-encoded payload specific to type
+public struct SyncMessage: Codable, Sendable {
+    public let type: SyncMessageType
+    public let timestamp: Date
+    public let payload: Data  // JSON-encoded payload specific to type
 
-    init(type: SyncMessageType, payload: Data) {
+    public init(type: SyncMessageType, payload: Data) {
         self.type = type
         self.timestamp = Date()
         self.payload = payload
     }
 
     /// Convert to dictionary for WCSession transfer
-    var asDictionary: [String: Any] {
+    public var asDictionary: [String: Any] {
         [
             "type": type.rawValue,
             "timestamp": timestamp.timeIntervalSince1970,
@@ -30,7 +30,7 @@ struct SyncMessage: Codable, Sendable {
     }
 
     /// Parse from WCSession dictionary
-    static func from(dictionary: [String: Any]) -> SyncMessage? {
+    public static func from(dictionary: [String: Any]) -> SyncMessage? {
         guard let typeStr = dictionary["type"] as? String,
               let type = SyncMessageType(rawValue: typeStr),
               let timestamp = dictionary["timestamp"] as? TimeInterval,

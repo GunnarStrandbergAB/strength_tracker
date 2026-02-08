@@ -1,26 +1,26 @@
 import Foundation
 import Observation
 
-enum WorkoutError: Error, Sendable {
+public enum WorkoutError: Error, Sendable {
     case noActiveWorkout
     case exerciseNotFound
 }
 
 @MainActor
 @Observable
-final class WorkoutViewModel {
-    var currentWorkout: Workout? = nil
-    var isActive = false
-    var errorMessage: String? = nil
-    var lastPR: PersonalRecord? = nil
-    var previousSetDataCache: [String: String] = [:]
+public final class WorkoutViewModel {
+    public var currentWorkout: Workout? = nil
+    public var isActive = false
+    public var errorMessage: String? = nil
+    public var lastPR: PersonalRecord? = nil
+    public var previousSetDataCache: [String: String] = [:]
 
     private let workoutRepository: any WorkoutRepository
     private let templateRepository: any TemplateRepository
     private let personalRecordService: PersonalRecordService?
     private let healthKitService: any HealthKitServiceProtocol
 
-    init(
+    public init(
         workoutRepository: any WorkoutRepository,
         templateRepository: any TemplateRepository,
         personalRecordService: PersonalRecordService? = nil,
@@ -32,7 +32,7 @@ final class WorkoutViewModel {
         self.healthKitService = healthKitService
     }
 
-    func startWorkout(name: String, from template: WorkoutTemplate? = nil) async {
+    public func startWorkout(name: String, from template: WorkoutTemplate? = nil) async {
         var exercises: [WorkoutExercise] = []
 
         if let template = template {
@@ -73,7 +73,7 @@ final class WorkoutViewModel {
         }
     }
 
-    func addExercise(_ exercise: Exercise) {
+    public func addExercise(_ exercise: Exercise) {
         guard var workout = currentWorkout else { return }
         let order = workout.exercises.count + 1
         let workoutExercise = WorkoutExercise(
@@ -89,7 +89,7 @@ final class WorkoutViewModel {
         currentWorkout = workout
     }
 
-    func logSet(exerciseId: UUID, weight: Double?, reps: Int?, setType: SetType = .normal) async throws {
+    public func logSet(exerciseId: UUID, weight: Double?, reps: Int?, setType: SetType = .normal) async throws {
         guard var workout = currentWorkout else {
             throw WorkoutError.noActiveWorkout
         }
@@ -126,7 +126,7 @@ final class WorkoutViewModel {
         }
     }
 
-    func removeSet(exerciseId: UUID, setId: UUID) async {
+    public func removeSet(exerciseId: UUID, setId: UUID) async {
         guard var workout = currentWorkout else { return }
         guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }) else { return }
         workout.exercises[exerciseIndex].sets.removeAll { $0.id == setId }
@@ -141,7 +141,7 @@ final class WorkoutViewModel {
         }
     }
 
-    func removeExercise(exerciseId: UUID) async {
+    public func removeExercise(exerciseId: UUID) async {
         guard var workout = currentWorkout else { return }
         workout.exercises.removeAll { $0.id == exerciseId }
         // Re-number orders
@@ -155,7 +155,7 @@ final class WorkoutViewModel {
         }
     }
 
-    func updateNotes(_ notes: String) async {
+    public func updateNotes(_ notes: String) async {
         guard var workout = currentWorkout else { return }
         workout.notes = notes.isEmpty ? nil : notes
         do {
@@ -165,7 +165,7 @@ final class WorkoutViewModel {
         }
     }
 
-    func completeWorkout() async throws {
+    public func completeWorkout() async throws {
         guard var workout = currentWorkout else {
             throw WorkoutError.noActiveWorkout
         }
@@ -184,7 +184,7 @@ final class WorkoutViewModel {
     }
 
     /// Fetch previous set data for an exercise to help with progressive overload
-    func previousSetData(for exerciseId: UUID, setIndex: Int) async -> String? {
+    public func previousSetData(for exerciseId: UUID, setIndex: Int) async -> String? {
         // Get the exercise ID from the current workout's exercise
         guard let currentWorkout = currentWorkout,
               let workoutExercise = currentWorkout.exercises.first(where: { $0.id == exerciseId }) else {
@@ -224,7 +224,7 @@ final class WorkoutViewModel {
     }
 
     /// Load previous data for all exercises when workout starts
-    func loadPreviousData() async {
+    public func loadPreviousData() async {
         guard let workout = currentWorkout else { return }
         for exercise in workout.exercises {
             for (index, _) in exercise.sets.enumerated() {
@@ -239,7 +239,7 @@ final class WorkoutViewModel {
     // MARK: - Inline Editing Methods
 
     /// Add an empty (incomplete) set to an exercise for the inline editing workflow.
-    func addEmptySet(exerciseId: UUID) async {
+    public func addEmptySet(exerciseId: UUID) async {
         guard var workout = currentWorkout else { return }
 
         guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }) else {
@@ -266,7 +266,7 @@ final class WorkoutViewModel {
     }
 
     /// Update the weight of a specific set within an exercise.
-    func updateSetWeight(exerciseId: UUID, setId: UUID, weight: Double?) async {
+    public func updateSetWeight(exerciseId: UUID, setId: UUID, weight: Double?) async {
         guard var workout = currentWorkout else { return }
 
         guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
@@ -279,7 +279,7 @@ final class WorkoutViewModel {
     }
 
     /// Update the reps of a specific set within an exercise.
-    func updateSetReps(exerciseId: UUID, setId: UUID, reps: Int?) async {
+    public func updateSetReps(exerciseId: UUID, setId: UUID, reps: Int?) async {
         guard var workout = currentWorkout else { return }
 
         guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
@@ -292,7 +292,7 @@ final class WorkoutViewModel {
     }
 
     /// Toggle the completion status of a specific set.
-    func toggleSetCompletion(exerciseId: UUID, setId: UUID) async {
+    public func toggleSetCompletion(exerciseId: UUID, setId: UUID) async {
         guard var workout = currentWorkout else { return }
 
         guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
@@ -307,7 +307,7 @@ final class WorkoutViewModel {
     }
 
     /// Cancel the current workout without saving completion.
-    func cancelWorkout() async {
+    public func cancelWorkout() async {
         currentWorkout = nil
         isActive = false
     }

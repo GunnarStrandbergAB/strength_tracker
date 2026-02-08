@@ -2,14 +2,14 @@
 import Foundation
 
 @MainActor
-final class ExerciseSeeder {
+public final class ExerciseSeeder {
     private let exerciseRepository: any ExerciseRepository
 
-    init(exerciseRepository: any ExerciseRepository) {
+    public init(exerciseRepository: any ExerciseRepository) {
         self.exerciseRepository = exerciseRepository
     }
 
-    func seedIfNeeded() async {
+    public func seedIfNeeded() async {
         do {
             let existing = try await exerciseRepository.fetchAll()
             guard existing.isEmpty else { return }

@@ -7,13 +7,13 @@ import SwiftData
 
 @Observable
 @MainActor
-final class WatchWorkoutListViewModel: Sendable {
-    var recentWorkouts: [Workout] = []
-    var templates: [WorkoutTemplate] = []
-    var syncStatus: SyncStatus = .idle
-    var errorMessage: String?
+public final class WatchWorkoutListViewModel: Sendable {
+    public var recentWorkouts: [Workout] = []
+    public var templates: [WorkoutTemplate] = []
+    public var syncStatus: SyncStatus = .idle
+    public var errorMessage: String?
 
-    enum SyncStatus: Sendable {
+    public enum SyncStatus: Sendable {
         case idle
         case syncing
         case synced
@@ -24,15 +24,15 @@ final class WatchWorkoutListViewModel: Sendable {
     private let workoutRepository: any WorkoutRepository
     private let templateRepository: any TemplateRepository
 
-    init(workoutRepository: any WorkoutRepository, templateRepository: any TemplateRepository) {
+    public init(workoutRepository: any WorkoutRepository, templateRepository: any TemplateRepository) {
         self.workoutRepository = workoutRepository
         self.templateRepository = templateRepository
     }
     #else
-    init() {}
+    public init() {}
     #endif
 
-    func loadData() async {
+    public func loadData() async {
         #if canImport(SwiftData)
         do {
             syncStatus = .syncing
@@ -56,7 +56,7 @@ final class WatchWorkoutListViewModel: Sendable {
         #endif
     }
 
-    func deleteWorkout(_ workout: Workout) async {
+    public func deleteWorkout(_ workout: Workout) async {
         #if canImport(SwiftData)
         do {
             try await workoutRepository.delete(workout)

@@ -1,11 +1,11 @@
 import Foundation
 
 @MainActor
-final class PersonalRecordService {
+public final class PersonalRecordService {
     private let personalRecordRepository: any PersonalRecordRepository
     private let workoutRepository: any WorkoutRepository
 
-    init(
+    public init(
         personalRecordRepository: any PersonalRecordRepository,
         workoutRepository: any WorkoutRepository
     ) {
@@ -18,7 +18,7 @@ final class PersonalRecordService {
     ///   - exercise: The exercise being performed
     ///   - set: The completed set to check
     /// - Returns: A new PersonalRecord if this set represents a PR, nil otherwise
-    func checkForPR(exercise: Exercise, set: ExerciseSet) async throws -> PersonalRecord? {
+    public func checkForPR(exercise: Exercise, set: ExerciseSet) async throws -> PersonalRecord? {
         guard set.isCompleted, set.setType != .warmup else { return nil }
 
         let existingRecords = try await personalRecordRepository.fetchForExercise(exercise.id)
@@ -100,14 +100,14 @@ final class PersonalRecordService {
     /// Get all personal records for an exercise
     /// - Parameter exerciseId: The exercise ID
     /// - Returns: Array of personal records, sorted by achieved date descending
-    func getRecords(for exerciseId: UUID) async throws -> [PersonalRecord] {
+    public func getRecords(for exerciseId: UUID) async throws -> [PersonalRecord] {
         let records = try await personalRecordRepository.fetchForExercise(exerciseId)
         return records.sorted { $0.achievedAt > $1.achievedAt }
     }
 
     /// Recalculate all personal records from workout history
     /// This is useful for data correction or migrating legacy data
-    func recalculateAllPRs() async throws {
+    public func recalculateAllPRs() async throws {
         let allWorkouts = try await workoutRepository.fetchAll()
 
         // Group all sets by exercise

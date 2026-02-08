@@ -3,17 +3,17 @@ import Observation
 
 @MainActor
 @Observable
-final class DashboardViewModel {
+public final class DashboardViewModel {
     // MARK: - Published State
 
-    var weeklyWorkoutCounts: [Int] = Array(repeating: 0, count: 7) // Mon-Sun
-    var totalVolume: Double = 0
-    var totalDurationHours: Double = 0
-    var prsThisWeek: Int = 0
-    var recentWorkouts: [Workout] = []
-    var weeklyTrend: Double = 0 // percentage change vs last week
-    var weeklyWorkoutTotal: Int = 0
-    var isLoading = false
+    public var weeklyWorkoutCounts: [Int] = Array(repeating: 0, count: 7) // Mon-Sun
+    public var totalVolume: Double = 0
+    public var totalDurationHours: Double = 0
+    public var prsThisWeek: Int = 0
+    public var recentWorkouts: [Workout] = []
+    public var weeklyTrend: Double = 0 // percentage change vs last week
+    public var weeklyWorkoutTotal: Int = 0
+    public var isLoading = false
 
     // MARK: - Dependencies
 
@@ -22,7 +22,7 @@ final class DashboardViewModel {
 
     // MARK: - Init
 
-    init(
+    public init(
         workoutRepository: any WorkoutRepository,
         personalRecordRepository: any PersonalRecordRepository
     ) {
@@ -32,7 +32,7 @@ final class DashboardViewModel {
 
     // MARK: - Data Loading
 
-    func loadDashboard() async {
+    public func loadDashboard() async {
         isLoading = true
         defer { isLoading = false }
 
@@ -132,7 +132,7 @@ final class DashboardViewModel {
 
     // MARK: - Formatting Helpers
 
-    func formattedVolume() -> String {
+    public func formattedVolume() -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 0
@@ -140,14 +140,14 @@ final class DashboardViewModel {
         return formatter.string(from: NSNumber(value: totalVolume)) ?? "0"
     }
 
-    func formattedDuration() -> String {
+    public func formattedDuration() -> String {
         if totalDurationHours >= 10 {
             return String(format: "%.0f", totalDurationHours)
         }
         return String(format: "%.1f", totalDurationHours)
     }
 
-    func formattedTrend() -> String {
+    public func formattedTrend() -> String {
         let absValue = abs(weeklyTrend)
         if absValue == absValue.rounded() {
             return String(format: "%.0f%%", absValue)
@@ -155,11 +155,11 @@ final class DashboardViewModel {
         return String(format: "%.0f%%", absValue)
     }
 
-    func trendIsPositive() -> Bool {
+    public func trendIsPositive() -> Bool {
         weeklyTrend >= 0
     }
 
-    func formatWorkoutDuration(_ workout: Workout) -> String {
+    public func formatWorkoutDuration(_ workout: Workout) -> String {
         guard let duration = workout.duration else { return "--" }
         let minutes = Int(duration) / 60
         if minutes >= 60 {
@@ -173,7 +173,7 @@ final class DashboardViewModel {
         return "\(minutes)m"
     }
 
-    func formatWorkoutDate(_ workout: Workout) -> String {
+    public func formatWorkoutDate(_ workout: Workout) -> String {
         let calendar = Calendar.current
         let now = Date()
 
@@ -203,11 +203,11 @@ final class DashboardViewModel {
         }
     }
 
-    func totalSetsCount(for workout: Workout) -> Int {
+    public func totalSetsCount(for workout: Workout) -> Int {
         workout.exercises.reduce(0) { $0 + $1.sets.filter(\.isCompleted).count }
     }
 
-    func formattedWorkoutVolume(_ workout: Workout) -> String {
+    public func formattedWorkoutVolume(_ workout: Workout) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 0

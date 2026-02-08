@@ -3,14 +3,14 @@ import SwiftData
 import Foundation
 
 @MainActor
-final class SwiftDataPersonalRecordRepository: PersonalRecordRepository, Sendable {
+public final class SwiftDataPersonalRecordRepository: PersonalRecordRepository, Sendable {
     private let modelContext: ModelContext
 
-    init(modelContext: ModelContext) {
+    public init(modelContext: ModelContext) {
         self.modelContext = modelContext
     }
 
-    func fetchForExercise(_ exerciseId: UUID) async throws -> [PersonalRecord] {
+    public func fetchForExercise(_ exerciseId: UUID) async throws -> [PersonalRecord] {
         let descriptor = FetchDescriptor<PersonalRecordEntity>(
             predicate: #Predicate { entity in
                 entity.exerciseId == exerciseId
@@ -21,7 +21,7 @@ final class SwiftDataPersonalRecordRepository: PersonalRecordRepository, Sendabl
         return entities.map { PersonalRecordMapper.toDomain($0) }
     }
 
-    func save(_ record: PersonalRecord) async throws -> PersonalRecord {
+    public func save(_ record: PersonalRecord) async throws -> PersonalRecord {
         let descriptor = FetchDescriptor<PersonalRecordEntity>(
             predicate: #Predicate { entity in
                 entity.id == record.id
@@ -39,7 +39,7 @@ final class SwiftDataPersonalRecordRepository: PersonalRecordRepository, Sendabl
         return record
     }
 
-    func deleteForExercise(_ exerciseId: UUID) async throws {
+    public func deleteForExercise(_ exerciseId: UUID) async throws {
         let descriptor = FetchDescriptor<PersonalRecordEntity>(
             predicate: #Predicate { entity in
                 entity.exerciseId == exerciseId

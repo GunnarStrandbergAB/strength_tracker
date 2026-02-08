@@ -3,19 +3,19 @@ import SwiftData
 import Foundation
 
 @Model
-final class WorkoutEntity {
-    @Attribute(.unique) var id: UUID
-    var name: String
-    var startedAt: Date
-    var completedAt: Date?
-    var notes: String?
-    var templateId: UUID?
-    var healthKitWorkoutId: UUID?
+public final class WorkoutEntity {
+    @Attribute(.unique) public var id: UUID
+    public var name: String
+    public var startedAt: Date
+    public var completedAt: Date?
+    public var notes: String?
+    public var templateId: UUID?
+    public var healthKitWorkoutId: UUID?
 
     @Relationship(deleteRule: .cascade)
-    var exercises: [WorkoutExerciseEntity]
+    public var exercises: [WorkoutExerciseEntity]
 
-    init(
+    public init(
         id: UUID,
         name: String,
         startedAt: Date,

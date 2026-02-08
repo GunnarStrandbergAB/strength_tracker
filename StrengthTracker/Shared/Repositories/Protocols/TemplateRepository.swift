@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-protocol TemplateRepository: Sendable {
+public protocol TemplateRepository: Sendable {
     func fetchAll() async throws -> [WorkoutTemplate]
     func save(_ template: WorkoutTemplate) async throws -> WorkoutTemplate
     func delete(_ template: WorkoutTemplate) async throws

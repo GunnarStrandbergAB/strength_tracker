@@ -62,25 +62,25 @@ final class ConnectivityManager: NSObject, @unchecked Sendable {
 #endif
 
 @MainActor
-final class AppContainer: Sendable {
-    let modelContainer: ModelContainer
-    let modelContext: ModelContext
+public final class AppContainer: Sendable {
+    public let modelContainer: ModelContainer
+    public let modelContext: ModelContext
 
     // Repositories
-    let exerciseRepository: any ExerciseRepository
-    let workoutRepository: any WorkoutRepository
-    let templateRepository: any TemplateRepository
-    let personalRecordRepository: any PersonalRecordRepository
+    public let exerciseRepository: any ExerciseRepository
+    public let workoutRepository: any WorkoutRepository
+    public let templateRepository: any TemplateRepository
+    public let personalRecordRepository: any PersonalRecordRepository
 
     // Services
-    let personalRecordService: PersonalRecordService
-    let restTimerService: RestTimerService
-    let userPreferencesService: UserPreferencesService
-    let exerciseSeeder: ExerciseSeeder
-    let healthKitService: any HealthKitServiceProtocol
-    let connectivityManager: ConnectivityManager
+    public let personalRecordService: PersonalRecordService
+    public let restTimerService: RestTimerService
+    public let userPreferencesService: UserPreferencesService
+    public let exerciseSeeder: ExerciseSeeder
+    public let healthKitService: any HealthKitServiceProtocol
+    public let connectivityManager: ConnectivityManager
 
-    init() throws {
+    public init() throws {
         let schema = Schema([
             ExerciseEntity.self,
             WorkoutEntity.self,
@@ -119,11 +119,11 @@ final class AppContainer: Sendable {
     }
 
     // Factory methods for ViewModels
-    func makeExerciseListViewModel() -> ExerciseListViewModel {
+    public func makeExerciseListViewModel() -> ExerciseListViewModel {
         ExerciseListViewModel(exerciseRepository: exerciseRepository)
     }
 
-    func makeWorkoutViewModel() -> WorkoutViewModel {
+    public func makeWorkoutViewModel() -> WorkoutViewModel {
         WorkoutViewModel(
             workoutRepository: workoutRepository,
             templateRepository: templateRepository,
@@ -132,32 +132,32 @@ final class AppContainer: Sendable {
         )
     }
 
-    func makeHistoryViewModel() -> HistoryViewModel {
+    public func makeHistoryViewModel() -> HistoryViewModel {
         HistoryViewModel(workoutRepository: workoutRepository)
     }
 
-    func makeTemplateViewModel() -> TemplateViewModel {
+    public func makeTemplateViewModel() -> TemplateViewModel {
         TemplateViewModel(
             templateRepository: templateRepository,
             exerciseRepository: exerciseRepository
         )
     }
 
-    func makeDashboardViewModel() -> DashboardViewModel {
+    public func makeDashboardViewModel() -> DashboardViewModel {
         DashboardViewModel(
             workoutRepository: workoutRepository,
             personalRecordRepository: personalRecordRepository
         )
     }
 
-    func makeProgressViewModel() -> ProgressViewModel {
+    public func makeProgressViewModel() -> ProgressViewModel {
         ProgressViewModel(
             exerciseRepository: exerciseRepository,
             workoutRepository: workoutRepository
         )
     }
 
-    func makeWatchWorkoutViewModel() -> WatchWorkoutViewModel {
+    public func makeWatchWorkoutViewModel() -> WatchWorkoutViewModel {
         WatchWorkoutViewModel(
             workoutRepository: workoutRepository,
             healthKitService: healthKitService,
@@ -165,18 +165,18 @@ final class AppContainer: Sendable {
         )
     }
 
-    func makeWatchWorkoutListViewModel() -> WatchWorkoutListViewModel {
+    public func makeWatchWorkoutListViewModel() -> WatchWorkoutListViewModel {
         WatchWorkoutListViewModel(
             workoutRepository: workoutRepository,
             templateRepository: templateRepository
         )
     }
 
-    func makePersonalRecordService() -> PersonalRecordService {
+    public func makePersonalRecordService() -> PersonalRecordService {
         personalRecordService
     }
 
-    func makeRestTimerService() -> RestTimerService {
+    public func makeRestTimerService() -> RestTimerService {
         restTimerService
     }
 }

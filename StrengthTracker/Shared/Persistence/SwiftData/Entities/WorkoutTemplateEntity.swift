@@ -3,18 +3,18 @@ import SwiftData
 import Foundation
 
 @Model
-final class WorkoutTemplateEntity {
-    @Attribute(.unique) var id: UUID
-    var name: String
-    var notes: String?
-    var sortOrder: Int
-    var lastUsedAt: Date?
-    var timesUsed: Int
+public final class WorkoutTemplateEntity {
+    @Attribute(.unique) public var id: UUID
+    public var name: String
+    public var notes: String?
+    public var sortOrder: Int
+    public var lastUsedAt: Date?
+    public var timesUsed: Int
 
     @Relationship(deleteRule: .cascade)
-    var exercises: [TemplateExerciseEntity]
+    public var exercises: [TemplateExerciseEntity]
 
-    init(
+    public init(
         id: UUID,
         name: String,
         notes: String? = nil,
@@ -34,31 +34,31 @@ final class WorkoutTemplateEntity {
 }
 
 @Model
-final class TemplateExerciseEntity {
-    @Attribute(.unique) var id: UUID
-    var exerciseId: UUID
-    var exerciseName: String
-    var primaryMuscleGroup: String
-    var secondaryMuscleGroups: [String]
-    var category: String
-    var exerciseType: String
-    var instructions: String?
-    var isCustom: Bool
-    var isArchived: Bool
-    var order: Int
-    var supersetGroup: Int?
-    var notes: String?
-    var restTimerSeconds: Int?
-    var targetSets: Int
-    var targetReps: Int?
-    var targetWeight: Double?
-    var targetDurationSeconds: Int?
-    var targetDistanceMeters: Double?
+public final class TemplateExerciseEntity {
+    @Attribute(.unique) public var id: UUID
+    public var exerciseId: UUID
+    public var exerciseName: String
+    public var primaryMuscleGroup: String
+    public var secondaryMuscleGroups: [String]
+    public var category: String
+    public var exerciseType: String
+    public var instructions: String?
+    public var isCustom: Bool
+    public var isArchived: Bool
+    public var order: Int
+    public var supersetGroup: Int?
+    public var notes: String?
+    public var restTimerSeconds: Int?
+    public var targetSets: Int
+    public var targetReps: Int?
+    public var targetWeight: Double?
+    public var targetDurationSeconds: Int?
+    public var targetDistanceMeters: Double?
 
     @Relationship(deleteRule: .nullify, inverse: \WorkoutTemplateEntity.exercises)
-    var template: WorkoutTemplateEntity?
+    public var template: WorkoutTemplateEntity?
 
-    init(
+    public init(
         id: UUID,
         exerciseId: UUID,
         exerciseName: String,
@@ -102,12 +102,12 @@ final class TemplateExerciseEntity {
 }
 
 @Model
-final class TemplateFolderEntity {
-    @Attribute(.unique) var id: UUID
-    var name: String
-    var sortOrder: Int
+public final class TemplateFolderEntity {
+    @Attribute(.unique) public var id: UUID
+    public var name: String
+    public var sortOrder: Int
 
-    init(
+    public init(
         id: UUID,
         name: String,
         sortOrder: Int

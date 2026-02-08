@@ -3,14 +3,14 @@ import SwiftData
 import Foundation
 
 @MainActor
-final class SwiftDataTemplateRepository: TemplateRepository, Sendable {
+public final class SwiftDataTemplateRepository: TemplateRepository, Sendable {
     private let modelContext: ModelContext
 
-    init(modelContext: ModelContext) {
+    public init(modelContext: ModelContext) {
         self.modelContext = modelContext
     }
 
-    func fetchAll() async throws -> [WorkoutTemplate] {
+    public func fetchAll() async throws -> [WorkoutTemplate] {
         let descriptor = FetchDescriptor<WorkoutTemplateEntity>(
             sortBy: [SortDescriptor(\.sortOrder)]
         )
@@ -18,7 +18,7 @@ final class SwiftDataTemplateRepository: TemplateRepository, Sendable {
         return entities.map { TemplateMapper.toDomain($0) }
     }
 
-    func save(_ template: WorkoutTemplate) async throws -> WorkoutTemplate {
+    public func save(_ template: WorkoutTemplate) async throws -> WorkoutTemplate {
         let descriptor = FetchDescriptor<WorkoutTemplateEntity>(
             predicate: #Predicate { entity in
                 entity.id == template.id
@@ -36,7 +36,7 @@ final class SwiftDataTemplateRepository: TemplateRepository, Sendable {
         return template
     }
 
-    func delete(_ template: WorkoutTemplate) async throws {
+    public func delete(_ template: WorkoutTemplate) async throws {
         let descriptor = FetchDescriptor<WorkoutTemplateEntity>(
             predicate: #Predicate { entity in
                 entity.id == template.id
@@ -49,7 +49,7 @@ final class SwiftDataTemplateRepository: TemplateRepository, Sendable {
         }
     }
 
-    func incrementUsage(_ templateId: UUID) async throws {
+    public func incrementUsage(_ templateId: UUID) async throws {
         let descriptor = FetchDescriptor<WorkoutTemplateEntity>(
             predicate: #Predicate { entity in
                 entity.id == templateId

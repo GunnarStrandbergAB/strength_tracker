@@ -3,15 +3,15 @@ import SwiftData
 import Foundation
 
 @Model
-final class BodyMeasurementEntity {
-    @Attribute(.unique) var id: UUID
-    var date: Date
-    var measurementType: String
-    var value: Double
-    var unit: String
-    var notes: String?
+public final class BodyMeasurementEntity {
+    @Attribute(.unique) public var id: UUID
+    public var date: Date
+    public var measurementType: String
+    public var value: Double
+    public var unit: String
+    public var notes: String?
 
-    init(
+    public init(
         id: UUID,
         date: Date,
         measurementType: String,

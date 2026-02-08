@@ -3,15 +3,15 @@ import SwiftData
 import Foundation
 
 @Model
-final class PersonalRecordEntity {
-    @Attribute(.unique) var id: UUID
-    var exerciseId: UUID
-    var recordType: String
-    var value: Double
-    var setId: UUID?
-    var achievedAt: Date
+public final class PersonalRecordEntity {
+    @Attribute(.unique) public var id: UUID
+    public var exerciseId: UUID
+    public var recordType: String
+    public var value: Double
+    public var setId: UUID?
+    public var achievedAt: Date
 
-    init(
+    public init(
         id: UUID,
         exerciseId: UUID,
         recordType: String,

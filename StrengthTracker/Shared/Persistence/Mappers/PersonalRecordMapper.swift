@@ -1,9 +1,9 @@
 #if canImport(SwiftData)
 import Foundation
 
-enum PersonalRecordMapper {
+public enum PersonalRecordMapper {
     /// Converts a PersonalRecordEntity (SwiftData) to a PersonalRecord (domain model)
-    static func toDomain(_ entity: PersonalRecordEntity) -> PersonalRecord {
+    public static func toDomain(_ entity: PersonalRecordEntity) -> PersonalRecord {
         PersonalRecord(
             id: entity.id,
             exerciseId: entity.exerciseId,
@@ -15,7 +15,7 @@ enum PersonalRecordMapper {
     }
 
     /// Converts a PersonalRecord (domain model) to a PersonalRecordEntity (SwiftData)
-    static func toEntity(_ domain: PersonalRecord) -> PersonalRecordEntity {
+    public static func toEntity(_ domain: PersonalRecord) -> PersonalRecordEntity {
         PersonalRecordEntity(
             id: domain.id,
             exerciseId: domain.exerciseId,
@@ -27,7 +27,7 @@ enum PersonalRecordMapper {
     }
 
     /// Updates an existing PersonalRecordEntity with values from a PersonalRecord domain model
-    static func updateEntity(_ entity: PersonalRecordEntity, from domain: PersonalRecord) {
+    public static func updateEntity(_ entity: PersonalRecordEntity, from domain: PersonalRecord) {
         entity.exerciseId = domain.exerciseId
         entity.recordType = domain.recordType.rawValue
         entity.value = domain.value

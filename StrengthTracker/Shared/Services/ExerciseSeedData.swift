@@ -1,6 +1,6 @@
 import Foundation
 
-enum ExerciseSeedData {
+public enum ExerciseSeedData {
     /// Generate deterministic UUID from exercise name
     /// Ensures iPhone and Watch have matching IDs for the same exercises
     private static func deterministicUUID(for name: String) -> UUID {
@@ -28,7 +28,7 @@ enum ExerciseSeedData {
         return uuid
     }
 
-    static let allExercises: [Exercise] = [
+    public static let allExercises: [Exercise] = [
         // MARK: - Chest Exercises
         Exercise(
             id: deterministicUUID(for: "Barbell Bench Press"),

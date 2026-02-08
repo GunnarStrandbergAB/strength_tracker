@@ -3,18 +3,18 @@ import SwiftData
 import Foundation
 
 @Model
-final class ExerciseEntity {
-    @Attribute(.unique) var id: UUID
-    var name: String
-    var primaryMuscleGroup: String
-    var secondaryMuscleGroups: [String]
-    var category: String
-    var exerciseType: String
-    var instructions: String?
-    var isCustom: Bool
-    var isArchived: Bool
+public final class ExerciseEntity {
+    @Attribute(.unique) public var id: UUID
+    public var name: String
+    public var primaryMuscleGroup: String
+    public var secondaryMuscleGroups: [String]
+    public var category: String
+    public var exerciseType: String
+    public var instructions: String?
+    public var isCustom: Bool
+    public var isArchived: Bool
 
-    init(
+    public init(
         id: UUID,
         name: String,
         primaryMuscleGroup: String,

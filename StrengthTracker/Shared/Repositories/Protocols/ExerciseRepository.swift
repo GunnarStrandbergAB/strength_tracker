@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-protocol ExerciseRepository: Sendable {
+public protocol ExerciseRepository: Sendable {
     func fetchAll() async throws -> [Exercise]
     func fetchByCategory(_ category: ExerciseCategory) async throws -> [Exercise]
     func fetchByMuscleGroup(_ muscleGroup: MuscleGroup) async throws -> [Exercise]

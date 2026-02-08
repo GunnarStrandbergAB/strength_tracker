@@ -1,32 +1,32 @@
 import Foundation
 
-struct WorkoutHistory: Identifiable, Hashable, Sendable, Codable {
-    let id: UUID
-    var workouts: [Workout]
+public struct WorkoutHistory: Identifiable, Hashable, Sendable, Codable {
+    public let id: UUID
+    public var workouts: [Workout]
 
-    var completedWorkouts: [Workout] {
+    public var completedWorkouts: [Workout] {
         workouts.filter { !$0.isInProgress }
     }
 
-    var sortedByDate: [Workout] {
+    public var sortedByDate: [Workout] {
         workouts.sorted { $0.startedAt > $1.startedAt }
     }
 
-    var totalWorkouts: Int {
+    public var totalWorkouts: Int {
         completedWorkouts.count
     }
 
-    var totalVolume: Double {
+    public var totalVolume: Double {
         completedWorkouts.reduce(0) { $0 + $1.totalVolume }
     }
 
-    var averageDuration: TimeInterval? {
+    public var averageDuration: TimeInterval? {
         let durations = completedWorkouts.compactMap(\.duration)
         guard !durations.isEmpty else { return nil }
         return durations.reduce(0, +) / Double(durations.count)
     }
 
-    func workoutsInWeek(containing date: Date) -> [Workout] {
+    public func workoutsInWeek(containing date: Date) -> [Workout] {
         let calendar = Calendar.current
         guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: date) else {
             return []
@@ -36,11 +36,11 @@ struct WorkoutHistory: Identifiable, Hashable, Sendable, Codable {
         }
     }
 
-    func weeklyCount(for date: Date) -> Int {
+    public func weeklyCount(for date: Date) -> Int {
         workoutsInWeek(containing: date).count
     }
 
-    func currentWeeklyStreak() -> Int {
+    public func currentWeeklyStreak() -> Int {
         let calendar = Calendar.current
         let now = Date()
         var streak = 0
@@ -62,7 +62,7 @@ struct WorkoutHistory: Identifiable, Hashable, Sendable, Codable {
         return streak
     }
 
-    func workoutsByMonth() -> [String: [Workout]] {
+    public func workoutsByMonth() -> [String: [Workout]] {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM"
         var result: [String: [Workout]] = [:]
@@ -71,5 +71,10 @@ struct WorkoutHistory: Identifiable, Hashable, Sendable, Codable {
             result[key, default: []].append(workout)
         }
         return result
+    }
+
+    public init(id: UUID, workouts: [Workout]) {
+        self.id = id
+        self.workouts = workouts
     }
 }

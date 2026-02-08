@@ -1,20 +1,20 @@
 import Foundation
 
-enum MuscleGroup: String, Codable, CaseIterable, Sendable {
+public enum MuscleGroup: String, Codable, CaseIterable, Sendable {
     case chest, back, shoulders, biceps, triceps, forearms
     case core, quadriceps, hamstrings, glutes, calves
     case adductors, abductors, traps, lats
     case fullBody, cardio, other
 }
 
-enum ExerciseCategory: String, Codable, CaseIterable, Sendable {
+public enum ExerciseCategory: String, Codable, CaseIterable, Sendable {
     case barbell, dumbbell, machine, cable, bodyweight
     case smithMachine, kettlebell, resistanceBand
     case plate, medicineBall, exerciseBall, trx
     case landmine, trapBar, ezBar, other
 }
 
-enum ExerciseType: String, Codable, CaseIterable, Sendable {
+public enum ExerciseType: String, Codable, CaseIterable, Sendable {
     case weightedReps
     case bodyweightReps
     case duration
@@ -22,7 +22,7 @@ enum ExerciseType: String, Codable, CaseIterable, Sendable {
     case weightedCardio
 }
 
-enum SetType: String, Codable, CaseIterable, Sendable {
+public enum SetType: String, Codable, CaseIterable, Sendable {
     case normal
     case warmup
     case dropset
@@ -30,14 +30,14 @@ enum SetType: String, Codable, CaseIterable, Sendable {
     case restPause
 }
 
-enum MeasurementType: String, Codable, CaseIterable, Sendable {
+public enum MeasurementType: String, Codable, CaseIterable, Sendable {
     case bodyWeight, bodyFat
     case chest, leftArm, rightArm, leftForearm, rightForearm
     case waist, hips, leftThigh, rightThigh, leftCalf, rightCalf
     case shoulders, neck
 }
 
-enum RecordType: String, Codable, CaseIterable, Sendable {
+public enum RecordType: String, Codable, CaseIterable, Sendable {
     case estimatedOneRepMax
     case maxWeight
     case maxReps
@@ -48,10 +48,10 @@ enum RecordType: String, Codable, CaseIterable, Sendable {
     case longestDistance
 }
 
-enum WeightUnit: String, Codable, Sendable {
+public enum WeightUnit: String, Codable, Sendable {
     case kg, lbs
 }
 
-enum DistanceUnit: String, Codable, Sendable {
+public enum DistanceUnit: String, Codable, Sendable {
     case km, miles
 }

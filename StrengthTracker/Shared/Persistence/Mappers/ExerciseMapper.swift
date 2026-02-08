@@ -1,9 +1,9 @@
 #if canImport(SwiftData)
 import Foundation
 
-enum ExerciseMapper {
+public enum ExerciseMapper {
     /// Converts an ExerciseEntity (SwiftData) to an Exercise (domain model)
-    static func toDomain(_ entity: ExerciseEntity) -> Exercise {
+    public static func toDomain(_ entity: ExerciseEntity) -> Exercise {
         Exercise(
             id: entity.id,
             name: entity.name,
@@ -18,7 +18,7 @@ enum ExerciseMapper {
     }
 
     /// Converts an Exercise (domain model) to an ExerciseEntity (SwiftData)
-    static func toEntity(_ domain: Exercise) -> ExerciseEntity {
+    public static func toEntity(_ domain: Exercise) -> ExerciseEntity {
         ExerciseEntity(
             id: domain.id,
             name: domain.name,
@@ -33,7 +33,7 @@ enum ExerciseMapper {
     }
 
     /// Updates an existing ExerciseEntity with values from an Exercise domain model
-    static func updateEntity(_ entity: ExerciseEntity, from domain: Exercise) {
+    public static func updateEntity(_ entity: ExerciseEntity, from domain: Exercise) {
         entity.name = domain.name
         entity.primaryMuscleGroup = domain.primaryMuscleGroup.rawValue
         entity.secondaryMuscleGroups = encodeSecondaryMuscleGroups(domain.secondaryMuscleGroups)

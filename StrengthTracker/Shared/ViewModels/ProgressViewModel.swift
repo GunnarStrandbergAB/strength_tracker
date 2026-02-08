@@ -3,40 +3,40 @@ import Observation
 
 @MainActor
 @Observable
-final class ProgressViewModel {
-    var selectedExercise: Exercise? = nil
-    var exercises: [Exercise] = []
-    var progressionData: [(date: Date, weight: Double, reps: Int)] = []
-    var isLoading = false
+public final class ProgressViewModel {
+    public var selectedExercise: Exercise? = nil
+    public var exercises: [Exercise] = []
+    public var progressionData: [(date: Date, weight: Double, reps: Int)] = []
+    public var isLoading = false
 
-    var bestWeight: Double? {
+    public var bestWeight: Double? {
         progressionData.map(\.weight).max()
     }
 
-    var bestReps: Int? {
+    public var bestReps: Int? {
         progressionData.map(\.reps).max()
     }
 
     /// Epley formula: 1RM = weight * (1 + reps / 30)
-    var estimated1RM: Double? {
+    public var estimated1RM: Double? {
         progressionData
             .map { $0.weight * (1.0 + Double($0.reps) / 30.0) }
             .max()
     }
 
-    var totalVolume: Double {
+    public var totalVolume: Double {
         progressionData.reduce(0) { $0 + $1.weight * Double($1.reps) }
     }
 
     private let exerciseRepository: any ExerciseRepository
     private let workoutRepository: any WorkoutRepository
 
-    init(exerciseRepository: any ExerciseRepository, workoutRepository: any WorkoutRepository) {
+    public init(exerciseRepository: any ExerciseRepository, workoutRepository: any WorkoutRepository) {
         self.exerciseRepository = exerciseRepository
         self.workoutRepository = workoutRepository
     }
 
-    func loadExercises() async {
+    public func loadExercises() async {
         isLoading = true
         do {
             exercises = try await exerciseRepository.fetchAll()
@@ -46,7 +46,7 @@ final class ProgressViewModel {
         isLoading = false
     }
 
-    func loadProgression(for exerciseId: UUID) async {
+    public func loadProgression(for exerciseId: UUID) async {
         isLoading = true
         do {
             let allWorkouts = try await workoutRepository.fetchAll()
@@ -72,7 +72,7 @@ final class ProgressViewModel {
         isLoading = false
     }
 
-    func selectExercise(_ exercise: Exercise) async {
+    public func selectExercise(_ exercise: Exercise) async {
         selectedExercise = exercise
         await loadProgression(for: exercise.id)
     }

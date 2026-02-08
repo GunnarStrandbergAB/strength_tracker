@@ -3,9 +3,9 @@ import Observation
 
 @MainActor
 @Observable
-final class UserPreferencesService {
+public final class UserPreferencesService {
     /// The user's preferred weight unit (kg or lbs)
-    var weightUnit: WeightUnit {
+    public var weightUnit: WeightUnit {
         get {
             let rawValue = UserDefaults.standard.string(forKey: "weightUnit") ?? "kg"
             return WeightUnit(rawValue: rawValue) ?? .kg
@@ -16,7 +16,7 @@ final class UserPreferencesService {
     }
 
     /// Default rest timer duration in seconds
-    var defaultRestSeconds: Int {
+    public var defaultRestSeconds: Int {
         get {
             let value = UserDefaults.standard.integer(forKey: "defaultRestSeconds")
             return value.nonZero ?? 90
@@ -27,7 +27,7 @@ final class UserPreferencesService {
     }
 
     /// Whether the user has completed the onboarding flow
-    var hasCompletedOnboarding: Bool {
+    public var hasCompletedOnboarding: Bool {
         get {
             UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         }
@@ -37,7 +37,7 @@ final class UserPreferencesService {
     }
 
     /// Whether the default exercises have been seeded into the database
-    var hasSeededExercises: Bool {
+    public var hasSeededExercises: Bool {
         get {
             UserDefaults.standard.bool(forKey: "hasSeededExercises")
         }
@@ -47,7 +47,7 @@ final class UserPreferencesService {
     }
 
     /// The user's preferred distance unit (km or miles)
-    var distanceUnit: DistanceUnit {
+    public var distanceUnit: DistanceUnit {
         get {
             let rawValue = UserDefaults.standard.string(forKey: "distanceUnit") ?? "km"
             return DistanceUnit(rawValue: rawValue) ?? .km
@@ -58,7 +58,7 @@ final class UserPreferencesService {
     }
 
     /// Whether to automatically start rest timer after completing a set
-    var autoStartRestTimer: Bool {
+    public var autoStartRestTimer: Bool {
         get {
             // Default to true if not set
             if !UserDefaults.standard.bool(forKey: "hasSetAutoStartRestTimer") {
@@ -73,7 +73,7 @@ final class UserPreferencesService {
     }
 
     /// Whether the user has been prompted for HealthKit authorization
-    var hasRequestedHealthKitAuth: Bool {
+    public var hasRequestedHealthKitAuth: Bool {
         get {
             UserDefaults.standard.bool(forKey: "hasRequestedHealthKitAuth")
         }
@@ -83,7 +83,7 @@ final class UserPreferencesService {
     }
 
     /// Preferred rest timer duration in seconds (for Watch and widgets)
-    var preferredRestTimerDuration: Int {
+    public var preferredRestTimerDuration: Int {
         get {
             let value = UserDefaults.standard.integer(forKey: "preferredRestTimerDuration")
             return value.nonZero ?? 90
@@ -94,7 +94,7 @@ final class UserPreferencesService {
     }
 
     /// Reset all preferences to defaults
-    func resetToDefaults() {
+    public func resetToDefaults() {
         weightUnit = .kg
         distanceUnit = .km
         defaultRestSeconds = 90

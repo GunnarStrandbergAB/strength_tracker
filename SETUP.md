@@ -73,15 +73,25 @@ open StrengthTracker.xcodeproj
 
 ## Step 7: Configure signing
 
-1. In Xcode, select the **StrengthTracker** project in the navigator (blue icon, top left)
-2. For each target, set your team:
-   - **StrengthTracker** (iOS app) -> Signing & Capabilities -> Team -> select your account
-   - **StrengthTrackerWatch** (watchOS app) -> same
-   - **StrengthTrackerWidgets** (widget extension) -> same
-   - **StrengthTrackerTests** -> same
-3. Xcode will auto-create provisioning profiles
+1. In the **left sidebar** (Project Navigator), click the **blue project icon** at the very top — it says "StrengthTracker" with a blue document icon
+2. In the center panel you'll see a list of **TARGETS** on the left side. Click each one and configure signing:
 
-If you don't have a paid developer account, HealthKit entitlements won't work on device. You can still run on simulator (HealthKit has limited simulator support).
+### For each target (StrengthTracker, StrengthTrackerWatch, StrengthTrackerWidgets, StrengthTrackerTests):
+
+3. Click the target name in the left column
+4. Click the **"Signing & Capabilities"** tab at the top of the center panel
+5. Check the box **"Automatically manage signing"** if it's not already checked
+6. In the **Team** dropdown, select your Apple ID
+   - If your Apple ID isn't listed, click "Add an Account..." and sign in with your Apple ID
+   - A free Apple ID works for simulator. A paid Developer account ($99/yr) is needed for physical devices + HealthKit
+7. If you see a bundle ID conflict, change the bundle ID to something unique:
+   - e.g., `com.yourname.strengthtracker` instead of `com.strengthtracker.ios`
+
+Repeat for all 4 targets. The targets are:
+- **StrengthTracker** — the main iOS app
+- **StrengthTrackerWatch** — the Apple Watch app
+- **StrengthTrackerWidgets** — home screen & lock screen widgets
+- **StrengthTrackerTests** — unit tests
 
 ## Step 8: Select scheme and destination
 
