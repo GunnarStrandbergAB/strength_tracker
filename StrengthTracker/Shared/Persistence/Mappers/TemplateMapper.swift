@@ -25,7 +25,11 @@ public enum TemplateMapper {
             lastUsedAt: domain.lastUsedAt,
             timesUsed: domain.timesUsed
         )
-        entity.exercises = domain.exercises.map { TemplateExerciseMapper.toEntity($0) }
+        let exerciseEntities = domain.exercises.map { TemplateExerciseMapper.toEntity($0) }
+        for ex in exerciseEntities {
+            ex.template = entity
+        }
+        entity.exercises = exerciseEntities
         return entity
     }
 
@@ -37,8 +41,15 @@ public enum TemplateMapper {
         entity.lastUsedAt = domain.lastUsedAt
         entity.timesUsed = domain.timesUsed
 
-        // Update exercises (replace all)
-        entity.exercises = domain.exercises.map { TemplateExerciseMapper.toEntity($0) }
+        // Remove old exercise entities before replacing
+        entity.exercises.removeAll()
+
+        // Create new exercise entities with parent reference
+        let exerciseEntities = domain.exercises.map { TemplateExerciseMapper.toEntity($0) }
+        for ex in exerciseEntities {
+            ex.template = entity
+        }
+        entity.exercises = exerciseEntities
     }
 }
 

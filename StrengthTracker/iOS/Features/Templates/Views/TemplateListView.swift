@@ -44,7 +44,9 @@ struct TemplateListView: View {
             .navigationDestination(for: WorkoutTemplate.self) { template in
                 TemplateDetailView(template: template, viewModel: viewModel, exerciseListViewModel: exerciseListViewModel, workoutViewModel: workoutViewModel)
             }
-            .sheet(isPresented: $showingEditor) {
+            .sheet(isPresented: $showingEditor, onDismiss: {
+                Task { await viewModel.loadTemplates() }
+            }) {
                 TemplateEditorView(viewModel: viewModel, exerciseListViewModel: exerciseListViewModel, template: nil)
             }
             .overlay {

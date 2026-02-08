@@ -110,6 +110,15 @@ struct SetRowGridView: View {
                 ? STColors.primary.opacity(0.05)
                 : Color.clear
         )
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    focusedField = nil
+                }
+                .fontWeight(.semibold)
+            }
+        }
     }
 }
 

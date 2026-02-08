@@ -1,0 +1,4 @@
+module StrengthTrackerShared {
+header "StrengthTrackerShared-Swift.h"
+export *
+}

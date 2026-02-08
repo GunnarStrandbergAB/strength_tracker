@@ -62,8 +62,8 @@ struct TemplateDetailView: View {
                 Button {
                     Task {
                         await workoutViewModel.startWorkout(name: template.name, from: template)
+                        dismiss()
                     }
-                    dismiss()
                 } label: {
                     Label("Start Workout", systemImage: "play.circle.fill")
                         .frame(maxWidth: .infinity)
@@ -84,7 +84,9 @@ struct TemplateDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingEditor) {
+        .sheet(isPresented: $showingEditor, onDismiss: {
+            Task { await viewModel.loadTemplates() }
+        }) {
             TemplateEditorView(viewModel: viewModel, exerciseListViewModel: exerciseListViewModel, template: template)
         }
     }

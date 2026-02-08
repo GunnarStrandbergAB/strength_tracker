@@ -26,6 +26,10 @@ public final class SwiftDataTemplateRepository: TemplateRepository, Sendable {
         )
 
         if let existingEntity = try modelContext.fetch(descriptor).first {
+            // Delete old exercise entities from context before replacing
+            for exercise in existingEntity.exercises {
+                modelContext.delete(exercise)
+            }
             TemplateMapper.updateEntity(existingEntity, from: template)
         } else {
             let newEntity = TemplateMapper.toEntity(template)

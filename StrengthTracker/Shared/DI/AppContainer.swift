@@ -21,6 +21,11 @@ public final class AppContainer: Sendable {
     public let healthKitService: any HealthKitServiceProtocol
     public let connectivityManager: ConnectivityManager
 
+    // Cached ViewModels (shared across multiple views)
+    public let workoutViewModel: WorkoutViewModel
+    public let templateViewModel: TemplateViewModel
+    public let exerciseListViewModel: ExerciseListViewModel
+
     public init() throws {
         let schema = Schema([
             ExerciseEntity.self,
@@ -57,20 +62,28 @@ public final class AppContainer: Sendable {
         healthKitService = NoOpHealthKitService()
         #endif
         connectivityManager = ConnectivityManager()
-    }
 
-    // Factory methods for ViewModels
-    public func makeExerciseListViewModel() -> ExerciseListViewModel {
-        ExerciseListViewModel(exerciseRepository: exerciseRepository)
-    }
-
-    public func makeWorkoutViewModel() -> WorkoutViewModel {
-        WorkoutViewModel(
+        // Initialize cached ViewModels
+        workoutViewModel = WorkoutViewModel(
             workoutRepository: workoutRepository,
             templateRepository: templateRepository,
             personalRecordService: personalRecordService,
             healthKitService: healthKitService
         )
+        templateViewModel = TemplateViewModel(
+            templateRepository: templateRepository,
+            exerciseRepository: exerciseRepository
+        )
+        exerciseListViewModel = ExerciseListViewModel(exerciseRepository: exerciseRepository)
+    }
+
+    // Factory methods for ViewModels
+    public func makeExerciseListViewModel() -> ExerciseListViewModel {
+        exerciseListViewModel
+    }
+
+    public func makeWorkoutViewModel() -> WorkoutViewModel {
+        workoutViewModel
     }
 
     public func makeHistoryViewModel() -> HistoryViewModel {
@@ -78,10 +91,7 @@ public final class AppContainer: Sendable {
     }
 
     public func makeTemplateViewModel() -> TemplateViewModel {
-        TemplateViewModel(
-            templateRepository: templateRepository,
-            exerciseRepository: exerciseRepository
-        )
+        templateViewModel
     }
 
     public func makeDashboardViewModel() -> DashboardViewModel {

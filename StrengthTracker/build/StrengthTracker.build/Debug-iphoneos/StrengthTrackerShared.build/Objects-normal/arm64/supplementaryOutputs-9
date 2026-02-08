@@ -1,0 +1,30 @@
+{
+  "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/Shared/ViewModels/DashboardViewModel.swift" : {
+    "const-values" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/DashboardViewModel.swiftconstvalues",
+    "dependencies" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/DashboardViewModel.d",
+    "diagnostics" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/DashboardViewModel.dia",
+    "object" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/DashboardViewModel.o",
+    "swift-dependencies" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/DashboardViewModel.swiftdeps"
+  },
+  "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/Shared/ViewModels/ExerciseListViewModel.swift" : {
+    "const-values" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/ExerciseListViewModel.swiftconstvalues",
+    "dependencies" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/ExerciseListViewModel.d",
+    "diagnostics" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/ExerciseListViewModel.dia",
+    "object" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/ExerciseListViewModel.o",
+    "swift-dependencies" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/ExerciseListViewModel.swiftdeps"
+  },
+  "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/Shared/ViewModels/HistoryViewModel.swift" : {
+    "const-values" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/HistoryViewModel.swiftconstvalues",
+    "dependencies" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/HistoryViewModel.d",
+    "diagnostics" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/HistoryViewModel.dia",
+    "object" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/HistoryViewModel.o",
+    "swift-dependencies" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/HistoryViewModel.swiftdeps"
+  },
+  "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/Shared/ViewModels/ProgressViewModel.swift" : {
+    "const-values" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/ProgressViewModel.swiftconstvalues",
+    "dependencies" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/ProgressViewModel.d",
+    "diagnostics" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/ProgressViewModel.dia",
+    "object" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/ProgressViewModel.o",
+    "swift-dependencies" : "/Users/gunnarholmgren/PycharmProjects/strength_tracker/StrengthTracker/build/StrengthTracker.build/Debug-iphoneos/StrengthTrackerShared.build/Objects-normal/arm64/ProgressViewModel.swiftdeps"
+  }
+}

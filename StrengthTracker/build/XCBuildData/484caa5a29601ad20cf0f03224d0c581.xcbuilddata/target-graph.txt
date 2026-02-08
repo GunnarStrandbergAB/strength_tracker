@@ -1,0 +1,6 @@
+Target dependency graph (3 targets)
+Target 'StrengthTracker' in project 'StrengthTracker'
+➜ Explicit dependency on target 'StrengthTrackerShared' in project 'StrengthTracker'
+Target 'StrengthTrackerShared' in project 'StrengthTracker'
+➜ Explicit dependency on target 'StrengthTrackerShared' in project 'StrengthTracker'
+Target 'StrengthTrackerShared' in project 'StrengthTracker' (no dependencies)
