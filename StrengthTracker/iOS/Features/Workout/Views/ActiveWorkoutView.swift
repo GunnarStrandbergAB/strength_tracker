@@ -32,18 +32,6 @@ struct ActiveWorkoutView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(STColors.background, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") {
-                        UIApplication.shared.sendAction(
-                            #selector(UIResponder.resignFirstResponder),
-                            to: nil, from: nil, for: nil
-                        )
-                    }
-                    .fontWeight(.semibold)
-                }
-            }
             .sheet(isPresented: $showingExercisePicker) {
                 ExercisePickerView(viewModel: exerciseListViewModel) { exercise in
                     viewModel.addExercise(exercise)
@@ -122,6 +110,16 @@ struct ActiveWorkoutView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 finishButton
+            }
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    UIApplication.shared.sendAction(
+                        #selector(UIResponder.resignFirstResponder),
+                        to: nil, from: nil, for: nil
+                    )
+                }
+                .fontWeight(.semibold)
             }
         }
         .sheet(isPresented: $showingRestTimer) {

@@ -48,11 +48,14 @@ public final class SwiftDataTemplateRepository: TemplateRepository, Sendable {
             var updatedExercises: [TemplateExerciseEntity] = []
             for domainExercise in template.exercises {
                 if let existing = existingExercises[domainExercise.id] {
+                    // Update in place — no UUID conflict
                     TemplateExerciseMapper.updateEntity(existing, from: domainExercise)
                     existing.template = existingEntity
                     updatedExercises.append(existing)
                 } else {
+                    // Fresh UUID avoids @Attribute(.unique) conflict with orphaned entities
                     let newExercise = TemplateExerciseMapper.toEntity(domainExercise)
+                    newExercise.id = UUID()
                     newExercise.template = existingEntity
                     modelContext.insert(newExercise)
                     updatedExercises.append(newExercise)
@@ -62,9 +65,18 @@ public final class SwiftDataTemplateRepository: TemplateRepository, Sendable {
         } else {
             let newEntity = TemplateMapper.toEntity(template)
             modelContext.insert(newEntity)
+            // Explicitly insert children — cascade insert is not guaranteed
+            for exercise in newEntity.exercises {
+                modelContext.insert(exercise)
+            }
         }
 
         try modelContext.save()
+
+        // Re-fetch to return actual saved state (with correct IDs)
+        if let savedEntity = try modelContext.fetch(descriptor).first {
+            return TemplateMapper.toDomain(savedEntity)
+        }
         return template
     }
 

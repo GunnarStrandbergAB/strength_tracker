@@ -3,15 +3,22 @@ import SwiftUI
 import StrengthTrackerShared
 
 struct TemplateDetailView: View {
-    let template: WorkoutTemplate
+    private let templateId: UUID
+    private let initialTemplate: WorkoutTemplate
     @State private var viewModel: TemplateViewModel
     let exerciseListViewModel: ExerciseListViewModel
     let workoutViewModel: WorkoutViewModel
     @State private var showingEditor = false
     @Environment(\.dismiss) private var dismiss
 
+    /// Always returns the latest version from the viewModel (refreshed on sheet dismiss)
+    private var template: WorkoutTemplate {
+        viewModel.templates.first { $0.id == templateId } ?? initialTemplate
+    }
+
     init(template: WorkoutTemplate, viewModel: TemplateViewModel, exerciseListViewModel: ExerciseListViewModel, workoutViewModel: WorkoutViewModel) {
-        self.template = template
+        self.templateId = template.id
+        self.initialTemplate = template
         self._viewModel = State(initialValue: viewModel)
         self.exerciseListViewModel = exerciseListViewModel
         self.workoutViewModel = workoutViewModel
