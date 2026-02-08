@@ -10,6 +10,7 @@ struct ActiveWorkoutView: View {
     @State private var showingFinishError = false
     @State private var finishErrorMessage = ""
     @State private var showingNotes = false
+    @State private var showingRestTimer = false
     @State private var notesText = ""
 
     init(viewModel: WorkoutViewModel, exerciseListViewModel: ExerciseListViewModel) {
@@ -109,6 +110,9 @@ struct ActiveWorkoutView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 finishButton
             }
+        }
+        .sheet(isPresented: $showingRestTimer) {
+            RestTimerView(service: restTimerService)
         }
     }
 
@@ -353,6 +357,9 @@ struct ActiveWorkoutView: View {
                         .monospacedDigit()
                         .foregroundStyle(Color.black)
                 }
+            }
+            .onTapGesture {
+                showingRestTimer = true
             }
 
             Spacer()

@@ -18,7 +18,9 @@ struct ContentView: View {
                 viewModel: dashboardViewModel,
                 userPreferencesService: userPreferencesService,
                 onStartWorkout: {
-                    selectedTab = 1
+                    Task {
+                        await workoutViewModel.startWorkout(name: "Quick Workout", from: nil)
+                    }
                 },
                 onHistoryTapped: {
                     selectedTab = 4
@@ -55,6 +57,13 @@ struct ContentView: View {
                     Label("History", systemImage: "clock.arrow.circlepath")
                 }
                 .tag(4)
+        }
+        .onChange(of: workoutViewModel.isActive) { oldValue, isActive in
+            if isActive {
+                selectedTab = 1
+            } else if oldValue {
+                selectedTab = 0
+            }
         }
         .onOpenURL { url in
             handleDeepLink(url)

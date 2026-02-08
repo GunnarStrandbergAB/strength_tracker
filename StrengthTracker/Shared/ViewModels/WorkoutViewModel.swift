@@ -37,14 +37,29 @@ public final class WorkoutViewModel {
 
         if let template = template {
             exercises = template.exercises.enumerated().map { index, te in
-                WorkoutExercise(
+                let sets = (0..<te.targetSets).map { setIndex in
+                    ExerciseSet(
+                        id: UUID(),
+                        order: setIndex + 1,
+                        setType: .normal,
+                        weight: te.targetWeight,
+                        reps: te.targetReps,
+                        durationSeconds: te.targetDurationSeconds,
+                        distanceMeters: te.targetDistanceMeters,
+                        rpe: nil,
+                        isCompleted: false,
+                        isPersonalRecord: false,
+                        completedAt: nil
+                    )
+                }
+                return WorkoutExercise(
                     id: UUID(),
                     exercise: te.exercise,
                     order: index + 1,
                     supersetGroup: te.supersetGroup,
                     notes: te.notes,
                     restTimerSeconds: te.restTimerSeconds,
-                    sets: []
+                    sets: sets
                 )
             }
         }
