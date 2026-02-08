@@ -8,6 +8,11 @@ public final class WatchWorkoutViewModel {
     public var currentExerciseIndex: Int = 0
     public var isActive = false
 
+    // Template target data per exercise index
+    public var plannedSetsPerExercise: [Int: Int] = [:]
+    public var targetWeightPerExercise: [Int: Double?] = [:]
+    public var targetRepsPerExercise: [Int: Int?] = [:]
+
     // Rest timer state
     public var isResting = false
     public var restTimeRemaining: TimeInterval = 0
@@ -44,11 +49,20 @@ public final class WatchWorkoutViewModel {
 
     public var currentSetNumber: Int {
         guard let exercise = currentExercise else { return 1 }
-        return exercise.sets.count + 1
+        let completedCount = exercise.sets.filter(\.isCompleted).count
+        return completedCount + 1
     }
 
     public var plannedSets: Int {
-        4 // Default planned sets per exercise
+        plannedSetsPerExercise[currentExerciseIndex] ?? 4
+    }
+
+    public var currentTargetWeight: Double? {
+        targetWeightPerExercise[currentExerciseIndex] ?? nil
+    }
+
+    public var currentTargetReps: Int? {
+        targetRepsPerExercise[currentExerciseIndex] ?? nil
     }
 
     public var currentExerciseVolume: Double {
@@ -57,7 +71,7 @@ public final class WatchWorkoutViewModel {
 
     public var totalSetsCompleted: Int {
         guard let workout = activeWorkout else { return 0 }
-        return workout.exercises.reduce(0) { $0 + $1.sets.count }
+        return workout.exercises.reduce(0) { $0 + $1.sets.filter(\.isCompleted).count }
     }
 
     public var elapsedTime: TimeInterval {
@@ -118,6 +132,66 @@ public final class WatchWorkoutViewModel {
         }
     }
 
+    public func startWorkout(name: String, from template: WorkoutTemplate) async {
+        let workoutExercises = template.exercises.sorted { $0.order < $1.order }.enumerated().map { index, te in
+            let sets = (0..<te.targetSets).map { setIndex in
+                ExerciseSet(
+                    id: UUID(),
+                    order: setIndex + 1,
+                    setType: .normal,
+                    weight: te.targetWeight,
+                    reps: te.targetReps,
+                    durationSeconds: te.targetDurationSeconds,
+                    distanceMeters: te.targetDistanceMeters,
+                    rpe: nil,
+                    isCompleted: false,
+                    isPersonalRecord: false,
+                    completedAt: nil
+                )
+            }
+            return WorkoutExercise(
+                id: UUID(),
+                exercise: te.exercise,
+                order: index + 1,
+                supersetGroup: te.supersetGroup,
+                notes: te.notes,
+                restTimerSeconds: te.restTimerSeconds,
+                sets: sets
+            )
+        }
+
+        // Store per-exercise targets
+        for (index, te) in template.exercises.sorted(by: { $0.order < $1.order }).enumerated() {
+            plannedSetsPerExercise[index] = te.targetSets
+            targetWeightPerExercise[index] = te.targetWeight
+            targetRepsPerExercise[index] = te.targetReps
+        }
+
+        let workout = Workout(
+            id: UUID(),
+            name: name,
+            startedAt: Date(),
+            completedAt: nil,
+            notes: nil,
+            templateId: template.id,
+            exercises: workoutExercises
+        )
+
+        do {
+            activeWorkout = try await workoutRepository.save(workout)
+            currentExerciseIndex = 0
+            isActive = true
+
+            #if canImport(HealthKit)
+            try? await healthKitService.startWorkoutSession()
+            #endif
+        } catch {
+            activeWorkout = workout
+            currentExerciseIndex = 0
+            isActive = true
+        }
+    }
+
     public func logSet(weight: Double?, reps: Int?, rpe: Double? = nil) async throws {
         guard var workout = activeWorkout else {
             throw WorkoutError.noActiveWorkout
@@ -127,22 +201,32 @@ public final class WatchWorkoutViewModel {
             throw WorkoutError.exerciseNotFound
         }
 
-        let setOrder = workout.exercises[currentExerciseIndex].sets.count + 1
-        let newSet = ExerciseSet(
-            id: UUID(),
-            order: setOrder,
-            setType: .normal,
-            weight: weight,
-            reps: reps,
-            durationSeconds: nil,
-            distanceMeters: nil,
-            rpe: rpe,
-            isCompleted: true,
-            isPersonalRecord: false,
-            completedAt: Date()
-        )
+        // If there's an incomplete pre-populated set, update it instead of appending
+        if let incompleteIndex = workout.exercises[currentExerciseIndex].sets.firstIndex(where: { !$0.isCompleted }) {
+            workout.exercises[currentExerciseIndex].sets[incompleteIndex].weight = weight
+            workout.exercises[currentExerciseIndex].sets[incompleteIndex].reps = reps
+            workout.exercises[currentExerciseIndex].sets[incompleteIndex].rpe = rpe
+            workout.exercises[currentExerciseIndex].sets[incompleteIndex].isCompleted = true
+            workout.exercises[currentExerciseIndex].sets[incompleteIndex].completedAt = Date()
+        } else {
+            // All pre-populated sets done (or none existed), append a new one
+            let setOrder = workout.exercises[currentExerciseIndex].sets.count + 1
+            let newSet = ExerciseSet(
+                id: UUID(),
+                order: setOrder,
+                setType: .normal,
+                weight: weight,
+                reps: reps,
+                durationSeconds: nil,
+                distanceMeters: nil,
+                rpe: rpe,
+                isCompleted: true,
+                isPersonalRecord: false,
+                completedAt: Date()
+            )
+            workout.exercises[currentExerciseIndex].sets.append(newSet)
+        }
 
-        workout.exercises[currentExerciseIndex].sets.append(newSet)
         activeWorkout = workout
 
         // Auto-start rest timer after logging a set

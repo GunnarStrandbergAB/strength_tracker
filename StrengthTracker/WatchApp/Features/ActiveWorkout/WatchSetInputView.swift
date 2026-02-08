@@ -11,8 +11,10 @@ struct WatchSetInputView: View {
         case weight, reps
     }
 
-    init(viewModel: WatchWorkoutViewModel) {
+    init(viewModel: WatchWorkoutViewModel, targetWeight: Double? = nil, targetReps: Int? = nil) {
         self._viewModel = State(initialValue: viewModel)
+        self._weight = State(initialValue: targetWeight ?? 20.0)
+        self._reps = State(initialValue: Double(targetReps ?? 10))
     }
 
     private let primaryYellow = Color(red: 0.949, green: 0.800, blue: 0.051)

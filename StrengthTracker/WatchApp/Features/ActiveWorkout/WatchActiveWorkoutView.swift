@@ -106,7 +106,11 @@ struct WatchActiveWorkoutView: View {
                 }
 
                 // Set input area
-                WatchSetInputView(viewModel: viewModel)
+                WatchSetInputView(
+                    viewModel: viewModel,
+                    targetWeight: viewModel.currentTargetWeight,
+                    targetReps: viewModel.currentTargetReps
+                )
 
                 // Exercise navigation
                 HStack(spacing: 16) {
