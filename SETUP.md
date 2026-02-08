@@ -5,16 +5,35 @@ Step-by-step instructions to build and run the app on a MacBook with Apple Silic
 ## Prerequisites
 
 - macOS 14 (Sonoma) or later
-- Xcode 15.3 or later (for Swift 6.0)
 - Apple Developer account (free works for simulator, paid for device + HealthKit)
 
-## Step 1: Install Homebrew (if not installed)
+## Step 1: Install Xcode
+
+Download from the Mac App Store: [Xcode](https://apps.apple.com/app/xcode/id497799835)
+
+You need **Xcode 15.3 or later** (for Swift 6.0 support). The download is ~7 GB and installation takes a while.
+
+After installing, open Xcode once to accept the license and install components:
+
+```bash
+sudo xcodebuild -license accept
+xcode-select --install
+```
+
+Verify it works:
+
+```bash
+swift --version
+# Should show: Swift version 6.0 or later
+```
+
+## Step 2: Install Homebrew (if not installed)
 
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-## Step 2: Install XcodeGen
+## Step 3: Install XcodeGen
 
 ```bash
 brew install xcodegen
@@ -26,14 +45,14 @@ Verify it installed:
 xcodegen --version
 ```
 
-## Step 3: Clone the repository
+## Step 4: Clone the repository
 
 ```bash
 git clone https://github.com/GunnarStrandbergAB/strength_tracker.git
 cd strength_tracker
 ```
 
-## Step 4: Generate the Xcode project
+## Step 5: Generate the Xcode project
 
 ```bash
 cd StrengthTracker
@@ -46,13 +65,13 @@ You should see:
 Generated StrengthTracker.xcodeproj
 ```
 
-## Step 5: Open in Xcode
+## Step 6: Open in Xcode
 
 ```bash
 open StrengthTracker.xcodeproj
 ```
 
-## Step 6: Configure signing
+## Step 7: Configure signing
 
 1. In Xcode, select the **StrengthTracker** project in the navigator (blue icon, top left)
 2. For each target, set your team:
@@ -64,12 +83,12 @@ open StrengthTracker.xcodeproj
 
 If you don't have a paid developer account, HealthKit entitlements won't work on device. You can still run on simulator (HealthKit has limited simulator support).
 
-## Step 7: Select scheme and destination
+## Step 8: Select scheme and destination
 
 1. In the toolbar, select scheme: **StrengthTracker**
 2. Select destination: **iPhone 15 Pro** (or any iOS 17+ simulator)
 
-## Step 8: Build and run
+## Step 9: Build and run
 
 Press **Cmd + R** or click the play button.
 
