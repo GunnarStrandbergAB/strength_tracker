@@ -2,6 +2,65 @@
 import SwiftData
 import Foundation
 
+// MARK: - Placeholder Protocols (will be implemented by other agents)
+
+protocol HealthKitServiceProtocol: Sendable {
+    func saveWorkout(_ workout: Workout) async throws
+    func startWorkoutSession() async throws
+    func endWorkoutSession(_ workout: Workout) async throws
+}
+
+final class NoOpHealthKitService: HealthKitServiceProtocol, @unchecked Sendable {
+    func saveWorkout(_ workout: Workout) async throws {}
+    func startWorkoutSession() async throws {}
+    func endWorkoutSession(_ workout: Workout) async throws {}
+}
+
+#if canImport(HealthKit)
+final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked Sendable {
+    func saveWorkout(_ workout: Workout) async throws {
+        // Implementation will be provided by Agent 2
+    }
+    func startWorkoutSession() async throws {
+        // Implementation will be provided by Agent 2
+    }
+    func endWorkoutSession(_ workout: Workout) async throws {
+        // Implementation will be provided by Agent 2
+    }
+}
+#endif
+
+#if canImport(WatchConnectivity)
+import WatchConnectivity
+
+final class ConnectivityManager: NSObject, WCSessionDelegate, @unchecked Sendable {
+    func sendWorkoutCompleted(_ workout: Workout) {
+        // Implementation will be provided by Agent 3
+    }
+
+    // WCSessionDelegate methods
+    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        // Implementation will be provided by Agent 3
+    }
+
+    #if os(iOS)
+    func sessionDidBecomeInactive(_ session: WCSession) {
+        // Implementation will be provided by Agent 3
+    }
+
+    func sessionDidDeactivate(_ session: WCSession) {
+        // Implementation will be provided by Agent 3
+    }
+    #endif
+}
+#else
+final class ConnectivityManager: NSObject, @unchecked Sendable {
+    func sendWorkoutCompleted(_ workout: Workout) {
+        // No-op on platforms without WatchConnectivity
+    }
+}
+#endif
+
 @MainActor
 final class AppContainer: Sendable {
     let modelContainer: ModelContainer
@@ -18,6 +77,8 @@ final class AppContainer: Sendable {
     let restTimerService: RestTimerService
     let userPreferencesService: UserPreferencesService
     let exerciseSeeder: ExerciseSeeder
+    let healthKitService: any HealthKitServiceProtocol
+    let connectivityManager: ConnectivityManager
 
     init() throws {
         let schema = Schema([
@@ -47,6 +108,14 @@ final class AppContainer: Sendable {
         restTimerService = RestTimerService()
         userPreferencesService = UserPreferencesService()
         exerciseSeeder = ExerciseSeeder(exerciseRepository: exerciseRepository)
+
+        // Platform-specific services
+        #if canImport(HealthKit)
+        healthKitService = DefaultHealthKitService()
+        #else
+        healthKitService = NoOpHealthKitService()
+        #endif
+        connectivityManager = ConnectivityManager()
     }
 
     // Factory methods for ViewModels
@@ -58,7 +127,8 @@ final class AppContainer: Sendable {
         WorkoutViewModel(
             workoutRepository: workoutRepository,
             templateRepository: templateRepository,
-            personalRecordService: personalRecordService
+            personalRecordService: personalRecordService,
+            healthKitService: healthKitService
         )
     }
 
@@ -88,7 +158,18 @@ final class AppContainer: Sendable {
     }
 
     func makeWatchWorkoutViewModel() -> WatchWorkoutViewModel {
-        WatchWorkoutViewModel(workoutRepository: workoutRepository)
+        WatchWorkoutViewModel(
+            workoutRepository: workoutRepository,
+            healthKitService: healthKitService,
+            connectivityManager: connectivityManager
+        )
+    }
+
+    func makeWatchWorkoutListViewModel() -> WatchWorkoutListViewModel {
+        WatchWorkoutListViewModel(
+            workoutRepository: workoutRepository,
+            templateRepository: templateRepository
+        )
     }
 
     func makePersonalRecordService() -> PersonalRecordService {

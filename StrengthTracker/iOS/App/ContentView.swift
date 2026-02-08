@@ -55,5 +55,24 @@ struct ContentView: View {
                 }
                 .tag(4)
         }
+        .onOpenURL { url in
+            handleDeepLink(url)
+        }
+    }
+
+    private func handleDeepLink(_ url: URL) {
+        guard url.scheme == "strengthtracker" else { return }
+        switch url.host {
+        case "workout":
+            selectedTab = 1
+        case "dashboard":
+            selectedTab = 0
+        case "history":
+            selectedTab = 4
+        case "exercises":
+            selectedTab = 3
+        default:
+            break
+        }
     }
 }

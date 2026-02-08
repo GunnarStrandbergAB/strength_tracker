@@ -13,19 +13,23 @@ final class WorkoutViewModel {
     var isActive = false
     var errorMessage: String? = nil
     var lastPR: PersonalRecord? = nil
+    var previousSetDataCache: [String: String] = [:]
 
     private let workoutRepository: any WorkoutRepository
     private let templateRepository: any TemplateRepository
     private let personalRecordService: PersonalRecordService?
+    private let healthKitService: any HealthKitServiceProtocol
 
     init(
         workoutRepository: any WorkoutRepository,
         templateRepository: any TemplateRepository,
-        personalRecordService: PersonalRecordService? = nil
+        personalRecordService: PersonalRecordService? = nil,
+        healthKitService: any HealthKitServiceProtocol
     ) {
         self.workoutRepository = workoutRepository
         self.templateRepository = templateRepository
         self.personalRecordService = personalRecordService
+        self.healthKitService = healthKitService
     }
 
     func startWorkout(name: String, from template: WorkoutTemplate? = nil) async {
@@ -170,6 +174,66 @@ final class WorkoutViewModel {
         let saved = try await workoutRepository.save(workout)
         currentWorkout = saved
         isActive = false
+
+        // Save to HealthKit after persisting to SwiftData
+        #if canImport(HealthKit)
+        Task {
+            try? await healthKitService.saveWorkout(saved)
+        }
+        #endif
+    }
+
+    /// Fetch previous set data for an exercise to help with progressive overload
+    func previousSetData(for exerciseId: UUID, setIndex: Int) async -> String? {
+        // Get the exercise ID from the current workout's exercise
+        guard let currentWorkout = currentWorkout,
+              let workoutExercise = currentWorkout.exercises.first(where: { $0.id == exerciseId }) else {
+            return nil
+        }
+
+        let targetExerciseId = workoutExercise.exercise.id
+
+        // Fetch recent completed workouts
+        #if canImport(SwiftData)
+        do {
+            let allWorkouts = try await workoutRepository.fetchAll()
+            // Find last completed workout with this exercise (not the current one)
+            let previousWorkout = allWorkouts
+                .filter { $0.completedAt != nil && $0.id != currentWorkout.id }
+                .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+                .first { workout in
+                    workout.exercises.contains { $0.exercise.id == targetExerciseId }
+                }
+
+            guard let prev = previousWorkout,
+                  let prevExercise = prev.exercises.first(where: { $0.exercise.id == targetExerciseId }),
+                  setIndex < prevExercise.sets.count else {
+                return nil
+            }
+
+            let prevSet = prevExercise.sets[setIndex]
+            let weight = prevSet.weight.map { String(format: "%g", $0) } ?? "0"
+            let reps = prevSet.reps.map { String($0) } ?? "0"
+            return "\(weight)kg × \(reps)"
+        } catch {
+            return nil
+        }
+        #else
+        return nil
+        #endif
+    }
+
+    /// Load previous data for all exercises when workout starts
+    func loadPreviousData() async {
+        guard let workout = currentWorkout else { return }
+        for exercise in workout.exercises {
+            for (index, _) in exercise.sets.enumerated() {
+                let key = "\(exercise.id)-\(index)"
+                if let data = await previousSetData(for: exercise.id, setIndex: index) {
+                    previousSetDataCache[key] = data
+                }
+            }
+        }
     }
 
     // MARK: - Inline Editing Methods

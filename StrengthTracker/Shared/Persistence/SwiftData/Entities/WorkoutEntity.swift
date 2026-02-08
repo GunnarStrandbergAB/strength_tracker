@@ -10,6 +10,7 @@ final class WorkoutEntity {
     var completedAt: Date?
     var notes: String?
     var templateId: UUID?
+    var healthKitWorkoutId: UUID?
 
     @Relationship(deleteRule: .cascade)
     var exercises: [WorkoutExerciseEntity]
@@ -21,6 +22,7 @@ final class WorkoutEntity {
         completedAt: Date? = nil,
         notes: String? = nil,
         templateId: UUID? = nil,
+        healthKitWorkoutId: UUID? = nil,
         exercises: [WorkoutExerciseEntity] = []
     ) {
         self.id = id
@@ -29,6 +31,7 @@ final class WorkoutEntity {
         self.completedAt = completedAt
         self.notes = notes
         self.templateId = templateId
+        self.healthKitWorkoutId = healthKitWorkoutId
         self.exercises = exercises
     }
 }

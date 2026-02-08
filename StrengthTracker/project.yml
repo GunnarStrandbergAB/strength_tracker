@@ -33,6 +33,13 @@ targets:
         SWIFT_VERSION: "6.0"
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: true
+    entitlements:
+      path: iOS/Resources/StrengthTracker.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+        com.apple.security.application-groups:
+          - group.com.strengthtracker.shared
     info:
       path: iOS/Resources/Info.plist
       properties:
@@ -70,6 +77,13 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
         WATCHOS_DEPLOYMENT_TARGET: "10.0"
+    entitlements:
+      path: WatchApp/Resources/StrengthTrackerWatch.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+        com.apple.security.application-groups:
+          - group.com.strengthtracker.shared
     info:
       path: WatchApp/Resources/Info.plist
       properties:
@@ -79,6 +93,26 @@ targets:
         CFBundleVersion: "1"
         WKApplication: true
         WKCompanionAppBundleIdentifier: com.strengthtracker.ios
+
+  StrengthTrackerWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: iOS/WidgetExtension
+    dependencies:
+      - package: StrengthTrackerPackage
+        product: StrengthTrackerShared
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        PRODUCT_BUNDLE_IDENTIFIER: com.strengthtracker.ios.widgets
+        INFOPLIST_KEY_CFBundleDisplayName: StrengthTracker Widgets
+        INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: iOS/WidgetExtension/StrengthTrackerWidgets.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.strengthtracker.shared
 
   StrengthTrackerTests:
     type: bundle.unit-test
@@ -104,6 +138,7 @@ schemes:
       targets:
         StrengthTracker: all
         StrengthTrackerWatch: all
+        StrengthTrackerWidgets: all
         StrengthTrackerTests: [test]
     run:
       config: Debug

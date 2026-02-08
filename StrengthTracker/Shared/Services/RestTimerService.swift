@@ -1,6 +1,10 @@
 import Foundation
 import Observation
 
+#if canImport(ActivityKit)
+import ActivityKit
+#endif
+
 @MainActor
 @Observable
 final class RestTimerService {
@@ -10,9 +14,20 @@ final class RestTimerService {
 
     nonisolated(unsafe) private var timer: Timer?
 
+    #if canImport(ActivityKit)
+    private var currentActivity: Activity<RestTimerAttributes>?
+    #endif
+
+    // Live Activity context (stored when activity starts)
+    private var currentExerciseName: String?
+    private var currentSetNumber: Int?
+
     /// Start the rest timer
-    /// - Parameter seconds: Optional duration in seconds. If nil, uses the current totalSeconds value
-    func start(seconds: Int? = nil) {
+    /// - Parameters:
+    ///   - seconds: Optional duration in seconds. If nil, uses the current totalSeconds value
+    ///   - exerciseName: Name of the exercise for Live Activity
+    ///   - setNumber: Set number for Live Activity
+    func start(seconds: Int? = nil, exerciseName: String? = nil, setNumber: Int? = nil) {
         stop() // Stop any existing timer
 
         if let seconds = seconds {
@@ -22,12 +37,22 @@ final class RestTimerService {
         remainingSeconds = totalSeconds
         isRunning = true
 
+        // Store Live Activity context
+        currentExerciseName = exerciseName
+        currentSetNumber = setNumber
+
+        // Start Live Activity if context is provided
+        if let exerciseName = exerciseName, let setNumber = setNumber {
+            startLiveActivity(exerciseName: exerciseName, setNumber: setNumber)
+        }
+
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
 
                 if self.remainingSeconds > 0 {
                     self.remainingSeconds -= 1
+                    self.updateLiveActivity()
                 } else {
                     self.timerCompleted()
                 }
@@ -40,6 +65,7 @@ final class RestTimerService {
         timer?.invalidate()
         timer = nil
         isRunning = false
+        endLiveActivity()
     }
 
     /// Reset the timer to initial state
@@ -67,6 +93,7 @@ final class RestTimerService {
     }
 
     private func timerCompleted() {
+        endLiveActivity()
         stop()
         triggerCompletionFeedback()
     }
@@ -75,7 +102,78 @@ final class RestTimerService {
         // Haptic feedback handled by the view layer
     }
 
+    // MARK: - Live Activity Management
+
+    /// Start a Live Activity for the rest timer
+    /// - Parameters:
+    ///   - exerciseName: Name of the exercise
+    ///   - setNumber: Set number
+    private func startLiveActivity(exerciseName: String, setNumber: Int) {
+        #if canImport(ActivityKit)
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+
+        let attributes = RestTimerAttributes(
+            exerciseName: exerciseName,
+            setNumber: setNumber
+        )
+        let state = RestTimerAttributes.ContentState(
+            remainingSeconds: remainingSeconds,
+            totalSeconds: totalSeconds,
+            isRunning: true
+        )
+
+        do {
+            currentActivity = try Activity.request(
+                attributes: attributes,
+                content: .init(state: state, staleDate: nil)
+            )
+        } catch {
+            print("RestTimerService: Failed to start Live Activity - \(error)")
+        }
+        #endif
+    }
+
+    /// Update the Live Activity with current state
+    private func updateLiveActivity() {
+        #if canImport(ActivityKit)
+        guard let activity = currentActivity else { return }
+
+        let state = RestTimerAttributes.ContentState(
+            remainingSeconds: remainingSeconds,
+            totalSeconds: totalSeconds,
+            isRunning: isRunning
+        )
+
+        Task {
+            await activity.update(.init(state: state, staleDate: nil))
+        }
+        #endif
+    }
+
+    /// End the Live Activity
+    private func endLiveActivity() {
+        #if canImport(ActivityKit)
+        guard let activity = currentActivity else { return }
+
+        let finalState = RestTimerAttributes.ContentState(
+            remainingSeconds: 0,
+            totalSeconds: totalSeconds,
+            isRunning: false
+        )
+
+        Task {
+            await activity.end(.init(state: finalState, staleDate: nil), dismissalPolicy: .immediate)
+        }
+        currentActivity = nil
+        #endif
+    }
+
     deinit {
         timer?.invalidate()
+        #if canImport(ActivityKit)
+        if currentActivity != nil {
+            endLiveActivity()
+        }
+        #endif
     }
 }

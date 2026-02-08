@@ -17,10 +17,18 @@ final class WatchWorkoutViewModel {
     var workoutNotes: String = ""
 
     private let workoutRepository: any WorkoutRepository
+    private let healthKitService: any HealthKitServiceProtocol
+    private let connectivityManager: ConnectivityManager
     private var restTimer: Timer?
 
-    init(workoutRepository: any WorkoutRepository) {
+    init(
+        workoutRepository: any WorkoutRepository,
+        healthKitService: any HealthKitServiceProtocol,
+        connectivityManager: ConnectivityManager
+    ) {
         self.workoutRepository = workoutRepository
+        self.healthKitService = healthKitService
+        self.connectivityManager = connectivityManager
     }
 
     // MARK: - Computed Properties
@@ -89,6 +97,7 @@ final class WatchWorkoutViewModel {
             completedAt: nil,
             notes: nil,
             templateId: nil,
+            healthKitWorkoutId: nil,
             exercises: workoutExercises
         )
 
@@ -96,6 +105,11 @@ final class WatchWorkoutViewModel {
             activeWorkout = try await workoutRepository.save(workout)
             currentExerciseIndex = 0
             isActive = true
+
+            // Start HealthKit workout session
+            #if canImport(HealthKit)
+            try? await healthKitService.startWorkoutSession()
+            #endif
         } catch {
             activeWorkout = workout
             currentExerciseIndex = 0
@@ -164,9 +178,18 @@ final class WatchWorkoutViewModel {
         if !workoutNotes.isEmpty {
             workout.notes = workoutNotes
         }
-        activeWorkout = try await workoutRepository.save(workout)
+        let saved = try await workoutRepository.save(workout)
+        activeWorkout = saved
         stopRestTimer()
         isActive = false
+
+        // End HealthKit workout session and save
+        #if canImport(HealthKit)
+        try? await healthKitService.endWorkoutSession(saved)
+        #endif
+
+        // Send completion notification to iPhone via WatchConnectivity
+        connectivityManager.sendWorkoutCompleted(saved)
     }
 
     // MARK: - Navigation

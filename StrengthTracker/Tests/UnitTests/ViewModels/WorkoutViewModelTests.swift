@@ -53,7 +53,7 @@ struct WorkoutViewModelTests {
     private func makeViewModel() -> (WorkoutViewModel, InMemoryWorkoutRepository, InMemoryTemplateRepository) {
         let workoutRepo = InMemoryWorkoutRepository()
         let templateRepo = InMemoryTemplateRepository()
-        let vm = WorkoutViewModel(workoutRepository: workoutRepo, templateRepository: templateRepo)
+        let vm = WorkoutViewModel(workoutRepository: workoutRepo, templateRepository: templateRepo, healthKitService: NoOpHealthKitService())
         return (vm, workoutRepo, templateRepo)
     }
 

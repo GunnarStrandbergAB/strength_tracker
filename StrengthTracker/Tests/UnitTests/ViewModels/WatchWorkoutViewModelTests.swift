@@ -24,7 +24,7 @@ struct WatchWorkoutViewModelTests {
 
     private func makeViewModel() -> (WatchWorkoutViewModel, InMemoryWorkoutRepository) {
         let repo = InMemoryWorkoutRepository()
-        let vm = WatchWorkoutViewModel(workoutRepository: repo)
+        let vm = WatchWorkoutViewModel(workoutRepository: repo, healthKitService: NoOpHealthKitService(), connectivityManager: ConnectivityManager())
         return (vm, repo)
     }
 

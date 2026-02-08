@@ -11,6 +11,7 @@ enum WorkoutMapper {
             completedAt: entity.completedAt,
             notes: entity.notes,
             templateId: entity.templateId,
+            healthKitWorkoutId: entity.healthKitWorkoutId,
             exercises: entity.exercises.map { WorkoutExerciseMapper.toDomain($0) }
         )
     }
@@ -23,7 +24,8 @@ enum WorkoutMapper {
             startedAt: domain.startedAt,
             completedAt: domain.completedAt,
             notes: domain.notes,
-            templateId: domain.templateId
+            templateId: domain.templateId,
+            healthKitWorkoutId: domain.healthKitWorkoutId
         )
         entity.exercises = domain.exercises.map { WorkoutExerciseMapper.toEntity($0) }
         return entity
@@ -36,6 +38,7 @@ enum WorkoutMapper {
         entity.completedAt = domain.completedAt
         entity.notes = domain.notes
         entity.templateId = domain.templateId
+        entity.healthKitWorkoutId = domain.healthKitWorkoutId
 
         // Update exercises (replace all)
         entity.exercises = domain.exercises.map { WorkoutExerciseMapper.toEntity($0) }

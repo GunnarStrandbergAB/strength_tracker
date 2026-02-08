@@ -81,83 +81,102 @@ struct ActiveWorkoutView: View {
     // MARK: - Workout Content
 
     private func workoutContent(_ workout: Workout) -> some View {
-        ScrollView {
-            VStack(spacing: STSpacing.cardGap) {
-                ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, workoutExercise in
-                    ExerciseCardView(
-                        workoutExercise: workoutExercise,
-                        isActiveExercise: index == 0,
-                        onWeightChange: { setId, weight in
-                            Task {
-                                await viewModel.updateSetWeight(
-                                    exerciseId: workoutExercise.id,
-                                    setId: setId,
-                                    weight: weight
-                                )
-                            }
-                        },
-                        onRepsChange: { setId, reps in
-                            Task {
-                                await viewModel.updateSetReps(
-                                    exerciseId: workoutExercise.id,
-                                    setId: setId,
-                                    reps: reps
-                                )
-                            }
-                        },
-                        onToggleComplete: { setId in
-                            Task {
-                                await viewModel.toggleSetCompletion(
-                                    exerciseId: workoutExercise.id,
-                                    setId: setId
-                                )
-                                // Auto-start rest timer on set completion
-                                if let ex = viewModel.currentWorkout?.exercises.first(where: { $0.id == workoutExercise.id }),
-                                   let completedSet = ex.sets.first(where: { $0.id == setId }),
-                                   completedSet.isCompleted {
-                                    let restSeconds = workoutExercise.restTimerSeconds ?? 90
-                                    restTimerService.start(seconds: restSeconds)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: STSpacing.cardGap) {
+                    ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, workoutExercise in
+                        ExerciseCardView(
+                            workoutExercise: workoutExercise,
+                            isActiveExercise: index == 0,
+                            previousSetData: previousDataForExercise(workoutExercise.id),
+                            onWeightChange: { setId, weight in
+                                Task {
+                                    await viewModel.updateSetWeight(
+                                        exerciseId: workoutExercise.id,
+                                        setId: setId,
+                                        weight: weight
+                                    )
+                                }
+                            },
+                            onRepsChange: { setId, reps in
+                                Task {
+                                    await viewModel.updateSetReps(
+                                        exerciseId: workoutExercise.id,
+                                        setId: setId,
+                                        reps: reps
+                                    )
+                                }
+                            },
+                            onToggleComplete: { setId in
+                                Task {
+                                    await viewModel.toggleSetCompletion(
+                                        exerciseId: workoutExercise.id,
+                                        setId: setId
+                                    )
+                                    // Auto-start rest timer on set completion
+                                    if let ex = viewModel.currentWorkout?.exercises.first(where: { $0.id == workoutExercise.id }),
+                                       let completedSet = ex.sets.first(where: { $0.id == setId }),
+                                       completedSet.isCompleted {
+                                        let restSeconds = workoutExercise.restTimerSeconds ?? 90
+                                        let setIndex = ex.sets.firstIndex(where: { $0.id == setId }) ?? 0
+                                        restTimerService.start(
+                                            seconds: restSeconds,
+                                            exerciseName: workoutExercise.exercise.name,
+                                            setNumber: setIndex + 1
+                                        )
+                                    }
+                                }
+                            },
+                            onAddSet: {
+                                Task {
+                                    await viewModel.addEmptySet(exerciseId: workoutExercise.id)
+                                }
+                            },
+                            onRemoveSet: { setId in
+                                Task {
+                                    await viewModel.removeSet(
+                                        exerciseId: workoutExercise.id,
+                                        setId: setId
+                                    )
+                                }
+                            },
+                            onRemoveExercise: {
+                                Task {
+                                    await viewModel.removeExercise(exerciseId: workoutExercise.id)
                                 }
                             }
-                        },
-                        onAddSet: {
-                            Task {
-                                await viewModel.addEmptySet(exerciseId: workoutExercise.id)
-                            }
-                        },
-                        onRemoveSet: { setId in
-                            Task {
-                                await viewModel.removeSet(
-                                    exerciseId: workoutExercise.id,
-                                    setId: setId
-                                )
-                            }
-                        },
-                        onRemoveExercise: {
-                            Task {
-                                await viewModel.removeExercise(exerciseId: workoutExercise.id)
-                            }
-                        }
-                    )
+                        )
+                        .id(workoutExercise.id)
+                    }
+
+                    // Workout Notes
+                    notesCard
+
+                    // Add Exercise button
+                    addExerciseButton
+
+                    // Cancel Workout button
+                    cancelWorkoutButton
+
+                    // Bottom spacing for rest timer
+                    Color.clear.frame(height: 20)
                 }
-
-                // Workout Notes
-                notesCard
-
-                // Add Exercise button
-                addExerciseButton
-
-                // Cancel Workout button
-                cancelWorkoutButton
-
-                // Bottom spacing for rest timer
-                Color.clear.frame(height: 20)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
+            .onChange(of: workout.exercises.count) { _, _ in
+                if let lastExercise = workout.exercises.last {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        proxy.scrollTo(lastExercise.id, anchor: .top)
+                    }
+                }
+            }
+            .background(STColors.background)
+            .scrollDismissesKeyboard(.interactively)
         }
-        .background(STColors.background)
-        .scrollDismissesKeyboard(.interactively)
+        .task {
+            await viewModel.loadPreviousData()
+        }
         .onAppear {
             if let notes = workout.notes, !notes.isEmpty {
                 notesText = notes
@@ -358,5 +377,20 @@ struct ActiveWorkoutView: View {
         .clipShape(RoundedRectangle(cornerRadius: STRadius.timer))
         .padding(.horizontal, 16)
         .padding(.bottom, 4)
+    }
+
+    // MARK: - Helpers
+
+    private func previousDataForExercise(_ exerciseId: UUID) -> [Int: String] {
+        var result: [Int: String] = [:]
+        if let exercise = viewModel.currentWorkout?.exercises.first(where: { $0.id == exerciseId }) {
+            for (index, _) in exercise.sets.enumerated() {
+                let key = "\(exerciseId)-\(index)"
+                if let data = viewModel.previousSetDataCache[key] {
+                    result[index] = data
+                }
+            }
+        }
+        return result
     }
 }

@@ -7,6 +7,7 @@ struct Workout: Identifiable, Hashable, Sendable, Codable {
     var completedAt: Date?
     var notes: String?
     var templateId: UUID?
+    var healthKitWorkoutId: UUID?
     var exercises: [WorkoutExercise]
 
     var isInProgress: Bool { completedAt == nil }

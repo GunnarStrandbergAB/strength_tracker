@@ -13,6 +13,8 @@ struct SetRowGridView: View {
     @State private var weightText: String
     @State private var repsText: String
     @FocusState private var focusedField: Field?
+    @State private var weightDebounceTask: Task<Void, Never>?
+    @State private var repsDebounceTask: Task<Void, Never>?
 
     private enum Field: Hashable {
         case weight
@@ -69,7 +71,12 @@ struct SetRowGridView: View {
             )
             .focused($focusedField, equals: .weight)
             .onChange(of: weightText) { _, newValue in
-                onWeightChange(Double(newValue))
+                weightDebounceTask?.cancel()
+                weightDebounceTask = Task {
+                    try? await Task.sleep(for: .milliseconds(400))
+                    guard !Task.isCancelled else { return }
+                    onWeightChange(Double(newValue))
+                }
             }
             .frame(width: 72)
 
@@ -81,7 +88,12 @@ struct SetRowGridView: View {
             )
             .focused($focusedField, equals: .reps)
             .onChange(of: repsText) { _, newValue in
-                onRepsChange(Int(newValue))
+                repsDebounceTask?.cancel()
+                repsDebounceTask = Task {
+                    try? await Task.sleep(for: .milliseconds(400))
+                    guard !Task.isCancelled else { return }
+                    onRepsChange(Int(newValue))
+                }
             }
             .frame(width: 52)
 

@@ -72,13 +72,35 @@ final class UserPreferencesService {
         }
     }
 
+    /// Whether the user has been prompted for HealthKit authorization
+    var hasRequestedHealthKitAuth: Bool {
+        get {
+            UserDefaults.standard.bool(forKey: "hasRequestedHealthKitAuth")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "hasRequestedHealthKitAuth")
+        }
+    }
+
+    /// Preferred rest timer duration in seconds (for Watch and widgets)
+    var preferredRestTimerDuration: Int {
+        get {
+            let value = UserDefaults.standard.integer(forKey: "preferredRestTimerDuration")
+            return value.nonZero ?? 90
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "preferredRestTimerDuration")
+        }
+    }
+
     /// Reset all preferences to defaults
     func resetToDefaults() {
         weightUnit = .kg
         distanceUnit = .km
         defaultRestSeconds = 90
         autoStartRestTimer = true
-        // Note: Don't reset onboarding or seeding flags
+        preferredRestTimerDuration = 90
+        // Note: Don't reset onboarding, seeding, or HealthKit auth flags
     }
 }
 

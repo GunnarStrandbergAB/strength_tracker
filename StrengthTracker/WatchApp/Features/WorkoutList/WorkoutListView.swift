@@ -2,15 +2,18 @@ import SwiftUI
 import StrengthTrackerShared
 
 struct WorkoutListView: View {
-    @State private var viewModel: WatchWorkoutViewModel
+    @State private var workoutViewModel: WatchWorkoutViewModel
+    @State private var listViewModel: WatchWorkoutListViewModel
 
-    init(viewModel: WatchWorkoutViewModel) {
-        self._viewModel = State(initialValue: viewModel)
+    init(workoutViewModel: WatchWorkoutViewModel, listViewModel: WatchWorkoutListViewModel) {
+        self._workoutViewModel = State(initialValue: workoutViewModel)
+        self._listViewModel = State(initialValue: listViewModel)
     }
 
     var body: some View {
         NavigationStack {
             List {
+                // Quick Start section - always available
                 Section("Quick Start") {
                     quickStartButton(
                         name: "Upper Body",
@@ -39,10 +42,52 @@ struct WorkoutListView: View {
                     )
                 }
 
+                // Templates section - synced from iPhone
+                if !listViewModel.templates.isEmpty {
+                    Section("Templates") {
+                        ForEach(listViewModel.templates) { template in
+                            Button {
+                                Task {
+                                    await startFromTemplate(template)
+                                }
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(template.name)
+                                        .font(.headline)
+                                    Text("\(template.exercises.count) exercises")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .foregroundStyle(.blue)
+                        }
+                    }
+                }
+
+                // Recent workouts section
+                if !listViewModel.recentWorkouts.isEmpty {
+                    Section("Recent") {
+                        ForEach(listViewModel.recentWorkouts.prefix(3)) { workout in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(workout.name)
+                                    .font(.headline)
+                                HStack {
+                                    Text(workout.startedAt, style: .date)
+                                    Text("·")
+                                    Text("\(workout.exercises.count) exercises")
+                                }
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                // Blank workout option
                 Section {
                     Button {
                         Task {
-                            await viewModel.startWorkout(name: "Empty Workout", exercises: [])
+                            await workoutViewModel.startWorkout(name: "Empty Workout", exercises: [])
                         }
                     } label: {
                         Label("Blank Workout", systemImage: "plus.circle")
@@ -52,10 +97,16 @@ struct WorkoutListView: View {
             }
             .navigationTitle("Workouts")
             .navigationDestination(isPresented: Binding(
-                get: { viewModel.isActive },
+                get: { workoutViewModel.isActive },
                 set: { _ in }
             )) {
-                WatchActiveWorkoutView(viewModel: viewModel)
+                WatchActiveWorkoutView(viewModel: workoutViewModel)
+            }
+            .task {
+                await listViewModel.loadData()
+            }
+            .refreshable {
+                await listViewModel.loadData()
             }
         }
     }
@@ -63,12 +114,20 @@ struct WorkoutListView: View {
     private func quickStartButton(name: String, icon: String, exercises: [Exercise]) -> some View {
         Button {
             Task {
-                await viewModel.startWorkout(name: name, exercises: exercises)
+                await workoutViewModel.startWorkout(name: name, exercises: exercises)
             }
         } label: {
             Label(name, systemImage: icon)
         }
         .foregroundStyle(.green)
+    }
+
+    private func startFromTemplate(_ template: WorkoutTemplate) async {
+        // Convert template exercises to regular exercises
+        let exercises = template.exercises
+            .sorted { $0.order < $1.order }
+            .map { $0.exercise }
+        await workoutViewModel.startWorkout(name: template.name, exercises: exercises)
     }
 
     // MARK: - Preset Exercise Lists

@@ -5,6 +5,7 @@ import StrengthTrackerShared
 struct ExerciseCardView: View {
     let workoutExercise: WorkoutExercise
     let isActiveExercise: Bool
+    let previousSetData: [Int: String]
     let onWeightChange: (UUID, Double?) -> Void
     let onRepsChange: (UUID, Int?) -> Void
     let onToggleComplete: (UUID) -> Void
@@ -15,6 +16,7 @@ struct ExerciseCardView: View {
     init(
         workoutExercise: WorkoutExercise,
         isActiveExercise: Bool = true,
+        previousSetData: [Int: String] = [:],
         onWeightChange: @escaping (UUID, Double?) -> Void,
         onRepsChange: @escaping (UUID, Int?) -> Void,
         onToggleComplete: @escaping (UUID) -> Void,
@@ -24,6 +26,7 @@ struct ExerciseCardView: View {
     ) {
         self.workoutExercise = workoutExercise
         self.isActiveExercise = isActiveExercise
+        self.previousSetData = previousSetData
         self.onWeightChange = onWeightChange
         self.onRepsChange = onRepsChange
         self.onToggleComplete = onToggleComplete
@@ -48,7 +51,7 @@ struct ExerciseCardView: View {
                 SetRowGridView(
                     setNumber: index + 1,
                     exerciseSet: exerciseSet,
-                    previousText: previousText(for: index),
+                    previousText: previousSetData[index],
                     onWeightChange: { weight in
                         onWeightChange(exerciseSet.id, weight)
                     },
@@ -181,12 +184,6 @@ struct ExerciseCardView: View {
             groups.append(secondary.rawValue.capitalized)
         }
         return groups.joined(separator: ", ")
-    }
-
-    private func previousText(for index: Int) -> String? {
-        // Placeholder: in a real implementation this would look up the previous
-        // workout's data for this exercise. For now return nil to show "--".
-        nil
     }
 }
 

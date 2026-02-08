@@ -1,10 +1,37 @@
 import Foundation
 
 enum ExerciseSeedData {
+    /// Generate deterministic UUID from exercise name
+    /// Ensures iPhone and Watch have matching IDs for the same exercises
+    private static func deterministicUUID(for name: String) -> UUID {
+        // Create stable UUID from exercise name using hash-based approach
+        var hash = [UInt8](repeating: 0, count: 16)
+        let nameData = name.utf8
+
+        for (index, byte) in nameData.enumerated() {
+            let position = index % 16
+            hash[position] = hash[position] &+ byte &+ UInt8(position)
+        }
+
+        // Additional mixing to improve distribution
+        for i in 0..<16 {
+            hash[i] = hash[i] &+ hash[(i + 7) % 16]
+        }
+
+        // Format as UUID
+        let uuid = UUID(uuid: (
+            hash[0], hash[1], hash[2], hash[3],
+            hash[4], hash[5], hash[6], hash[7],
+            hash[8], hash[9], hash[10], hash[11],
+            hash[12], hash[13], hash[14], hash[15]
+        ))
+        return uuid
+    }
+
     static let allExercises: [Exercise] = [
         // MARK: - Chest Exercises
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Barbell Bench Press"),
             name: "Barbell Bench Press",
             primaryMuscleGroup: .chest,
             secondaryMuscleGroups: [.triceps, .shoulders],
@@ -15,7 +42,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Incline Barbell Bench Press"),
             name: "Incline Barbell Bench Press",
             primaryMuscleGroup: .chest,
             secondaryMuscleGroups: [.triceps, .shoulders],
@@ -26,7 +53,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Dumbbell Bench Press"),
             name: "Dumbbell Bench Press",
             primaryMuscleGroup: .chest,
             secondaryMuscleGroups: [.triceps, .shoulders],
@@ -37,7 +64,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Incline Dumbbell Press"),
             name: "Incline Dumbbell Press",
             primaryMuscleGroup: .chest,
             secondaryMuscleGroups: [.triceps, .shoulders],
@@ -48,7 +75,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Dumbbell Chest Fly"),
             name: "Dumbbell Chest Fly",
             primaryMuscleGroup: .chest,
             secondaryMuscleGroups: [.shoulders],
@@ -59,7 +86,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Push-Up"),
             name: "Push-Up",
             primaryMuscleGroup: .chest,
             secondaryMuscleGroups: [.triceps, .shoulders, .core],
@@ -70,7 +97,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Cable Crossover"),
             name: "Cable Crossover",
             primaryMuscleGroup: .chest,
             secondaryMuscleGroups: [.shoulders],
@@ -83,7 +110,7 @@ enum ExerciseSeedData {
 
         // MARK: - Back Exercises
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Conventional Deadlift"),
             name: "Conventional Deadlift",
             primaryMuscleGroup: .back,
             secondaryMuscleGroups: [.hamstrings, .glutes, .traps, .core],
@@ -94,7 +121,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Barbell Row"),
             name: "Barbell Row",
             primaryMuscleGroup: .back,
             secondaryMuscleGroups: [.biceps, .traps],
@@ -105,7 +132,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Pull-Up"),
             name: "Pull-Up",
             primaryMuscleGroup: .back,
             secondaryMuscleGroups: [.biceps, .lats],
@@ -116,7 +143,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Lat Pulldown"),
             name: "Lat Pulldown",
             primaryMuscleGroup: .lats,
             secondaryMuscleGroups: [.biceps, .back],
@@ -127,7 +154,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Seated Cable Row"),
             name: "Seated Cable Row",
             primaryMuscleGroup: .back,
             secondaryMuscleGroups: [.biceps, .traps],
@@ -138,7 +165,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "T-Bar Row"),
             name: "T-Bar Row",
             primaryMuscleGroup: .back,
             secondaryMuscleGroups: [.biceps, .traps],
@@ -149,7 +176,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "One-Arm Dumbbell Row"),
             name: "One-Arm Dumbbell Row",
             primaryMuscleGroup: .back,
             secondaryMuscleGroups: [.biceps, .traps],
@@ -162,7 +189,7 @@ enum ExerciseSeedData {
 
         // MARK: - Shoulder Exercises
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Overhead Press"),
             name: "Overhead Press",
             primaryMuscleGroup: .shoulders,
             secondaryMuscleGroups: [.triceps, .core],
@@ -173,7 +200,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Dumbbell Shoulder Press"),
             name: "Dumbbell Shoulder Press",
             primaryMuscleGroup: .shoulders,
             secondaryMuscleGroups: [.triceps],
@@ -184,7 +211,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Lateral Raise"),
             name: "Lateral Raise",
             primaryMuscleGroup: .shoulders,
             secondaryMuscleGroups: [],
@@ -195,7 +222,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Front Raise"),
             name: "Front Raise",
             primaryMuscleGroup: .shoulders,
             secondaryMuscleGroups: [],
@@ -206,7 +233,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Face Pull"),
             name: "Face Pull",
             primaryMuscleGroup: .shoulders,
             secondaryMuscleGroups: [.traps],
@@ -217,7 +244,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Reverse Pec Deck Fly"),
             name: "Reverse Pec Deck Fly",
             primaryMuscleGroup: .shoulders,
             secondaryMuscleGroups: [.back],
@@ -230,7 +257,7 @@ enum ExerciseSeedData {
 
         // MARK: - Biceps Exercises
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Barbell Curl"),
             name: "Barbell Curl",
             primaryMuscleGroup: .biceps,
             secondaryMuscleGroups: [.forearms],
@@ -241,7 +268,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Dumbbell Curl"),
             name: "Dumbbell Curl",
             primaryMuscleGroup: .biceps,
             secondaryMuscleGroups: [.forearms],
@@ -252,7 +279,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Hammer Curl"),
             name: "Hammer Curl",
             primaryMuscleGroup: .biceps,
             secondaryMuscleGroups: [.forearms],
@@ -263,7 +290,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Preacher Curl"),
             name: "Preacher Curl",
             primaryMuscleGroup: .biceps,
             secondaryMuscleGroups: [.forearms],
@@ -274,7 +301,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Cable Curl"),
             name: "Cable Curl",
             primaryMuscleGroup: .biceps,
             secondaryMuscleGroups: [.forearms],
@@ -287,7 +314,7 @@ enum ExerciseSeedData {
 
         // MARK: - Triceps Exercises
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Tricep Pushdown"),
             name: "Tricep Pushdown",
             primaryMuscleGroup: .triceps,
             secondaryMuscleGroups: [],
@@ -298,7 +325,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Skull Crusher"),
             name: "Skull Crusher",
             primaryMuscleGroup: .triceps,
             secondaryMuscleGroups: [],
@@ -309,7 +336,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Overhead Tricep Extension"),
             name: "Overhead Tricep Extension",
             primaryMuscleGroup: .triceps,
             secondaryMuscleGroups: [],
@@ -320,7 +347,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Dips"),
             name: "Dips",
             primaryMuscleGroup: .triceps,
             secondaryMuscleGroups: [.chest, .shoulders],
@@ -331,7 +358,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Close-Grip Bench Press"),
             name: "Close-Grip Bench Press",
             primaryMuscleGroup: .triceps,
             secondaryMuscleGroups: [.chest, .shoulders],
@@ -344,7 +371,7 @@ enum ExerciseSeedData {
 
         // MARK: - Quadriceps Exercises
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Barbell Back Squat"),
             name: "Barbell Back Squat",
             primaryMuscleGroup: .quadriceps,
             secondaryMuscleGroups: [.glutes, .hamstrings, .core],
@@ -355,7 +382,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Front Squat"),
             name: "Front Squat",
             primaryMuscleGroup: .quadriceps,
             secondaryMuscleGroups: [.glutes, .core],
@@ -366,7 +393,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Goblet Squat"),
             name: "Goblet Squat",
             primaryMuscleGroup: .quadriceps,
             secondaryMuscleGroups: [.glutes, .core],
@@ -377,7 +404,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Leg Press"),
             name: "Leg Press",
             primaryMuscleGroup: .quadriceps,
             secondaryMuscleGroups: [.glutes, .hamstrings],
@@ -388,7 +415,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Leg Extension"),
             name: "Leg Extension",
             primaryMuscleGroup: .quadriceps,
             secondaryMuscleGroups: [],
@@ -399,7 +426,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Walking Lunge"),
             name: "Walking Lunge",
             primaryMuscleGroup: .quadriceps,
             secondaryMuscleGroups: [.glutes, .hamstrings],
@@ -410,7 +437,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Bulgarian Split Squat"),
             name: "Bulgarian Split Squat",
             primaryMuscleGroup: .quadriceps,
             secondaryMuscleGroups: [.glutes],
@@ -423,7 +450,7 @@ enum ExerciseSeedData {
 
         // MARK: - Hamstring Exercises
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Romanian Deadlift"),
             name: "Romanian Deadlift",
             primaryMuscleGroup: .hamstrings,
             secondaryMuscleGroups: [.glutes, .back],
@@ -434,7 +461,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Lying Leg Curl"),
             name: "Lying Leg Curl",
             primaryMuscleGroup: .hamstrings,
             secondaryMuscleGroups: [],
@@ -445,7 +472,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Seated Leg Curl"),
             name: "Seated Leg Curl",
             primaryMuscleGroup: .hamstrings,
             secondaryMuscleGroups: [],
@@ -456,7 +483,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Good Morning"),
             name: "Good Morning",
             primaryMuscleGroup: .hamstrings,
             secondaryMuscleGroups: [.glutes, .back],
@@ -467,7 +494,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Nordic Curl"),
             name: "Nordic Curl",
             primaryMuscleGroup: .hamstrings,
             secondaryMuscleGroups: [],
@@ -480,7 +507,7 @@ enum ExerciseSeedData {
 
         // MARK: - Glute Exercises
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Hip Thrust"),
             name: "Hip Thrust",
             primaryMuscleGroup: .glutes,
             secondaryMuscleGroups: [.hamstrings],
@@ -491,7 +518,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Glute Bridge"),
             name: "Glute Bridge",
             primaryMuscleGroup: .glutes,
             secondaryMuscleGroups: [.hamstrings],
@@ -502,7 +529,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Cable Pull-Through"),
             name: "Cable Pull-Through",
             primaryMuscleGroup: .glutes,
             secondaryMuscleGroups: [.hamstrings],
@@ -513,7 +540,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Cable Kickback"),
             name: "Cable Kickback",
             primaryMuscleGroup: .glutes,
             secondaryMuscleGroups: [],
@@ -526,7 +553,7 @@ enum ExerciseSeedData {
 
         // MARK: - Core Exercises
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Plank"),
             name: "Plank",
             primaryMuscleGroup: .core,
             secondaryMuscleGroups: [.shoulders],
@@ -537,7 +564,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Ab Rollout"),
             name: "Ab Rollout",
             primaryMuscleGroup: .core,
             secondaryMuscleGroups: [.back, .shoulders],
@@ -548,7 +575,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Cable Crunch"),
             name: "Cable Crunch",
             primaryMuscleGroup: .core,
             secondaryMuscleGroups: [],
@@ -559,7 +586,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Hanging Leg Raise"),
             name: "Hanging Leg Raise",
             primaryMuscleGroup: .core,
             secondaryMuscleGroups: [],
@@ -570,7 +597,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Russian Twist"),
             name: "Russian Twist",
             primaryMuscleGroup: .core,
             secondaryMuscleGroups: [],
@@ -581,7 +608,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Dead Bug"),
             name: "Dead Bug",
             primaryMuscleGroup: .core,
             secondaryMuscleGroups: [],
@@ -594,7 +621,7 @@ enum ExerciseSeedData {
 
         // MARK: - Calves Exercises
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Standing Calf Raise"),
             name: "Standing Calf Raise",
             primaryMuscleGroup: .calves,
             secondaryMuscleGroups: [],
@@ -605,7 +632,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Seated Calf Raise"),
             name: "Seated Calf Raise",
             primaryMuscleGroup: .calves,
             secondaryMuscleGroups: [],
@@ -616,7 +643,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Calf Press on Leg Press"),
             name: "Calf Press on Leg Press",
             primaryMuscleGroup: .calves,
             secondaryMuscleGroups: [],
@@ -629,7 +656,7 @@ enum ExerciseSeedData {
 
         // MARK: - Trap Exercises
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Barbell Shrug"),
             name: "Barbell Shrug",
             primaryMuscleGroup: .traps,
             secondaryMuscleGroups: [],
@@ -640,7 +667,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Dumbbell Shrug"),
             name: "Dumbbell Shrug",
             primaryMuscleGroup: .traps,
             secondaryMuscleGroups: [],
@@ -653,7 +680,7 @@ enum ExerciseSeedData {
 
         // MARK: - Full Body / Compound Exercises
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Clean and Press"),
             name: "Clean and Press",
             primaryMuscleGroup: .fullBody,
             secondaryMuscleGroups: [.shoulders, .back, .quadriceps, .core],
@@ -664,7 +691,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Thruster"),
             name: "Thruster",
             primaryMuscleGroup: .fullBody,
             secondaryMuscleGroups: [.quadriceps, .shoulders, .core],
@@ -675,7 +702,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Burpee"),
             name: "Burpee",
             primaryMuscleGroup: .fullBody,
             secondaryMuscleGroups: [.chest, .core, .quadriceps],
@@ -686,7 +713,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Kettlebell Swing"),
             name: "Kettlebell Swing",
             primaryMuscleGroup: .fullBody,
             secondaryMuscleGroups: [.glutes, .hamstrings, .shoulders, .core],
@@ -697,7 +724,7 @@ enum ExerciseSeedData {
             isArchived: false
         ),
         Exercise(
-            id: UUID(),
+            id: deterministicUUID(for: "Man Maker"),
             name: "Man Maker",
             primaryMuscleGroup: .fullBody,
             secondaryMuscleGroups: [.chest, .back, .shoulders, .core],

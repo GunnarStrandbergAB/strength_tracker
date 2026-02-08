@@ -1,5 +1,8 @@
 #if canImport(SwiftUI)
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Colors
 
@@ -66,10 +69,21 @@ extension Color {
 
 struct STCheckbox: View {
     let isChecked: Bool
-    let action: () -> Void
+    let onToggle: () -> Void
+
+    init(isChecked: Bool, onToggle: @escaping () -> Void) {
+        self.isChecked = isChecked
+        self.onToggle = onToggle
+    }
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            #if canImport(UIKit)
+            let generator = UIImpactFeedbackGenerator(style: .medium)
+            generator.impactOccurred()
+            #endif
+            onToggle()
+        } label: {
             RoundedRectangle(cornerRadius: 8)
                 .fill(isChecked ? STColors.primary : Color.clear)
                 .overlay(
@@ -127,6 +141,17 @@ struct STColumnHeader: View {
             .foregroundStyle(STColors.textSecondary)
             .frame(maxWidth: .infinity, alignment: alignment)
     }
+}
+
+// MARK: - Typography Font Extensions
+
+extension Font {
+    static let stTitle = Font.system(size: 18, weight: .bold)
+    static let stBody = Font.system(size: 14)
+    static let stCaption = Font.system(size: 12)
+    static let stLabel = Font.system(size: 10, weight: .bold)
+    static let stTimer = Font.system(size: 20, weight: .bold, design: .default)
+    static let stSetNumber = Font.system(size: 14, weight: .bold)
 }
 
 #endif
