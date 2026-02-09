@@ -48,44 +48,34 @@ struct WatchActiveWorkoutView: View {
     }
 
     private func exerciseView(_ workout: Workout) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 2) {
             #if canImport(HealthKit) && os(watchOS)
-            // Real-time workout metrics (from ViewModel's WatchHealthKitManager)
+            // Compact metrics bar
             WatchMetricsView(
                 heartRate: viewModel.heartRate,
                 activeCalories: viewModel.activeCalories,
                 elapsedTime: viewModel.healthKitElapsedTime
             )
-            .padding(.bottom, 2)
             #endif
 
             if viewModel.currentExerciseIndex < workout.exercises.count {
                 let current = workout.exercises[viewModel.currentExerciseIndex]
 
-                // Exercise name - prominent, yellow
+                // Exercise name + set info on one line
                 Text(current.exercise.name)
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(primaryYellow)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
 
-                // Set count and exercise volume
-                HStack(spacing: 8) {
-                    if viewModel.hasPlannedSets {
-                        Text("Set \(viewModel.currentSetNumber) of \(viewModel.plannedSets)")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(secondaryText)
-                    } else {
-                        Text("Set \(viewModel.currentSetNumber)")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(secondaryText)
-                    }
-
-                    if current.exerciseVolume > 0 {
-                        Text(String(format: "%.0f kg", current.exerciseVolume))
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(Color.white.opacity(0.4))
-                    }
+                if viewModel.hasPlannedSets {
+                    Text("Set \(viewModel.currentSetNumber)/\(viewModel.plannedSets)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(secondaryText)
+                } else {
+                    Text("Set \(viewModel.currentSetNumber)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(secondaryText)
                 }
 
                 // Set input area
