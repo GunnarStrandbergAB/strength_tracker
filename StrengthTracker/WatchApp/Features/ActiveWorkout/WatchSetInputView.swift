@@ -11,10 +11,15 @@ struct WatchSetInputView: View {
         case weight, reps
     }
 
+    private let weightUnit: WeightUnit
+    private var weightStep: Double { weightUnit == .kg ? 1.25 : 2.5 }
+    private var weightLabel: String { weightUnit == .kg ? "KG" : "LBS" }
+
     init(viewModel: WatchWorkoutViewModel, targetWeight: Double? = nil, targetReps: Int? = nil) {
         self._viewModel = State(initialValue: viewModel)
         self._weight = State(initialValue: targetWeight ?? 20.0)
         self._reps = State(initialValue: Double(targetReps ?? 10))
+        self.weightUnit = UserPreferencesService().weightUnit
     }
 
     private let primaryYellow = Color(red: 0.949, green: 0.800, blue: 0.051)
@@ -28,15 +33,15 @@ struct WatchSetInputView: View {
             HStack(spacing: 8) {
                 // Weight card
                 inputCard(
-                    label: "WEIGHT",
-                    value: String(format: "%.0f", weight),
+                    label: weightLabel,
+                    value: String(format: "%.1f", weight),
                     isFocused: focusedField == .weight,
                     onTap: { focusedField = .weight },
-                    onDecrement: { weight = max(0, weight - 2.5) },
-                    onIncrement: { weight += 2.5 }
+                    onDecrement: { weight = max(0, weight - weightStep) },
+                    onIncrement: { weight += weightStep }
                 )
                 .focusable(focusedField == .weight)
-                .digitalCrownRotation($weight, from: 0, through: 500, by: 2.5)
+                .digitalCrownRotation($weight, from: 0, through: 500, by: weightStep)
 
                 // Reps card
                 inputCard(
