@@ -16,6 +16,7 @@ public final class ConnectivityManager: NSObject, @unchecked Sendable {
     public var onExercisesReceived: (([Exercise]) -> Void)?
     public var onWorkoutReceived: ((Workout) -> Void)?
     public var onSettingsReceived: (([String: Any]) -> Void)?
+    public var onTemplatesReceived: (([WorkoutTemplate]) -> Void)?
 
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -36,22 +37,47 @@ public final class ConnectivityManager: NSObject, @unchecked Sendable {
 
     // MARK: - Send Methods
 
-    /// Sync exercise library to Watch (iPhone → Watch via applicationContext)
+    /// Sync exercise library to Watch (iPhone -> Watch via applicationContext)
     public func syncExercises(_ exercises: [Exercise]) {
         #if canImport(WatchConnectivity)
         guard WCSession.default.activationState == .activated else { return }
 
         do {
             let data = try encoder.encode(exercises)
-            let message = SyncMessage(type: .exerciseSync, payload: data)
-            try WCSession.default.updateApplicationContext(message.asDictionary)
+            var context = WCSession.default.applicationContext
+            context["exerciseSync"] = [
+                "type": SyncMessageType.exerciseSync.rawValue,
+                "timestamp": Date().timeIntervalSince1970,
+                "payload": data.base64EncodedString()
+            ] as [String: Any]
+            try WCSession.default.updateApplicationContext(context)
         } catch {
             print("ConnectivityManager: Failed to sync exercises - \(error)")
         }
         #endif
     }
 
-    /// Send completed workout to iPhone (Watch → iPhone via transferUserInfo)
+    /// Sync templates to Watch (iPhone -> Watch via applicationContext)
+    public func syncTemplates(_ templates: [WorkoutTemplate]) {
+        #if canImport(WatchConnectivity)
+        guard WCSession.default.activationState == .activated else { return }
+
+        do {
+            let data = try encoder.encode(templates)
+            var context = WCSession.default.applicationContext
+            context["templateSync"] = [
+                "type": SyncMessageType.templateSync.rawValue,
+                "timestamp": Date().timeIntervalSince1970,
+                "payload": data.base64EncodedString()
+            ] as [String: Any]
+            try WCSession.default.updateApplicationContext(context)
+        } catch {
+            print("ConnectivityManager: Failed to sync templates - \(error)")
+        }
+        #endif
+    }
+
+    /// Send completed workout to iPhone (Watch -> iPhone via transferUserInfo)
     public func sendWorkoutCompleted(_ workout: Workout) {
         #if canImport(WatchConnectivity)
         guard WCSession.default.activationState == .activated else { return }
@@ -69,7 +95,7 @@ public final class ConnectivityManager: NSObject, @unchecked Sendable {
         #endif
     }
 
-    /// Send real-time set update (Watch → iPhone via sendMessage)
+    /// Send real-time set update (Watch -> iPhone via sendMessage)
     public func sendSetUpdate(exerciseId: UUID, setId: UUID, weight: Double?, reps: Int?, isCompleted: Bool) {
         #if canImport(WatchConnectivity)
         guard WCSession.default.isReachable else { return }
@@ -89,13 +115,12 @@ public final class ConnectivityManager: NSObject, @unchecked Sendable {
         #endif
     }
 
-    /// Sync settings to Watch (iPhone → Watch)
+    /// Sync settings to Watch (iPhone -> Watch)
     public func syncSettings(_ settings: [String: Any]) {
         #if canImport(WatchConnectivity)
         guard WCSession.default.activationState == .activated else { return }
 
         do {
-            // Merge with existing context
             var context = WCSession.default.applicationContext
             context["settings"] = settings
             try WCSession.default.updateApplicationContext(context)
@@ -131,25 +156,44 @@ extension ConnectivityManager: WCSessionDelegate {
         }
     }
 
-    // Receive applicationContext (exercises, settings)
+    // Receive applicationContext (multi-key: exerciseSync, templateSync, settings)
     nonisolated public func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        guard let message = SyncMessage.from(dictionary: applicationContext) else { return }
         let decoder = JSONDecoder()
+
+        // Extract data on the calling thread to avoid sending non-Sendable dict across isolation
+        var exerciseData: Data?
+        if let exerciseDict = applicationContext["exerciseSync"] as? [String: Any],
+           let payloadStr = exerciseDict["payload"] as? String {
+            exerciseData = Data(base64Encoded: payloadStr)
+        }
+
+        var templateData: Data?
+        if let templateDict = applicationContext["templateSync"] as? [String: Any],
+           let payloadStr = templateDict["payload"] as? String {
+            templateData = Data(base64Encoded: payloadStr)
+        }
+
+        var settingsData: Data?
+        if let settings = applicationContext["settings"] {
+            settingsData = try? JSONSerialization.data(withJSONObject: settings)
+        }
 
         Task { @MainActor in
             self.lastSyncDate = Date()
 
-            switch message.type {
-            case .exerciseSync:
-                if let exercises = try? decoder.decode([Exercise].self, from: message.payload) {
-                    self.onExercisesReceived?(exercises)
-                }
-            case .settingsSync:
-                if let settings = try? JSONSerialization.jsonObject(with: message.payload) as? [String: Any] {
-                    self.onSettingsReceived?(settings)
-                }
-            default:
-                break
+            if let data = exerciseData,
+               let exercises = try? decoder.decode([Exercise].self, from: data) {
+                self.onExercisesReceived?(exercises)
+            }
+
+            if let data = templateData,
+               let templates = try? decoder.decode([WorkoutTemplate].self, from: data) {
+                self.onTemplatesReceived?(templates)
+            }
+
+            if let data = settingsData,
+               let settings = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                self.onSettingsReceived?(settings)
             }
         }
     }

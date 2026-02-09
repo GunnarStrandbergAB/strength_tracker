@@ -11,10 +11,16 @@ public final class TemplateViewModel {
 
     private let templateRepository: any TemplateRepository
     private let exerciseRepository: any ExerciseRepository
+    private let connectivityManager: ConnectivityManager?
 
-    public init(templateRepository: any TemplateRepository, exerciseRepository: any ExerciseRepository) {
+    public init(
+        templateRepository: any TemplateRepository,
+        exerciseRepository: any ExerciseRepository,
+        connectivityManager: ConnectivityManager? = nil
+    ) {
         self.templateRepository = templateRepository
         self.exerciseRepository = exerciseRepository
+        self.connectivityManager = connectivityManager
     }
 
     public func loadTemplates() async {
@@ -37,6 +43,7 @@ public final class TemplateViewModel {
             } else {
                 templates.append(saved)
             }
+            syncTemplatesToWatch()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -47,6 +54,7 @@ public final class TemplateViewModel {
         do {
             try await templateRepository.delete(template)
             templates.removeAll { $0.id == template.id }
+            syncTemplatesToWatch()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -64,4 +72,12 @@ public final class TemplateViewModel {
         )
         await saveTemplate(template)
     }
+
+    #if os(iOS)
+    private func syncTemplatesToWatch() {
+        connectivityManager?.syncTemplates(templates)
+    }
+    #else
+    private func syncTemplatesToWatch() {}
+    #endif
 }

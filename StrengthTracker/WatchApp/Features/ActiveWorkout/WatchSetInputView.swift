@@ -24,11 +24,6 @@ struct WatchSetInputView: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            // Set counter
-            Text("Set \(viewModel.currentSetNumber)")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(secondaryText)
-
             // Weight / Reps grid
             HStack(spacing: 8) {
                 // Weight card

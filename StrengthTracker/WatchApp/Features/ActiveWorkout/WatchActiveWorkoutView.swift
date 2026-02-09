@@ -94,9 +94,15 @@ struct WatchActiveWorkoutView: View {
 
                 // Set count and exercise volume
                 HStack(spacing: 8) {
-                    Text("Set \(current.sets.count + 1) of \(viewModel.plannedSets)")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(secondaryText)
+                    if viewModel.hasPlannedSets {
+                        Text("Set \(viewModel.currentSetNumber) of \(viewModel.plannedSets)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(secondaryText)
+                    } else {
+                        Text("Set \(viewModel.currentSetNumber)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(secondaryText)
+                    }
 
                     if current.exerciseVolume > 0 {
                         Text(String(format: "%.0f kg", current.exerciseVolume))

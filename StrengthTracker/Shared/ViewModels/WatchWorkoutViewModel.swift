@@ -7,6 +7,7 @@ public final class WatchWorkoutViewModel {
     public var activeWorkout: Workout? = nil
     public var currentExerciseIndex: Int = 0
     public var isActive = false
+    public var isQuickStart: Bool = false
 
     // Template target data per exercise index
     public var plannedSetsPerExercise: [Int: Int] = [:]
@@ -53,8 +54,12 @@ public final class WatchWorkoutViewModel {
         return completedCount + 1
     }
 
+    public var hasPlannedSets: Bool {
+        plannedSetsPerExercise[currentExerciseIndex] != nil
+    }
+
     public var plannedSets: Int {
-        plannedSetsPerExercise[currentExerciseIndex] ?? 4
+        plannedSetsPerExercise[currentExerciseIndex] ?? (isQuickStart ? 1 : 4)
     }
 
     public var currentTargetWeight: Double? {
@@ -93,6 +98,11 @@ public final class WatchWorkoutViewModel {
     // MARK: - Workout Lifecycle
 
     public func startWorkout(name: String, exercises: [Exercise]) async {
+        isQuickStart = true
+        plannedSetsPerExercise = [:]
+        targetWeightPerExercise = [:]
+        targetRepsPerExercise = [:]
+
         let workoutExercises = exercises.enumerated().map { index, exercise in
             WorkoutExercise(
                 id: UUID(),
@@ -133,6 +143,8 @@ public final class WatchWorkoutViewModel {
     }
 
     public func startWorkout(name: String, from template: WorkoutTemplate) async {
+        isQuickStart = false
+
         let workoutExercises = template.exercises.sorted { $0.order < $1.order }.enumerated().map { index, te in
             let sets = (0..<te.targetSets).map { setIndex in
                 ExerciseSet(

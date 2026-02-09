@@ -4,23 +4,41 @@ import StrengthTrackerShared
 struct WorkoutListView: View {
     @State private var workoutViewModel: WatchWorkoutViewModel
     @State private var listViewModel: WatchWorkoutListViewModel
+    @State private var exerciseListViewModel: ExerciseListViewModel
+    @State private var showExercisePicker = false
 
-    init(workoutViewModel: WatchWorkoutViewModel, listViewModel: WatchWorkoutListViewModel) {
+    private let primaryYellow = Color(red: 0.949, green: 0.800, blue: 0.051)
+
+    init(
+        workoutViewModel: WatchWorkoutViewModel,
+        listViewModel: WatchWorkoutListViewModel,
+        exerciseListViewModel: ExerciseListViewModel
+    ) {
         self._workoutViewModel = State(initialValue: workoutViewModel)
         self._listViewModel = State(initialValue: listViewModel)
+        self._exerciseListViewModel = State(initialValue: exerciseListViewModel)
     }
 
     var body: some View {
         NavigationStack {
-            Group {
-                if listViewModel.templates.isEmpty {
-                    ContentUnavailableView(
-                        "No Templates",
-                        systemImage: "dumbbell",
-                        description: Text("Create templates on your iPhone to start workouts here.")
-                    )
-                } else {
-                    List {
+            List {
+                // Quick Start section
+                Section {
+                    Button {
+                        showExercisePicker = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "bolt.fill")
+                                .foregroundStyle(primaryYellow)
+                            Text("Quick Start")
+                                .font(.headline)
+                        }
+                    }
+                }
+
+                // Templates section
+                if !listViewModel.templates.isEmpty {
+                    Section("Templates") {
                         ForEach(listViewModel.templates) { template in
                             Button {
                                 Task {
@@ -45,6 +63,14 @@ struct WorkoutListView: View {
                 set: { _ in }
             )) {
                 WatchActiveWorkoutView(viewModel: workoutViewModel)
+            }
+            .sheet(isPresented: $showExercisePicker) {
+                WatchExercisePickerView(exerciseListViewModel: exerciseListViewModel) { exercises in
+                    showExercisePicker = false
+                    Task {
+                        await workoutViewModel.startWorkout(name: "Quick Start", exercises: exercises)
+                    }
+                }
             }
             .task {
                 await listViewModel.loadData()

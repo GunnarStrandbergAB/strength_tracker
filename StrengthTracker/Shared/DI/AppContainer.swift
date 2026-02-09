@@ -72,7 +72,8 @@ public final class AppContainer: Sendable {
         )
         templateViewModel = TemplateViewModel(
             templateRepository: templateRepository,
-            exerciseRepository: exerciseRepository
+            exerciseRepository: exerciseRepository,
+            connectivityManager: connectivityManager
         )
         exerciseListViewModel = ExerciseListViewModel(exerciseRepository: exerciseRepository)
     }

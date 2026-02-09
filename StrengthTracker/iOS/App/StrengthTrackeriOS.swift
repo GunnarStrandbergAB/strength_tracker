@@ -71,6 +71,16 @@ struct ContentViewWrapper: View {
                 #if canImport(WidgetKit)
                 WidgetCenter.shared.reloadAllTimelines()
                 #endif
+
+                // Sync templates to Watch when app becomes active
+                Task { @MainActor in
+                    do {
+                        let templates = try await container.templateRepository.fetchAll()
+                        container.connectivityManager.syncTemplates(templates)
+                    } catch {
+                        print("Failed to sync templates on activation: \(error)")
+                    }
+                }
             }
         }
     }
