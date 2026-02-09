@@ -110,15 +110,15 @@ struct WatchSetInputView: View {
                 // Minus button
                 Button(action: onDecrement) {
                     Image(systemName: "minus")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 26, height: 26)
                         .background(Color.white.opacity(0.1))
-                        .cornerRadius(8)
+                        .cornerRadius(6)
                 }
                 .buttonStyle(.plain)
 
-                Spacer(minLength: 2)
+                Spacer(minLength: 0)
 
                 // Value display
                 Text(value)
@@ -126,23 +126,23 @@ struct WatchSetInputView: View {
                     .monospacedDigit()
                     .foregroundStyle(isFocused ? primaryYellow : .white)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .minimumScaleFactor(0.6)
 
-                Spacer(minLength: 2)
+                Spacer(minLength: 0)
 
                 // Plus button
                 Button(action: onIncrement) {
                     Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 26, height: 26)
                         .background(Color.white.opacity(0.1))
-                        .cornerRadius(8)
+                        .cornerRadius(6)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(8)
+        .padding(6)
         .background(cardBackground)
         .cornerRadius(16)
         .onTapGesture(perform: onTap)
