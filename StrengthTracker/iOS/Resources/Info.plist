@@ -35,5 +35,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSHealthShareUsageDescription</key>
+	<string>StrengthTracker reads your workout data to display history and progress.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>StrengthTracker saves your strength training workouts to Apple Health.</string>
 </dict>
 </plist>

@@ -10,14 +10,18 @@ public enum SyncMessageType: String, Codable, Sendable {
 }
 
 public struct SyncMessage: Codable, Sendable {
+    public static let currentVersion = 1
+
     public let type: SyncMessageType
     public let timestamp: Date
     public let payload: Data  // JSON-encoded payload specific to type
+    public let version: Int
 
     public init(type: SyncMessageType, payload: Data) {
         self.type = type
         self.timestamp = Date()
         self.payload = payload
+        self.version = Self.currentVersion
     }
 
     /// Convert to dictionary for WCSession transfer
@@ -25,7 +29,8 @@ public struct SyncMessage: Codable, Sendable {
         [
             "type": type.rawValue,
             "timestamp": timestamp.timeIntervalSince1970,
-            "payload": payload.base64EncodedString()
+            "payload": payload.base64EncodedString(),
+            "version": version
         ]
     }
 
@@ -38,13 +43,15 @@ public struct SyncMessage: Codable, Sendable {
               let payload = Data(base64Encoded: payloadStr) else {
             return nil
         }
-        return SyncMessage(type: type, timestamp: Date(timeIntervalSince1970: timestamp), payload: payload)
+        let version = dictionary["version"] as? Int ?? 1
+        return SyncMessage(type: type, timestamp: Date(timeIntervalSince1970: timestamp), payload: payload, version: version)
     }
 
     // Private init with all fields for reconstruction
-    private init(type: SyncMessageType, timestamp: Date, payload: Data) {
+    private init(type: SyncMessageType, timestamp: Date, payload: Data, version: Int) {
         self.type = type
         self.timestamp = timestamp
         self.payload = payload
+        self.version = version
     }
 }

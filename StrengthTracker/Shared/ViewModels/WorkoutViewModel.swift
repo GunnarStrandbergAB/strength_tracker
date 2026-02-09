@@ -14,6 +14,7 @@ public final class WorkoutViewModel {
     public var errorMessage: String? = nil
     public var lastPR: PersonalRecord? = nil
     public var previousSetDataCache: [String: String] = [:]
+    public var watchActiveWorkout: Workout? = nil
 
     private let workoutRepository: any WorkoutRepository
     private let templateRepository: any TemplateRepository

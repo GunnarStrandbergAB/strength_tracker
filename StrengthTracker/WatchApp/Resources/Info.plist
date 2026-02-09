@@ -20,13 +20,17 @@
 	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>WKApplication</key>
-	<true/>
-	<key>WKCompanionAppBundleIdentifier</key>
-	<string>com.gunnar.strengthtracker.ios</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>StrengthTracker reads your workout and heart rate data to display real-time metrics during workouts.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>StrengthTracker saves your strength training workouts to Apple Health.</string>
+	<key>WKApplication</key>
+	<true/>
+	<key>WKBackgroundModes</key>
+	<array>
+		<string>workout-processing</string>
+	</array>
+	<key>WKCompanionAppBundleIdentifier</key>
+	<string>com.gunnar.strengthtracker.ios</string>
 </dict>
 </plist>

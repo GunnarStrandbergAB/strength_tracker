@@ -4,9 +4,6 @@ import StrengthTrackerShared
 struct WatchActiveWorkoutView: View {
     @State private var viewModel: WatchWorkoutViewModel
     @State private var selectedTab: Int = 0
-    #if canImport(HealthKit) && os(watchOS)
-    @State private var healthKitManager = WatchHealthKitManager()
-    #endif
 
     init(viewModel: WatchWorkoutViewModel) {
         self._viewModel = State(initialValue: viewModel)
@@ -34,26 +31,6 @@ struct WatchActiveWorkoutView: View {
             }
             .tabViewStyle(.verticalPage)
             .navigationBarBackButtonHidden()
-            #if canImport(HealthKit) && os(watchOS)
-            .task {
-                // Request authorization and start HealthKit session when workout view appears
-                do {
-                    try await healthKitManager.requestAuthorization()
-                    try await healthKitManager.startWorkoutSession()
-                } catch {
-                    // Handle authorization or session start errors silently
-                    // User can still track workout without HealthKit
-                }
-            }
-            .onChange(of: viewModel.isActive) { _, isActive in
-                // End HealthKit session when workout is completed
-                if !isActive && healthKitManager.isSessionActive {
-                    Task {
-                        try? await healthKitManager.endWorkoutSession()
-                    }
-                }
-            }
-            #endif
             .onChange(of: viewModel.isResting) { _, isResting in
                 if isResting {
                     // Auto-navigate to rest timer when it starts
@@ -73,11 +50,11 @@ struct WatchActiveWorkoutView: View {
     private func exerciseView(_ workout: Workout) -> some View {
         VStack(spacing: 4) {
             #if canImport(HealthKit) && os(watchOS)
-            // Real-time workout metrics
+            // Real-time workout metrics (from ViewModel's WatchHealthKitManager)
             WatchMetricsView(
-                heartRate: healthKitManager.heartRate,
-                activeCalories: healthKitManager.activeCalories,
-                elapsedTime: healthKitManager.elapsedTime
+                heartRate: viewModel.heartRate,
+                activeCalories: viewModel.activeCalories,
+                elapsedTime: viewModel.healthKitElapsedTime
             )
             .padding(.bottom, 2)
             #endif

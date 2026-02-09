@@ -26,6 +26,22 @@ public protocol HealthKitServiceProtocol: Sendable {
     func endWorkoutSession(_ workout: Workout) async throws
 }
 
+// MARK: - Watch Workout Session Protocol
+
+/// Protocol for real-time Watch workout session management (heart rate, calories, etc.)
+/// WatchHealthKitManager in the Watch target conforms to this.
+@MainActor
+public protocol WatchWorkoutSessionManager: AnyObject {
+    var heartRate: Double { get }
+    var activeCalories: Double { get }
+    var elapsedTime: TimeInterval { get }
+    var isSessionActive: Bool { get }
+
+    func requestAuthorization() async throws
+    func startWorkoutSession() async throws
+    func endWorkoutSession() async throws
+}
+
 // MARK: - Data Models
 
 /// Summary of a HealthKit workout
@@ -111,11 +127,15 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked
     }
 
     public func startWorkoutSession() async throws {
-        // Workout sessions on watchOS are managed by WatchHealthKitManager
+        // No-op: on watchOS, workout sessions are managed by WatchHealthKitManager
+        // On iOS, workout sessions are not needed (we only save completed workouts)
     }
 
     public func endWorkoutSession(_ workout: Workout) async throws {
-        // Workout sessions on watchOS are managed by WatchHealthKitManager
+        // On iOS, save the workout to HealthKit when it completes
+        #if os(iOS)
+        try await saveWorkout(workout)
+        #endif
     }
 
     public func fetchRecentWorkouts(limit: Int) async -> [HealthKitWorkoutSummary] {

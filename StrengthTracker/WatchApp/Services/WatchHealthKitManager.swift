@@ -2,20 +2,25 @@
 import Foundation
 import HealthKit
 import Observation
+import StrengthTrackerShared
 
 @Observable
 @MainActor
-final class WatchHealthKitManager: NSObject, @unchecked Sendable {
-    var heartRate: Double = 0
-    var activeCalories: Double = 0
-    var elapsedTime: TimeInterval = 0
-    var isSessionActive: Bool = false
+public final class WatchHealthKitManager: NSObject, WatchWorkoutSessionManager, @unchecked Sendable {
+    public var heartRate: Double = 0
+    public var activeCalories: Double = 0
+    public var elapsedTime: TimeInterval = 0
+    public var isSessionActive: Bool = false
 
     private let healthStore = HKHealthStore()
     private var workoutSession: HKWorkoutSession?
     private var workoutBuilder: HKLiveWorkoutBuilder?
 
-    func requestAuthorization() async throws {
+    public override init() {
+        super.init()
+    }
+
+    public func requestAuthorization() async throws {
         let typesToShare: Set<HKSampleType> = [
             HKObjectType.workoutType()
         ]
@@ -27,7 +32,7 @@ final class WatchHealthKitManager: NSObject, @unchecked Sendable {
         try await healthStore.requestAuthorization(toShare: typesToShare, read: typesToRead)
     }
 
-    func startWorkoutSession() async throws {
+    public func startWorkoutSession() async throws {
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = .traditionalStrengthTraining
         configuration.locationType = .indoor
@@ -49,7 +54,7 @@ final class WatchHealthKitManager: NSObject, @unchecked Sendable {
         isSessionActive = true
     }
 
-    func endWorkoutSession() async throws {
+    public func endWorkoutSession() async throws {
         guard let session = workoutSession, let builder = workoutBuilder else { return }
 
         session.end()
@@ -61,24 +66,47 @@ final class WatchHealthKitManager: NSObject, @unchecked Sendable {
         workoutBuilder = nil
     }
 
-    func pauseWorkout() {
+    public func pauseWorkout() {
         workoutSession?.pause()
     }
 
-    func resumeWorkout() {
+    public func resumeWorkout() {
         workoutSession?.resume()
+    }
+
+    /// Recover an orphaned HealthKit workout session (e.g. after crash or app termination)
+    public func recoverOrphanedSession() async {
+        do {
+            // Available watchOS 10+
+            guard let session = try await healthStore.recoverActiveWorkoutSession() else {
+                return
+            }
+            let builder = session.associatedWorkoutBuilder()
+
+            let configuration = session.workoutConfiguration
+            builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+
+            session.delegate = self
+            builder.delegate = self
+
+            self.workoutSession = session
+            self.workoutBuilder = builder
+            self.isSessionActive = true
+        } catch {
+            // No orphaned session to recover — this is expected in normal operation
+        }
     }
 }
 
 // MARK: - HKWorkoutSessionDelegate
 extension WatchHealthKitManager: HKWorkoutSessionDelegate {
-    nonisolated func workoutSession(_ workoutSession: HKWorkoutSession, didChangeTo toState: HKWorkoutSessionState, from fromState: HKWorkoutSessionState, date: Date) {
+    nonisolated public func workoutSession(_ workoutSession: HKWorkoutSession, didChangeTo toState: HKWorkoutSessionState, from fromState: HKWorkoutSessionState, date: Date) {
         Task { @MainActor in
             isSessionActive = (toState == .running)
         }
     }
 
-    nonisolated func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
+    nonisolated public func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
         Task { @MainActor in
             isSessionActive = false
         }
@@ -87,11 +115,11 @@ extension WatchHealthKitManager: HKWorkoutSessionDelegate {
 
 // MARK: - HKLiveWorkoutBuilderDelegate
 extension WatchHealthKitManager: HKLiveWorkoutBuilderDelegate {
-    nonisolated func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {
+    nonisolated public func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {
         // Handle workout events if needed
     }
 
-    nonisolated func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder, didCollectDataOf collectedTypes: Set<HKSampleType>) {
+    nonisolated public func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder, didCollectDataOf collectedTypes: Set<HKSampleType>) {
         for type in collectedTypes {
             guard let quantityType = type as? HKQuantityType else { continue }
 

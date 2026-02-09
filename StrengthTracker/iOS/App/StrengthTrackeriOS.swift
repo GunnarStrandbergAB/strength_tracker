@@ -45,6 +45,24 @@ struct StrengthTrackeriOSApp: App {
                     }
                 }
             }
+
+            // Wire up live Watch workout mirror (Fix 6)
+            let workoutVM = container.workoutViewModel
+            container.connectivityManager.onWatchWorkoutSnapshot = { workout in
+                Task { @MainActor in
+                    workoutVM.watchActiveWorkout = workout
+                }
+            }
+            container.connectivityManager.onWatchWorkoutStarted = { workout in
+                Task { @MainActor in
+                    workoutVM.watchActiveWorkout = workout
+                }
+            }
+            container.connectivityManager.onWatchWorkoutEnded = {
+                Task { @MainActor in
+                    workoutVM.watchActiveWorkout = nil
+                }
+            }
         } catch {
             fatalError("Failed to initialize app: \(error)")
         }
@@ -84,13 +102,16 @@ struct ContentViewWrapper: View {
                 WidgetCenter.shared.reloadAllTimelines()
                 #endif
 
-                // Sync templates to Watch when app becomes active
+                // Sync templates and exercises to Watch when app becomes active
                 Task { @MainActor in
                     do {
                         let templates = try await container.templateRepository.fetchAll()
                         container.connectivityManager.syncTemplates(templates)
+
+                        let exercises = try await container.exerciseRepository.fetchAll()
+                        container.connectivityManager.syncExercises(exercises)
                     } catch {
-                        print("Failed to sync templates on activation: \(error)")
+                        print("Failed to sync data on activation: \(error)")
                     }
                 }
             }

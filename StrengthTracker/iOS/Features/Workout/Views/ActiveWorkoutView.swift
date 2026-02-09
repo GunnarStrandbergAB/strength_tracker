@@ -24,6 +24,8 @@ struct ActiveWorkoutView: View {
             Group {
                 if let workout = viewModel.currentWorkout, viewModel.isActive {
                     workoutContent(workout)
+                } else if let watchWorkout = viewModel.watchActiveWorkout {
+                    watchWorkoutBanner(watchWorkout)
                 } else {
                     startView
                 }
@@ -65,6 +67,56 @@ struct ActiveWorkoutView: View {
                 Text(finishErrorMessage)
             }
         }
+    }
+
+    // MARK: - Watch Workout Banner
+
+    private func watchWorkoutBanner(_ workout: Workout) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "applewatch")
+                .font(.system(size: 48))
+                .foregroundStyle(STColors.primary)
+
+            Text("Workout In Progress on Watch")
+                .font(.headline)
+                .foregroundStyle(STColors.textPrimary)
+
+            VStack(spacing: 8) {
+                Text(workout.name)
+                    .font(.title3.bold())
+                    .foregroundStyle(STColors.textPrimary)
+
+                if let currentExercise = workout.exercises.first(where: { ex in
+                    ex.sets.contains { !$0.isCompleted }
+                }) ?? workout.exercises.last {
+                    Text(currentExercise.exercise.name)
+                        .font(.subheadline)
+                        .foregroundStyle(STColors.textSecondary)
+                }
+
+                let totalSets = workout.exercises.reduce(0) { $0 + $1.sets.filter(\.isCompleted).count }
+                Text("\(totalSets) sets completed")
+                    .font(.subheadline)
+                    .foregroundStyle(STColors.textSecondary)
+
+                let elapsed = Date().timeIntervalSince(workout.startedAt)
+                let minutes = Int(elapsed) / 60
+                Text("\(minutes) min elapsed")
+                    .font(.caption)
+                    .foregroundStyle(STColors.textTertiary)
+            }
+            .padding()
+            .frame(maxWidth: .infinity)
+            .background(STColors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+            .overlay(
+                RoundedRectangle(cornerRadius: STRadius.card)
+                    .stroke(STColors.border, lineWidth: 1)
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+        .background(STColors.background)
     }
 
     // MARK: - Start View

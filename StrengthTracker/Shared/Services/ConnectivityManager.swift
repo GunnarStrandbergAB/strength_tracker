@@ -10,13 +10,15 @@ import WatchConnectivity
 public final class ConnectivityManager: NSObject, @unchecked Sendable {
     public var isReachable: Bool = false
     public var lastSyncDate: Date?
-    public var pendingTransfers: Int = 0
 
     // Callbacks for received data
     public var onExercisesReceived: (([Exercise]) -> Void)?
     public var onWorkoutReceived: ((Workout) -> Void)?
     public var onSettingsReceived: (([String: Any]) -> Void)?
     public var onTemplatesReceived: (([WorkoutTemplate]) -> Void)?
+    public var onWatchWorkoutSnapshot: ((Workout) -> Void)?
+    public var onWatchWorkoutStarted: ((Workout) -> Void)?
+    public var onWatchWorkoutEnded: (() -> Void)?
 
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -86,33 +88,106 @@ public final class ConnectivityManager: NSObject, @unchecked Sendable {
             let data = try encoder.encode(workout)
             let message = SyncMessage(type: .workoutCompleted, payload: data)
             WCSession.default.transferUserInfo(message.asDictionary)
-            Task { @MainActor in
-                self.pendingTransfers += 1
-            }
         } catch {
             print("ConnectivityManager: Failed to send workout - \(error)")
         }
         #endif
     }
 
-    /// Send real-time set update (Watch -> iPhone via sendMessage)
-    public func sendSetUpdate(exerciseId: UUID, setId: UUID, weight: Double?, reps: Int?, isCompleted: Bool) {
+    /// Send live workout snapshot to iPhone (Watch -> iPhone via sendMessage)
+    public func sendWorkoutSnapshot(_ workout: Workout) {
         #if canImport(WatchConnectivity)
         guard WCSession.default.isReachable else { return }
 
-        let update: [String: Any] = [
-            "type": SyncMessageType.workoutInProgress.rawValue,
-            "exerciseId": exerciseId.uuidString,
-            "setId": setId.uuidString,
-            "weight": weight as Any,
-            "reps": reps as Any,
-            "isCompleted": isCompleted
-        ]
-
-        WCSession.default.sendMessage(update, replyHandler: nil) { error in
-            print("ConnectivityManager: sendMessage failed - \(error)")
+        do {
+            let data = try encoder.encode(workout)
+            let message: [String: Any] = [
+                "type": SyncMessageType.workoutInProgress.rawValue,
+                "payload": data.base64EncodedString()
+            ]
+            WCSession.default.sendMessage(message, replyHandler: nil) { error in
+                print("ConnectivityManager: sendWorkoutSnapshot failed - \(error)")
+            }
+        } catch {
+            print("ConnectivityManager: Failed to encode workout snapshot - \(error)")
         }
         #endif
+    }
+
+    /// Notify iPhone that a Watch workout has started
+    public func sendWorkoutStarted(_ workout: Workout) {
+        #if canImport(WatchConnectivity)
+        guard WCSession.default.isReachable else { return }
+
+        do {
+            let data = try encoder.encode(workout)
+            let message: [String: Any] = [
+                "type": "workoutStarted",
+                "payload": data.base64EncodedString()
+            ]
+            WCSession.default.sendMessage(message, replyHandler: nil) { error in
+                print("ConnectivityManager: sendWorkoutStarted failed - \(error)")
+            }
+        } catch {
+            print("ConnectivityManager: Failed to encode workout start - \(error)")
+        }
+        #endif
+    }
+
+    /// Notify iPhone that a Watch workout has ended
+    public func sendWorkoutEnded() {
+        #if canImport(WatchConnectivity)
+        guard WCSession.default.isReachable else { return }
+
+        let message: [String: Any] = [
+            "type": "workoutEnded"
+        ]
+        WCSession.default.sendMessage(message, replyHandler: nil) { error in
+            print("ConnectivityManager: sendWorkoutEnded failed - \(error)")
+        }
+        #endif
+    }
+
+    /// Process received application context (used both by delegate and on-launch catch-up)
+    public func processReceivedContext(_ applicationContext: [String: Any]) {
+        let decoder = JSONDecoder()
+
+        // Extract data on the calling thread to avoid sending non-Sendable dict across isolation
+        var exerciseData: Data?
+        if let exerciseDict = applicationContext["exerciseSync"] as? [String: Any],
+           let payloadStr = exerciseDict["payload"] as? String {
+            exerciseData = Data(base64Encoded: payloadStr)
+        }
+
+        var templateData: Data?
+        if let templateDict = applicationContext["templateSync"] as? [String: Any],
+           let payloadStr = templateDict["payload"] as? String {
+            templateData = Data(base64Encoded: payloadStr)
+        }
+
+        var settingsData: Data?
+        if let settings = applicationContext["settings"] {
+            settingsData = try? JSONSerialization.data(withJSONObject: settings)
+        }
+
+        Task { @MainActor in
+            self.lastSyncDate = Date()
+
+            if let data = exerciseData,
+               let exercises = try? decoder.decode([Exercise].self, from: data) {
+                self.onExercisesReceived?(exercises)
+            }
+
+            if let data = templateData,
+               let templates = try? decoder.decode([WorkoutTemplate].self, from: data) {
+                self.onTemplatesReceived?(templates)
+            }
+
+            if let data = settingsData,
+               let settings = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                self.onSettingsReceived?(settings)
+            }
+        }
     }
 
     /// Sync settings to Watch (iPhone -> Watch)
@@ -160,7 +235,7 @@ extension ConnectivityManager: WCSessionDelegate {
     nonisolated public func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         let decoder = JSONDecoder()
 
-        // Extract data on the calling thread to avoid sending non-Sendable dict across isolation
+        // Extract sendable data before crossing isolation boundary (Swift 6 concurrency)
         var exerciseData: Data?
         if let exerciseDict = applicationContext["exerciseSync"] as? [String: Any],
            let payloadStr = exerciseDict["payload"] as? String {
@@ -205,7 +280,6 @@ extension ConnectivityManager: WCSessionDelegate {
 
         Task { @MainActor in
             self.lastSyncDate = Date()
-            self.pendingTransfers = max(0, self.pendingTransfers - 1)
 
             if message.type == .workoutCompleted,
                let workout = try? decoder.decode(Workout.self, from: message.payload) {
@@ -214,11 +288,30 @@ extension ConnectivityManager: WCSessionDelegate {
         }
     }
 
-    // Receive real-time messages
+    // Receive real-time messages (workout snapshots, started, ended)
     nonisolated public func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-        // Handle real-time set updates on the receiving side
+        let typeStr = message["type"] as? String
+        let decoder = JSONDecoder()
+
+        var workout: Workout?
+        if let payloadStr = message["payload"] as? String,
+           let data = Data(base64Encoded: payloadStr) {
+            workout = try? decoder.decode(Workout.self, from: data)
+        }
+
         Task { @MainActor in
             self.lastSyncDate = Date()
+
+            switch typeStr {
+            case SyncMessageType.workoutInProgress.rawValue:
+                if let workout { self.onWatchWorkoutSnapshot?(workout) }
+            case "workoutStarted":
+                if let workout { self.onWatchWorkoutStarted?(workout) }
+            case "workoutEnded":
+                self.onWatchWorkoutEnded?()
+            default:
+                break
+            }
         }
     }
 }

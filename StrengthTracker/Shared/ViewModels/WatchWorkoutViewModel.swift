@@ -22,11 +22,20 @@ public final class WatchWorkoutViewModel {
     // Notes
     public var workoutNotes: String = ""
 
+    // HealthKit metrics (forwarded from WatchWorkoutSessionManager)
+    public var heartRate: Double { watchSessionManager?.heartRate ?? 0 }
+    public var activeCalories: Double { watchSessionManager?.activeCalories ?? 0 }
+    public var healthKitElapsedTime: TimeInterval { watchSessionManager?.elapsedTime ?? 0 }
+    public var isHealthKitSessionActive: Bool { watchSessionManager?.isSessionActive ?? false }
+
     private let workoutRepository: any WorkoutRepository
     private let healthKitService: any HealthKitServiceProtocol
     private let connectivityManager: ConnectivityManager
     private var restTimer: Timer?
     private var restStartDate: Date?
+
+    // Watch workout session manager (nil on iOS)
+    private var watchSessionManager: (any WatchWorkoutSessionManager)?
 
     public init(
         workoutRepository: any WorkoutRepository,
@@ -36,6 +45,10 @@ public final class WatchWorkoutViewModel {
         self.workoutRepository = workoutRepository
         self.healthKitService = healthKitService
         self.connectivityManager = connectivityManager
+    }
+
+    public func setWatchSessionManager(_ manager: any WatchWorkoutSessionManager) {
+        self.watchSessionManager = manager
     }
 
     // MARK: - Computed Properties
@@ -131,10 +144,14 @@ public final class WatchWorkoutViewModel {
             currentExerciseIndex = 0
             isActive = true
 
-            // Start HealthKit workout session
-            #if canImport(HealthKit)
-            try? await healthKitService.startWorkoutSession()
-            #endif
+            // Start HealthKit workout session (nil on iOS, active on watchOS)
+            try? await watchSessionManager?.requestAuthorization()
+            try? await watchSessionManager?.startWorkoutSession()
+
+            // Notify iPhone that workout started
+            if let saved = activeWorkout {
+                connectivityManager.sendWorkoutStarted(saved)
+            }
         } catch {
             activeWorkout = workout
             currentExerciseIndex = 0
@@ -194,9 +211,13 @@ public final class WatchWorkoutViewModel {
             currentExerciseIndex = 0
             isActive = true
 
-            #if canImport(HealthKit)
-            try? await healthKitService.startWorkoutSession()
-            #endif
+            try? await watchSessionManager?.requestAuthorization()
+            try? await watchSessionManager?.startWorkoutSession()
+
+            // Notify iPhone that workout started
+            if let saved = activeWorkout {
+                connectivityManager.sendWorkoutStarted(saved)
+            }
         } catch {
             activeWorkout = workout
             currentExerciseIndex = 0
@@ -241,6 +262,9 @@ public final class WatchWorkoutViewModel {
 
         activeWorkout = workout
 
+        // Send live snapshot to iPhone
+        connectivityManager.sendWorkoutSnapshot(workout)
+
         // Auto-start rest timer after logging a set
         startRestTimer()
     }
@@ -280,12 +304,11 @@ public final class WatchWorkoutViewModel {
         stopRestTimer()
         isActive = false
 
-        // End HealthKit workout session and save
-        #if canImport(HealthKit)
-        try? await healthKitService.endWorkoutSession(saved)
-        #endif
+        // End HealthKit workout session (nil on iOS, active on watchOS)
+        try? await watchSessionManager?.endWorkoutSession()
 
-        // Send completion notification to iPhone via WatchConnectivity
+        // Notify iPhone workout ended, then send full workout via transferUserInfo
+        connectivityManager.sendWorkoutEnded()
         connectivityManager.sendWorkoutCompleted(saved)
     }
 

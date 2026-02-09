@@ -11,9 +11,18 @@ import WatchConnectivity
 struct StrengthTrackerWatchApp: App {
     let container: AppContainer
 
+    #if canImport(HealthKit) && os(watchOS)
+    let healthKitManager = WatchHealthKitManager()
+    #endif
+
     init() {
         do {
             container = try AppContainer()
+
+            // Wire WatchHealthKitManager into the ViewModel (Fix 5)
+            #if canImport(HealthKit) && os(watchOS)
+            container.watchWorkoutViewModel.setWatchSessionManager(healthKitManager)
+            #endif
 
             // Initialize WatchConnectivity
             #if canImport(WatchConnectivity)
@@ -30,9 +39,17 @@ struct StrengthTrackerWatchApp: App {
                 await seeder.seedIfNeeded()
             }
 
+            // Recover orphaned HealthKit workout session on launch (Fix 7)
+            #if canImport(HealthKit) && os(watchOS)
+            let hkManager = healthKitManager
+            Task { @MainActor in
+                await hkManager.recoverOrphanedSession()
+            }
+            #endif
+
             // Wire template sync: when templates arrive from iPhone, replace local data
             let templateRepo = container.templateRepository
-            let listVM = container.makeWatchWorkoutListViewModel()
+            let listVM = container.watchWorkoutListViewModel
             container.connectivityManager.onTemplatesReceived = { receivedTemplates in
                 Task { @MainActor in
                     do {
@@ -52,6 +69,35 @@ struct StrengthTrackerWatchApp: App {
                     }
                 }
             }
+
+            // Wire exercise sync: when exercises arrive from iPhone, upsert local data
+            let exerciseRepo = container.exerciseRepository
+            container.connectivityManager.onExercisesReceived = { receivedExercises in
+                Task { @MainActor in
+                    do {
+                        let receivedIds = Set(receivedExercises.map(\.id))
+                        let existing = try await exerciseRepo.fetchAll()
+                        for local in existing where !receivedIds.contains(local.id) && local.isCustom {
+                            try await exerciseRepo.delete(local)
+                        }
+                        for exercise in receivedExercises {
+                            _ = try await exerciseRepo.save(exercise)
+                        }
+                    } catch {
+                        print("Watch: Failed to sync exercises - \(error)")
+                    }
+                }
+            }
+
+            // Process any context that arrived while app was not running (Fix 4)
+            #if canImport(WatchConnectivity)
+            if WCSession.isSupported() {
+                let existingContext = WCSession.default.receivedApplicationContext
+                if !existingContext.isEmpty {
+                    container.connectivityManager.processReceivedContext(existingContext)
+                }
+            }
+            #endif
         } catch {
             fatalError("Failed to initialize app: \(error)")
         }
@@ -60,8 +106,8 @@ struct StrengthTrackerWatchApp: App {
     var body: some Scene {
         WindowGroup {
             WorkoutListView(
-                workoutViewModel: container.makeWatchWorkoutViewModel(),
-                listViewModel: container.makeWatchWorkoutListViewModel(),
+                workoutViewModel: container.watchWorkoutViewModel,
+                listViewModel: container.watchWorkoutListViewModel,
                 exerciseListViewModel: container.exerciseListViewModel
             )
         }
