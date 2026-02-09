@@ -33,6 +33,18 @@ struct StrengthTrackeriOSApp: App {
                 let seeder = ExerciseSeeder(exerciseRepository: exerciseRepo)
                 await seeder.seedIfNeeded()
             }
+
+            // Wire up Watch → iPhone workout sync
+            let workoutRepo = container.workoutRepository
+            container.connectivityManager.onWorkoutReceived = { workout in
+                Task { @MainActor in
+                    do {
+                        _ = try await workoutRepo.save(workout)
+                    } catch {
+                        print("Failed to save Watch workout: \(error)")
+                    }
+                }
+            }
         } catch {
             fatalError("Failed to initialize app: \(error)")
         }
