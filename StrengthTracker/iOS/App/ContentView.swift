@@ -18,6 +18,7 @@ struct ContentView: View {
                 viewModel: dashboardViewModel,
                 userPreferencesService: userPreferencesService,
                 onStartWorkout: {
+                    selectedTab = 1
                     Task {
                         await workoutViewModel.startWorkout(name: "Quick Workout", from: nil)
                     }
@@ -63,6 +64,11 @@ struct ContentView: View {
                 selectedTab = 1
             } else if oldValue {
                 selectedTab = 0
+            }
+        }
+        .onChange(of: workoutViewModel.currentWorkout?.id) { _, newId in
+            if newId != nil && workoutViewModel.isActive {
+                selectedTab = 1
             }
         }
         .onOpenURL { url in
