@@ -9,6 +9,7 @@ struct TemplateDetailView: View {
     let exerciseListViewModel: ExerciseListViewModel
     let workoutViewModel: WorkoutViewModel
     @State private var showingEditor = false
+    @State private var showingDeleteConfirmation = false
     @Environment(\.dismiss) private var dismiss
 
     /// Always returns the latest version from the viewModel (refreshed on sheet dismiss)
@@ -84,12 +85,32 @@ struct TemplateDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showingEditor = true
+                Menu {
+                    Button {
+                        showingEditor = true
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
+                    }
+
+                    Button(role: .destructive) {
+                        showingDeleteConfirmation = true
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
                 } label: {
-                    Label("Edit", systemImage: "pencil")
+                    Image(systemName: "ellipsis.circle")
                 }
             }
+        }
+        .confirmationDialog("Delete Template?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                Task {
+                    await viewModel.deleteTemplate(template)
+                    dismiss()
+                }
+            }
+        } message: {
+            Text("This will permanently delete \"\(template.name)\". This cannot be undone.")
         }
         .sheet(isPresented: $showingEditor, onDismiss: {
             Task { await viewModel.loadTemplates() }
