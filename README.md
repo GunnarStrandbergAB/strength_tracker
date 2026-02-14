@@ -1,4 +1,4 @@
-# StrengthTracker
+# HellBent
 
 A native strength training app for iPhone and Apple Watch, built with SwiftUI and SwiftData.
 
@@ -22,7 +22,7 @@ Track workouts, follow templates, log sets with weight and reps, monitor rest ti
 - **Quick Start** — pick exercises and start a workout directly from the wrist
 - **Template Workouts** — start workouts from templates synced from iPhone
 - **Set Logging** — weight and reps input with +/- buttons and Digital Crown rotation
-- **Unit-Aware Steps** — 1.25 kg or 2.5 lbs increments based on user preference
+- **Unit-Aware Steps** — 2.5 kg or 5 lbs increments based on user preference
 - **Live Metrics** — real-time heart rate, active calories, and duration via HealthKit
 - **Rest Timer** — automatic rest countdown between sets with dedicated timer view
 - **Exercise Navigation** — swipe between exercises, view logged sets as chips

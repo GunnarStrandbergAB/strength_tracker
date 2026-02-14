@@ -43,8 +43,8 @@ targets:
     info:
       path: iOS/Resources/Info.plist
       properties:
-        CFBundleDisplayName: StrengthTracker
-        CFBundleName: StrengthTracker
+        CFBundleDisplayName: HellBent
+        CFBundleName: HellBent
         CFBundleShortVersionString: "1.0.0"
         CFBundleVersion: "1"
         UILaunchScreen: {}
@@ -57,8 +57,8 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        NSHealthShareUsageDescription: "StrengthTracker reads your workout data to display history and progress."
-        NSHealthUpdateUsageDescription: "StrengthTracker saves your strength training workouts to Apple Health."
+        NSHealthShareUsageDescription: "HellBent reads your workout data to display history and progress."
+        NSHealthUpdateUsageDescription: "HellBent saves your strength training workouts to Apple Health."
 
   StrengthTrackerWatch:
     type: application
@@ -88,16 +88,16 @@ targets:
     info:
       path: WatchApp/Resources/Info.plist
       properties:
-        CFBundleDisplayName: StrengthTracker
-        CFBundleName: StrengthTracker Watch
+        CFBundleDisplayName: HellBent
+        CFBundleName: HellBent Watch
         CFBundleShortVersionString: "1.0.0"
         CFBundleVersion: "1"
         WKApplication: true
         WKCompanionAppBundleIdentifier: com.gunnar.strengthtracker.ios
         WKBackgroundModes:
           - workout-processing
-        NSHealthShareUsageDescription: "StrengthTracker reads your workout and heart rate data to display real-time metrics during workouts."
-        NSHealthUpdateUsageDescription: "StrengthTracker saves your strength training workouts to Apple Health."
+        NSHealthShareUsageDescription: "HellBent reads your workout and heart rate data to display real-time metrics during workouts."
+        NSHealthUpdateUsageDescription: "HellBent saves your strength training workouts to Apple Health."
 
   StrengthTrackerWidgets:
     type: app-extension
@@ -112,7 +112,7 @@ targets:
         SWIFT_VERSION: "6.0"
         PRODUCT_BUNDLE_IDENTIFIER: com.gunnar.strengthtracker.ios.widgets
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: StrengthTracker Widgets
+        INFOPLIST_KEY_CFBundleDisplayName: HellBent Widgets
         INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.widgetkit-extension
     entitlements:
       path: iOS/WidgetExtension/StrengthTrackerWidgets.entitlements

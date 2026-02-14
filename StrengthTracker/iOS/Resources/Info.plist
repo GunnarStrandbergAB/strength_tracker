@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>StrengthTracker</string>
+	<string>HellBent</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>StrengthTracker</string>
+	<string>HellBent</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -36,8 +36,8 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSHealthShareUsageDescription</key>
-	<string>StrengthTracker reads your workout data to display history and progress.</string>
+	<string>HellBent reads your workout data to display history and progress.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>StrengthTracker saves your strength training workouts to Apple Health.</string>
+	<string>HellBent saves your strength training workouts to Apple Health.</string>
 </dict>
 </plist>
