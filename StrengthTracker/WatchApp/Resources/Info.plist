@@ -31,6 +31,6 @@
 		<string>workout-processing</string>
 	</array>
 	<key>WKCompanionAppBundleIdentifier</key>
-	<string>com.gunnar.strengthtracker.ios</string>
+	<string>se.gunnarstrandberg.hellbent.ios</string>
 </dict>
 </plist>
