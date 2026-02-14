@@ -85,8 +85,8 @@ struct WatchActiveWorkoutView: View {
                     targetReps: viewModel.currentTargetReps
                 )
 
-                // Exercise navigation
-                HStack(spacing: 16) {
+                // Exercise navigation + end workout
+                HStack(spacing: 12) {
                     Button {
                         viewModel.previousExercise()
                     } label: {
@@ -118,6 +118,19 @@ struct WatchActiveWorkoutView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(viewModel.currentExerciseIndex >= workout.exercises.count - 1)
+
+                    Spacer(minLength: 0)
+
+                    Button {
+                        withAnimation {
+                            selectedTab = viewModel.isResting ? 2 : 1
+                        }
+                    } label: {
+                        Image(systemName: "flag.checkered.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundStyle(Color.red.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 // Logged sets list with swipe-to-delete and RPE display
