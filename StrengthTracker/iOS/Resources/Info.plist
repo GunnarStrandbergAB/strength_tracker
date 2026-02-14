@@ -20,6 +20,10 @@
 	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>HellBent reads your workout data to display history and progress.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>HellBent saves your strength training workouts to Apple Health.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
@@ -35,9 +39,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>NSHealthShareUsageDescription</key>
-	<string>HellBent reads your workout data to display history and progress.</string>
-	<key>NSHealthUpdateUsageDescription</key>
-	<string>HellBent saves your strength training workouts to Apple Health.</string>
 </dict>
 </plist>
