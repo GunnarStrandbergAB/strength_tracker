@@ -66,3 +66,6 @@ fastlane/test_output
 # Claude Flow runtime state
 .swarm/
 .claude-flow/
+
+# Local guides
+APP_STORE_RELEASE_GUIDE.md
