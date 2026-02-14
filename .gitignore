@@ -65,3 +65,4 @@ fastlane/test_output
 
 # Claude Flow runtime state
 .swarm/
+.claude-flow/
