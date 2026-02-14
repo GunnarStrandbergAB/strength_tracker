@@ -34,7 +34,7 @@ struct WatchSetInputView: View {
                 // Weight card
                 inputCard(
                     label: weightLabel,
-                    value: String(format: "%.1f", weight),
+                    value: String(format: "%g", weight),
                     isFocused: focusedField == .weight,
                     onTap: { focusedField = .weight },
                     onDecrement: { weight = max(0, weight - weightStep) },
@@ -123,17 +123,14 @@ struct WatchSetInputView: View {
                 }
                 .buttonStyle(.plain)
 
-                Spacer(minLength: 0)
-
                 // Value display
                 Text(value)
                     .font(.system(size: 20, weight: .bold))
                     .monospacedDigit()
                     .foregroundStyle(isFocused ? primaryYellow : .white)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-
-                Spacer(minLength: 0)
+                    .minimumScaleFactor(0.5)
+                    .frame(maxWidth: .infinity)
 
                 // Plus button
                 Button(action: onIncrement) {
