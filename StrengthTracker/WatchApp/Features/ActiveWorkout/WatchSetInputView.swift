@@ -12,7 +12,7 @@ struct WatchSetInputView: View {
     }
 
     private let weightUnit: WeightUnit
-    private var weightStep: Double { weightUnit == .kg ? 1.25 : 2.5 }
+    private var weightStep: Double { weightUnit == .kg ? 2.5 : 5.0 }
     private var weightLabel: String { weightUnit == .kg ? "KG" : "LBS" }
 
     init(viewModel: WatchWorkoutViewModel, targetWeight: Double? = nil, targetReps: Int? = nil) {
