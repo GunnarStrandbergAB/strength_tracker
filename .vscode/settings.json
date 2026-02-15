@@ -1,5 +1,4 @@
 {
-    "swift.path": "/usr/local/bin",
     "editor.formatOnSave": true,
     "editor.tabSize": 4,
     "[swift]": {
