@@ -21,7 +21,7 @@ public final class WorkoutViewModel {
     private let personalRecordService: PersonalRecordService?
     private let healthKitService: any HealthKitServiceProtocol
     private let calorieEstimationService: CalorieEstimationService
-    private let userPreferencesService: UserPreferencesService?
+    public let userPreferencesService: UserPreferencesService?
 
     public init(
         workoutRepository: any WorkoutRepository,

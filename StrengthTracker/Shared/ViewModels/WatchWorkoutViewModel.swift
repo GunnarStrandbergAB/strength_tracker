@@ -31,6 +31,7 @@ public final class WatchWorkoutViewModel {
     private let workoutRepository: any WorkoutRepository
     private let healthKitService: any HealthKitServiceProtocol
     private let connectivityManager: ConnectivityManager
+    private let userPreferencesService: UserPreferencesService?
     private var restTimer: Timer?
     private var restStartDate: Date?
 
@@ -40,11 +41,16 @@ public final class WatchWorkoutViewModel {
     public init(
         workoutRepository: any WorkoutRepository,
         healthKitService: any HealthKitServiceProtocol,
-        connectivityManager: ConnectivityManager
+        connectivityManager: ConnectivityManager,
+        userPreferencesService: UserPreferencesService? = nil
     ) {
         self.workoutRepository = workoutRepository
         self.healthKitService = healthKitService
         self.connectivityManager = connectivityManager
+        self.userPreferencesService = userPreferencesService
+        if let prefs = userPreferencesService {
+            self.restDuration = TimeInterval(prefs.defaultRestSeconds)
+        }
     }
 
     public func setWatchSessionManager(_ manager: any WatchWorkoutSessionManager) {
@@ -353,6 +359,10 @@ public final class WatchWorkoutViewModel {
 
     public func startRestTimer() {
         stopRestTimer()
+        // Re-read preference in case user changed it
+        if let prefs = userPreferencesService {
+            restDuration = TimeInterval(prefs.defaultRestSeconds)
+        }
         isResting = true
         restTimeRemaining = restDuration
         restStartDate = Date()

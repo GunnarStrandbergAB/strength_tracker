@@ -85,7 +85,8 @@ public final class AppContainer: Sendable {
         watchWorkoutViewModel = WatchWorkoutViewModel(
             workoutRepository: workoutRepository,
             healthKitService: healthKitService,
-            connectivityManager: connectivityManager
+            connectivityManager: connectivityManager,
+            userPreferencesService: userPreferencesService
         )
         watchWorkoutListViewModel = WatchWorkoutListViewModel(
             workoutRepository: workoutRepository,
