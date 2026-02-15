@@ -40,8 +40,27 @@ public enum WorkoutMapper {
         entity.templateId = domain.templateId
         entity.healthKitWorkoutId = domain.healthKitWorkoutId
 
-        // Update exercises (replace all)
-        entity.exercises = domain.exercises.map { WorkoutExerciseMapper.toEntity($0) }
+        // Update exercises in-place to preserve SwiftData relationships
+        let existingById = Dictionary(uniqueKeysWithValues: entity.exercises.map { ($0.id, $0) })
+        let domainIds = Set(domain.exercises.map(\.id))
+
+        // Delete removed exercises
+        for existing in entity.exercises where !domainIds.contains(existing.id) {
+            entity.exercises.removeAll { $0.id == existing.id }
+        }
+
+        // Update existing or add new
+        var updatedExercises: [WorkoutExerciseEntity] = []
+        for domainExercise in domain.exercises {
+            if let existing = existingById[domainExercise.id] {
+                WorkoutExerciseMapper.updateEntity(existing, from: domainExercise)
+                updatedExercises.append(existing)
+            } else {
+                let newEntity = WorkoutExerciseMapper.toEntity(domainExercise)
+                updatedExercises.append(newEntity)
+            }
+        }
+        entity.exercises = updatedExercises
     }
 }
 
@@ -109,8 +128,27 @@ public enum WorkoutExerciseMapper {
         entity.notes = domain.notes
         entity.restTimerSeconds = domain.restTimerSeconds
 
-        // Update sets (replace all)
-        entity.sets = domain.sets.map { ExerciseSetMapper.toEntity($0) }
+        // Update sets in-place to preserve SwiftData relationships
+        let existingById = Dictionary(uniqueKeysWithValues: entity.sets.map { ($0.id, $0) })
+        let domainIds = Set(domain.sets.map(\.id))
+
+        // Delete removed sets
+        for existing in entity.sets where !domainIds.contains(existing.id) {
+            entity.sets.removeAll { $0.id == existing.id }
+        }
+
+        // Update existing or add new
+        var updatedSets: [ExerciseSetEntity] = []
+        for domainSet in domain.sets {
+            if let existing = existingById[domainSet.id] {
+                ExerciseSetMapper.updateEntity(existing, from: domainSet)
+                updatedSets.append(existing)
+            } else {
+                let newEntity = ExerciseSetMapper.toEntity(domainSet)
+                updatedSets.append(newEntity)
+            }
+        }
+        entity.sets = updatedSets
     }
 }
 

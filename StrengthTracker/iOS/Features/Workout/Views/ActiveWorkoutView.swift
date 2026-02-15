@@ -202,7 +202,7 @@ struct ActiveWorkoutView: View {
             }
         }
         .background(STColors.background)
-        .scrollDismissesKeyboard(.interactively)
+        .scrollDismissesKeyboard(.immediately)
     }
 
     private func exerciseCard(for workoutExercise: WorkoutExercise, isActive: Bool) -> some View {
