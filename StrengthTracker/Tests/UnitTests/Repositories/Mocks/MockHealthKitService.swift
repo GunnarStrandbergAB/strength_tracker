@@ -9,9 +9,13 @@ final class MockHealthKitService: HealthKitServiceProtocol, @unchecked Sendable 
     var authorizationRequested = false
     var saveWorkoutCalled = false
     var savedWorkout: Workout?
+    var savedCalories: Double?
     var fetchRecentWorkoutsCalled = false
     var fetchLimit: Int?
     var mockRecentWorkouts: [HealthKitWorkoutSummary] = []
+    var mockBodyWeightKg: Double?
+    var addCaloriesCalled = false
+    var addCaloriesWorkoutId: UUID?
 
     // MARK: - Error Simulation
 
@@ -39,6 +43,25 @@ final class MockHealthKitService: HealthKitServiceProtocol, @unchecked Sendable 
         }
     }
 
+    func saveWorkout(_ workout: Workout, calories: Double) async throws {
+        saveWorkoutCalled = true
+        savedWorkout = workout
+        savedCalories = calories
+        if let error = saveWorkoutError {
+            throw error
+        }
+    }
+
+    func addCaloriesToExistingWorkout(healthKitWorkoutId: UUID, calories: Double, workout: Workout) async throws {
+        addCaloriesCalled = true
+        addCaloriesWorkoutId = healthKitWorkoutId
+        savedCalories = calories
+    }
+
+    func fetchBodyWeightKg() async -> Double? {
+        mockBodyWeightKg
+    }
+
     func startWorkoutSession() async throws {}
 
     func endWorkoutSession(_ workout: Workout) async throws {}
@@ -56,9 +79,13 @@ final class MockHealthKitService: HealthKitServiceProtocol, @unchecked Sendable 
         authorizationRequested = false
         saveWorkoutCalled = false
         savedWorkout = nil
+        savedCalories = nil
         fetchRecentWorkoutsCalled = false
         fetchLimit = nil
         mockRecentWorkouts = []
+        mockBodyWeightKg = nil
+        addCaloriesCalled = false
+        addCaloriesWorkoutId = nil
         authorizationError = nil
         saveWorkoutError = nil
     }

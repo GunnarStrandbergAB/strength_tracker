@@ -299,13 +299,20 @@ public final class WatchWorkoutViewModel {
         if !workoutNotes.isEmpty {
             workout.notes = workoutNotes
         }
-        let saved = try await workoutRepository.save(workout)
-        activeWorkout = saved
+        var saved = try await workoutRepository.save(workout)
         stopRestTimer()
         isActive = false
 
         // End HealthKit workout session (nil on iOS, active on watchOS)
         try? await watchSessionManager?.endWorkoutSession()
+
+        // Attach the Watch's HKWorkout UUID so iPhone can add calorie data to it
+        if let hkUUID = watchSessionManager?.finishedWorkoutUUID {
+            saved.healthKitWorkoutId = hkUUID
+            saved = (try? await workoutRepository.save(saved)) ?? saved
+        }
+
+        activeWorkout = saved
 
         // Notify iPhone workout ended, then send full workout via transferUserInfo
         connectivityManager.sendWorkoutEnded()

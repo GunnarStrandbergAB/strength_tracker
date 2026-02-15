@@ -11,6 +11,8 @@ public final class WatchHealthKitManager: NSObject, WatchWorkoutSessionManager, 
     public var activeCalories: Double = 0
     public var elapsedTime: TimeInterval = 0
     public var isSessionActive: Bool = false
+    /// UUID of the last finished HKWorkout (sent to iPhone for calorie association)
+    public var finishedWorkoutUUID: UUID?
 
     private let healthStore = HKHealthStore()
     private var workoutSession: HKWorkoutSession?
@@ -40,13 +42,17 @@ public final class WatchHealthKitManager: NSObject, WatchWorkoutSessionManager, 
         let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
         let builder = session.associatedWorkoutBuilder()
 
-        builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+        let dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+        // Disable automatic calorie collection — iPhone will compute & attach volume-based calories
+        dataSource.disableCollection(for: HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!)
+        builder.dataSource = dataSource
 
         session.delegate = self
         builder.delegate = self
 
         self.workoutSession = session
         self.workoutBuilder = builder
+        self.finishedWorkoutUUID = nil
 
         session.startActivity(with: Date())
         try await builder.beginCollection(at: Date())
@@ -59,7 +65,10 @@ public final class WatchHealthKitManager: NSObject, WatchWorkoutSessionManager, 
 
         session.end()
         try await builder.endCollection(at: Date())
-        try await builder.finishWorkout()
+        let finishedWorkout = try await builder.finishWorkout()
+
+        // Capture the HKWorkout UUID so iPhone can attach calorie data to it
+        finishedWorkoutUUID = finishedWorkout?.uuid
 
         isSessionActive = false
         workoutSession = nil
