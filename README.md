@@ -1,19 +1,20 @@
-# HellBent
+# HellBentIron
 
-A native strength training app for iPhone and Apple Watch, built with SwiftUI and SwiftData.
+A no-nonsense strength training tracker for iPhone and Apple Watch. Built with SwiftUI and SwiftData.
 
-Track workouts, follow templates, log sets with weight and reps, monitor rest timers, and view personal records — all synced between your phone and wrist.
+Built for lifters who want to log their workouts quickly and get back to the bar. No accounts, no subscriptions, no cloud — your data stays on your device.
 
 ## Features
 
 ### iPhone
 
 - **Dashboard** — overview of recent workouts, quick-start buttons, and active Watch workout banner
-- **Workout Templates** — create, edit, and delete reusable workout plans with target sets, reps, and weight per exercise
+- **Workout Templates** — create templates for your favorite routines. Start a workout from a template and adjust on the fly — add exercises, skip exercises, change the weight. Templates save time without locking you in.
+- **Quick Start** — no template? Start an empty workout and add exercises as you go. The full exercise library is always one tap away.
 - **Active Workout** — log sets with weight/reps, RPE tracking, automatic rest timer, exercise navigation
-- **Exercise Library** — built-in exercise database with custom exercise support
-- **Workout History** — browse past workouts with detailed set logs
-- **Progress Tracking** — personal records and progress over time
+- **Exercise Library** — built-in database covering barbell, dumbbell, kettlebell, cable, machine, bodyweight, and more. Custom exercise support included.
+- **Workout History** — review past workouts with full exercise and set detail
+- **Progress Tracking** — automatic personal record detection. Hit a new PR and you'll know it.
 - **Settings** — weight unit (kg/lbs), rest timer duration, and preferences
 - **Widgets** — home screen widgets via WidgetKit
 
@@ -34,8 +35,24 @@ Track workouts, follow templates, log sets with weight and reps, monitor rest ti
 - **Exercise Sync** — custom exercises sync from iPhone to Watch
 - **Live Workout Mirror** — iPhone shows a read-only banner of the active Watch workout in real-time
 - **Workout History Sync** — completed Watch workouts transfer to iPhone for unified history
-- **HealthKit Integration** — workouts saved to Apple Health with heart rate and calorie data
+- **HealthKit Integration** — workouts saved to Apple Health with duration and estimated calories
 - **Session Recovery** — orphaned HealthKit sessions are recovered after app crash or termination
+
+### Calorie Estimation
+
+Every completed workout is saved to Apple Health with research-based calorie estimates. The model combines three components:
+
+1. **MET-based session calories** — `MET x bodyWeight(kg) x hours`. MET values are sourced from the [2024 Compendium of Physical Activities (Herrmann et al.)](https://pacompendium.com/) and assigned per exercise category (barbell, kettlebell, machine, bodyweight, etc.) with separate values for compound and isolation movements.
+
+2. **Volume bonus** — based on [Lytle et al. (2019)](https://doi.org/10.1249/MSS.0000000000002111), a regression model (R²=0.75) for resistance exercise energy expenditure. Applies a coefficient of ~2.5 kcal per 1000 kg total volume moved.
+
+3. **EPOC (Excess Post-Exercise Oxygen Consumption)** — 6-15% of session calories, scaled by average RPE when available, or compound exercise ratio as fallback.
+
+The only personal data used is **body weight** (from HealthKit or user preferences). No age, height, or sex data is collected. Warmup sets are excluded. Results are cross-validated against [João et al. (2021)](https://doi.org/10.3390/app11125592) (~6 kcal/min average).
+
+### Privacy
+
+Zero data collection. No analytics. No tracking. No account required. Everything lives on your iPhone and Apple Watch.
 
 ## Architecture
 
