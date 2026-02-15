@@ -24,6 +24,10 @@ targets:
     dependencies:
       - package: StrengthTrackerPackage
         product: StrengthTrackerShared
+      - target: StrengthTrackerWatch
+        embed: true
+      - target: StrengthTrackerWidgets
+        embed: true
     settings:
       base:
         INFOPLIST_FILE: iOS/Resources/Info.plist
