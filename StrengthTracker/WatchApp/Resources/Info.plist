@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>HellBent</string>
+	<string>HellBentIron</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>HellBent Watch</string>
+	<string>HellBentIron Watch</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -21,9 +21,9 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>HellBent reads your workout and heart rate data to display real-time metrics during workouts.</string>
+	<string>HellBentIron reads your workout and heart rate data to display real-time metrics during workouts.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>HellBent saves your strength training workouts to Apple Health.</string>
+	<string>HellBentIron saves your strength training workouts to Apple Health.</string>
 	<key>WKApplication</key>
 	<true/>
 	<key>WKBackgroundModes</key>
