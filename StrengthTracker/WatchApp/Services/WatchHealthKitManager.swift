@@ -23,8 +23,14 @@ public final class WatchHealthKitManager: NSObject, WatchWorkoutSessionManager, 
     }
 
     public func requestAuthorization() async throws {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            print("[HealthKit] Health data not available on this device")
+            return
+        }
+
         let typesToShare: Set<HKSampleType> = [
-            HKObjectType.workoutType()
+            HKObjectType.workoutType(),
+            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!
         ]
         let typesToRead: Set<HKObjectType> = [
             HKObjectType.workoutType(),
@@ -32,9 +38,15 @@ public final class WatchHealthKitManager: NSObject, WatchWorkoutSessionManager, 
             HKObjectType.quantityType(forIdentifier: .heartRate)!
         ]
         try await healthStore.requestAuthorization(toShare: typesToShare, read: typesToRead)
+        print("[HealthKit] Authorization requested successfully")
     }
 
     public func startWorkoutSession() async throws {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            print("[HealthKit] Cannot start session — health data not available")
+            return
+        }
+
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = .traditionalStrengthTraining
         configuration.locationType = .indoor
@@ -43,8 +55,6 @@ public final class WatchHealthKitManager: NSObject, WatchWorkoutSessionManager, 
         let builder = session.associatedWorkoutBuilder()
 
         let dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
-        // Disable automatic calorie collection — iPhone will compute & attach volume-based calories
-        dataSource.disableCollection(for: HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!)
         builder.dataSource = dataSource
 
         session.delegate = self
@@ -58,6 +68,7 @@ public final class WatchHealthKitManager: NSObject, WatchWorkoutSessionManager, 
         try await builder.beginCollection(at: Date())
 
         isSessionActive = true
+        print("[HealthKit] Workout session started successfully")
     }
 
     public func endWorkoutSession() async throws {
@@ -69,6 +80,7 @@ public final class WatchHealthKitManager: NSObject, WatchWorkoutSessionManager, 
 
         // Capture the HKWorkout UUID so iPhone can attach calorie data to it
         finishedWorkoutUUID = finishedWorkout?.uuid
+        print("[HealthKit] Workout session ended, HKWorkout UUID: \(finishedWorkout?.uuid.uuidString ?? "nil")")
 
         isSessionActive = false
         workoutSession = nil
@@ -110,12 +122,14 @@ public final class WatchHealthKitManager: NSObject, WatchWorkoutSessionManager, 
 // MARK: - HKWorkoutSessionDelegate
 extension WatchHealthKitManager: HKWorkoutSessionDelegate {
     nonisolated public func workoutSession(_ workoutSession: HKWorkoutSession, didChangeTo toState: HKWorkoutSessionState, from fromState: HKWorkoutSessionState, date: Date) {
+        print("[HealthKit] Session state: \(fromState.rawValue) → \(toState.rawValue)")
         Task { @MainActor in
             isSessionActive = (toState == .running)
         }
     }
 
     nonisolated public func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
+        print("[HealthKit] Session failed: \(error)")
         Task { @MainActor in
             isSessionActive = false
         }

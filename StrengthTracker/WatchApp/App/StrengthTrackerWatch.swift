@@ -39,10 +39,16 @@ struct StrengthTrackerWatchApp: App {
                 await seeder.seedIfNeeded()
             }
 
-            // Recover orphaned HealthKit workout session on launch (Fix 7)
+            // Request HealthKit authorization early so prompt appears on iPhone
+            // Then recover orphaned HealthKit workout session on launch (Fix 7)
             #if canImport(HealthKit) && os(watchOS)
             let hkManager = healthKitManager
             Task { @MainActor in
+                do {
+                    try await hkManager.requestAuthorization()
+                } catch {
+                    print("[Watch] HealthKit authorization failed: \(error)")
+                }
                 await hkManager.recoverOrphanedSession()
             }
             #endif

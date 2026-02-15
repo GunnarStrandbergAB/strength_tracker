@@ -145,8 +145,12 @@ public final class WatchWorkoutViewModel {
             isActive = true
 
             // Start HealthKit workout session (nil on iOS, active on watchOS)
-            try? await watchSessionManager?.requestAuthorization()
-            try? await watchSessionManager?.startWorkoutSession()
+            do {
+                try await watchSessionManager?.requestAuthorization()
+                try await watchSessionManager?.startWorkoutSession()
+            } catch {
+                print("[WatchWorkoutVM] HealthKit session start failed: \(error)")
+            }
 
             // Notify iPhone that workout started
             if let saved = activeWorkout {
@@ -211,8 +215,12 @@ public final class WatchWorkoutViewModel {
             currentExerciseIndex = 0
             isActive = true
 
-            try? await watchSessionManager?.requestAuthorization()
-            try? await watchSessionManager?.startWorkoutSession()
+            do {
+                try await watchSessionManager?.requestAuthorization()
+                try await watchSessionManager?.startWorkoutSession()
+            } catch {
+                print("[WatchWorkoutVM] HealthKit session start failed: \(error)")
+            }
 
             // Notify iPhone that workout started
             if let saved = activeWorkout {
@@ -304,7 +312,11 @@ public final class WatchWorkoutViewModel {
         isActive = false
 
         // End HealthKit workout session (nil on iOS, active on watchOS)
-        try? await watchSessionManager?.endWorkoutSession()
+        do {
+            try await watchSessionManager?.endWorkoutSession()
+        } catch {
+            print("[WatchWorkoutVM] HealthKit session end failed: \(error)")
+        }
 
         // Attach the Watch's HKWorkout UUID so iPhone can add calorie data to it
         if let hkUUID = watchSessionManager?.finishedWorkoutUUID {
