@@ -107,7 +107,11 @@ struct WorkoutSummaryView: View {
                     WKInterfaceDevice.current().play(.success)
                     #endif
                     Task {
-                        try? await viewModel.completeWorkout()
+                        do {
+                            try await viewModel.completeWorkout()
+                        } catch {
+                            print("[WorkoutSummary] Complete workout failed: \(error)")
+                        }
                     }
                 } label: {
                     HStack(spacing: 6) {

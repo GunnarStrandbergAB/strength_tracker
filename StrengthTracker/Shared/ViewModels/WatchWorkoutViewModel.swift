@@ -309,9 +309,9 @@ public final class WatchWorkoutViewModel {
         }
         var saved = try await workoutRepository.save(workout)
         stopRestTimer()
-        isActive = false
 
-        // End HealthKit workout session (nil on iOS, active on watchOS)
+        // End HealthKit workout session BEFORE setting isActive = false.
+        // Setting isActive = false triggers navigation pop which can interrupt the Task.
         do {
             try await watchSessionManager?.endWorkoutSession()
         } catch {
@@ -329,6 +329,9 @@ public final class WatchWorkoutViewModel {
         // Notify iPhone workout ended, then send full workout via transferUserInfo
         connectivityManager.sendWorkoutEnded()
         connectivityManager.sendWorkoutCompleted(saved)
+
+        // Set isActive = false LAST so the view stays alive until all work is done
+        isActive = false
     }
 
     // MARK: - Navigation
