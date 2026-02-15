@@ -115,9 +115,12 @@ targets:
       base:
         SWIFT_VERSION: "6.0"
         PRODUCT_BUNDLE_IDENTIFIER: se.gunnarstrandberg.hellbent.ios.widgets
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: HellBentIron Widgets
-        INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    info:
+      path: iOS/WidgetExtension/Info.plist
+      properties:
+        CFBundleDisplayName: HellBentIron Widgets
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
     entitlements:
       path: iOS/WidgetExtension/StrengthTrackerWidgets.entitlements
       properties:
