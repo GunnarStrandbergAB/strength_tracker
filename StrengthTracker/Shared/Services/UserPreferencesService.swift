@@ -4,110 +4,89 @@ import Observation
 @MainActor
 @Observable
 public final class UserPreferencesService {
-    public init() {}
 
     /// The user's preferred weight unit (kg or lbs)
     public var weightUnit: WeightUnit {
-        get {
-            let rawValue = UserDefaults.standard.string(forKey: "weightUnit") ?? "kg"
-            return WeightUnit(rawValue: rawValue) ?? .kg
-        }
-        set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: "weightUnit")
-        }
+        didSet { UserDefaults.standard.set(weightUnit.rawValue, forKey: "weightUnit") }
     }
 
     /// Default rest timer duration in seconds
     public var defaultRestSeconds: Int {
-        get {
-            let value = UserDefaults.standard.integer(forKey: "defaultRestSeconds")
-            return value.nonZero ?? 90
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: "defaultRestSeconds")
-        }
+        didSet { UserDefaults.standard.set(defaultRestSeconds, forKey: "defaultRestSeconds") }
     }
 
     /// Whether the user has completed the onboarding flow
     public var hasCompletedOnboarding: Bool {
-        get {
-            UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: "hasCompletedOnboarding")
-        }
+        didSet { UserDefaults.standard.set(hasCompletedOnboarding, forKey: "hasCompletedOnboarding") }
     }
 
     /// Whether the default exercises have been seeded into the database
     public var hasSeededExercises: Bool {
-        get {
-            UserDefaults.standard.bool(forKey: "hasSeededExercises")
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: "hasSeededExercises")
-        }
+        didSet { UserDefaults.standard.set(hasSeededExercises, forKey: "hasSeededExercises") }
     }
 
     /// The user's preferred distance unit (km or miles)
     public var distanceUnit: DistanceUnit {
-        get {
-            let rawValue = UserDefaults.standard.string(forKey: "distanceUnit") ?? "km"
-            return DistanceUnit(rawValue: rawValue) ?? .km
-        }
-        set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: "distanceUnit")
-        }
+        didSet { UserDefaults.standard.set(distanceUnit.rawValue, forKey: "distanceUnit") }
     }
 
     /// Whether to automatically start rest timer after completing a set
     public var autoStartRestTimer: Bool {
-        get {
-            // Default to true if not set
-            if !UserDefaults.standard.bool(forKey: "hasSetAutoStartRestTimer") {
-                return true
-            }
-            return UserDefaults.standard.bool(forKey: "autoStartRestTimer")
-        }
-        set {
+        didSet {
             UserDefaults.standard.set(true, forKey: "hasSetAutoStartRestTimer")
-            UserDefaults.standard.set(newValue, forKey: "autoStartRestTimer")
+            UserDefaults.standard.set(autoStartRestTimer, forKey: "autoStartRestTimer")
         }
     }
 
     /// Whether the user has been prompted for HealthKit authorization
     public var hasRequestedHealthKitAuth: Bool {
-        get {
-            UserDefaults.standard.bool(forKey: "hasRequestedHealthKitAuth")
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: "hasRequestedHealthKitAuth")
-        }
+        didSet { UserDefaults.standard.set(hasRequestedHealthKitAuth, forKey: "hasRequestedHealthKitAuth") }
     }
 
     /// Preferred rest timer duration in seconds (for Watch and widgets)
     public var preferredRestTimerDuration: Int {
-        get {
-            let value = UserDefaults.standard.integer(forKey: "preferredRestTimerDuration")
-            return value.nonZero ?? 90
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: "preferredRestTimerDuration")
-        }
+        didSet { UserDefaults.standard.set(preferredRestTimerDuration, forKey: "preferredRestTimerDuration") }
     }
 
     /// User's body weight in kg (last-resort fallback for calorie estimation)
     public var bodyWeightKg: Double? {
-        get {
-            let value = UserDefaults.standard.double(forKey: "bodyWeightKg")
-            return value > 0 ? value : nil
-        }
-        set {
-            if let newValue {
-                UserDefaults.standard.set(newValue, forKey: "bodyWeightKg")
+        didSet {
+            if let bodyWeightKg {
+                UserDefaults.standard.set(bodyWeightKg, forKey: "bodyWeightKg")
             } else {
                 UserDefaults.standard.removeObject(forKey: "bodyWeightKg")
             }
         }
+    }
+
+    public init() {
+        let defaults = UserDefaults.standard
+
+        let weightRaw = defaults.string(forKey: "weightUnit") ?? "kg"
+        self.weightUnit = WeightUnit(rawValue: weightRaw) ?? .kg
+
+        let restSeconds = defaults.integer(forKey: "defaultRestSeconds")
+        self.defaultRestSeconds = restSeconds != 0 ? restSeconds : 90
+
+        self.hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
+        self.hasSeededExercises = defaults.bool(forKey: "hasSeededExercises")
+
+        let distanceRaw = defaults.string(forKey: "distanceUnit") ?? "km"
+        self.distanceUnit = DistanceUnit(rawValue: distanceRaw) ?? .km
+
+        if defaults.bool(forKey: "hasSetAutoStartRestTimer") {
+            self.autoStartRestTimer = defaults.bool(forKey: "autoStartRestTimer")
+        } else {
+            self.autoStartRestTimer = true
+        }
+
+        self.hasRequestedHealthKitAuth = defaults.bool(forKey: "hasRequestedHealthKitAuth")
+
+        let restDuration = defaults.integer(forKey: "preferredRestTimerDuration")
+        self.preferredRestTimerDuration = restDuration != 0 ? restDuration : 90
+
+        let weight = defaults.double(forKey: "bodyWeightKg")
+        self.bodyWeightKg = weight > 0 ? weight : nil
     }
 
     /// Reset all preferences to defaults
@@ -118,11 +97,5 @@ public final class UserPreferencesService {
         autoStartRestTimer = true
         preferredRestTimerDuration = 90
         // Note: Don't reset onboarding, seeding, or HealthKit auth flags
-    }
-}
-
-private extension Int {
-    var nonZero: Int? {
-        self == 0 ? nil : self
     }
 }
