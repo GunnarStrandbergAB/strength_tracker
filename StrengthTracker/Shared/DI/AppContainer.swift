@@ -20,6 +20,7 @@ public final class AppContainer: Sendable {
     public let exerciseSeeder: ExerciseSeeder
     public let healthKitService: any HealthKitServiceProtocol
     public let connectivityManager: ConnectivityManager
+    public let calorieEstimationService: CalorieEstimationService
 
     // Cached ViewModels (shared across multiple views)
     public let workoutViewModel: WorkoutViewModel
@@ -64,13 +65,16 @@ public final class AppContainer: Sendable {
         healthKitService = NoOpHealthKitService()
         #endif
         connectivityManager = ConnectivityManager()
+        calorieEstimationService = CalorieEstimationService()
 
         // Initialize cached ViewModels
         workoutViewModel = WorkoutViewModel(
             workoutRepository: workoutRepository,
             templateRepository: templateRepository,
             personalRecordService: personalRecordService,
-            healthKitService: healthKitService
+            healthKitService: healthKitService,
+            calorieEstimationService: calorieEstimationService,
+            userPreferencesService: userPreferencesService
         )
         templateViewModel = TemplateViewModel(
             templateRepository: templateRepository,

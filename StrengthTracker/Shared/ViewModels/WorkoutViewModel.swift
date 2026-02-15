@@ -20,17 +20,23 @@ public final class WorkoutViewModel {
     private let templateRepository: any TemplateRepository
     private let personalRecordService: PersonalRecordService?
     private let healthKitService: any HealthKitServiceProtocol
+    private let calorieEstimationService: CalorieEstimationService
+    private let userPreferencesService: UserPreferencesService?
 
     public init(
         workoutRepository: any WorkoutRepository,
         templateRepository: any TemplateRepository,
         personalRecordService: PersonalRecordService? = nil,
-        healthKitService: any HealthKitServiceProtocol
+        healthKitService: any HealthKitServiceProtocol,
+        calorieEstimationService: CalorieEstimationService = CalorieEstimationService(),
+        userPreferencesService: UserPreferencesService? = nil
     ) {
         self.workoutRepository = workoutRepository
         self.templateRepository = templateRepository
         self.personalRecordService = personalRecordService
         self.healthKitService = healthKitService
+        self.calorieEstimationService = calorieEstimationService
+        self.userPreferencesService = userPreferencesService
     }
 
     public func startWorkout(name: String, from template: WorkoutTemplate? = nil) async {
@@ -191,12 +197,28 @@ public final class WorkoutViewModel {
         currentWorkout = saved
         isActive = false
 
-        // Save to HealthKit after persisting to SwiftData
+        // Save to HealthKit with calorie estimation (iPhone-only path)
         #if canImport(HealthKit)
         Task {
-            try? await healthKitService.saveWorkout(saved)
+            let bodyWeightKg = await resolveBodyWeightKg()
+            if let bw = bodyWeightKg {
+                let result = calorieEstimationService.estimateCalories(workout: saved, bodyWeightKg: bw)
+                try? await healthKitService.saveWorkout(saved, calories: result.totalCalories)
+            } else {
+                try? await healthKitService.saveWorkout(saved)
+            }
         }
         #endif
+    }
+
+    /// Resolve body weight via fallback chain: HealthKit → UserPreferences → nil
+    private func resolveBodyWeightKg() async -> Double? {
+        // Try HealthKit first
+        if let hkWeight = await healthKitService.fetchBodyWeightKg() {
+            return hkWeight
+        }
+        // Fallback to user preference
+        return userPreferencesService?.bodyWeightKg
     }
 
     /// Fetch previous set data for an exercise to help with progressive overload

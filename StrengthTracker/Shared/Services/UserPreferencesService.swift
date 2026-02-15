@@ -95,6 +95,21 @@ public final class UserPreferencesService {
         }
     }
 
+    /// User's body weight in kg (last-resort fallback for calorie estimation)
+    public var bodyWeightKg: Double? {
+        get {
+            let value = UserDefaults.standard.double(forKey: "bodyWeightKg")
+            return value > 0 ? value : nil
+        }
+        set {
+            if let newValue {
+                UserDefaults.standard.set(newValue, forKey: "bodyWeightKg")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "bodyWeightKg")
+            }
+        }
+    }
+
     /// Reset all preferences to defaults
     public func resetToDefaults() {
         weightUnit = .kg
