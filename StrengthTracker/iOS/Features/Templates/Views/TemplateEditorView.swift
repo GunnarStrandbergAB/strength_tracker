@@ -134,7 +134,7 @@ struct TemplateEditorView: View {
             restTimerSeconds: nil,
             targetSets: 3,
             targetReps: exercise.exerciseType == .weightedReps || exercise.exerciseType == .bodyweightReps ? 10 : nil,
-            targetWeight: exercise.exerciseType == .weightedReps ? 0 : nil,
+            targetWeight: exercise.exerciseType == .weightedReps || exercise.exerciseType == .bodyweightReps ? 0 : nil,
             targetDurationSeconds: exercise.exerciseType == .duration ? 60 : nil,
             targetDistanceMeters: exercise.exerciseType == .cardio || exercise.exerciseType == .weightedCardio ? 1000 : nil
         )
@@ -215,7 +215,7 @@ private struct TemplateExerciseConfigView: View {
 
     private var exerciseType: ExerciseType { templateExercise.exercise.exerciseType }
     private var showsReps: Bool { exerciseType == .weightedReps || exerciseType == .bodyweightReps }
-    private var showsWeight: Bool { exerciseType == .weightedReps }
+    private var showsWeight: Bool { exerciseType == .weightedReps || exerciseType == .bodyweightReps }
     private var showsDuration: Bool { exerciseType == .duration }
     private var showsDistance: Bool { exerciseType == .cardio || exerciseType == .weightedCardio }
 
