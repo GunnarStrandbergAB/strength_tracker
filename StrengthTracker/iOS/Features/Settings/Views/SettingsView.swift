@@ -35,7 +35,7 @@ struct SettingsView: View {
                             Text("Default Rest Timer")
                             Spacer()
                             Text("\(formatSeconds(preferencesService.defaultRestSeconds))")
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
 
@@ -47,7 +47,7 @@ struct SettingsView: View {
                     Button("Reset All Preferences") {
                         preferencesService.resetToDefaults()
                     }
-                    .foregroundColor(.orange)
+                    .foregroundStyle(.orange)
 
                     if preferencesService.hasSeededExercises {
                         HStack {
@@ -55,7 +55,7 @@ struct SettingsView: View {
                             Spacer()
                             Text("Loaded")
                                 .font(.caption)
-                                .foregroundColor(.green)
+                                .foregroundStyle(STColors.success)
                         }
                     }
                 }
@@ -66,14 +66,14 @@ struct SettingsView: View {
                         Text("Version")
                         Spacer()
                         Text(appVersion)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
 
                     HStack {
                         Text("Build")
                         Spacer()
                         Text(buildNumber)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
 
                     Link(destination: URL(string: "https://github.com")!) {
@@ -81,7 +81,7 @@ struct SettingsView: View {
                             Text("GitHub Repository")
                             Spacer()
                             Image(systemName: "arrow.up.forward.square")
-                                .foregroundColor(.blue)
+                                .foregroundStyle(.blue)
                         }
                     }
                 }
@@ -90,17 +90,16 @@ struct SettingsView: View {
                 Section("Credits") {
                     Text("Built with SwiftUI and SwiftData")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
 
                     Text("Icons by SF Symbols")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
-            .toolbarBackground(STColors.background, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .stNavigationBarStyle()
     }
 
     private func formatSeconds(_ seconds: Int) -> String {

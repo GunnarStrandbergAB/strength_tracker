@@ -20,6 +20,7 @@ struct ExerciseListView: View {
                 }
             }
             .navigationTitle("Exercises")
+            .stNavigationBarStyle()
             .searchable(text: $viewModel.searchText, prompt: "Search exercises")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -80,6 +81,7 @@ private struct ExerciseRowView: View {
             Text(exercise.name)
                 .font(.body)
                 .fontWeight(.medium)
+                .foregroundStyle(.primary)
             HStack(spacing: 8) {
                 Text(exercise.primaryMuscleGroup.rawValue.capitalized)
                     .font(.caption)

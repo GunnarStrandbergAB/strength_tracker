@@ -143,6 +143,23 @@ struct STColumnHeader: View {
     }
 }
 
+// MARK: - Navigation Bar Style
+
+struct STNavigationBarStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .toolbarBackground(STColors.background, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+    }
+}
+
+extension View {
+    func stNavigationBarStyle() -> some View {
+        modifier(STNavigationBarStyle())
+    }
+}
+
 // MARK: - Typography Font Extensions
 
 extension Font {

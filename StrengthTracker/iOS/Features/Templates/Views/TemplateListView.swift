@@ -32,6 +32,7 @@ struct TemplateListView: View {
                 }
             }
             .navigationTitle("Templates")
+            .stNavigationBarStyle()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -83,6 +84,7 @@ private struct TemplateRowView: View {
             Text(template.name)
                 .font(.body)
                 .fontWeight(.medium)
+                .foregroundStyle(.primary)
             HStack(spacing: 12) {
                 Label("\(template.exercises.count)", systemImage: "figure.strengthtraining.traditional")
                     .font(.caption)

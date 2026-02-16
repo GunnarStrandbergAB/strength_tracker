@@ -18,6 +18,7 @@ struct WorkoutHistoryView: View {
                 }
             }
             .navigationTitle("History")
+            .stNavigationBarStyle()
             .navigationDestination(for: Workout.self) { workout in
                 WorkoutDetailView(workout: workout)
             }
@@ -55,6 +56,7 @@ private struct WorkoutHistoryRow: View {
             Text(workout.name)
                 .font(.body)
                 .fontWeight(.medium)
+                .foregroundStyle(.primary)
             HStack(spacing: 12) {
                 Label(
                     workout.startedAt.formatted(date: .abbreviated, time: .shortened),

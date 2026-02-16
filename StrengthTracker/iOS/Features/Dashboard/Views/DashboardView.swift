@@ -79,9 +79,7 @@ struct DashboardView: View {
             .scrollIndicators(.hidden)
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(STColors.background, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .stNavigationBarStyle()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {

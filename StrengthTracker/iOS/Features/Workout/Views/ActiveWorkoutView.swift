@@ -32,8 +32,7 @@ struct ActiveWorkoutView: View {
             }
             .navigationTitle(viewModel.currentWorkout?.name ?? "Workout")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(STColors.background, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .stNavigationBarStyle()
             .sheet(isPresented: $showingExercisePicker) {
                 ExercisePickerView(viewModel: exerciseListViewModel) { exercise in
                     viewModel.addExercise(exercise)
