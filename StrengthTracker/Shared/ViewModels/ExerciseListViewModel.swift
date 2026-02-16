@@ -31,15 +31,18 @@ public final class ExerciseListViewModel {
     }
 
     private let exerciseRepository: any ExerciseRepository
+    private let exerciseSeeder: ExerciseSeeder?
 
-    public init(exerciseRepository: any ExerciseRepository) {
+    public init(exerciseRepository: any ExerciseRepository, exerciseSeeder: ExerciseSeeder? = nil) {
         self.exerciseRepository = exerciseRepository
+        self.exerciseSeeder = exerciseSeeder
     }
 
     public func loadExercises() async {
         isLoading = true
         errorMessage = nil
         do {
+            await exerciseSeeder?.ensureSeeded()
             exercises = try await exerciseRepository.fetchAll()
         } catch {
             errorMessage = error.localizedDescription

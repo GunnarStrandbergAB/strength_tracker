@@ -34,10 +34,7 @@ struct StrengthTrackerWatchApp: App {
             #endif
 
             // Seed exercises on Watch (same as iOS)
-            let seeder = container.exerciseSeeder
-            Task { @MainActor in
-                await seeder.seedIfNeeded()
-            }
+            container.exerciseSeeder.startSeeding()
 
             // Request HealthKit authorization early so prompt appears on iPhone
             // Then recover orphaned HealthKit workout session on launch (Fix 7)

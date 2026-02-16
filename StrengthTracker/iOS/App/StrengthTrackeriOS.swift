@@ -28,11 +28,7 @@ struct StrengthTrackeriOSApp: App {
             }
             #endif
 
-            let exerciseRepo = container.exerciseRepository
-            Task { @MainActor in
-                let seeder = ExerciseSeeder(exerciseRepository: exerciseRepo)
-                await seeder.seedIfNeeded()
-            }
+            container.exerciseSeeder.startSeeding()
 
             // Wire up Watch → iPhone workout sync with calorie estimation
             let workoutRepo = container.workoutRepository
