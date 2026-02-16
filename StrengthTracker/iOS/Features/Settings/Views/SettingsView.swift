@@ -10,8 +10,7 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
+        Form {
                 // Units Section
                 Section("Units") {
                     Picker("Weight Unit", selection: $preferencesService.weightUnit) {
@@ -102,7 +101,6 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(STColors.background, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
-        }
     }
 
     private func formatSeconds(_ seconds: Int) -> String {
@@ -128,7 +126,9 @@ struct SettingsView: View {
 }
 
 #Preview {
-    SettingsView(preferencesService: UserPreferencesService())
+    NavigationStack {
+        SettingsView(preferencesService: UserPreferencesService())
+    }
 }
 
 #endif

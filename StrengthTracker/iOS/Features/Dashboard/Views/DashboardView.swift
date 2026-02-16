@@ -94,6 +94,7 @@ struct DashboardView: View {
                             .background(STColors.surface)
                             .clipShape(Circle())
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .task {
