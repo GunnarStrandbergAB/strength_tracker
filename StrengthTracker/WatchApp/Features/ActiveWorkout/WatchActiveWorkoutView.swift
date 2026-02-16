@@ -93,6 +93,7 @@ struct WatchActiveWorkoutView: View {
                         targetWeight: viewModel.currentTargetWeight,
                         targetReps: viewModel.currentTargetReps
                     )
+                    .id(viewModel.currentSetNumber)
                 } else {
                     exerciseCompletionView
                 }

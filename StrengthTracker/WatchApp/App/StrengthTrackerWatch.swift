@@ -92,6 +92,27 @@ struct StrengthTrackerWatchApp: App {
                 }
             }
 
+            // Wire settings sync: when settings arrive from iPhone, apply to local preferences
+            let prefs = container.userPreferencesService
+            container.connectivityManager.onSettingsReceived = { settings in
+                Task { @MainActor in
+                    if let restSeconds = settings["defaultRestSeconds"] as? Int {
+                        prefs.defaultRestSeconds = restSeconds
+                    }
+                    if let weightRaw = settings["weightUnit"] as? String,
+                       let unit = WeightUnit(rawValue: weightRaw) {
+                        prefs.weightUnit = unit
+                    }
+                    if let autoRest = settings["autoStartRestTimer"] as? Bool {
+                        prefs.autoStartRestTimer = autoRest
+                    }
+                    if let distanceRaw = settings["distanceUnit"] as? String,
+                       let unit = DistanceUnit(rawValue: distanceRaw) {
+                        prefs.distanceUnit = unit
+                    }
+                }
+            }
+
             // Process any context that arrived while app was not running (Fix 4)
             #if canImport(WatchConnectivity)
             if WCSession.isSupported() {

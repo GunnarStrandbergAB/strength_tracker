@@ -11,12 +11,14 @@ struct ContentView: View {
     let historyViewModel: HistoryViewModel
     let templateViewModel: TemplateViewModel
     let userPreferencesService: UserPreferencesService
+    let connectivityManager: ConnectivityManager?
 
     var body: some View {
         TabView(selection: $selectedTab) {
             DashboardView(
                 viewModel: dashboardViewModel,
                 userPreferencesService: userPreferencesService,
+                connectivityManager: connectivityManager,
                 onStartWorkout: {
                     selectedTab = 1
                     Task {

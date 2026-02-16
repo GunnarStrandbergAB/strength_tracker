@@ -5,17 +5,20 @@ import StrengthTrackerShared
 struct DashboardView: View {
     @State private var viewModel: DashboardViewModel
     let userPreferencesService: UserPreferencesService
+    let connectivityManager: ConnectivityManager?
     let onStartWorkout: () -> Void
     let onHistoryTapped: () -> Void
 
     init(
         viewModel: DashboardViewModel,
         userPreferencesService: UserPreferencesService,
+        connectivityManager: ConnectivityManager? = nil,
         onStartWorkout: @escaping () -> Void,
         onHistoryTapped: @escaping () -> Void
     ) {
         self._viewModel = State(initialValue: viewModel)
         self.userPreferencesService = userPreferencesService
+        self.connectivityManager = connectivityManager
         self.onStartWorkout = onStartWorkout
         self.onHistoryTapped = onHistoryTapped
     }
@@ -83,7 +86,7 @@ struct DashboardView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
-                        SettingsView(preferencesService: userPreferencesService)
+                        SettingsView(preferencesService: userPreferencesService, connectivityManager: connectivityManager)
                     } label: {
                         Image(systemName: "gearshape")
                             .font(.system(size: 16))

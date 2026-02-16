@@ -82,11 +82,23 @@ public final class WatchWorkoutViewModel {
     }
 
     public var currentTargetWeight: Double? {
-        targetWeightPerExercise[currentExerciseIndex] ?? nil
+        // Prefer the next incomplete pre-populated set's weight (per-set targets from template)
+        if let exercise = currentExercise,
+           let nextIncomplete = exercise.sets.first(where: { !$0.isCompleted }) {
+            return nextIncomplete.weight
+        }
+        // Fall back to exercise-level target for extra sets
+        return targetWeightPerExercise[currentExerciseIndex] ?? nil
     }
 
     public var currentTargetReps: Int? {
-        targetRepsPerExercise[currentExerciseIndex] ?? nil
+        // Prefer the next incomplete pre-populated set's reps (per-set targets from template)
+        if let exercise = currentExercise,
+           let nextIncomplete = exercise.sets.first(where: { !$0.isCompleted }) {
+            return nextIncomplete.reps
+        }
+        // Fall back to exercise-level target for extra sets
+        return targetRepsPerExercise[currentExerciseIndex] ?? nil
     }
 
     public var currentExercisePlannedSetsComplete: Bool {

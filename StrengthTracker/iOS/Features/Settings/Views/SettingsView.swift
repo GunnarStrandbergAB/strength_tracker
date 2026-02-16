@@ -4,9 +4,11 @@ import StrengthTrackerShared
 
 struct SettingsView: View {
     @State private var preferencesService: UserPreferencesService
+    private var connectivityManager: ConnectivityManager?
 
-    init(preferencesService: UserPreferencesService) {
+    init(preferencesService: UserPreferencesService, connectivityManager: ConnectivityManager? = nil) {
         self.preferencesService = preferencesService
+        self.connectivityManager = connectivityManager
     }
 
     var body: some View {
@@ -100,6 +102,19 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
             .stNavigationBarStyle()
+            .onChange(of: preferencesService.defaultRestSeconds) { _, _ in syncSettingsToWatch() }
+            .onChange(of: preferencesService.weightUnit) { _, _ in syncSettingsToWatch() }
+            .onChange(of: preferencesService.autoStartRestTimer) { _, _ in syncSettingsToWatch() }
+            .onChange(of: preferencesService.distanceUnit) { _, _ in syncSettingsToWatch() }
+    }
+
+    private func syncSettingsToWatch() {
+        connectivityManager?.syncSettings([
+            "defaultRestSeconds": preferencesService.defaultRestSeconds,
+            "weightUnit": preferencesService.weightUnit.rawValue,
+            "autoStartRestTimer": preferencesService.autoStartRestTimer,
+            "distanceUnit": preferencesService.distanceUnit.rawValue
+        ])
     }
 
     private func formatSeconds(_ seconds: Int) -> String {
