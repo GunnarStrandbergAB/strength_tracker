@@ -61,6 +61,8 @@ struct ContentView: View {
         }
         .toolbarBackground(STColors.background, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
+        .toolbarColorScheme(.dark, for: .tabBar)
+        .tint(STColors.primary)
         .onChange(of: workoutViewModel.isActive) { oldValue, isActive in
             if isActive {
                 selectedTab = 1

@@ -125,15 +125,24 @@ struct ActiveWorkoutView: View {
         VStack(spacing: 20) {
             Image(systemName: "figure.strengthtraining.traditional")
                 .font(.system(size: 60))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(STColors.textSecondary)
             Text("No Active Workout")
                 .font(.title2)
-            Button("Start Workout") {
+                .foregroundStyle(STColors.textPrimary)
+            Button {
                 Task {
                     await viewModel.startWorkout(name: "Quick Workout", from: nil)
                 }
+            } label: {
+                Text("Start Workout")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(STColors.background)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .background(STColors.primary)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(STColors.background)
