@@ -169,6 +169,7 @@ private struct TemplateExerciseEditorRowView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(templateExercise.exercise.name)
                 .font(.body)
+                .foregroundStyle(.primary)
 
             HStack(spacing: 8) {
                 Text("\(templateExercise.targetSets) sets")

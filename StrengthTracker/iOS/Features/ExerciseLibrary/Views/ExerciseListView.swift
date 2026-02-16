@@ -20,7 +20,6 @@ struct ExerciseListView: View {
                 }
             }
             .navigationTitle("Exercises")
-            .stNavigationBarStyle()
             .searchable(text: $viewModel.searchText, prompt: "Search exercises")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

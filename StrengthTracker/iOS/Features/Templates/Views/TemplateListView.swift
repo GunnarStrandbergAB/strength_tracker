@@ -32,7 +32,6 @@ struct TemplateListView: View {
                 }
             }
             .navigationTitle("Templates")
-            .stNavigationBarStyle()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {

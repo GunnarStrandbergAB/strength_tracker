@@ -18,7 +18,6 @@ struct WorkoutHistoryView: View {
                 }
             }
             .navigationTitle("History")
-            .stNavigationBarStyle()
             .navigationDestination(for: Workout.self) { workout in
                 WorkoutDetailView(workout: workout)
             }
