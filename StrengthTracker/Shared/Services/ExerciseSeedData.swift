@@ -3355,5 +3355,338 @@ public enum ExerciseSeedData {
             isCustom: false,
             isArchived: false
         ),
+
+        // MARK: - Calisthenics (new)
+
+        // Push variations
+        Exercise(
+            id: deterministicUUID(for: "Wide Push-Up"),
+            name: "Wide Push-Up",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.shoulders, .triceps],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Push-up with hands placed wider than shoulder width, emphasizing chest stretch.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Archer Push-Up"),
+            name: "Archer Push-Up",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.triceps, .shoulders],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Wide hand placement, lower toward one hand while the other arm extends straight, alternate.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Pseudo-Planche Push-Up"),
+            name: "Pseudo-Planche Push-Up",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.shoulders, .core, .triceps],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Hands by hips with fingers pointing to sides, lean forward and perform push-ups.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Hindu Push-Up"),
+            name: "Hindu Push-Up",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.shoulders, .triceps, .back],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "From downward dog, swoop chest toward the floor and through to upward dog, reverse.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Explosive Push-Up"),
+            name: "Explosive Push-Up",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.triceps, .shoulders],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Push-up with max force launching hands off the ground at the top. Builds power.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "One-Arm Push-Up"),
+            name: "One-Arm Push-Up",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.triceps, .shoulders, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Feet wide, one hand behind back, lower chest to floor on one arm and press up.",
+            isCustom: false,
+            isArchived: false
+        ),
+
+        // Dip variations
+        Exercise(
+            id: deterministicUUID(for: "Parallel Bar Dip"),
+            name: "Parallel Bar Dip",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.triceps, .shoulders],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "On parallel bars, lower until elbows at 90 degrees, press back up. Lean forward for chest.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring Dip"),
+            name: "Ring Dip",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.triceps, .shoulders, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Dips on gymnastic rings requiring extra stabilization. Turn rings out at top for full lockout.",
+            isCustom: false,
+            isArchived: false
+        ),
+
+        // Pull variations
+        Exercise(
+            id: deterministicUUID(for: "Chin-Up"),
+            name: "Chin-Up",
+            primaryMuscleGroup: .biceps,
+            secondaryMuscleGroups: [.lats, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Supinated grip (palms facing you), pull chin above bar and lower with control.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Wide Grip Pull-Up"),
+            name: "Wide Grip Pull-Up",
+            primaryMuscleGroup: .lats,
+            secondaryMuscleGroups: [.shoulders, .biceps],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Grip wider than shoulder width, pull up emphasizing lat width and upper back.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Commando Pull-Up"),
+            name: "Commando Pull-Up",
+            primaryMuscleGroup: .lats,
+            secondaryMuscleGroups: [.biceps, .core, .shoulders],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Hands facing opposite directions on bar, pull head to one side, alternate.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Archer Pull-Up"),
+            name: "Archer Pull-Up",
+            primaryMuscleGroup: .lats,
+            secondaryMuscleGroups: [.biceps, .shoulders],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Wide grip, pull toward one hand while the other arm extends straight, alternate.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "L-Sit Pull-Up"),
+            name: "L-Sit Pull-Up",
+            primaryMuscleGroup: .lats,
+            secondaryMuscleGroups: [.core, .hipFlexors, .biceps],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Hold legs in L-sit position while performing pull-ups.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Muscle-Up (Bar)"),
+            name: "Muscle-Up (Bar)",
+            primaryMuscleGroup: .lats,
+            secondaryMuscleGroups: [.chest, .triceps, .shoulders, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Explosive pull-up transitioning over the bar into a dip position.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring Muscle-Up"),
+            name: "Ring Muscle-Up",
+            primaryMuscleGroup: .lats,
+            secondaryMuscleGroups: [.chest, .triceps, .shoulders, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Muscle-up on rings using false grip, requiring more stability and strength.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Towel Pull-Up"),
+            name: "Towel Pull-Up",
+            primaryMuscleGroup: .lats,
+            secondaryMuscleGroups: [.forearms, .biceps],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Drape a towel over the bar and grip both ends, pull up for grip and forearm work.",
+            isCustom: false,
+            isArchived: false
+        ),
+
+        // Skill / static holds
+        Exercise(
+            id: deterministicUUID(for: "Skin the Cat"),
+            name: "Skin the Cat",
+            primaryMuscleGroup: .shoulders,
+            secondaryMuscleGroups: [.lats, .core, .biceps],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Hang from bar/rings, tuck legs through arms to German hang and return. Shoulder mobility.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Freestanding Handstand"),
+            name: "Freestanding Handstand",
+            primaryMuscleGroup: .shoulders,
+            secondaryMuscleGroups: [.core, .triceps, .forearms],
+            category: .bodyweight,
+            exerciseType: .duration,
+            instructions: "Balance in a handstand without wall support using wrists and fingers for corrections.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Tuck Planche"),
+            name: "Tuck Planche",
+            primaryMuscleGroup: .shoulders,
+            secondaryMuscleGroups: [.chest, .core, .triceps],
+            category: .bodyweight,
+            exerciseType: .duration,
+            instructions: "Support body on hands with knees tucked, back horizontal. Planche progression.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Full Planche"),
+            name: "Full Planche",
+            primaryMuscleGroup: .shoulders,
+            secondaryMuscleGroups: [.chest, .core, .triceps],
+            category: .bodyweight,
+            exerciseType: .duration,
+            instructions: "Body fully extended horizontally, supported only on hands. Elite straight-arm hold.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Full Front Lever"),
+            name: "Full Front Lever",
+            primaryMuscleGroup: .lats,
+            secondaryMuscleGroups: [.core, .biceps, .shoulders],
+            category: .bodyweight,
+            exerciseType: .duration,
+            instructions: "Body fully extended horizontally under bar, facing up. Extreme back and core strength.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Full Back Lever"),
+            name: "Full Back Lever",
+            primaryMuscleGroup: .shoulders,
+            secondaryMuscleGroups: [.lats, .core, .biceps],
+            category: .bodyweight,
+            exerciseType: .duration,
+            instructions: "Body fully extended horizontally under bar, facing down. Requires shoulder flexibility.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Human Flag"),
+            name: "Human Flag",
+            primaryMuscleGroup: .core,
+            secondaryMuscleGroups: [.shoulders, .lats, .obliques],
+            category: .bodyweight,
+            exerciseType: .duration,
+            instructions: "Grip vertical pole, hold body horizontally sideways using push-pull and full-body tension.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Iron Cross"),
+            name: "Iron Cross",
+            primaryMuscleGroup: .shoulders,
+            secondaryMuscleGroups: [.chest, .biceps, .core],
+            category: .bodyweight,
+            exerciseType: .duration,
+            instructions: "On rings, hold body upright with arms extended straight to the sides.",
+            isCustom: false,
+            isArchived: false
+        ),
+
+        // Leg variations
+        Exercise(
+            id: deterministicUUID(for: "Bodyweight Squat"),
+            name: "Bodyweight Squat",
+            primaryMuscleGroup: .quadriceps,
+            secondaryMuscleGroups: [.glutes, .hamstrings, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Feet shoulder-width, squat until thighs parallel or below, stand back up.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Pistol Squat"),
+            name: "Pistol Squat",
+            primaryMuscleGroup: .quadriceps,
+            secondaryMuscleGroups: [.glutes, .hamstrings, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Single-leg squat with non-working leg extended forward. Demands strength and balance.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Cossack Squat"),
+            name: "Cossack Squat",
+            primaryMuscleGroup: .quadriceps,
+            secondaryMuscleGroups: [.adductors, .glutes, .hamstrings],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Wide stance, shift weight to one leg squatting deep while other stays straight.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Jump Squat"),
+            name: "Jump Squat",
+            primaryMuscleGroup: .quadriceps,
+            secondaryMuscleGroups: [.glutes, .calves],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Squat down then explode upward into a jump, land softly and repeat.",
+            isCustom: false,
+            isArchived: false
+        ),
+
+        // Lower body isolation
+        Exercise(
+            id: deterministicUUID(for: "Single-Leg Calf Raise"),
+            name: "Single-Leg Calf Raise",
+            primaryMuscleGroup: .calves,
+            secondaryMuscleGroups: [.core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Rise onto toes on one leg, squeeze calf at top, lower slowly. Use wall for balance.",
+            isCustom: false,
+            isArchived: false
+        ),
     ]
 }
