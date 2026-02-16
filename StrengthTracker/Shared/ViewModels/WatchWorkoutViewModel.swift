@@ -89,6 +89,18 @@ public final class WatchWorkoutViewModel {
         targetRepsPerExercise[currentExerciseIndex] ?? nil
     }
 
+    public var currentExercisePlannedSetsComplete: Bool {
+        guard !isQuickStart,
+              let planned = plannedSetsPerExercise[currentExerciseIndex],
+              let exercise = currentExercise else { return false }
+        return exercise.sets.filter(\.isCompleted).count >= planned
+    }
+
+    public var isLastExercise: Bool {
+        guard let workout = activeWorkout else { return false }
+        return currentExerciseIndex >= workout.exercises.count - 1
+    }
+
     public var currentExerciseVolume: Double {
         currentExercise?.exerciseVolume ?? 0
     }

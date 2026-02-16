@@ -134,6 +134,122 @@ struct WatchWorkoutViewModelTests {
         }
     }
 
+    // MARK: - Helpers (template)
+
+    private func makeTemplate(exerciseCount: Int = 2, setsPerExercise: Int = 3) -> WorkoutTemplate {
+        let exercises = (0..<exerciseCount).map { i in
+            TemplateExercise(
+                id: UUID(),
+                exercise: makeExercise(name: "Exercise \(i + 1)"),
+                order: i + 1,
+                supersetGroup: nil,
+                notes: nil,
+                restTimerSeconds: nil,
+                targetSets: setsPerExercise,
+                targetReps: 10,
+                targetWeight: 80,
+                targetDurationSeconds: nil,
+                targetDistanceMeters: nil
+            )
+        }
+        return WorkoutTemplate(
+            id: UUID(),
+            name: "Test Template",
+            notes: nil,
+            sortOrder: 0,
+            lastUsedAt: nil,
+            timesUsed: 0,
+            exercises: exercises
+        )
+    }
+
+    // MARK: - currentExercisePlannedSetsComplete
+
+    @Test("plannedSetsComplete returns false for quick-start workout")
+    func plannedSetsCompleteFalseForQuickStart() async throws {
+        let (vm, _) = makeViewModel()
+        await vm.startWorkout(name: "Quick", exercises: [makeExercise()])
+
+        try await vm.logSet(weight: 80, reps: 10)
+
+        #expect(vm.currentExercisePlannedSetsComplete == false)
+    }
+
+    @Test("plannedSetsComplete returns false when completed < planned")
+    func plannedSetsCompleteIncomplete() async throws {
+        let (vm, _) = makeViewModel()
+        let template = makeTemplate(exerciseCount: 1, setsPerExercise: 3)
+        await vm.startWorkout(name: "Template", from: template)
+
+        // Complete 2 of 3 planned sets
+        try await vm.logSet(weight: 80, reps: 10)
+        vm.skipRestTimer()
+        try await vm.logSet(weight: 80, reps: 10)
+        vm.skipRestTimer()
+
+        #expect(vm.currentExercisePlannedSetsComplete == false)
+    }
+
+    @Test("plannedSetsComplete returns true when completed == planned")
+    func plannedSetsCompleteExact() async throws {
+        let (vm, _) = makeViewModel()
+        let template = makeTemplate(exerciseCount: 1, setsPerExercise: 3)
+        await vm.startWorkout(name: "Template", from: template)
+
+        // Complete all 3 planned sets
+        for _ in 0..<3 {
+            try await vm.logSet(weight: 80, reps: 10)
+            vm.skipRestTimer()
+        }
+
+        #expect(vm.currentExercisePlannedSetsComplete == true)
+    }
+
+    @Test("plannedSetsComplete returns true when completed > planned (extra sets)")
+    func plannedSetsCompleteExtra() async throws {
+        let (vm, _) = makeViewModel()
+        let template = makeTemplate(exerciseCount: 1, setsPerExercise: 2)
+        await vm.startWorkout(name: "Template", from: template)
+
+        // Complete 3 sets when only 2 planned
+        for _ in 0..<3 {
+            try await vm.logSet(weight: 80, reps: 10)
+            vm.skipRestTimer()
+        }
+
+        #expect(vm.currentExercisePlannedSetsComplete == true)
+    }
+
+    // MARK: - isLastExercise
+
+    @Test("isLastExercise returns false for first exercise with multiple exercises")
+    func isLastExerciseFirstOfMany() async {
+        let (vm, _) = makeViewModel()
+        let template = makeTemplate(exerciseCount: 2)
+        await vm.startWorkout(name: "Template", from: template)
+
+        #expect(vm.isLastExercise == false)
+    }
+
+    @Test("isLastExercise returns true for last exercise")
+    func isLastExerciseLast() async {
+        let (vm, _) = makeViewModel()
+        let template = makeTemplate(exerciseCount: 2)
+        await vm.startWorkout(name: "Template", from: template)
+
+        vm.nextExercise()
+        #expect(vm.isLastExercise == true)
+    }
+
+    @Test("isLastExercise returns true for single-exercise workout")
+    func isLastExerciseSingle() async {
+        let (vm, _) = makeViewModel()
+        let template = makeTemplate(exerciseCount: 1)
+        await vm.startWorkout(name: "Template", from: template)
+
+        #expect(vm.isLastExercise == true)
+    }
+
     // MARK: - Offline-ready
 
     @Test("Works standalone without connection")
