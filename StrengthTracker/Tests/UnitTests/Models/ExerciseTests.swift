@@ -13,6 +13,7 @@ struct MuscleGroupTests {
             .chest, .back, .shoulders, .biceps, .triceps, .forearms,
             .core, .quadriceps, .hamstrings, .glutes, .calves,
             .adductors, .abductors, .traps, .lats,
+            .hipFlexors, .lowerBack, .obliques,
             .fullBody, .cardio, .other
         ]
         #expect(MuscleGroup.allCases.count == expectedCases.count)
@@ -86,7 +87,7 @@ struct ExerciseTypeTests {
     @Test("ExerciseType has all expected cases")
     func allCases() {
         let expectedCases: [ExerciseType] = [
-            .weightedReps, .bodyweightReps, .duration, .cardio, .weightedCardio
+            .weightedReps, .bodyweightReps, .duration, .distance, .cardio, .weightedCardio
         ]
         #expect(ExerciseType.allCases.count == expectedCases.count)
         for expected in expectedCases {

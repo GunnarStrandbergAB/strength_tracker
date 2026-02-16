@@ -12,9 +12,11 @@ public final class ExerciseSeeder {
     public func seedIfNeeded() async {
         do {
             let existing = try await exerciseRepository.fetchAll()
-            guard existing.isEmpty else { return }
+            let existingIds = Set(existing.map(\.id))
+            let missing = ExerciseSeedData.allExercises.filter { !existingIds.contains($0.id) }
+            guard !missing.isEmpty else { return }
 
-            for exercise in ExerciseSeedData.allExercises {
+            for exercise in missing {
                 _ = try await exerciseRepository.save(exercise)
             }
         } catch {

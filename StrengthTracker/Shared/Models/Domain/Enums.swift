@@ -4,6 +4,7 @@ public enum MuscleGroup: String, Codable, CaseIterable, Sendable {
     case chest, back, shoulders, biceps, triceps, forearms
     case core, quadriceps, hamstrings, glutes, calves
     case adductors, abductors, traps, lats
+    case hipFlexors, lowerBack, obliques
     case fullBody, cardio, other
 }
 
@@ -18,6 +19,7 @@ public enum ExerciseType: String, Codable, CaseIterable, Sendable {
     case weightedReps
     case bodyweightReps
     case duration
+    case distance
     case cardio
     case weightedCardio
 }
