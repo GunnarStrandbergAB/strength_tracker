@@ -186,14 +186,15 @@ public final class WatchWorkoutViewModel {
 
         let workoutExercises = template.exercises.sorted { $0.order < $1.order }.enumerated().map { index, te in
             let sets = (0..<te.targetSets).map { setIndex in
-                ExerciseSet(
+                let target = te.setTargets.indices.contains(setIndex) ? te.setTargets[setIndex] : nil
+                return ExerciseSet(
                     id: UUID(),
                     order: setIndex + 1,
                     setType: .normal,
-                    weight: te.targetWeight,
-                    reps: te.targetReps,
-                    durationSeconds: te.targetDurationSeconds,
-                    distanceMeters: te.targetDistanceMeters,
+                    weight: target?.targetWeight ?? te.targetWeight,
+                    reps: target?.targetReps ?? te.targetReps,
+                    durationSeconds: target?.targetDurationSeconds ?? te.targetDurationSeconds,
+                    distanceMeters: target?.targetDistanceMeters ?? te.targetDistanceMeters,
                     rpe: nil,
                     isCompleted: false,
                     isPersonalRecord: false,

@@ -68,6 +68,11 @@ public enum TemplateExerciseMapper {
             isArchived: entity.isArchived
         )
 
+        var setTargets: [TemplateSetTarget] = []
+        if let json = entity.setTargetsJSON, let data = json.data(using: .utf8) {
+            setTargets = (try? JSONDecoder().decode([TemplateSetTarget].self, from: data)) ?? []
+        }
+
         return TemplateExercise(
             id: entity.id,
             exercise: exercise,
@@ -79,8 +84,15 @@ public enum TemplateExerciseMapper {
             targetReps: entity.targetReps,
             targetWeight: entity.targetWeight,
             targetDurationSeconds: entity.targetDurationSeconds,
-            targetDistanceMeters: entity.targetDistanceMeters
+            targetDistanceMeters: entity.targetDistanceMeters,
+            setTargets: setTargets
         )
+    }
+
+    private static func encodeSetTargets(_ targets: [TemplateSetTarget]) -> String? {
+        guard !targets.isEmpty else { return nil }
+        guard let data = try? JSONEncoder().encode(targets) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     /// Converts a TemplateExercise (domain model) to a TemplateExerciseEntity
@@ -104,7 +116,8 @@ public enum TemplateExerciseMapper {
             targetReps: domain.targetReps,
             targetWeight: domain.targetWeight,
             targetDurationSeconds: domain.targetDurationSeconds,
-            targetDistanceMeters: domain.targetDistanceMeters
+            targetDistanceMeters: domain.targetDistanceMeters,
+            setTargetsJSON: encodeSetTargets(domain.setTargets)
         )
     }
 
@@ -128,6 +141,7 @@ public enum TemplateExerciseMapper {
         entity.targetWeight = domain.targetWeight
         entity.targetDurationSeconds = domain.targetDurationSeconds
         entity.targetDistanceMeters = domain.targetDistanceMeters
+        entity.setTargetsJSON = encodeSetTargets(domain.setTargets)
     }
 }
 #endif

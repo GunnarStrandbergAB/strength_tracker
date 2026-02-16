@@ -20,6 +20,24 @@ public struct WorkoutTemplate: Identifiable, Hashable, Sendable, Codable {
     }
 }
 
+public struct TemplateSetTarget: Identifiable, Hashable, Sendable, Codable {
+    public let id: UUID
+    public var order: Int
+    public var targetReps: Int?
+    public var targetWeight: Double?
+    public var targetDurationSeconds: Int?
+    public var targetDistanceMeters: Double?
+
+    public init(id: UUID = UUID(), order: Int, targetReps: Int? = nil, targetWeight: Double? = nil, targetDurationSeconds: Int? = nil, targetDistanceMeters: Double? = nil) {
+        self.id = id
+        self.order = order
+        self.targetReps = targetReps
+        self.targetWeight = targetWeight
+        self.targetDurationSeconds = targetDurationSeconds
+        self.targetDistanceMeters = targetDistanceMeters
+    }
+}
+
 public struct TemplateExercise: Identifiable, Hashable, Sendable, Codable {
     public let id: UUID
     public var exercise: Exercise
@@ -32,8 +50,9 @@ public struct TemplateExercise: Identifiable, Hashable, Sendable, Codable {
     public var targetWeight: Double?
     public var targetDurationSeconds: Int?
     public var targetDistanceMeters: Double?
+    public var setTargets: [TemplateSetTarget]
 
-    public init(id: UUID, exercise: Exercise, order: Int, supersetGroup: Int?, notes: String?, restTimerSeconds: Int?, targetSets: Int, targetReps: Int?, targetWeight: Double?, targetDurationSeconds: Int?, targetDistanceMeters: Double?) {
+    public init(id: UUID, exercise: Exercise, order: Int, supersetGroup: Int?, notes: String?, restTimerSeconds: Int?, targetSets: Int, targetReps: Int?, targetWeight: Double?, targetDurationSeconds: Int?, targetDistanceMeters: Double?, setTargets: [TemplateSetTarget] = []) {
         self.id = id
         self.exercise = exercise
         self.order = order
@@ -45,6 +64,7 @@ public struct TemplateExercise: Identifiable, Hashable, Sendable, Codable {
         self.targetWeight = targetWeight
         self.targetDurationSeconds = targetDurationSeconds
         self.targetDistanceMeters = targetDistanceMeters
+        self.setTargets = setTargets
     }
 }
 

@@ -2,6 +2,20 @@
 import SwiftUI
 import StrengthTrackerShared
 
+// MARK: - Sheet Enum (Fix 1: single .sheet(item:) avoids nested-sheet bug)
+
+private enum EditorSheet: Identifiable {
+    case exercisePicker
+    case exerciseConfig(Int)
+
+    var id: String {
+        switch self {
+        case .exercisePicker: return "picker"
+        case .exerciseConfig(let i): return "config-\(i)"
+        }
+    }
+}
+
 struct TemplateEditorView: View {
     @State private var viewModel: TemplateViewModel
     let exerciseListViewModel: ExerciseListViewModel
@@ -12,9 +26,7 @@ struct TemplateEditorView: View {
     @State private var name: String
     @State private var notes: String
     @State private var exercises: [TemplateExercise]
-    @State private var showingExercisePicker = false
-    @State private var editingExerciseIndex: Int? = nil
-    @State private var showingExerciseConfig = false
+    @State private var activeSheet: EditorSheet? = nil
 
     init(viewModel: TemplateViewModel, exerciseListViewModel: ExerciseListViewModel, template: WorkoutTemplate?) {
         self._viewModel = State(initialValue: viewModel)
@@ -37,8 +49,7 @@ struct TemplateEditorView: View {
                 Section {
                     ForEach(exercises.indices, id: \.self) { index in
                         Button {
-                            editingExerciseIndex = index
-                            showingExerciseConfig = true
+                            activeSheet = .exerciseConfig(index)
                         } label: {
                             TemplateExerciseEditorRowView(templateExercise: exercises[index])
                         }
@@ -54,7 +65,7 @@ struct TemplateEditorView: View {
                     }
 
                     Button {
-                        showingExercisePicker = true
+                        activeSheet = .exercisePicker
                     } label: {
                         Label("Add Exercise", systemImage: "plus.circle.fill")
                     }
@@ -88,26 +99,26 @@ struct TemplateEditorView: View {
                         .disabled(exercises.isEmpty)
                 }
             }
-            .sheet(isPresented: $showingExercisePicker) {
-                ExercisePickerView(viewModel: exerciseListViewModel) { exercise in
-                    addExercise(exercise)
-                    showingExercisePicker = false
-                }
-            }
-            .sheet(isPresented: $showingExerciseConfig) {
-                if let index = editingExerciseIndex, exercises.indices.contains(index) {
-                    TemplateExerciseConfigView(
-                        templateExercise: exercises[index],
-                        onSave: { updated in
-                            exercises[index] = updated
-                            showingExerciseConfig = false
-                            editingExerciseIndex = nil
-                        },
-                        onCancel: {
-                            showingExerciseConfig = false
-                            editingExerciseIndex = nil
-                        }
-                    )
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .exercisePicker:
+                    ExercisePickerView(viewModel: exerciseListViewModel) { exercise in
+                        addExercise(exercise)
+                        activeSheet = nil
+                    }
+                case .exerciseConfig(let index):
+                    if exercises.indices.contains(index) {
+                        TemplateExerciseConfigView(
+                            templateExercise: exercises[index],
+                            onSave: { updated in
+                                exercises[index] = updated
+                                activeSheet = nil
+                            },
+                            onCancel: {
+                                activeSheet = nil
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -131,20 +142,8 @@ struct TemplateEditorView: View {
     }
 
     private func reorderExercises() {
-        for (index, _) in exercises.enumerated() {
-            exercises[index] = TemplateExercise(
-                id: exercises[index].id,
-                exercise: exercises[index].exercise,
-                order: index,
-                supersetGroup: exercises[index].supersetGroup,
-                notes: exercises[index].notes,
-                restTimerSeconds: exercises[index].restTimerSeconds,
-                targetSets: exercises[index].targetSets,
-                targetReps: exercises[index].targetReps,
-                targetWeight: exercises[index].targetWeight,
-                targetDurationSeconds: exercises[index].targetDurationSeconds,
-                targetDistanceMeters: exercises[index].targetDistanceMeters
-            )
+        for index in exercises.indices {
+            exercises[index].order = index
         }
     }
 
@@ -162,6 +161,8 @@ struct TemplateEditorView: View {
     }
 }
 
+// MARK: - Row View
+
 private struct TemplateExerciseEditorRowView: View {
     let templateExercise: TemplateExercise
 
@@ -176,16 +177,22 @@ private struct TemplateExerciseEditorRowView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if let reps = templateExercise.targetReps {
-                    Text("\(reps) reps")
+                if !templateExercise.setTargets.isEmpty {
+                    Text("per-set targets")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                }
+                } else {
+                    if let reps = templateExercise.targetReps {
+                        Text("\(reps) reps")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
 
-                if let weight = templateExercise.targetWeight {
-                    Text("\(weight, specifier: "%.1f") kg")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if let weight = templateExercise.targetWeight {
+                        Text("\(weight, specifier: "%.1f") kg")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
@@ -193,33 +200,52 @@ private struct TemplateExerciseEditorRowView: View {
     }
 }
 
+// MARK: - Config View (Fix 2d: per-set targets, Fix 3: keyboard dismiss)
+
 private struct TemplateExerciseConfigView: View {
     let templateExercise: TemplateExercise
     let onSave: (TemplateExercise) -> Void
     let onCancel: () -> Void
 
     @State private var targetSets: Int
-    @State private var targetReps: Int?
-    @State private var targetWeight: Double?
-    @State private var targetDurationSeconds: Int?
-    @State private var targetDistanceMeters: Double?
+    @State private var setTargets: [TemplateSetTarget]
     @State private var notes: String
     @State private var restTimerSeconds: Int?
     @State private var supersetGroup: Int?
+
+    private var exerciseType: ExerciseType { templateExercise.exercise.exerciseType }
+    private var showsReps: Bool { exerciseType == .weightedReps || exerciseType == .bodyweightReps }
+    private var showsWeight: Bool { exerciseType == .weightedReps }
+    private var showsDuration: Bool { exerciseType == .duration }
+    private var showsDistance: Bool { exerciseType == .cardio || exerciseType == .weightedCardio }
 
     init(templateExercise: TemplateExercise, onSave: @escaping (TemplateExercise) -> Void, onCancel: @escaping () -> Void) {
         self.templateExercise = templateExercise
         self.onSave = onSave
         self.onCancel = onCancel
 
-        self._targetSets = State(initialValue: templateExercise.targetSets)
-        self._targetReps = State(initialValue: templateExercise.targetReps)
-        self._targetWeight = State(initialValue: templateExercise.targetWeight)
-        self._targetDurationSeconds = State(initialValue: templateExercise.targetDurationSeconds)
-        self._targetDistanceMeters = State(initialValue: templateExercise.targetDistanceMeters)
+        let sets = templateExercise.targetSets
+        self._targetSets = State(initialValue: sets)
         self._notes = State(initialValue: templateExercise.notes ?? "")
         self._restTimerSeconds = State(initialValue: templateExercise.restTimerSeconds)
         self._supersetGroup = State(initialValue: templateExercise.supersetGroup)
+
+        // Build initial setTargets array: use existing per-set data or fill from flat values
+        var targets: [TemplateSetTarget] = []
+        for i in 0..<sets {
+            if templateExercise.setTargets.indices.contains(i) {
+                targets.append(templateExercise.setTargets[i])
+            } else {
+                targets.append(TemplateSetTarget(
+                    order: i,
+                    targetReps: templateExercise.targetReps,
+                    targetWeight: templateExercise.targetWeight,
+                    targetDurationSeconds: templateExercise.targetDurationSeconds,
+                    targetDistanceMeters: templateExercise.targetDistanceMeters
+                ))
+            }
+        }
+        self._setTargets = State(initialValue: targets)
     }
 
     var body: some View {
@@ -230,51 +256,23 @@ private struct TemplateExerciseConfigView: View {
                         .font(.headline)
                 }
 
-                Section("Targets") {
+                Section("Sets") {
                     Stepper("Sets: \(targetSets)", value: $targetSets, in: 1...20)
-
-                    if templateExercise.exercise.exerciseType == .weightedReps || templateExercise.exercise.exerciseType == .bodyweightReps {
-                        HStack {
-                            Text("Reps")
-                            Spacer()
-                            TextField("Reps", value: $targetReps, format: .number)
-                                .keyboardType(.numberPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 80)
+                        .onChange(of: targetSets) { _, newCount in
+                            adjustSetTargets(to: newCount)
                         }
-                    }
+                }
 
-                    if templateExercise.exercise.exerciseType == .weightedReps {
-                        HStack {
-                            Text("Weight (kg)")
-                            Spacer()
-                            TextField("Weight", value: $targetWeight, format: .number)
-                                .keyboardType(.decimalPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 80)
-                        }
-                    }
-
-                    if templateExercise.exercise.exerciseType == .duration {
-                        HStack {
-                            Text("Duration (seconds)")
-                            Spacer()
-                            TextField("Duration", value: $targetDurationSeconds, format: .number)
-                                .keyboardType(.numberPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 80)
-                        }
-                    }
-
-                    if templateExercise.exercise.exerciseType == .cardio || templateExercise.exercise.exerciseType == .weightedCardio {
-                        HStack {
-                            Text("Distance (meters)")
-                            Spacer()
-                            TextField("Distance", value: $targetDistanceMeters, format: .number)
-                                .keyboardType(.decimalPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 80)
-                        }
+                Section("Per-Set Targets") {
+                    ForEach(setTargets.indices, id: \.self) { i in
+                        SetTargetRow(
+                            index: i,
+                            target: $setTargets[i],
+                            showsReps: showsReps,
+                            showsWeight: showsWeight,
+                            showsDuration: showsDuration,
+                            showsDistance: showsDistance
+                        )
                     }
                 }
 
@@ -311,23 +309,125 @@ private struct TemplateExerciseConfigView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        let updated = TemplateExercise(
-                            id: templateExercise.id,
-                            exercise: templateExercise.exercise,
-                            order: templateExercise.order,
-                            supersetGroup: supersetGroup,
-                            notes: notes.isEmpty ? nil : notes,
-                            restTimerSeconds: restTimerSeconds,
-                            targetSets: targetSets,
-                            targetReps: targetReps,
-                            targetWeight: targetWeight,
-                            targetDurationSeconds: targetDurationSeconds,
-                            targetDistanceMeters: targetDistanceMeters
-                        )
-                        onSave(updated)
+                        saveExercise()
                     }
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder),
+                            to: nil, from: nil, for: nil
+                        )
+                    }
+                    .fontWeight(.semibold)
+                }
             }
+        }
+    }
+
+    private func adjustSetTargets(to newCount: Int) {
+        while setTargets.count < newCount {
+            let last = setTargets.last
+            setTargets.append(TemplateSetTarget(
+                order: setTargets.count,
+                targetReps: last?.targetReps,
+                targetWeight: last?.targetWeight,
+                targetDurationSeconds: last?.targetDurationSeconds,
+                targetDistanceMeters: last?.targetDistanceMeters
+            ))
+        }
+        while setTargets.count > newCount {
+            setTargets.removeLast()
+        }
+    }
+
+    private func saveExercise() {
+        // Re-number orders
+        var orderedTargets = setTargets
+        for i in orderedTargets.indices {
+            orderedTargets[i].order = i
+        }
+
+        // Derive flat fallback values from the first set target
+        let first = orderedTargets.first
+
+        let updated = TemplateExercise(
+            id: templateExercise.id,
+            exercise: templateExercise.exercise,
+            order: templateExercise.order,
+            supersetGroup: supersetGroup,
+            notes: notes.isEmpty ? nil : notes,
+            restTimerSeconds: restTimerSeconds,
+            targetSets: targetSets,
+            targetReps: first?.targetReps,
+            targetWeight: first?.targetWeight,
+            targetDurationSeconds: first?.targetDurationSeconds,
+            targetDistanceMeters: first?.targetDistanceMeters,
+            setTargets: orderedTargets
+        )
+        onSave(updated)
+    }
+}
+
+// MARK: - Per-Set Target Row
+
+private struct SetTargetRow: View {
+    let index: Int
+    @Binding var target: TemplateSetTarget
+    let showsReps: Bool
+    let showsWeight: Bool
+    let showsDuration: Bool
+    let showsDistance: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("Set \(index + 1)")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: 44, alignment: .leading)
+
+            if showsReps {
+                TextField("Reps", value: $target.targetReps, format: .number)
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 56)
+                Text("reps")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if showsWeight {
+                TextField("kg", value: $target.targetWeight, format: .number)
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 56)
+                Text("kg")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if showsDuration {
+                TextField("Sec", value: $target.targetDurationSeconds, format: .number)
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 56)
+                Text("sec")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if showsDistance {
+                TextField("m", value: $target.targetDistanceMeters, format: .number)
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 56)
+                Text("m")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
         }
     }
 }
