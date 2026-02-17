@@ -22,6 +22,9 @@ public final class WatchWorkoutViewModel {
     // Set navigation (nil = active/next set)
     public var viewingSetIndex: Int? = nil
 
+    // Completion guard (prevents double-tap and provides loading state)
+    public var isCompleting = false
+
     // Notes
     public var workoutNotes: String = ""
 
@@ -208,28 +211,27 @@ public final class WatchWorkoutViewModel {
             exercises: workoutExercises
         )
 
+        // Set state immediately so navigation pushes without waiting for save
+        activeWorkout = workout
+        currentExerciseIndex = 0
+        isActive = true
+
+        // Persist and start HealthKit in background
         do {
-            activeWorkout = try await workoutRepository.save(workout)
-            currentExerciseIndex = 0
-            isActive = true
-
-            // Start HealthKit workout session (nil on iOS, active on watchOS)
-            do {
-                try await watchSessionManager?.requestAuthorization()
-                try await watchSessionManager?.startWorkoutSession()
-            } catch {
-                print("[WatchWorkoutVM] HealthKit session start failed: \(error)")
-            }
-
-            // Notify iPhone that workout started
-            if let saved = activeWorkout {
-                connectivityManager.sendWorkoutStarted(saved)
-            }
+            let saved = try await workoutRepository.save(workout)
+            activeWorkout = saved
         } catch {
-            activeWorkout = workout
-            currentExerciseIndex = 0
-            isActive = true
+            print("[WatchWorkoutVM] Initial save failed: \(error)")
         }
+
+        do {
+            try await watchSessionManager?.requestAuthorization()
+            try await watchSessionManager?.startWorkoutSession()
+        } catch {
+            print("[WatchWorkoutVM] HealthKit session start failed: \(error)")
+        }
+
+        connectivityManager.sendWorkoutStarted(workout)
     }
 
     public func startWorkout(name: String, from template: WorkoutTemplate) async {
@@ -280,27 +282,27 @@ public final class WatchWorkoutViewModel {
             exercises: workoutExercises
         )
 
+        // Set state immediately so navigation pushes without waiting for save
+        activeWorkout = workout
+        currentExerciseIndex = 0
+        isActive = true
+
+        // Persist and start HealthKit in background
         do {
-            activeWorkout = try await workoutRepository.save(workout)
-            currentExerciseIndex = 0
-            isActive = true
-
-            do {
-                try await watchSessionManager?.requestAuthorization()
-                try await watchSessionManager?.startWorkoutSession()
-            } catch {
-                print("[WatchWorkoutVM] HealthKit session start failed: \(error)")
-            }
-
-            // Notify iPhone that workout started
-            if let saved = activeWorkout {
-                connectivityManager.sendWorkoutStarted(saved)
-            }
+            let saved = try await workoutRepository.save(workout)
+            activeWorkout = saved
         } catch {
-            activeWorkout = workout
-            currentExerciseIndex = 0
-            isActive = true
+            print("[WatchWorkoutVM] Initial save failed: \(error)")
         }
+
+        do {
+            try await watchSessionManager?.requestAuthorization()
+            try await watchSessionManager?.startWorkoutSession()
+        } catch {
+            print("[WatchWorkoutVM] HealthKit session start failed: \(error)")
+        }
+
+        connectivityManager.sendWorkoutStarted(workout)
     }
 
     public func logSet(weight: Double?, reps: Int?, rpe: Double? = nil) async throws {
@@ -370,6 +372,14 @@ public final class WatchWorkoutViewModel {
     }
 
     public func completeWorkout() async throws {
+        guard !isCompleting else { return }
+        isCompleting = true
+        defer {
+            isCompleting = false
+            // Always pop navigation so user is never stuck
+            isActive = false
+        }
+
         guard var workout = activeWorkout else {
             throw WorkoutError.noActiveWorkout
         }
@@ -382,7 +392,6 @@ public final class WatchWorkoutViewModel {
         stopRestTimer()
 
         // End HealthKit workout session BEFORE setting isActive = false.
-        // Setting isActive = false triggers navigation pop which can interrupt the Task.
         do {
             try await watchSessionManager?.endWorkoutSession()
         } catch {
@@ -406,9 +415,6 @@ public final class WatchWorkoutViewModel {
             let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
             try? await analyticsService?.vectorizeWorkout(saved, bodyWeightKg: bodyWeightKg)
         }
-
-        // Set isActive = false LAST so the view stays alive until all work is done
-        isActive = false
     }
 
     // MARK: - Navigation

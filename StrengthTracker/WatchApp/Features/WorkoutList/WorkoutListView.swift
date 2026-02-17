@@ -6,7 +6,6 @@ struct WorkoutListView: View {
     @State private var listViewModel: WatchWorkoutListViewModel
     @State private var exerciseListViewModel: ExerciseListViewModel
     @State private var showExercisePicker = false
-    @State private var pendingQuickStartExercises: [Exercise]? = nil
 
     private let primaryYellow = Color(red: 0.949, green: 0.800, blue: 0.051)
 
@@ -61,21 +60,16 @@ struct WorkoutListView: View {
             .navigationTitle("Workouts")
             .navigationDestination(isPresented: Binding(
                 get: { workoutViewModel.isActive },
-                set: { _ in }
+                set: { newValue in workoutViewModel.isActive = newValue }
             )) {
                 WatchActiveWorkoutView(viewModel: workoutViewModel)
             }
-            .sheet(isPresented: $showExercisePicker, onDismiss: {
-                if let exercises = pendingQuickStartExercises {
-                    pendingQuickStartExercises = nil
+            .sheet(isPresented: $showExercisePicker) {
+                WatchExercisePickerView(exerciseListViewModel: exerciseListViewModel) { exercises in
+                    showExercisePicker = false
                     Task {
                         await workoutViewModel.startWorkout(name: "Quick Start", exercises: exercises)
                     }
-                }
-            }) {
-                WatchExercisePickerView(exerciseListViewModel: exerciseListViewModel) { exercises in
-                    pendingQuickStartExercises = exercises
-                    showExercisePicker = false
                 }
             }
             .task {
