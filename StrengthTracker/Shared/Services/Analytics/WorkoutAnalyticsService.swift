@@ -140,7 +140,7 @@ public final class WorkoutAnalyticsService: Sendable {
     }
 
     /// Vectorize a single workout and store
-    public func vectorizeWorkout(_ workout: Workout, bodyWeightKg: Double = 70.0) async throws {
+    public func vectorizeWorkout(_ workout: Workout, bodyWeightKg: Double = UserPreferencesService.defaultBodyWeightKg) async throws {
         let allWorkouts = try await workoutRepository.fetchAll()
         let vector = vectorizer.vectorize(workout, historicalWorkouts: allWorkouts, bodyWeightKg: bodyWeightKg)
 
@@ -158,7 +158,7 @@ public final class WorkoutAnalyticsService: Sendable {
     }
 
     /// Batch vectorize all workouts missing vectors
-    public func vectorizeAllWorkouts(bodyWeightKg: Double = 70.0) async throws {
+    public func vectorizeAllWorkouts(bodyWeightKg: Double = UserPreferencesService.defaultBodyWeightKg) async throws {
         let allWorkouts = try await workoutRepository.fetchAll()
         let existingVectors = try await analyticsRepository.fetchAllVectors()
         let vectorizedIds = Set(existingVectors.map(\.workoutId))

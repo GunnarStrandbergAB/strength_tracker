@@ -16,14 +16,12 @@ struct InsightsCardView: View {
 
                 Spacer()
 
-                if viewModel.isFeatureUnlocked(.qualityScore) {
-                    NavigationLink {
-                        AnalyticsDashboardView(viewModel: viewModel)
-                    } label: {
-                        Text("View All")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(STColors.primary)
-                    }
+                NavigationLink {
+                    AnalyticsDashboardView(viewModel: viewModel)
+                } label: {
+                    Text("View All")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(STColors.primary)
                 }
             }
 

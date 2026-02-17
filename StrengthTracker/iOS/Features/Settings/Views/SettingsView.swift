@@ -4,6 +4,7 @@ import StrengthTrackerShared
 
 struct SettingsView: View {
     @State private var preferencesService: UserPreferencesService
+    @State private var bodyWeightText: String = ""
     private var connectivityManager: ConnectivityManager?
 
     init(preferencesService: UserPreferencesService, connectivityManager: ConnectivityManager? = nil) {
@@ -13,6 +14,35 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+                // Profile Section
+                Section {
+                    HStack {
+                        Text("Body Weight")
+                        Spacer()
+                        TextField(
+                            preferencesService.weightUnit == .kg ? "kg" : "lbs",
+                            text: $bodyWeightText
+                        )
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 70)
+                        .onChange(of: bodyWeightText) { _, newValue in
+                            if let value = Double(newValue), value > 0 {
+                                let kg = preferencesService.weightUnit == .lbs ? value / 2.20462 : value
+                                preferencesService.bodyWeightKg = kg
+                            } else if newValue.isEmpty {
+                                preferencesService.bodyWeightKg = nil
+                            }
+                        }
+                        Text(preferencesService.weightUnit == .kg ? "kg" : "lbs")
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Profile")
+                } footer: {
+                    Text("Used for bodyweight exercises and calorie estimation. Syncs from Apple Health when available.")
+                }
+
                 // Units Section
                 Section("Units") {
                     Picker("Weight Unit", selection: $preferencesService.weightUnit) {
@@ -102,10 +132,23 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .stNavigationBarStyle()
+            .onAppear { updateBodyWeightText() }
             .onChange(of: preferencesService.defaultRestSeconds) { _, _ in syncSettingsToWatch() }
-            .onChange(of: preferencesService.weightUnit) { _, _ in syncSettingsToWatch() }
+            .onChange(of: preferencesService.weightUnit) { _, _ in
+                syncSettingsToWatch()
+                updateBodyWeightText()
+            }
             .onChange(of: preferencesService.autoStartRestTimer) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.distanceUnit) { _, _ in syncSettingsToWatch() }
+    }
+
+    private func updateBodyWeightText() {
+        guard let kg = preferencesService.bodyWeightKg else {
+            bodyWeightText = ""
+            return
+        }
+        let displayValue = preferencesService.weightUnit == .lbs ? kg * 2.20462 : kg
+        bodyWeightText = String(format: "%.1f", displayValue)
     }
 
     private func syncSettingsToWatch() {

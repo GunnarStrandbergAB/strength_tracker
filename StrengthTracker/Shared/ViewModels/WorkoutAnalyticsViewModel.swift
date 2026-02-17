@@ -68,14 +68,21 @@ public final class WorkoutAnalyticsViewModel {
             unlockedFeatures = try await featureGate.unlockedFeatures()
             nextFeatureUnlock = try? await featureGate.nextUnlock()
 
-            // Generate insights (only if we have enough data for Phase 2+)
-            guard unlockedFeatures.contains(.qualityScore) else {
-                insights = .empty
-                errorMessage = nil
-                return
-            }
-
+            // Always generate insights (workoutCount is always useful)
             var rawInsights = try await analyticsService.generateInsights()
+
+            // Gate quality score data
+            if !unlockedFeatures.contains(.qualityScore) {
+                rawInsights = WorkoutInsights(
+                    generatedAt: rawInsights.generatedAt,
+                    workoutCount: rawInsights.workoutCount,
+                    plateaus: [],
+                    muscleBalance: nil,
+                    recommendations: [],
+                    recoveryPatterns: rawInsights.recoveryPatterns,
+                    optimalVolumes: rawInsights.optimalVolumes
+                )
+            }
 
             // Enforce feature gate: only include data for unlocked features
             if !unlockedFeatures.contains(.plateauDetection) {

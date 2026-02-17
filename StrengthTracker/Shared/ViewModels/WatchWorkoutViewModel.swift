@@ -17,7 +17,7 @@ public final class WatchWorkoutViewModel {
     // Rest timer state
     public var isResting = false
     public var restTimeRemaining: TimeInterval = 0
-    public var restDuration: TimeInterval = 90
+    public var restDuration: TimeInterval = TimeInterval(UserPreferencesService.defaultRestSecondsValue)
 
     // Notes
     public var workoutNotes: String = ""
@@ -366,7 +366,7 @@ public final class WatchWorkoutViewModel {
 
         // Vectorize workout for analytics in background
         Task {
-            let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? 70.0
+            let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
             try? await analyticsService?.vectorizeWorkout(saved, bodyWeightKg: bodyWeightKg)
         }
 

@@ -10,7 +10,7 @@ import ActivityKit
 public final class RestTimerService {
     public var remainingSeconds: Int = 0
     public var isRunning: Bool = false
-    public var totalSeconds: Int = 90  // default rest time
+    public var totalSeconds: Int = UserPreferencesService.defaultRestSecondsValue
 
     public init() {}
 

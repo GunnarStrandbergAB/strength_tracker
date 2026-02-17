@@ -5,6 +5,12 @@ import Observation
 @Observable
 public final class UserPreferencesService {
 
+    /// Default body weight fallback when neither HealthKit nor user setting is available
+    public static let defaultBodyWeightKg: Double = 70.0
+
+    /// Default rest timer duration in seconds
+    public static let defaultRestSecondsValue: Int = 90
+
     /// The user's preferred weight unit (kg or lbs)
     public var weightUnit: WeightUnit {
         didSet { UserDefaults.standard.set(weightUnit.rawValue, forKey: "weightUnit") }
@@ -66,7 +72,7 @@ public final class UserPreferencesService {
         self.weightUnit = WeightUnit(rawValue: weightRaw) ?? .kg
 
         let restSeconds = defaults.integer(forKey: "defaultRestSeconds")
-        self.defaultRestSeconds = restSeconds != 0 ? restSeconds : 90
+        self.defaultRestSeconds = restSeconds != 0 ? restSeconds : Self.defaultRestSecondsValue
 
         self.hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
         self.hasSeededExercises = defaults.bool(forKey: "hasSeededExercises")
@@ -83,7 +89,7 @@ public final class UserPreferencesService {
         self.hasRequestedHealthKitAuth = defaults.bool(forKey: "hasRequestedHealthKitAuth")
 
         let restDuration = defaults.integer(forKey: "preferredRestTimerDuration")
-        self.preferredRestTimerDuration = restDuration != 0 ? restDuration : 90
+        self.preferredRestTimerDuration = restDuration != 0 ? restDuration : Self.defaultRestSecondsValue
 
         let weight = defaults.double(forKey: "bodyWeightKg")
         self.bodyWeightKg = weight > 0 ? weight : nil
@@ -93,9 +99,9 @@ public final class UserPreferencesService {
     public func resetToDefaults() {
         weightUnit = .kg
         distanceUnit = .km
-        defaultRestSeconds = 90
+        defaultRestSeconds = Self.defaultRestSecondsValue
         autoStartRestTimer = true
-        preferredRestTimerDuration = 90
+        preferredRestTimerDuration = Self.defaultRestSecondsValue
         // Note: Don't reset onboarding, seeding, or HealthKit auth flags
     }
 }

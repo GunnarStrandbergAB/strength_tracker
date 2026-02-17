@@ -9,33 +9,51 @@ struct AnalyticsDashboardView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // Next unlock banner (if applicable)
-                if let unlock = viewModel.nextFeatureUnlock {
-                    nextUnlockBanner(unlock)
-                }
+                if viewModel.isInsightsLoading || viewModel.isMigrating {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .tint(STColors.primary)
+                        Text(viewModel.isMigrating ? "Analyzing workout history..." : "Loading insights...")
+                            .font(.system(size: 13))
+                            .foregroundStyle(STColors.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 60)
+                } else {
+                    // Next unlock banner (if applicable)
+                    if let unlock = viewModel.nextFeatureUnlock {
+                        nextUnlockBanner(unlock)
+                    }
 
-                // Quality Score overview
-                if viewModel.isFeatureUnlocked(.qualityScore),
-                   let score = viewModel.qualityScore {
-                    qualityOverviewSection(score)
-                }
+                    // Workout count summary
+                    workoutCountHeader
 
-                // Muscle Balance
-                if viewModel.isFeatureUnlocked(.muscleBalance),
-                   let balance = viewModel.insights.muscleBalance {
-                    muscleBalanceSection(balance)
-                }
+                    // Feature roadmap (shows locked features)
+                    featureRoadmap
 
-                // Plateau Warnings
-                if viewModel.isFeatureUnlocked(.plateauDetection),
-                   !viewModel.insights.plateaus.isEmpty {
-                    plateauSection(viewModel.insights.plateaus)
-                }
+                    // Quality Score overview
+                    if viewModel.isFeatureUnlocked(.qualityScore),
+                       let score = viewModel.qualityScore {
+                        qualityOverviewSection(score)
+                    }
 
-                // Recommendations
-                if viewModel.isFeatureUnlocked(.exerciseRecommendations),
-                   !viewModel.insights.recommendations.isEmpty {
-                    recommendationsSection(viewModel.insights.recommendations)
+                    // Muscle Balance
+                    if viewModel.isFeatureUnlocked(.muscleBalance),
+                       let balance = viewModel.insights.muscleBalance {
+                        muscleBalanceSection(balance)
+                    }
+
+                    // Plateau Warnings
+                    if viewModel.isFeatureUnlocked(.plateauDetection),
+                       !viewModel.insights.plateaus.isEmpty {
+                        plateauSection(viewModel.insights.plateaus)
+                    }
+
+                    // Recommendations
+                    if viewModel.isFeatureUnlocked(.exerciseRecommendations),
+                       !viewModel.insights.recommendations.isEmpty {
+                        recommendationsSection(viewModel.insights.recommendations)
+                    }
                 }
 
                 Spacer().frame(height: 20)
@@ -50,6 +68,82 @@ struct AnalyticsDashboardView: View {
         .stNavigationBarStyle()
         .task {
             await viewModel.loadDashboardInsights()
+        }
+    }
+
+    // MARK: - Header & Roadmap
+
+    private var workoutCountHeader: some View {
+        VStack(spacing: 4) {
+            Text("\(viewModel.insights.workoutCount)")
+                .font(.system(size: 36, weight: .bold, design: .rounded))
+                .foregroundStyle(STColors.textPrimary)
+            Text("workouts completed")
+                .font(.system(size: 13))
+                .foregroundStyle(STColors.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(STColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+    }
+
+    private var featureRoadmap: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Feature Roadmap")
+
+            featureRow(.qualityScore, threshold: 5, icon: "star.fill")
+            featureRow(.plateauDetection, threshold: 10, icon: "exclamationmark.triangle.fill")
+            featureRow(.muscleBalance, threshold: 20, icon: "arrow.left.arrow.right")
+            featureRow(.advancedInsights, threshold: 50, icon: "brain.head.profile")
+        }
+        .padding(STSpacing.cardPadding)
+        .background(STColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+    }
+
+    private func featureRow(_ feature: AnalyticsFeatureGate.Feature, threshold: Int, icon: String) -> some View {
+        let unlocked = viewModel.isFeatureUnlocked(feature)
+        let count = viewModel.insights.workoutCount
+        let progress = min(Double(count) / Double(threshold), 1.0)
+
+        return HStack(spacing: 10) {
+            Image(systemName: unlocked ? "checkmark.circle.fill" : icon)
+                .font(.system(size: 14))
+                .foregroundStyle(unlocked ? STColors.success : STColors.textTertiary)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(viewModel.featureDisplayName(feature))
+                    .font(.system(size: 13, weight: unlocked ? .semibold : .regular))
+                    .foregroundStyle(unlocked ? STColors.textPrimary : STColors.textSecondary)
+
+                if !unlocked {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(STColors.background)
+                                .frame(height: 4)
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(STColors.primary.opacity(0.6))
+                                .frame(width: geo.size.width * CGFloat(progress), height: 4)
+                        }
+                    }
+                    .frame(height: 4)
+                }
+            }
+
+            Spacer()
+
+            if unlocked {
+                Text("Unlocked")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(STColors.success)
+            } else {
+                Text("\(count)/\(threshold)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(STColors.textTertiary)
+            }
         }
     }
 

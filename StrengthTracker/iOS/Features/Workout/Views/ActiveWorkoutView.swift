@@ -269,7 +269,7 @@ struct ActiveWorkoutView: View {
             if let ex = viewModel.currentWorkout?.exercises.first(where: { $0.id == workoutExercise.id }),
                let completedSet = ex.sets.first(where: { $0.id == setId }),
                completedSet.isCompleted {
-                let restSeconds = workoutExercise.restTimerSeconds ?? viewModel.userPreferencesService?.defaultRestSeconds ?? 90
+                let restSeconds = workoutExercise.restTimerSeconds ?? viewModel.userPreferencesService?.defaultRestSeconds ?? UserPreferencesService.defaultRestSecondsValue
                 let setIndex = ex.sets.firstIndex(where: { $0.id == setId }) ?? 0
                 restTimerService.start(
                     seconds: restSeconds,

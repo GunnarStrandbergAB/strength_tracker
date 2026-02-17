@@ -216,7 +216,7 @@ public final class WorkoutViewModel {
 
         // Vectorize workout for analytics in background
         Task {
-            let bodyWeightKg = await resolveBodyWeightKg() ?? 70.0
+            let bodyWeightKg = await resolveBodyWeightKg() ?? UserPreferencesService.defaultBodyWeightKg
             try? await analyticsService?.vectorizeWorkout(saved, bodyWeightKg: bodyWeightKg)
         }
     }

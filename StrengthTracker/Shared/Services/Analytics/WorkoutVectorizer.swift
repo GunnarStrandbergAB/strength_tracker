@@ -24,8 +24,8 @@ public final class WorkoutVectorizer: Sendable {
     /// - Parameters:
     ///   - workout: The workout to vectorize
     ///   - historicalWorkouts: Recent workouts for computing relative features (7d/30d averages)
-    ///   - bodyWeightKg: User's body weight for pure bodyweight exercise volume (default 70kg)
-    public func vectorize(_ workout: Workout, historicalWorkouts: [Workout] = [], bodyWeightKg: Double = 70.0) -> WorkoutVector {
+    ///   - bodyWeightKg: User's body weight for pure bodyweight exercise volume
+    public func vectorize(_ workout: Workout, historicalWorkouts: [Workout] = [], bodyWeightKg: Double = UserPreferencesService.defaultBodyWeightKg) -> WorkoutVector {
         var features = [Double](repeating: 0.0, count: 18)
 
         // 0: Total volume (normalized) — use body-weight-aware calculation
