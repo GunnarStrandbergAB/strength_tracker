@@ -100,7 +100,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .stNavigationBarStyle()
             .onChange(of: preferencesService.defaultRestSeconds) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.weightUnit) { _, _ in syncSettingsToWatch() }
