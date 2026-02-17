@@ -66,10 +66,14 @@ struct WorkoutListView: View {
             }
             .sheet(isPresented: $showExercisePicker) {
                 WatchExercisePickerView(exerciseListViewModel: exerciseListViewModel) { exercises in
-                    // Both state changes in the same synchronous scope so SwiftUI
-                    // batches them into one render cycle: sheet dismiss + nav push.
                     workoutViewModel.prepareQuickStart(name: "Quick Start", exercises: exercises)
-                    showExercisePicker = false
+                    // Skip sheet dismiss animation so navigation push isn't queued
+                    // behind it — otherwise watchOS serializes dismiss then push.
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        showExercisePicker = false
+                    }
                     Task {
                         await workoutViewModel.persistAndStartSession()
                     }

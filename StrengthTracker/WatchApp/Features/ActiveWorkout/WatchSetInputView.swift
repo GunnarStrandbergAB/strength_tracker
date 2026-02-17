@@ -30,7 +30,7 @@ struct WatchSetInputView: View {
     var body: some View {
         VStack(spacing: 6) {
             // Weight / Reps grid
-            HStack(spacing: 8) {
+            HStack(spacing: 4) {
                 // Weight card
                 inputCard(
                     label: weightLabel,
@@ -140,9 +140,9 @@ struct WatchSetInputView: View {
         onDecrement: @escaping () -> Void,
         onIncrement: @escaping () -> Void
     ) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 2) {
             Text(label)
-                .font(.system(size: 9, weight: .bold))
+                .font(.system(size: 8, weight: .bold))
                 .foregroundStyle(labelColor)
                 .tracking(1.5)
 
@@ -150,17 +150,17 @@ struct WatchSetInputView: View {
                 // Minus button
                 Button(action: onDecrement) {
                     Image(systemName: "minus")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(.white)
-                        .frame(width: 26, height: 26)
+                        .frame(width: 22, height: 22)
                         .background(Color.white.opacity(0.1))
-                        .cornerRadius(5)
+                        .cornerRadius(4)
                 }
                 .buttonStyle(.plain)
 
                 // Value display
                 Text(value)
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.system(size: 28, weight: .bold))
                     .monospacedDigit()
                     .foregroundStyle(isFocused ? primaryYellow : .white)
                     .lineLimit(1)
@@ -170,16 +170,17 @@ struct WatchSetInputView: View {
                 // Plus button
                 Button(action: onIncrement) {
                     Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(.white)
-                        .frame(width: 26, height: 26)
+                        .frame(width: 22, height: 22)
                         .background(Color.white.opacity(0.1))
-                        .cornerRadius(5)
+                        .cornerRadius(4)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(8)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
         .background(cardBackground)
         .cornerRadius(16)
         .onTapGesture(perform: onTap)
