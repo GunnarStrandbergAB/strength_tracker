@@ -4,6 +4,7 @@ import StrengthTrackerShared
 struct ExerciseDetailView: View {
     let exercise: Exercise
     var progressViewModel: ProgressViewModel? = nil
+    var analyticsViewModel: WorkoutAnalyticsViewModel? = nil
 
     var body: some View {
         List {
@@ -38,6 +39,12 @@ struct ExerciseDetailView: View {
                     } label: {
                         Label("View Progress Chart", systemImage: "chart.line.uptrend.xyaxis")
                     }
+                }
+            }
+
+            if let analyticsVM = analyticsViewModel {
+                Section("Insights") {
+                    ExerciseInsightsView(exercise: exercise, viewModel: analyticsVM)
                 }
             }
         }

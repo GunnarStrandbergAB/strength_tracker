@@ -3,9 +3,11 @@ import StrengthTrackerShared
 
 struct WorkoutHistoryView: View {
     @State private var viewModel: HistoryViewModel
+    var analyticsViewModel: WorkoutAnalyticsViewModel? = nil
 
-    init(viewModel: HistoryViewModel) {
+    init(viewModel: HistoryViewModel, analyticsViewModel: WorkoutAnalyticsViewModel? = nil) {
         self._viewModel = State(initialValue: viewModel)
+        self.analyticsViewModel = analyticsViewModel
     }
 
     var body: some View {
@@ -19,7 +21,7 @@ struct WorkoutHistoryView: View {
             }
             .navigationTitle("History")
             .navigationDestination(for: Workout.self) { workout in
-                WorkoutDetailView(workout: workout)
+                WorkoutDetailView(workout: workout, analyticsViewModel: analyticsViewModel)
             }
             .overlay {
                 if viewModel.isLoading {

@@ -22,6 +22,7 @@ public final class WorkoutViewModel {
     private let healthKitService: any HealthKitServiceProtocol
     private let calorieEstimationService: CalorieEstimationService
     public let userPreferencesService: UserPreferencesService?
+    private let analyticsService: WorkoutAnalyticsService?
 
     public init(
         workoutRepository: any WorkoutRepository,
@@ -29,7 +30,8 @@ public final class WorkoutViewModel {
         personalRecordService: PersonalRecordService? = nil,
         healthKitService: any HealthKitServiceProtocol,
         calorieEstimationService: CalorieEstimationService = CalorieEstimationService(),
-        userPreferencesService: UserPreferencesService? = nil
+        userPreferencesService: UserPreferencesService? = nil,
+        analyticsService: WorkoutAnalyticsService? = nil
     ) {
         self.workoutRepository = workoutRepository
         self.templateRepository = templateRepository
@@ -37,6 +39,7 @@ public final class WorkoutViewModel {
         self.healthKitService = healthKitService
         self.calorieEstimationService = calorieEstimationService
         self.userPreferencesService = userPreferencesService
+        self.analyticsService = analyticsService
     }
 
     public func startWorkout(name: String, from template: WorkoutTemplate? = nil) async {
@@ -210,6 +213,12 @@ public final class WorkoutViewModel {
             }
         }
         #endif
+
+        // Vectorize workout for analytics in background
+        Task {
+            let bodyWeightKg = await resolveBodyWeightKg() ?? UserPreferencesService.defaultBodyWeightKg
+            try? await analyticsService?.vectorizeWorkout(saved, bodyWeightKg: bodyWeightKg)
+        }
     }
 
     /// Resolve body weight via fallback chain: HealthKit → UserPreferences → nil

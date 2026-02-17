@@ -3,6 +3,7 @@ import StrengthTrackerShared
 
 struct WorkoutDetailView: View {
     let workout: Workout
+    var analyticsViewModel: WorkoutAnalyticsViewModel? = nil
 
     var body: some View {
         List {
@@ -24,6 +25,13 @@ struct WorkoutDetailView: View {
                 LabeledContent("Exercises", value: "\(workout.exercises.count)")
             }
 
+            // Quality Score section
+            if let vm = analyticsViewModel, vm.isFeatureUnlocked(.qualityScore) {
+                Section("Quality Score") {
+                    WorkoutQualityScoreView(viewModel: vm, workout: workout)
+                }
+            }
+
             ForEach(workout.exercises) { workoutExercise in
                 Section(workoutExercise.exercise.name) {
                     ForEach(workoutExercise.sets) { exerciseSet in
@@ -41,6 +49,17 @@ struct WorkoutDetailView: View {
             if let notes = workout.notes {
                 Section("Notes") {
                     Text(notes)
+                }
+            }
+
+            // Similar Workouts link
+            if let vm = analyticsViewModel, vm.isFeatureUnlocked(.similarWorkouts) {
+                Section {
+                    NavigationLink {
+                        SimilarWorkoutsView(viewModel: vm, workout: workout)
+                    } label: {
+                        Label("Similar Workouts", systemImage: "doc.on.doc")
+                    }
                 }
             }
         }

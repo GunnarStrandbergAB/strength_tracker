@@ -107,6 +107,7 @@ struct ContentViewWrapper: View {
             workoutViewModel: container.makeWorkoutViewModel(),
             historyViewModel: container.makeHistoryViewModel(),
             templateViewModel: container.makeTemplateViewModel(),
+            analyticsViewModel: container.makeWorkoutAnalyticsViewModel(),
             userPreferencesService: container.userPreferencesService,
             connectivityManager: container.connectivityManager
         )
@@ -121,7 +122,7 @@ struct ContentViewWrapper: View {
                 WidgetCenter.shared.reloadAllTimelines()
                 #endif
 
-                // Sync templates and exercises to Watch when app becomes active
+                // Sync templates, exercises, and settings to Watch when app becomes active
                 Task { @MainActor in
                     do {
                         let templates = try await container.templateRepository.fetchAll()
@@ -132,6 +133,14 @@ struct ContentViewWrapper: View {
                     } catch {
                         print("Failed to sync data on activation: \(error)")
                     }
+
+                    let prefs = container.userPreferencesService
+                    container.connectivityManager.syncSettings([
+                        "defaultRestSeconds": prefs.defaultRestSeconds,
+                        "weightUnit": prefs.weightUnit.rawValue,
+                        "autoStartRestTimer": prefs.autoStartRestTimer,
+                        "distanceUnit": prefs.distanceUnit.rawValue
+                    ])
                 }
             }
         }
