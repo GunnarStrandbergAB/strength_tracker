@@ -105,6 +105,7 @@ struct AnalyticsDashboardView: View {
     private func featureRow(_ feature: AnalyticsFeatureGate.Feature, threshold: Int, icon: String) -> some View {
         let unlocked = viewModel.isFeatureUnlocked(feature)
         let count = viewModel.insights.workoutCount
+        let remaining = max(threshold - count, 0)
         let progress = min(Double(count) / Double(threshold), 1.0)
 
         return HStack(spacing: 10) {
@@ -117,6 +118,10 @@ struct AnalyticsDashboardView: View {
                 Text(viewModel.featureDisplayName(feature))
                     .font(.system(size: 13, weight: unlocked ? .semibold : .regular))
                     .foregroundStyle(unlocked ? STColors.textPrimary : STColors.textSecondary)
+
+                Text(viewModel.featureDescription(feature))
+                    .font(.system(size: 11))
+                    .foregroundStyle(STColors.textTertiary)
 
                 if !unlocked {
                     GeometryReader { geo in
@@ -140,8 +145,8 @@ struct AnalyticsDashboardView: View {
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(STColors.success)
             } else {
-                Text("\(count)/\(threshold)")
-                    .font(.system(size: 11, design: .monospaced))
+                Text("\(remaining) more")
+                    .font(.system(size: 11))
                     .foregroundStyle(STColors.textTertiary)
             }
         }

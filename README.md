@@ -41,26 +41,30 @@ Built for lifters who want to log their workouts quickly and get back to the bar
 
 ### Workout Analytics
 
-Every workout is transformed into an 18-dimensional feature vector — entirely on-device, no cloud or LLM required. The analytics engine uses these vectors to surface insights that improve over time as you train more.
+All analytics run entirely on-device — no cloud, no AI API calls, no data leaves your phone. Every workout is converted into an 18-dimensional feature vector that captures volume, intensity, muscle targeting, and training patterns. As you log more workouts, the app progressively unlocks deeper insights.
 
-**Plateau Detection** — sliding-window coefficient of variation analysis on per-exercise volume. When your volume flatlines for 2+ weeks, the app identifies the stall and suggests variations to break through.
+#### Progressive Unlocks
 
-**Muscle Balance** — tracks antagonist muscle pair ratios (chest/back, quads/hamstrings, biceps/triceps) and flags imbalances with severity levels (mild/moderate/severe). Recommends corrective exercises.
+Analytics features are hidden until there's enough training data for them to be meaningful. The insights card doesn't appear on the dashboard until you're close to the first unlock. Each feature tells you how many more workouts you need.
 
-**Similar Workout Search** — cosine similarity search across your workout history finds past sessions that match your current training pattern. Powered by Apple Accelerate/vDSP for hardware-accelerated dot products.
+| Workouts | What Unlocks | What It Does |
+|---|---|---|
+| 5 | **Quality Score** | Rates each workout 0-100 across volume, intensity, balance, and consistency |
+| 5 | **Similar Workouts** | Finds past sessions that match your current training pattern |
+| 10 | **Plateau Detection** | Spots exercises where progress has stalled for 2+ weeks |
+| 20 | **Muscle Balance** | Checks if opposing muscle groups (chest/back, quads/hamstrings) are trained evenly |
+| 20 | **Recommendations** | Suggests exercises based on training gaps, plateaus, and muscle imbalances |
+| 50 | **Advanced Insights** | Deep analysis across your full training history |
 
-**Exercise Recommendations** — recommends exercises based on three signals: muscle imbalances to correct, plateaus to break, and muscle groups you haven't trained recently.
+#### Under the Hood
 
-**Workout Quality Score** — post-workout score (0-100) across four dimensions: volume consistency, intensity (RPE), rest time pacing, and muscle balance.
+**Vectorization** — each workout is encoded as an 18-dimensional vector capturing total volume, exercise count, intensity distribution, muscle group coverage, rest patterns, and more. Vectors are stored locally and searched using cosine similarity via Apple Accelerate/vDSP.
 
-**Progressive Disclosure** — analytics features unlock gradually as you build history:
+**Plateau Detection** — sliding-window coefficient of variation analysis on per-exercise volume. When volume flatlines, the app identifies the stall and suggests variations.
 
-| Workouts | Features Unlocked |
-|---|---|
-| 5 | Similar workouts, quality score |
-| 10 | Plateau detection |
-| 20 | Muscle balance, exercise recommendations |
-| 50 | Recovery patterns, advanced insights |
+**Muscle Balance** — tracks antagonist muscle pair ratios and flags imbalances at three severity levels (mild/moderate/severe) with corrective exercise suggestions.
+
+**Quality Score** — post-workout score across four dimensions: volume consistency, intensity (RPE), rest time pacing, and muscle balance.
 
 ### Calorie Estimation
 

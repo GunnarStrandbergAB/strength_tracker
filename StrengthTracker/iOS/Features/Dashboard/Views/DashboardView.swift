@@ -68,9 +68,11 @@ struct DashboardView: View {
                         prsCount: viewModel.prsThisWeek
                     )
 
-                    // Analytics Insights Card
-                    InsightsCardView(viewModel: analyticsViewModel)
-                        .padding(.horizontal, 20)
+                    // Analytics Insights Card (hidden until close to first unlock)
+                    if analyticsViewModel.insights.workoutCount >= 3 {
+                        InsightsCardView(viewModel: analyticsViewModel)
+                            .padding(.horizontal, 20)
+                    }
 
                     // Recent Workouts
                     RecentWorkoutsWidget(

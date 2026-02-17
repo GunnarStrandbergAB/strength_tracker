@@ -190,4 +190,17 @@ public final class WorkoutAnalyticsViewModel {
         case .advancedInsights: return "Advanced Insights"
         }
     }
+
+    public func featureDescription(_ feature: AnalyticsFeatureGate.Feature) -> String {
+        switch feature {
+        case .similarWorkouts: return "Find past workouts that match your current session"
+        case .qualityScore: return "Rate each workout on volume, intensity, and balance"
+        case .strengthTrends: return "Track strength changes over time per exercise"
+        case .exerciseRecommendations: return "Get exercise suggestions based on your training gaps"
+        case .plateauDetection: return "Spot exercises where progress has stalled"
+        case .muscleBalance: return "Check if opposing muscle groups are trained evenly"
+        case .recoveryTimeline: return "Optimal rest days between sessions"
+        case .advancedInsights: return "Deep analysis across your full training history"
+        }
+    }
 }
