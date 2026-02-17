@@ -66,9 +66,12 @@ struct WorkoutListView: View {
             }
             .sheet(isPresented: $showExercisePicker) {
                 WatchExercisePickerView(exerciseListViewModel: exerciseListViewModel) { exercises in
+                    // Both state changes in the same synchronous scope so SwiftUI
+                    // batches them into one render cycle: sheet dismiss + nav push.
+                    workoutViewModel.prepareQuickStart(name: "Quick Start", exercises: exercises)
                     showExercisePicker = false
                     Task {
-                        await workoutViewModel.startWorkout(name: "Quick Start", exercises: exercises)
+                        await workoutViewModel.persistAndStartSession()
                     }
                 }
             }

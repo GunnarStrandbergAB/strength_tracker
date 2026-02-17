@@ -182,11 +182,14 @@ public final class WatchWorkoutViewModel {
 
     // MARK: - Workout Lifecycle
 
-    public func startWorkout(name: String, exercises: [Exercise]) async {
+    /// Synchronous: builds workout, sets state, activates navigation immediately.
+    /// Call from the same synchronous scope as sheet dismiss for batched rendering.
+    public func prepareQuickStart(name: String, exercises: [Exercise]) {
         isQuickStart = true
         plannedSetsPerExercise = [:]
         targetWeightPerExercise = [:]
         targetRepsPerExercise = [:]
+        viewingSetIndex = nil
 
         let workoutExercises = exercises.enumerated().map { index, exercise in
             WorkoutExercise(
@@ -211,12 +214,16 @@ public final class WatchWorkoutViewModel {
             exercises: workoutExercises
         )
 
-        // Set state immediately so navigation pushes without waiting for save
         activeWorkout = workout
         currentExerciseIndex = 0
         isActive = true
+    }
 
-        // Persist and start HealthKit in background
+    /// Async: persists the current workout and starts HealthKit session.
+    /// Call in a background Task after prepareQuickStart.
+    public func persistAndStartSession() async {
+        guard let workout = activeWorkout else { return }
+
         do {
             let saved = try await workoutRepository.save(workout)
             activeWorkout = saved
@@ -231,7 +238,7 @@ public final class WatchWorkoutViewModel {
             print("[WatchWorkoutVM] HealthKit session start failed: \(error)")
         }
 
-        connectivityManager.sendWorkoutStarted(workout)
+        connectivityManager.sendWorkoutStarted(activeWorkout ?? workout)
     }
 
     public func startWorkout(name: String, from template: WorkoutTemplate) async {
