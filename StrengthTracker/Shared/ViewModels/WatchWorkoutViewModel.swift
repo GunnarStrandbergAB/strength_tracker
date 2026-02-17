@@ -19,6 +19,12 @@ public final class WatchWorkoutViewModel {
     public var restTimeRemaining: TimeInterval = 0
     public var restDuration: TimeInterval = TimeInterval(UserPreferencesService.defaultRestSecondsValue)
 
+    // Set navigation (nil = active/next set)
+    public var viewingSetIndex: Int? = nil
+
+    // Completion guard (prevents double-tap and provides loading state)
+    public var isCompleting = false
+
     // Notes
     public var workoutNotes: String = ""
 
@@ -104,6 +110,39 @@ public final class WatchWorkoutViewModel {
         return targetRepsPerExercise[currentExerciseIndex] ?? nil
     }
 
+    public var isEditingCompletedSet: Bool {
+        guard let idx = viewingSetIndex,
+              let exercise = currentExercise else { return false }
+        return idx < exercise.sets.count && exercise.sets[idx].isCompleted
+    }
+
+    public var viewingSetWeight: Double? {
+        guard let idx = viewingSetIndex,
+              let exercise = currentExercise,
+              idx < exercise.sets.count else { return currentTargetWeight }
+        return exercise.sets[idx].weight
+    }
+
+    public var viewingSetReps: Int? {
+        guard let idx = viewingSetIndex,
+              let exercise = currentExercise,
+              idx < exercise.sets.count else { return currentTargetReps }
+        return exercise.sets[idx].reps
+    }
+
+    public var canNavigateToPreviousSet: Bool {
+        guard let exercise = currentExercise else { return false }
+        let completedCount = exercise.sets.filter(\.isCompleted).count
+        if viewingSetIndex == nil {
+            return completedCount > 0
+        }
+        return (viewingSetIndex ?? 0) > 0
+    }
+
+    public var canNavigateToNextSet: Bool {
+        viewingSetIndex != nil
+    }
+
     public var currentExercisePlannedSetsComplete: Bool {
         guard !isQuickStart,
               let planned = plannedSetsPerExercise[currentExerciseIndex],
@@ -143,11 +182,14 @@ public final class WatchWorkoutViewModel {
 
     // MARK: - Workout Lifecycle
 
-    public func startWorkout(name: String, exercises: [Exercise]) async {
+    /// Synchronous: builds workout, sets state, activates navigation immediately.
+    /// Call from the same synchronous scope as sheet dismiss for batched rendering.
+    public func prepareQuickStart(name: String, exercises: [Exercise]) {
         isQuickStart = true
         plannedSetsPerExercise = [:]
         targetWeightPerExercise = [:]
         targetRepsPerExercise = [:]
+        viewingSetIndex = nil
 
         let workoutExercises = exercises.enumerated().map { index, exercise in
             WorkoutExercise(
@@ -172,28 +214,31 @@ public final class WatchWorkoutViewModel {
             exercises: workoutExercises
         )
 
+        activeWorkout = workout
+        currentExerciseIndex = 0
+        isActive = true
+    }
+
+    /// Async: persists the current workout and starts HealthKit session.
+    /// Call in a background Task after prepareQuickStart.
+    public func persistAndStartSession() async {
+        guard let workout = activeWorkout else { return }
+
         do {
-            activeWorkout = try await workoutRepository.save(workout)
-            currentExerciseIndex = 0
-            isActive = true
-
-            // Start HealthKit workout session (nil on iOS, active on watchOS)
-            do {
-                try await watchSessionManager?.requestAuthorization()
-                try await watchSessionManager?.startWorkoutSession()
-            } catch {
-                print("[WatchWorkoutVM] HealthKit session start failed: \(error)")
-            }
-
-            // Notify iPhone that workout started
-            if let saved = activeWorkout {
-                connectivityManager.sendWorkoutStarted(saved)
-            }
+            let saved = try await workoutRepository.save(workout)
+            activeWorkout = saved
         } catch {
-            activeWorkout = workout
-            currentExerciseIndex = 0
-            isActive = true
+            print("[WatchWorkoutVM] Initial save failed: \(error)")
         }
+
+        do {
+            try await watchSessionManager?.requestAuthorization()
+            try await watchSessionManager?.startWorkoutSession()
+        } catch {
+            print("[WatchWorkoutVM] HealthKit session start failed: \(error)")
+        }
+
+        connectivityManager.sendWorkoutStarted(activeWorkout ?? workout)
     }
 
     public func startWorkout(name: String, from template: WorkoutTemplate) async {
@@ -244,27 +289,27 @@ public final class WatchWorkoutViewModel {
             exercises: workoutExercises
         )
 
+        // Set state immediately so navigation pushes without waiting for save
+        activeWorkout = workout
+        currentExerciseIndex = 0
+        isActive = true
+
+        // Persist and start HealthKit in background
         do {
-            activeWorkout = try await workoutRepository.save(workout)
-            currentExerciseIndex = 0
-            isActive = true
-
-            do {
-                try await watchSessionManager?.requestAuthorization()
-                try await watchSessionManager?.startWorkoutSession()
-            } catch {
-                print("[WatchWorkoutVM] HealthKit session start failed: \(error)")
-            }
-
-            // Notify iPhone that workout started
-            if let saved = activeWorkout {
-                connectivityManager.sendWorkoutStarted(saved)
-            }
+            let saved = try await workoutRepository.save(workout)
+            activeWorkout = saved
         } catch {
-            activeWorkout = workout
-            currentExerciseIndex = 0
-            isActive = true
+            print("[WatchWorkoutVM] Initial save failed: \(error)")
         }
+
+        do {
+            try await watchSessionManager?.requestAuthorization()
+            try await watchSessionManager?.startWorkoutSession()
+        } catch {
+            print("[WatchWorkoutVM] HealthKit session start failed: \(error)")
+        }
+
+        connectivityManager.sendWorkoutStarted(workout)
     }
 
     public func logSet(weight: Double?, reps: Int?, rpe: Double? = nil) async throws {
@@ -303,6 +348,7 @@ public final class WatchWorkoutViewModel {
         }
 
         activeWorkout = workout
+        viewingSetIndex = nil
 
         // Send live snapshot to iPhone
         connectivityManager.sendWorkoutSnapshot(workout)
@@ -333,6 +379,14 @@ public final class WatchWorkoutViewModel {
     }
 
     public func completeWorkout() async throws {
+        guard !isCompleting else { return }
+        isCompleting = true
+        defer {
+            isCompleting = false
+            // Always pop navigation so user is never stuck
+            isActive = false
+        }
+
         guard var workout = activeWorkout else {
             throw WorkoutError.noActiveWorkout
         }
@@ -345,7 +399,6 @@ public final class WatchWorkoutViewModel {
         stopRestTimer()
 
         // End HealthKit workout session BEFORE setting isActive = false.
-        // Setting isActive = false triggers navigation pop which can interrupt the Task.
         do {
             try await watchSessionManager?.endWorkoutSession()
         } catch {
@@ -369,9 +422,6 @@ public final class WatchWorkoutViewModel {
             let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
             try? await analyticsService?.vectorizeWorkout(saved, bodyWeightKg: bodyWeightKg)
         }
-
-        // Set isActive = false LAST so the view stays alive until all work is done
-        isActive = false
     }
 
     // MARK: - Navigation
@@ -379,14 +429,56 @@ public final class WatchWorkoutViewModel {
     public func nextExercise() {
         guard let workout = activeWorkout else { return }
         if currentExerciseIndex < workout.exercises.count - 1 {
+            viewingSetIndex = nil
             currentExerciseIndex += 1
         }
     }
 
     public func previousExercise() {
         if currentExerciseIndex > 0 {
+            viewingSetIndex = nil
             currentExerciseIndex -= 1
         }
+    }
+
+    // MARK: - Set Navigation
+
+    public func navigateToPreviousSet() {
+        guard let exercise = currentExercise else { return }
+        let completedCount = exercise.sets.filter(\.isCompleted).count
+        if viewingSetIndex == nil {
+            // From active set, go to last completed
+            if completedCount > 0 {
+                viewingSetIndex = completedCount - 1
+            }
+        } else if let idx = viewingSetIndex, idx > 0 {
+            viewingSetIndex = idx - 1
+        }
+    }
+
+    public func navigateToNextSet() {
+        guard let idx = viewingSetIndex,
+              let exercise = currentExercise else { return }
+        let completedCount = exercise.sets.filter(\.isCompleted).count
+        if idx < completedCount - 1 {
+            viewingSetIndex = idx + 1
+        } else {
+            viewingSetIndex = nil
+        }
+    }
+
+    public func updateSet(weight: Double?, reps: Int?) {
+        guard let idx = viewingSetIndex,
+              var workout = activeWorkout,
+              currentExerciseIndex < workout.exercises.count,
+              idx < workout.exercises[currentExerciseIndex].sets.count else { return }
+        workout.exercises[currentExerciseIndex].sets[idx].weight = weight
+        workout.exercises[currentExerciseIndex].sets[idx].reps = reps
+        activeWorkout = workout
+        viewingSetIndex = nil
+
+        // Send updated snapshot to iPhone
+        connectivityManager.sendWorkoutSnapshot(workout)
     }
 
     // MARK: - Rest Timer

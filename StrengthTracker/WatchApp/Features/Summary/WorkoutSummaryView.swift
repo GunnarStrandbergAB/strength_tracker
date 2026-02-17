@@ -115,19 +115,25 @@ struct WorkoutSummaryView: View {
                     }
                 } label: {
                     HStack(spacing: 6) {
-                        Text("DONE")
-                            .font(.system(size: 14, weight: .black))
-                            .tracking(1)
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 12, weight: .bold))
+                        if viewModel.isCompleting {
+                            ProgressView()
+                                .tint(.black)
+                        } else {
+                            Text("DONE")
+                                .font(.system(size: 14, weight: .black))
+                                .tracking(1)
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 12, weight: .bold))
+                        }
                     }
                     .foregroundStyle(.black)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
-                    .background(primaryYellow)
+                    .background(viewModel.isCompleting ? primaryYellow.opacity(0.5) : primaryYellow)
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .disabled(viewModel.isCompleting)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)

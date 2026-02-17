@@ -60,15 +60,22 @@ struct WorkoutListView: View {
             .navigationTitle("Workouts")
             .navigationDestination(isPresented: Binding(
                 get: { workoutViewModel.isActive },
-                set: { _ in }
+                set: { newValue in workoutViewModel.isActive = newValue }
             )) {
                 WatchActiveWorkoutView(viewModel: workoutViewModel)
             }
             .sheet(isPresented: $showExercisePicker) {
                 WatchExercisePickerView(exerciseListViewModel: exerciseListViewModel) { exercises in
-                    showExercisePicker = false
+                    workoutViewModel.prepareQuickStart(name: "Quick Start", exercises: exercises)
+                    // Skip sheet dismiss animation so navigation push isn't queued
+                    // behind it — otherwise watchOS serializes dismiss then push.
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        showExercisePicker = false
+                    }
                     Task {
-                        await workoutViewModel.startWorkout(name: "Quick Start", exercises: exercises)
+                        await workoutViewModel.persistAndStartSession()
                     }
                 }
             }
