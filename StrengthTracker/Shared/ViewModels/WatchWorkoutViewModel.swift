@@ -19,6 +19,9 @@ public final class WatchWorkoutViewModel {
     public var restTimeRemaining: TimeInterval = 0
     public var restDuration: TimeInterval = TimeInterval(UserPreferencesService.defaultRestSecondsValue)
 
+    // Set navigation (nil = active/next set)
+    public var viewingSetIndex: Int? = nil
+
     // Notes
     public var workoutNotes: String = ""
 
@@ -102,6 +105,39 @@ public final class WatchWorkoutViewModel {
         }
         // Fall back to exercise-level target for extra sets
         return targetRepsPerExercise[currentExerciseIndex] ?? nil
+    }
+
+    public var isEditingCompletedSet: Bool {
+        guard let idx = viewingSetIndex,
+              let exercise = currentExercise else { return false }
+        return idx < exercise.sets.count && exercise.sets[idx].isCompleted
+    }
+
+    public var viewingSetWeight: Double? {
+        guard let idx = viewingSetIndex,
+              let exercise = currentExercise,
+              idx < exercise.sets.count else { return currentTargetWeight }
+        return exercise.sets[idx].weight
+    }
+
+    public var viewingSetReps: Int? {
+        guard let idx = viewingSetIndex,
+              let exercise = currentExercise,
+              idx < exercise.sets.count else { return currentTargetReps }
+        return exercise.sets[idx].reps
+    }
+
+    public var canNavigateToPreviousSet: Bool {
+        guard let exercise = currentExercise else { return false }
+        let completedCount = exercise.sets.filter(\.isCompleted).count
+        if viewingSetIndex == nil {
+            return completedCount > 0
+        }
+        return (viewingSetIndex ?? 0) > 0
+    }
+
+    public var canNavigateToNextSet: Bool {
+        viewingSetIndex != nil
     }
 
     public var currentExercisePlannedSetsComplete: Bool {
@@ -303,6 +339,7 @@ public final class WatchWorkoutViewModel {
         }
 
         activeWorkout = workout
+        viewingSetIndex = nil
 
         // Send live snapshot to iPhone
         connectivityManager.sendWorkoutSnapshot(workout)
@@ -379,14 +416,56 @@ public final class WatchWorkoutViewModel {
     public func nextExercise() {
         guard let workout = activeWorkout else { return }
         if currentExerciseIndex < workout.exercises.count - 1 {
+            viewingSetIndex = nil
             currentExerciseIndex += 1
         }
     }
 
     public func previousExercise() {
         if currentExerciseIndex > 0 {
+            viewingSetIndex = nil
             currentExerciseIndex -= 1
         }
+    }
+
+    // MARK: - Set Navigation
+
+    public func navigateToPreviousSet() {
+        guard let exercise = currentExercise else { return }
+        let completedCount = exercise.sets.filter(\.isCompleted).count
+        if viewingSetIndex == nil {
+            // From active set, go to last completed
+            if completedCount > 0 {
+                viewingSetIndex = completedCount - 1
+            }
+        } else if let idx = viewingSetIndex, idx > 0 {
+            viewingSetIndex = idx - 1
+        }
+    }
+
+    public func navigateToNextSet() {
+        guard let idx = viewingSetIndex,
+              let exercise = currentExercise else { return }
+        let completedCount = exercise.sets.filter(\.isCompleted).count
+        if idx < completedCount - 1 {
+            viewingSetIndex = idx + 1
+        } else {
+            viewingSetIndex = nil
+        }
+    }
+
+    public func updateSet(weight: Double?, reps: Int?) {
+        guard let idx = viewingSetIndex,
+              var workout = activeWorkout,
+              currentExerciseIndex < workout.exercises.count,
+              idx < workout.exercises[currentExerciseIndex].sets.count else { return }
+        workout.exercises[currentExerciseIndex].sets[idx].weight = weight
+        workout.exercises[currentExerciseIndex].sets[idx].reps = reps
+        activeWorkout = workout
+        viewingSetIndex = nil
+
+        // Send updated snapshot to iPhone
+        connectivityManager.sendWorkoutSnapshot(workout)
     }
 
     // MARK: - Rest Timer

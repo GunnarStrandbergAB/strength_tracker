@@ -73,26 +73,61 @@ struct WatchSetInputView: View {
 
             Spacer(minLength: 0)
 
-            // Finish Set button
-            Button {
-                Task {
-                    try? await viewModel.logSet(weight: weight, reps: Int(reps))
+            // Action button row with set navigation
+            HStack(spacing: 6) {
+                // ◀ previous set
+                Button {
+                    viewModel.navigateToPreviousSet()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(viewModel.canNavigateToPreviousSet ? .white : .white.opacity(0.25))
+                        .frame(width: 30, height: 30)
+                        .background(Color.white.opacity(0.15))
+                        .clipShape(Circle())
                 }
-            } label: {
-                HStack(spacing: 6) {
-                    Text("FINISH SET")
-                        .font(.system(size: 14, weight: .black))
-                        .tracking(-0.5)
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 14, weight: .bold))
+                .buttonStyle(.plain)
+                .disabled(!viewModel.canNavigateToPreviousSet)
+
+                // FINISH SET / UPDATE
+                Button {
+                    if viewModel.isEditingCompletedSet {
+                        viewModel.updateSet(weight: weight, reps: Int(reps))
+                    } else {
+                        Task {
+                            try? await viewModel.logSet(weight: weight, reps: Int(reps))
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(viewModel.isEditingCompletedSet ? "UPDATE" : "FINISH SET")
+                            .font(.system(size: 12, weight: .black))
+                            .tracking(-0.5)
+                        Image(systemName: viewModel.isEditingCompletedSet ? "pencil.circle.fill" : "checkmark.circle.fill")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    .foregroundStyle(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .background(primaryYellow)
+                    .clipShape(Capsule())
                 }
-                .foregroundStyle(.black)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(primaryYellow)
-                .clipShape(Capsule())
+                .buttonStyle(.plain)
+
+                // ▶ next set
+                Button {
+                    viewModel.navigateToNextSet()
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(viewModel.canNavigateToNextSet ? .white : .white.opacity(0.25))
+                        .frame(width: 30, height: 30)
+                        .background(Color.white.opacity(0.15))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!viewModel.canNavigateToNextSet)
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -115,9 +150,9 @@ struct WatchSetInputView: View {
                 // Minus button
                 Button(action: onDecrement) {
                     Image(systemName: "minus")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.white)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 26, height: 26)
                         .background(Color.white.opacity(0.1))
                         .cornerRadius(5)
                 }
@@ -125,7 +160,7 @@ struct WatchSetInputView: View {
 
                 // Value display
                 Text(value)
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(size: 20, weight: .bold))
                     .monospacedDigit()
                     .foregroundStyle(isFocused ? primaryYellow : .white)
                     .lineLimit(1)
@@ -135,16 +170,16 @@ struct WatchSetInputView: View {
                 // Plus button
                 Button(action: onIncrement) {
                     Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.white)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 26, height: 26)
                         .background(Color.white.opacity(0.1))
                         .cornerRadius(5)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(6)
+        .padding(8)
         .background(cardBackground)
         .cornerRadius(16)
         .onTapGesture(perform: onTap)

@@ -76,7 +76,11 @@ struct WatchActiveWorkoutView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
 
-                if viewModel.hasPlannedSets {
+                if viewModel.isEditingCompletedSet, let idx = viewModel.viewingSetIndex {
+                    Text("Editing Set \(idx + 1)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(primaryYellow)
+                } else if viewModel.hasPlannedSets {
                     Text("Set \(viewModel.currentSetNumber)/\(viewModel.plannedSets)")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(secondaryText)
@@ -87,13 +91,13 @@ struct WatchActiveWorkoutView: View {
                 }
 
                 // Set input area or completion view
-                if !viewModel.currentExercisePlannedSetsComplete || isAddingExtraSet {
+                if !viewModel.currentExercisePlannedSetsComplete || isAddingExtraSet || viewModel.isEditingCompletedSet {
                     WatchSetInputView(
                         viewModel: viewModel,
-                        targetWeight: viewModel.currentTargetWeight,
-                        targetReps: viewModel.currentTargetReps
+                        targetWeight: viewModel.viewingSetWeight,
+                        targetReps: viewModel.viewingSetReps
                     )
-                    .id(viewModel.currentSetNumber)
+                    .id(viewModel.viewingSetIndex ?? viewModel.currentSetNumber)
                 } else {
                     exerciseCompletionView
                 }
@@ -182,8 +186,15 @@ struct WatchActiveWorkoutView: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
-        .background(Color.white.opacity(0.08))
+        .background(viewModel.viewingSetIndex == index
+            ? primaryYellow.opacity(0.25)
+            : Color.white.opacity(0.08))
         .cornerRadius(8)
+        .onTapGesture {
+            if set.isCompleted {
+                viewModel.viewingSetIndex = index
+            }
+        }
         .onLongPressGesture {
             // Swipe-to-delete alternative for Watch: long-press to delete
             viewModel.removeSetFromCurrentExercise(at: index)
