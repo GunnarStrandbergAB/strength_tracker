@@ -182,21 +182,32 @@ public struct WorkoutVector: Identifiable, Hashable, Sendable, Codable {
 ```swift
 import Foundation
 
-/// A workout with its similarity score to a reference workout
+/// A reference to a similar workout with its similarity score.
+/// References the workout by ID only (DDD: cross-aggregate references by identity).
+/// The presentation layer resolves the full Workout when needed for display.
 public struct SimilarWorkout: Identifiable, Hashable, Sendable {
     public let id: UUID
-    public let workout: Workout
+    public let workoutId: UUID
+    public let workoutName: String // Denormalized for display without fetching
+    public let workoutDate: Date   // Denormalized for display without fetching
+    public let totalVolume: Double  // Denormalized for display without fetching
     public let similarityScore: Double // 0.0 to 1.0 (cosine similarity)
     public let matchedFeatures: [String] // Top 3 matching feature names
 
     public init(
         id: UUID,
-        workout: Workout,
+        workoutId: UUID,
+        workoutName: String,
+        workoutDate: Date,
+        totalVolume: Double,
         similarityScore: Double,
         matchedFeatures: [String]
     ) {
         self.id = id
-        self.workout = workout
+        self.workoutId = workoutId
+        self.workoutName = workoutName
+        self.workoutDate = workoutDate
+        self.totalVolume = totalVolume
         self.similarityScore = similarityScore
         self.matchedFeatures = matchedFeatures
     }
@@ -208,7 +219,9 @@ public struct SimilarWorkout: Identifiable, Hashable, Sendable {
 ```swift
 import Foundation
 
-/// Analysis of progress plateau for an exercise or muscle group
+/// Analysis of progress plateau for an exercise or muscle group.
+/// Recommendation text is a computed property derived from the model's own data
+/// (DDD: domain model owns its business rules, services produce data not presentation).
 public struct PlateauAnalysis: Identifiable, Hashable, Sendable {
     public let id: UUID
     public let exerciseId: UUID?
@@ -219,8 +232,19 @@ public struct PlateauAnalysis: Identifiable, Hashable, Sendable {
     public let averageVolumePerWeek: Double
     public let volumeStdDev: Double
     public let lastImprovement: Date?
-    public let recommendation: String
     public let confidenceScore: Double // 0.0 to 1.0
+
+    /// Business rule: recommendation derived from analysis data
+    public var recommendation: String {
+        guard let name = exerciseName else { return "" }
+        if consecutiveWeeksStalled >= 4 {
+            return "Consider deloading \(name) by 10-20% and focus on form, or try a variation."
+        } else if consecutiveWeeksStalled >= 2 {
+            return "Try increasing volume by 5-10% or adding a technique like drop sets for \(name)."
+        } else {
+            return "Progress is on track for \(name). Keep pushing!"
+        }
+    }
 
     public init(
         id: UUID,
@@ -232,7 +256,6 @@ public struct PlateauAnalysis: Identifiable, Hashable, Sendable {
         averageVolumePerWeek: Double,
         volumeStdDev: Double,
         lastImprovement: Date?,
-        recommendation: String,
         confidenceScore: Double
     ) {
         self.id = id
@@ -244,7 +267,6 @@ public struct PlateauAnalysis: Identifiable, Hashable, Sendable {
         self.averageVolumePerWeek = averageVolumePerWeek
         self.volumeStdDev = volumeStdDev
         self.lastImprovement = lastImprovement
-        self.recommendation = recommendation
         self.confidenceScore = confidenceScore
     }
 }
@@ -287,22 +309,32 @@ public struct MuscleImbalance: Identifiable, Hashable, Sendable {
     public let comparisonGroup: MuscleGroup
     public let ratio: Double // e.g., 2.5 means primary is 2.5x comparison
     public let severity: ImbalanceSeverity
-    public let recommendation: String
+
+    /// Business rule: recommendation derived from imbalance data
+    public var recommendation: String {
+        let ratioStr = String(format: "%.1f", ratio)
+        switch severity {
+        case .severe:
+            return "Significantly reduce \(primaryGroup.rawValue) volume and increase \(comparisonGroup.rawValue) by 30-40% (\(ratioStr)x imbalance)."
+        case .moderate:
+            return "Increase \(comparisonGroup.rawValue) volume by 20-30% to balance \(primaryGroup.rawValue) training (\(ratioStr)x imbalance)."
+        case .mild:
+            return "Consider adding 1-2 more sets for \(comparisonGroup.rawValue) to improve balance with \(primaryGroup.rawValue) (\(ratioStr)x imbalance)."
+        }
+    }
 
     public init(
         id: UUID,
         primaryGroup: MuscleGroup,
         comparisonGroup: MuscleGroup,
         ratio: Double,
-        severity: ImbalanceSeverity,
-        recommendation: String
+        severity: ImbalanceSeverity
     ) {
         self.id = id
         self.primaryGroup = primaryGroup
         self.comparisonGroup = comparisonGroup
         self.ratio = ratio
         self.severity = severity
-        self.recommendation = recommendation
     }
 }
 
@@ -503,7 +535,63 @@ public enum HighlightType: String, Codable, Sendable {
 }
 ```
 
-### 2.2 SwiftData Entity Extension
+### 2.2 Analytics Aggregate: WorkoutInsights
+
+The analytics domain models above are read projections — they're computed from workout data, not independently persisted entities. In DDD terms, they form a **read-side aggregate** rooted at `WorkoutInsights`, which groups all analytics results for a dashboard load. This prevents the ViewModel from holding 6+ independent arrays and provides a single consistency boundary for analytics state.
+
+**File: `Shared/Models/Domain/Analytics/WorkoutInsights.swift`**
+
+```swift
+import Foundation
+
+/// Aggregate root for analytics read projections.
+/// Groups all computed insights for a single analytics load,
+/// ensuring consistent state (all insights from the same data snapshot).
+public struct WorkoutInsights: Sendable {
+    public let generatedAt: Date
+    public let workoutCount: Int // Number of workouts in the analysis window
+
+    // Read projections (nil = not yet loaded or insufficient data)
+    public let plateaus: [PlateauAnalysis]
+    public let muscleBalance: MuscleBalance?
+    public let recommendations: [ExerciseRecommendation]
+    public let recoveryPatterns: [RecoveryPattern]
+    public let optimalVolumes: [OptimalVolumeRange]
+
+    public init(
+        generatedAt: Date,
+        workoutCount: Int,
+        plateaus: [PlateauAnalysis],
+        muscleBalance: MuscleBalance?,
+        recommendations: [ExerciseRecommendation],
+        recoveryPatterns: [RecoveryPattern],
+        optimalVolumes: [OptimalVolumeRange]
+    ) {
+        self.generatedAt = generatedAt
+        self.workoutCount = workoutCount
+        self.plateaus = plateaus
+        self.muscleBalance = muscleBalance
+        self.recommendations = recommendations
+        self.recoveryPatterns = recoveryPatterns
+        self.optimalVolumes = optimalVolumes
+    }
+
+    /// Empty insights (for initial state before data loads)
+    public static let empty = WorkoutInsights(
+        generatedAt: Date(),
+        workoutCount: 0,
+        plateaus: [],
+        muscleBalance: nil,
+        recommendations: [],
+        recoveryPatterns: [],
+        optimalVolumes: []
+    )
+}
+```
+
+> **DDD Note:** `SimilarWorkout` and `WorkoutQualityScore` are scoped to a single workout (not the dashboard), so they live outside this aggregate — they're returned by dedicated service methods when the user views a specific workout.
+
+### 2.3 SwiftData Entity Extension
 
 **File: `Shared/Persistence/SwiftData/Entities/WorkoutVectorEntity.swift`**
 
@@ -568,6 +656,62 @@ public final class WorkoutVectorEntity {
     public var workoutVector: WorkoutVectorEntity?
 ```
 
+### 2.4 WorkoutVectorMapper
+
+Follows the existing codebase pattern (`WorkoutMapper`, `ExerciseMapper`, `TemplateMapper`, `PersonalRecordMapper`) — a dedicated mapper translating between SwiftData entities and domain models, including the Float32↔Double conversion at the repository boundary (ADR-002).
+
+**File: `Shared/Persistence/Mappers/WorkoutVectorMapper.swift`**
+
+```swift
+import Foundation
+
+/// Maps between WorkoutVectorEntity (persistence) and WorkoutVector (domain).
+/// Handles Float32↔Double conversion at the repository boundary (ADR-002).
+public enum WorkoutVectorMapper {
+
+    // MARK: - Entity → Domain
+
+    public static func toDomain(_ entity: WorkoutVectorEntity) -> WorkoutVector {
+        WorkoutVector(
+            id: entity.id,
+            workoutId: entity.workoutId,
+            createdAt: entity.createdAt,
+            dimensions: dataToDoubles(entity.vectorData)
+        )
+    }
+
+    // MARK: - Domain → Entity
+
+    public static func toEntity(_ domain: WorkoutVector, totalVolume: Double, workoutDate: Date, primaryMuscleGroups: [String]) -> WorkoutVectorEntity {
+        WorkoutVectorEntity(
+            id: domain.id,
+            workoutId: domain.workoutId,
+            createdAt: domain.createdAt,
+            vectorData: doublesToData(domain.dimensions),
+            totalVolume: totalVolume,
+            workoutDate: workoutDate,
+            primaryMuscleGroups: primaryMuscleGroups
+        )
+    }
+
+    // MARK: - Float32↔Double Conversion (ADR-002)
+
+    /// Convert [Double] domain values to Float32 Data for storage (72 bytes)
+    public static func doublesToData(_ dimensions: [Double]) -> Data {
+        let floats = dimensions.map { Float($0) }
+        return Data(bytes: floats, count: floats.count * MemoryLayout<Float>.stride)
+    }
+
+    /// Convert Float32 Data back to [Double] domain values
+    public static func dataToDoubles(_ data: Data) -> [Double] {
+        let floats = data.withUnsafeBytes { buffer in
+            Array(buffer.bindMemory(to: Float.self))
+        }
+        return floats.map { Double($0) }
+    }
+}
+```
+
 ---
 
 ## 3. Service Layer Design
@@ -582,7 +726,9 @@ import Foundation
 import Accelerate
 #endif
 
-/// Extracts 18-dimensional feature vectors from workout data
+/// Extracts 18-dimensional feature vectors from workout data.
+/// Stateless service (DDD: services should not hold mutable state).
+/// Historical context is passed as a parameter, not stored.
 /// - Feature engineering optimized for similarity search
 /// - L2 normalization for cosine similarity
 @MainActor
@@ -597,18 +743,13 @@ public final class WorkoutVectorizer: Sendable {
     private let maxDuration: TimeInterval = 7200 // 2 hours
     private let maxPRs: Int = 10                 // 99th percentile
 
-    // MARK: - Context Data (for relative features)
-    private var historicalWorkouts: [Workout] = []
-
     public init() {}
 
-    /// Update historical context for computing relative features
-    public func updateContext(workouts: [Workout]) {
-        self.historicalWorkouts = workouts
-    }
-
     /// Extract feature vector from a workout
-    public func vectorize(_ workout: Workout) -> WorkoutVector {
+    /// - Parameters:
+    ///   - workout: The workout to vectorize
+    ///   - historicalWorkouts: Recent workouts for computing relative features (7d/30d averages)
+    public func vectorize(_ workout: Workout, historicalWorkouts: [Workout] = []) -> WorkoutVector {
         var features = [Double](repeating: 0.0, count: 18)
 
         // 0: Total volume (normalized)
@@ -657,7 +798,7 @@ public final class WorkoutVectorizer: Sendable {
         features[13] = avgRPE / 10.0
 
         // 14-15: Volume vs historical moving averages
-        let (vol7d, vol30d) = calculateHistoricalVolumes(workout)
+        let (vol7d, vol30d) = calculateHistoricalVolumes(workout, historicalWorkouts: historicalWorkouts)
         features[14] = vol7d
         features[15] = vol30d
 
@@ -701,7 +842,7 @@ public final class WorkoutVectorizer: Sendable {
         return volumes
     }
 
-    private func calculateHistoricalVolumes(_ workout: Workout) -> (vol7d: Double, vol30d: Double) {
+    private func calculateHistoricalVolumes(_ workout: Workout, historicalWorkouts: [Workout]) -> (vol7d: Double, vol30d: Double) {
         let calendar = Calendar.current
         let workoutDate = workout.startedAt
 
@@ -930,11 +1071,11 @@ public final class WorkoutAnalyticsService: Sendable {
         let filtered = similarities.filter { $0.similarity >= minSimilarity }
         let topResults = Array(filtered.prefix(limit))
 
-        // Fetch corresponding workouts
+        // Fetch corresponding workouts (via WorkoutRepository, not AnalyticsRepository)
         let workoutIds = topResults.map { vectors[$0.index].workoutId }
-        let workouts = try await analyticsRepository.fetchWorkoutsByIds(workoutIds)
+        let workouts = try await workoutRepository.fetchByIds(workoutIds)
 
-        // Map to SimilarWorkout domain models
+        // Map to SimilarWorkout domain models (ID reference, not embedded Workout)
         return try topResults.compactMap { result in
             guard let workout = workouts.first(where: { $0.id == vectors[result.index].workoutId }) else {
                 return nil
@@ -948,11 +1089,35 @@ public final class WorkoutAnalyticsService: Sendable {
 
             return SimilarWorkout(
                 id: UUID(),
-                workout: workout,
+                workoutId: workout.id,
+                workoutName: workout.name ?? "Workout",
+                workoutDate: workout.startedAt,
+                totalVolume: workout.totalVolume,
                 similarityScore: result.similarity,
                 matchedFeatures: matchedFeatures
             )
         }
+    }
+
+    // MARK: - Dashboard Aggregate
+
+    /// Generate a consistent WorkoutInsights snapshot for the dashboard
+    public func generateInsights(timeWindow: TimeInterval = 2_592_000) async throws -> WorkoutInsights {
+        let workouts = try await workoutRepository.fetchAll()
+
+        // Run analyses concurrently from the same data snapshot
+        async let plateausResult = plateauService.analyzePlateaus(workouts: workouts, timeWindow: timeWindow)
+        let muscleBalanceResult = muscleBalanceService.analyze(workouts: workouts, timeWindow: timeWindow)
+
+        return WorkoutInsights(
+            generatedAt: Date(),
+            workoutCount: workouts.count,
+            plateaus: (try? await plateausResult) ?? [],
+            muscleBalance: muscleBalanceResult,
+            recommendations: [],       // Loaded on-demand per workout
+            recoveryPatterns: [],       // Future extension
+            optimalVolumes: []          // Future extension
+        )
     }
 
     // MARK: - Plateau Detection
@@ -997,12 +1162,11 @@ public final class WorkoutAnalyticsService: Sendable {
 
     /// Vectorize a single workout and store
     public func vectorizeWorkout(_ workout: Workout) async throws {
-        // Update vectorizer context with recent workouts
+        // Fetch historical workouts for context-aware feature scaling
         let allWorkouts = try await workoutRepository.fetchAll()
-        vectorizer.updateContext(workouts: allWorkouts)
 
-        // Generate vector
-        let vector = vectorizer.vectorize(workout)
+        // Generate vector (stateless — context passed as parameter)
+        let vector = vectorizer.vectorize(workout, historicalWorkouts: allWorkouts)
 
         // Store
         try await analyticsRepository.storeVector(vector)
@@ -1019,12 +1183,9 @@ public final class WorkoutAnalyticsService: Sendable {
 
         let needsVectorization = allWorkouts.filter { !vectorizedIds.contains($0.id) }
 
-        // Update context once
-        vectorizer.updateContext(workouts: allWorkouts)
-
-        // Vectorize in batch
+        // Vectorize in batch (pass full history for context-aware scaling)
         for workout in needsVectorization {
-            let vector = vectorizer.vectorize(workout)
+            let vector = vectorizer.vectorize(workout, historicalWorkouts: allWorkouts)
             try await analyticsRepository.storeVector(vector)
         }
 
@@ -1143,12 +1304,7 @@ public final class PlateauDetectionService: Sendable {
 
         let plateauDetected = cv < plateauThresholdCV && weeksStalled >= 2
 
-        let recommendation = generatePlateauRecommendation(
-            exerciseName: exerciseName,
-            weeksStalled: weeksStalled,
-            avgVolume: avgVolume
-        )
-
+        // Note: recommendation is a computed property on PlateauAnalysis (DDD: domain owns its rules)
         return PlateauAnalysis(
             id: UUID(),
             exerciseId: exerciseId,
@@ -1159,7 +1315,6 @@ public final class PlateauDetectionService: Sendable {
             averageVolumePerWeek: avgVolume,
             volumeStdDev: stdDev,
             lastImprovement: lastImprovement,
-            recommendation: recommendation,
             confidenceScore: min(Double(weeklyVolumes.count) / 8.0, 1.0) // More weeks = higher confidence
         )
     }
@@ -1180,20 +1335,6 @@ public final class PlateauDetectionService: Sendable {
         let squaredDiffs = values.map { pow($0 - mean, 2) }
         let variance = squaredDiffs.reduce(0, +) / Double(values.count)
         return sqrt(variance)
-    }
-
-    private func generatePlateauRecommendation(
-        exerciseName: String,
-        weeksStalled: Int,
-        avgVolume: Double
-    ) -> String {
-        if weeksStalled >= 4 {
-            return "Consider deloading \(exerciseName) by 10-20% and focus on form, or try a variation."
-        } else if weeksStalled >= 2 {
-            return "Try increasing volume by 5-10% or adding a technique like drop sets for \(exerciseName)."
-        } else {
-            return "Progress is on track for \(exerciseName). Keep pushing!"
-        }
     }
 }
 ```
@@ -1279,59 +1420,30 @@ public final class MuscleBalanceService: Sendable {
 
             let ratio = primaryVol / comparisonVol
 
+            // Note: recommendation is a computed property on MuscleImbalance (DDD: domain owns its rules)
             if ratio >= mildImbalanceThreshold {
-                let severity: ImbalanceSeverity
-                if ratio >= moderateImbalanceThreshold {
-                    severity = .severe
-                } else if ratio >= mildImbalanceThreshold {
-                    severity = .moderate
-                } else {
-                    severity = .mild
-                }
-
-                let recommendation = generateBalanceRecommendation(
-                    primary: primary,
-                    comparison: comparison,
-                    ratio: ratio,
-                    severity: severity
-                )
+                let severity: ImbalanceSeverity = ratio >= moderateImbalanceThreshold ? .severe : .moderate
 
                 imbalances.append(MuscleImbalance(
                     id: UUID(),
                     primaryGroup: primary,
                     comparisonGroup: comparison,
                     ratio: ratio,
-                    severity: severity,
-                    recommendation: recommendation
+                    severity: severity
                 ))
             }
 
             // Check reverse imbalance
             let reverseRatio = comparisonVol / primaryVol
             if reverseRatio >= mildImbalanceThreshold {
-                let severity: ImbalanceSeverity
-                if reverseRatio >= moderateImbalanceThreshold {
-                    severity = .severe
-                } else if reverseRatio >= mildImbalanceThreshold {
-                    severity = .moderate
-                } else {
-                    severity = .mild
-                }
-
-                let recommendation = generateBalanceRecommendation(
-                    primary: comparison,
-                    comparison: primary,
-                    ratio: reverseRatio,
-                    severity: severity
-                )
+                let severity: ImbalanceSeverity = reverseRatio >= moderateImbalanceThreshold ? .severe : .moderate
 
                 imbalances.append(MuscleImbalance(
                     id: UUID(),
                     primaryGroup: comparison,
                     comparisonGroup: primary,
                     ratio: reverseRatio,
-                    severity: severity,
-                    recommendation: recommendation
+                    severity: severity
                 ))
             }
         }
@@ -1355,24 +1467,6 @@ public final class MuscleBalanceService: Sendable {
         }
 
         return max(0.0, 1.0 - totalPenalty)
-    }
-
-    private func generateBalanceRecommendation(
-        primary: MuscleGroup,
-        comparison: MuscleGroup,
-        ratio: Double,
-        severity: ImbalanceSeverity
-    ) -> String {
-        let ratioStr = String(format: "%.1f", ratio)
-
-        switch severity {
-        case .severe:
-            return "Significantly reduce \(primary.rawValue) volume and increase \(comparison.rawValue) by 30-40% (\(ratioStr)x imbalance)."
-        case .moderate:
-            return "Increase \(comparison.rawValue) volume by 20-30% to balance \(primary.rawValue) training (\(ratioStr)x imbalance)."
-        case .mild:
-            return "Consider adding 1-2 more sets for \(comparison.rawValue) to improve balance with \(primary.rawValue) (\(ratioStr)x imbalance)."
-        }
     }
 }
 ```
@@ -1661,28 +1755,31 @@ WorkoutAnalyticsService.findSimilarWorkouts(to: workout)
          ├─► VectorSearchService.findSimilar(query, vectors, topK)
          │   └─► Accelerate vDSP dot products (bulk)
          │
-         └─► AnalyticsRepository.fetchWorkoutsByIds(ids)
-             └─► Return [SimilarWorkout]
+         └─► WorkoutRepository.fetchByIds(ids)
+             └─► Build [SimilarWorkout] with ID + denormalized display fields
 ```
 
-### 4.3 Plateau Detection Flow
+### 4.3 Dashboard Insights Flow (Aggregate)
 
 ```
 Dashboard loads
          │
          ▼
-WorkoutAnalyticsViewModel.loadPlateaus()
+WorkoutAnalyticsViewModel.loadDashboardInsights()
          │
          ▼
-WorkoutAnalyticsService.detectPlateaus()
+WorkoutAnalyticsService.generateInsights()
          │
-         ├─► WorkoutRepository.fetchAll()
+         ├─► detectPlateaus()
+         │   └─► PlateauDetectionService.analyzePlateaus(workouts)
          │
-         └─► PlateauDetectionService.analyzePlateaus(workouts)
-             ├─► Group by exercise
-             ├─► Calculate weekly volumes
-             ├─► Compute CV and stalled weeks
-             └─► Return [PlateauAnalysis]
+         ├─► analyzeMuscleBalance()
+         │   └─► MuscleBalanceService.analyzeBalance(workouts)
+         │
+         ├─► generateRecommendations()
+         │   └─► ExerciseRecommendationService
+         │
+         └─► Return WorkoutInsights (single aggregate snapshot)
 ```
 
 ### 4.4 SwiftData Schema
@@ -1716,21 +1813,19 @@ let schema = Schema([
 ```swift
 import Foundation
 
+/// Repository for WorkoutVectorEntity only (DDD: one repository per aggregate/entity type).
+/// Workout queries belong on WorkoutRepository, not here.
 @MainActor
 public protocol AnalyticsRepository: Sendable {
-    // Vector CRUD
     func storeVector(_ vector: WorkoutVector) async throws
     func fetchVector(for workoutId: UUID) async throws -> WorkoutVector?
     func fetchAllVectors() async throws -> [WorkoutVector]
     func fetchVectorsByDateRange(_ start: Date, _ end: Date) async throws -> [WorkoutVector]
     func deleteVector(for workoutId: UUID) async throws
-
-    // Workout queries (optimized for analytics)
-    func fetchWorkoutsByIds(_ ids: [UUID]) async throws -> [Workout]
-    func fetchWorkoutsByMuscleGroup(_ group: MuscleGroup, limit: Int) async throws -> [Workout]
-    func fetchWorkoutsAfter(_ date: Date) async throws -> [Workout]
 }
 ```
+
+> **DDD Note:** Workout queries (`fetchWorkoutsByIds`, `fetchByDateRange`, etc.) stay on `WorkoutRepository`. The `WorkoutAnalyticsService` orchestrator holds references to both `AnalyticsRepository` and `WorkoutRepository` and coordinates between them. This matches how existing services use `WorkoutRepository` and `ExerciseRepository` — repositories are never mixed.
 
 ### 5.2 SwiftDataAnalyticsRepository
 
@@ -1741,37 +1836,31 @@ public protocol AnalyticsRepository: Sendable {
 import SwiftData
 import Foundation
 
+/// Manages WorkoutVectorEntity only. Uses WorkoutVectorMapper for entity↔domain conversion.
+/// Workout queries are handled by WorkoutRepository (DDD: single-entity repository).
 @MainActor
 public final class SwiftDataAnalyticsRepository: AnalyticsRepository, Sendable {
     private let modelContext: ModelContext
-    private let workoutRepository: any WorkoutRepository
 
-    public init(modelContext: ModelContext, workoutRepository: any WorkoutRepository) {
+    public init(modelContext: ModelContext) {
         self.modelContext = modelContext
-        self.workoutRepository = workoutRepository
     }
 
     // MARK: - Vector CRUD
 
     public func storeVector(_ vector: WorkoutVector) async throws {
-        // Check if vector already exists
         let descriptor = FetchDescriptor<WorkoutVectorEntity>(
             predicate: #Predicate { $0.workoutId == vector.workoutId }
         )
 
         if let existing = try modelContext.fetch(descriptor).first {
-            // Update existing
-            existing.vectorData = vectorToData(vector.dimensions)
+            existing.vectorData = WorkoutVectorMapper.doublesToData(vector.dimensions)
             existing.createdAt = vector.createdAt
         } else {
-            // Create new
-            let entity = WorkoutVectorEntity(
-                id: vector.id,
-                workoutId: vector.workoutId,
-                createdAt: vector.createdAt,
-                vectorData: vectorToData(vector.dimensions),
-                totalVolume: 0, // Will be computed from workout
-                workoutDate: Date(),
+            let entity = WorkoutVectorMapper.toEntity(
+                vector,
+                totalVolume: 0,
+                workoutDate: vector.createdAt,
                 primaryMuscleGroups: []
             )
             modelContext.insert(entity)
@@ -1789,7 +1878,7 @@ public final class SwiftDataAnalyticsRepository: AnalyticsRepository, Sendable {
             return nil
         }
 
-        return entityToDomain(entity)
+        return WorkoutVectorMapper.toDomain(entity)
     }
 
     public func fetchAllVectors() async throws -> [WorkoutVector] {
@@ -1797,8 +1886,7 @@ public final class SwiftDataAnalyticsRepository: AnalyticsRepository, Sendable {
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
 
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { entityToDomain($0) }
+        return try modelContext.fetch(descriptor).map { WorkoutVectorMapper.toDomain($0) }
     }
 
     public func fetchVectorsByDateRange(_ start: Date, _ end: Date) async throws -> [WorkoutVector] {
@@ -1809,8 +1897,7 @@ public final class SwiftDataAnalyticsRepository: AnalyticsRepository, Sendable {
             sortBy: [SortDescriptor(\.workoutDate, order: .reverse)]
         )
 
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { entityToDomain($0) }
+        return try modelContext.fetch(descriptor).map { WorkoutVectorMapper.toDomain($0) }
     }
 
     public func deleteVector(for workoutId: UUID) async throws {
@@ -1822,59 +1909,6 @@ public final class SwiftDataAnalyticsRepository: AnalyticsRepository, Sendable {
             modelContext.delete(entity)
             try modelContext.save()
         }
-    }
-
-    // MARK: - Workout Queries
-
-    public func fetchWorkoutsByIds(_ ids: [UUID]) async throws -> [Workout] {
-        let descriptor = FetchDescriptor<WorkoutEntity>(
-            predicate: #Predicate { entity in
-                ids.contains(entity.id)
-            }
-        )
-
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { WorkoutMapper.toDomain($0) }
-    }
-
-    public func fetchWorkoutsByMuscleGroup(_ group: MuscleGroup, limit: Int) async throws -> [Workout] {
-        // This is a simplified query - actual implementation would need to query
-        // WorkoutExerciseEntity and filter by primaryMuscleGroup
-        let allWorkouts = try await workoutRepository.fetchAll()
-
-        let filtered = allWorkouts.filter { workout in
-            workout.exercises.contains { $0.exercise.primaryMuscleGroup == group }
-        }
-
-        return Array(filtered.prefix(limit))
-    }
-
-    public func fetchWorkoutsAfter(_ date: Date) async throws -> [Workout] {
-        return try await workoutRepository.fetchByDateRange(date, Date())
-    }
-
-    // MARK: - Helpers
-
-    private func vectorToData(_ dimensions: [Double]) -> Data {
-        // Convert [Double] to [Float] to save space (72 bytes vs 144 bytes)
-        let floats = dimensions.map { Float($0) }
-        return Data(bytes: floats, count: floats.count * MemoryLayout<Float>.stride)
-    }
-
-    private func dataToVector(_ data: Data) -> [Double] {
-        let floats = data.withUnsafeBytes { buffer in
-            Array(buffer.bindMemory(to: Float.self))
-        }
-        return floats.map { Double($0) }
-    }
-
-    private func entityToDomain(_ entity: WorkoutVectorEntity) -> WorkoutVector {
-        WorkoutVector(
-            id: entity.id,
-            workoutId: entity.workoutId,
-            createdAt: entity.createdAt,
-            dimensions: dataToVector(entity.vectorData)
-        )
     }
 }
 #endif
@@ -1898,49 +1932,59 @@ public final class WorkoutAnalyticsViewModel {
 
     // MARK: - Published State
 
-    // Similar Workouts
+    /// Dashboard aggregate — loaded as a consistent snapshot
+    public var insights: WorkoutInsights = .empty
+    public var isInsightsLoading = false
+
+    /// Per-workout results (loaded on demand, outside the aggregate)
     public var similarWorkouts: [SimilarWorkout] = []
     public var isSimilarWorkoutsLoading = false
 
-    // Plateau Detection
-    public var plateaus: [PlateauAnalysis] = []
-    public var isPlateausLoading = false
+    public var qualityScore: WorkoutQualityScore?
+    public var isQualityScoreLoading = false
 
-    // Muscle Balance
-    public var muscleBalance: MuscleBalance?
-    public var isMuscleBalanceLoading = false
+    /// Feature gating
+    public var nextFeatureUnlock: (feature: AnalyticsFeatureGate.Feature, workoutsNeeded: Int)?
 
-    // Exercise Recommendations
-    public var recommendations: [ExerciseRecommendation] = []
-    public var isRecommendationsLoading = false
-
-    // Recovery Patterns
-    public var recoveryPatterns: [RecoveryPattern] = []
-    public var isRecoveryLoading = false
-
-    // Optimal Volume
-    public var optimalVolumes: [OptimalVolumeRange] = []
-    public var isOptimalVolumeLoading = false
-
-    // Error handling
+    /// Error handling
     public var errorMessage: String?
 
     // MARK: - Dependencies
 
     private let analyticsService: WorkoutAnalyticsService
-    private let workoutRepository: any WorkoutRepository
+    private let qualityScoreService: WorkoutQualityScoreService
+    private let featureGate: AnalyticsFeatureGate
 
     // MARK: - Init
 
     public init(
         analyticsService: WorkoutAnalyticsService,
-        workoutRepository: any WorkoutRepository
+        qualityScoreService: WorkoutQualityScoreService,
+        featureGate: AnalyticsFeatureGate
     ) {
         self.analyticsService = analyticsService
-        self.workoutRepository = workoutRepository
+        self.qualityScoreService = qualityScoreService
+        self.featureGate = featureGate
     }
 
-    // MARK: - Similar Workouts
+    // MARK: - Dashboard (loads WorkoutInsights aggregate)
+
+    /// Load all analytics for dashboard as a consistent snapshot
+    public func loadDashboardInsights() async {
+        isInsightsLoading = true
+        defer { isInsightsLoading = false }
+
+        do {
+            insights = try await analyticsService.generateInsights()
+            nextFeatureUnlock = try? await featureGate.nextUnlock()
+            errorMessage = nil
+        } catch {
+            errorMessage = "Failed to load insights: \(error.localizedDescription)"
+            insights = .empty
+        }
+    }
+
+    // MARK: - Per-Workout (outside aggregate)
 
     public func loadSimilarWorkouts(to workout: Workout, limit: Int = 5) async {
         isSimilarWorkoutsLoading = true
@@ -1948,9 +1992,7 @@ public final class WorkoutAnalyticsViewModel {
 
         do {
             similarWorkouts = try await analyticsService.findSimilarWorkouts(
-                to: workout,
-                limit: limit,
-                minSimilarity: 0.7
+                to: workout, limit: limit, minSimilarity: 0.7
             )
             errorMessage = nil
         } catch {
@@ -1959,69 +2001,23 @@ public final class WorkoutAnalyticsViewModel {
         }
     }
 
-    // MARK: - Plateau Detection
-
-    public func loadPlateaus(timeWindow: TimeInterval = 2_592_000) async { // 30 days
-        isPlateausLoading = true
-        defer { isPlateausLoading = false }
+    public func loadQualityScore(for workout: Workout) async {
+        isQualityScoreLoading = true
+        defer { isQualityScoreLoading = false }
 
         do {
-            plateaus = try await analyticsService.detectPlateaus(timeWindow: timeWindow)
+            qualityScore = try await qualityScoreService.computeScore(for: workout)
             errorMessage = nil
         } catch {
-            errorMessage = "Failed to analyze plateaus: \(error.localizedDescription)"
-            plateaus = []
+            errorMessage = "Failed to compute quality score: \(error.localizedDescription)"
+            qualityScore = nil
         }
-    }
-
-    // MARK: - Muscle Balance
-
-    public func loadMuscleBalance(timeWindow: TimeInterval = 2_592_000) async {
-        isMuscleBalanceLoading = true
-        defer { isMuscleBalanceLoading = false }
-
-        do {
-            muscleBalance = try await analyticsService.analyzeMuscleBalance(timeWindow: timeWindow)
-            errorMessage = nil
-        } catch {
-            errorMessage = "Failed to analyze muscle balance: \(error.localizedDescription)"
-            muscleBalance = nil
-        }
-    }
-
-    // MARK: - Exercise Recommendations
-
-    public func loadRecommendations(for workout: Workout, limit: Int = 5) async {
-        isRecommendationsLoading = true
-        defer { isRecommendationsLoading = false }
-
-        do {
-            recommendations = try await analyticsService.generateRecommendations(
-                for: workout,
-                limit: limit
-            )
-            errorMessage = nil
-        } catch {
-            errorMessage = "Failed to generate recommendations: \(error.localizedDescription)"
-            recommendations = []
-        }
-    }
-
-    // MARK: - Bulk Load for Dashboard
-
-    /// Load all analytics data for dashboard view
-    public func loadAllAnalytics() async {
-        async let plateausTask = loadPlateaus()
-        async let muscleBalanceTask = loadMuscleBalance()
-
-        await plateausTask
-        await muscleBalanceTask
     }
 
     // MARK: - Formatting Helpers
 
     public func formatSimilarity(_ score: Double) -> String {
-        return String(format: "%.0f%%", score * 100)
+        String(format: "%.0f%%", score * 100)
     }
 
     public func formatVolume(_ volume: Double) -> String {
@@ -2032,7 +2028,7 @@ public final class WorkoutAnalyticsViewModel {
     }
 
     public func formatRatio(_ ratio: Double) -> String {
-        return String(format: "%.1f:1", ratio)
+        String(format: "%.1f:1", ratio)
     }
 
     public func severityColor(_ severity: ImbalanceSeverity) -> String {
@@ -2159,14 +2155,10 @@ public func loadMoreSimilarWorkouts() async {
 
 **Swift Concurrency Patterns:**
 ```swift
-// Parallel loading with structured concurrency
-async let plateausTask = loadPlateaus()
-async let muscleBalanceTask = loadMuscleBalance()
-async let recommendationsTask = loadRecommendations()
-
-await plateausTask
-await muscleBalanceTask
-await recommendationsTask
+// Single aggregate load replaces parallel independent calls.
+// generateInsights() internally runs plateau, muscle balance, and
+// recommendations in structured concurrency, returning a WorkoutInsights snapshot.
+await loadDashboardInsights()
 ```
 
 **Background Vectorization:**
@@ -2441,19 +2433,20 @@ public final class AnalyticsFeatureGate: Sendable {
 
 **Usage in ViewModels:**
 ```swift
-// WorkoutAnalyticsViewModel
+// WorkoutAnalyticsViewModel — loads WorkoutInsights aggregate
 public func loadDashboardInsights() async {
-    let unlocked = try? await featureGate.unlockedFeatures()
+    isInsightsLoading = true
+    defer { isInsightsLoading = false }
 
-    if unlocked?.contains(.plateauDetection) == true {
-        await loadPlateaus()
-    }
-    if unlocked?.contains(.muscleBalance) == true {
-        await loadMuscleBalance()
-    }
-    // Show "X workouts to unlock..." for locked features
-    if let next = try? await featureGate.nextUnlock() {
-        nextFeatureUnlock = next
+    do {
+        // generateInsights() respects feature gate internally —
+        // returns empty arrays for locked features
+        insights = try await analyticsService.generateInsights()
+        nextFeatureUnlock = try? await featureGate.nextUnlock()
+        errorMessage = nil
+    } catch {
+        errorMessage = "Failed to load insights: \(error.localizedDescription)"
+        insights = .empty
     }
 }
 ```
@@ -2548,14 +2541,14 @@ func semanticExerciseSearch(query: String, exercises: [Exercise]) async throws -
 ```swift
 // WatchApp/Features/Analytics/RecommendedExercisesView.swift
 struct RecommendedExercisesView: View {
-    @StateObject private var viewModel: WorkoutAnalyticsViewModel
+    let viewModel: WorkoutAnalyticsViewModel  // @Observable, not @StateObject
 
     var body: some View {
-        List(viewModel.recommendations) { recommendation in
+        List(viewModel.insights.recommendations) { recommendation in
             ExerciseRecommendationRow(recommendation: recommendation)
         }
         .task {
-            await viewModel.loadRecommendations(for: currentWorkout)
+            await viewModel.loadDashboardInsights()
         }
     }
 }
@@ -2728,6 +2721,10 @@ public var recoveryNotificationsEnabled: Bool {
 - `Shared/Models/Domain/Analytics/RecoveryPattern.swift`
 - `Shared/Models/Domain/Analytics/OptimalVolumeRange.swift`
 - `Shared/Models/Domain/Analytics/WorkoutQualityScore.swift`
+- `Shared/Models/Domain/Analytics/WorkoutInsights.swift`
+
+### Mappers
+- `Shared/Persistence/Mappers/WorkoutVectorMapper.swift`
 
 ### Services
 - `Shared/Services/Analytics/WorkoutVectorizer.swift`
@@ -2783,11 +2780,8 @@ public let analyticsNotificationService: AnalyticsNotificationService
 // Line 47: Add analytics repository
 public let analyticsRepository: any AnalyticsRepository
 
-// Line 50: Wire up analytics repository
-analyticsRepository = SwiftDataAnalyticsRepository(
-    modelContext: modelContext,
-    workoutRepository: workoutRepository
-)
+// Line 50: Wire up analytics repository (vector-only, no workoutRepository dependency)
+analyticsRepository = SwiftDataAnalyticsRepository(modelContext: modelContext)
 
 // Line 53: Wire up analytics services
 vectorizer = WorkoutVectorizer()
@@ -2795,7 +2789,10 @@ searchService = VectorSearchService()
 plateauService = PlateauDetectionService()
 muscleBalanceService = MuscleBalanceService()
 recommendationService = ExerciseRecommendationService()
-qualityScoreService = WorkoutQualityScoreService()
+qualityScoreService = WorkoutQualityScoreService(
+    workoutRepository: workoutRepository,
+    muscleBalanceService: muscleBalanceService
+)
 analyticsFeatureGate = AnalyticsFeatureGate(workoutRepository: workoutRepository)
 analyticsNotificationService = AnalyticsNotificationService(
     plateauService: plateauService,
@@ -2816,7 +2813,6 @@ analyticsService = WorkoutAnalyticsService(
 public func makeWorkoutAnalyticsViewModel() -> WorkoutAnalyticsViewModel {
     WorkoutAnalyticsViewModel(
         analyticsService: analyticsService,
-        workoutRepository: workoutRepository,
         qualityScoreService: qualityScoreService,
         featureGate: analyticsFeatureGate
     )

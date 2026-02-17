@@ -22,6 +22,17 @@ public final class AppContainer: Sendable {
     public let connectivityManager: ConnectivityManager
     public let calorieEstimationService: CalorieEstimationService
 
+    // Analytics
+    public let analyticsRepository: any AnalyticsRepository
+    public let vectorizer: WorkoutVectorizer
+    public let searchService: VectorSearchService
+    public let plateauService: PlateauDetectionService
+    public let muscleBalanceService: MuscleBalanceService
+    public let recommendationService: ExerciseRecommendationService
+    public let qualityScoreService: WorkoutQualityScoreService
+    public let analyticsFeatureGate: AnalyticsFeatureGate
+    public let analyticsService: WorkoutAnalyticsService
+
     // Cached ViewModels (shared across multiple views)
     public let workoutViewModel: WorkoutViewModel
     public let templateViewModel: TemplateViewModel
@@ -37,7 +48,8 @@ public final class AppContainer: Sendable {
             ExerciseSetEntity.self,
             WorkoutTemplateEntity.self,
             TemplateExerciseEntity.self,
-            PersonalRecordEntity.self
+            PersonalRecordEntity.self,
+            WorkoutVectorEntity.self
         ])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         modelContainer = try ModelContainer(for: schema, configurations: [config])
@@ -66,6 +78,31 @@ public final class AppContainer: Sendable {
         #endif
         connectivityManager = ConnectivityManager()
         calorieEstimationService = CalorieEstimationService()
+
+        // Analytics repository (vector-only, no workoutRepository dependency -- ADR-011)
+        analyticsRepository = SwiftDataAnalyticsRepository(modelContext: modelContext)
+
+        // Analytics services (stateless -- ADR-012)
+        vectorizer = WorkoutVectorizer()
+        searchService = VectorSearchService()
+        plateauService = PlateauDetectionService()
+        muscleBalanceService = MuscleBalanceService()
+        recommendationService = ExerciseRecommendationService()
+        qualityScoreService = WorkoutQualityScoreService(
+            workoutRepository: workoutRepository,
+            muscleBalanceService: muscleBalanceService
+        )
+        analyticsFeatureGate = AnalyticsFeatureGate(workoutRepository: workoutRepository)
+        analyticsService = WorkoutAnalyticsService(
+            analyticsRepository: analyticsRepository,
+            workoutRepository: workoutRepository,
+            exerciseRepository: exerciseRepository,
+            vectorizer: vectorizer,
+            searchService: searchService,
+            plateauService: plateauService,
+            muscleBalanceService: muscleBalanceService,
+            recommendationService: recommendationService
+        )
 
         // Initialize cached ViewModels
         workoutViewModel = WorkoutViewModel(
@@ -139,6 +176,14 @@ public final class AppContainer: Sendable {
 
     public func makeRestTimerService() -> RestTimerService {
         restTimerService
+    }
+
+    public func makeWorkoutAnalyticsViewModel() -> WorkoutAnalyticsViewModel {
+        WorkoutAnalyticsViewModel(
+            analyticsService: analyticsService,
+            qualityScoreService: qualityScoreService,
+            featureGate: analyticsFeatureGate
+        )
     }
 }
 #endif
