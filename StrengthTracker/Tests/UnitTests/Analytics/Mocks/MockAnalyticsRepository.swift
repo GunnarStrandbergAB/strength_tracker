@@ -38,7 +38,7 @@ final class MockAnalyticsRepository: AnalyticsRepository {
 
     // MARK: - AnalyticsRepository Protocol
 
-    func storeVector(_ vector: WorkoutVector) async throws {
+    func storeVector(_ vector: WorkoutVector, totalVolume: Double, workoutDate: Date, primaryMuscleGroups: [String]) async throws {
         storeVectorCallCount += 1
         storeVectorArguments.append(vector)
         if shouldThrowOnStore { throw errorToThrow }
@@ -72,6 +72,11 @@ final class MockAnalyticsRepository: AnalyticsRepository {
         deleteVectorArguments.append(workoutId)
         if shouldThrowOnDelete { throw errorToThrow }
         storedVectors.removeValue(forKey: workoutId)
+    }
+
+    /// Convenience for tests that don't care about metadata
+    func storeVector(_ vector: WorkoutVector) async throws {
+        try await storeVector(vector, totalVolume: 0, workoutDate: vector.createdAt, primaryMuscleGroups: [])
     }
 
     // MARK: - Test Helpers

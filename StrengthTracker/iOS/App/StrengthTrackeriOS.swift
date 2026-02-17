@@ -107,6 +107,7 @@ struct ContentViewWrapper: View {
             workoutViewModel: container.makeWorkoutViewModel(),
             historyViewModel: container.makeHistoryViewModel(),
             templateViewModel: container.makeTemplateViewModel(),
+            analyticsViewModel: container.makeWorkoutAnalyticsViewModel(),
             userPreferencesService: container.userPreferencesService,
             connectivityManager: container.connectivityManager
         )

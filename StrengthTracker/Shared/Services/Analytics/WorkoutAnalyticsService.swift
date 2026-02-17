@@ -140,15 +140,25 @@ public final class WorkoutAnalyticsService: Sendable {
     }
 
     /// Vectorize a single workout and store
-    public func vectorizeWorkout(_ workout: Workout) async throws {
+    public func vectorizeWorkout(_ workout: Workout, bodyWeightKg: Double = 70.0) async throws {
         let allWorkouts = try await workoutRepository.fetchAll()
-        let vector = vectorizer.vectorize(workout, historicalWorkouts: allWorkouts)
-        try await analyticsRepository.storeVector(vector)
+        let vector = vectorizer.vectorize(workout, historicalWorkouts: allWorkouts, bodyWeightKg: bodyWeightKg)
+
+        // Compute denormalized metadata for the entity
+        let totalVolume = vectorizer.calculateTotalVolume(workout, bodyWeightKg: bodyWeightKg)
+        let primaryMuscleGroups = computePrimaryMuscleGroups(workout, bodyWeightKg: bodyWeightKg)
+
+        try await analyticsRepository.storeVector(
+            vector,
+            totalVolume: totalVolume,
+            workoutDate: workout.startedAt,
+            primaryMuscleGroups: primaryMuscleGroups
+        )
         cachedVectors[workout.id] = vector
     }
 
     /// Batch vectorize all workouts missing vectors
-    public func vectorizeAllWorkouts() async throws {
+    public func vectorizeAllWorkouts(bodyWeightKg: Double = 70.0) async throws {
         let allWorkouts = try await workoutRepository.fetchAll()
         let existingVectors = try await analyticsRepository.fetchAllVectors()
         let vectorizedIds = Set(existingVectors.map(\.workoutId))
@@ -156,8 +166,15 @@ public final class WorkoutAnalyticsService: Sendable {
         let needsVectorization = allWorkouts.filter { !vectorizedIds.contains($0.id) }
 
         for workout in needsVectorization {
-            let vector = vectorizer.vectorize(workout, historicalWorkouts: allWorkouts)
-            try await analyticsRepository.storeVector(vector)
+            let vector = vectorizer.vectorize(workout, historicalWorkouts: allWorkouts, bodyWeightKg: bodyWeightKg)
+            let totalVolume = vectorizer.calculateTotalVolume(workout, bodyWeightKg: bodyWeightKg)
+            let primaryMuscleGroups = computePrimaryMuscleGroups(workout, bodyWeightKg: bodyWeightKg)
+            try await analyticsRepository.storeVector(
+                vector,
+                totalVolume: totalVolume,
+                workoutDate: workout.startedAt,
+                primaryMuscleGroups: primaryMuscleGroups
+            )
         }
 
         cachedVectors.removeAll()
@@ -165,6 +182,20 @@ public final class WorkoutAnalyticsService: Sendable {
     }
 
     // MARK: - Helpers
+
+    /// Top 3 muscle groups by volume for a workout
+    private func computePrimaryMuscleGroups(_ workout: Workout, bodyWeightKg: Double) -> [String] {
+        var volumes: [String: Double] = [:]
+        for exercise in workout.exercises {
+            let vol = exercise.sets.filter(\.isCompleted).reduce(0.0) { sum, set in
+                let weight = set.weight ?? (exercise.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : 0.0)
+                return sum + weight * Double(set.reps ?? 0)
+            }
+            let group = exercise.exercise.primaryMuscleGroup.rawValue
+            volumes[group, default: 0] += vol
+        }
+        return volumes.sorted { $0.value > $1.value }.prefix(3).map(\.key)
+    }
 
     private func identifyTopMatchedFeatures(
         query: [Double],

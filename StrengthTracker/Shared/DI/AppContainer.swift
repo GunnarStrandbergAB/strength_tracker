@@ -111,7 +111,8 @@ public final class AppContainer: Sendable {
             personalRecordService: personalRecordService,
             healthKitService: healthKitService,
             calorieEstimationService: calorieEstimationService,
-            userPreferencesService: userPreferencesService
+            userPreferencesService: userPreferencesService,
+            analyticsService: analyticsService
         )
         templateViewModel = TemplateViewModel(
             templateRepository: templateRepository,
@@ -123,7 +124,8 @@ public final class AppContainer: Sendable {
             workoutRepository: workoutRepository,
             healthKitService: healthKitService,
             connectivityManager: connectivityManager,
-            userPreferencesService: userPreferencesService
+            userPreferencesService: userPreferencesService,
+            analyticsService: analyticsService
         )
         watchWorkoutListViewModel = WatchWorkoutListViewModel(
             workoutRepository: workoutRepository,

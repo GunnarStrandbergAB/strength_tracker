@@ -10,6 +10,7 @@ struct ContentView: View {
     let workoutViewModel: WorkoutViewModel
     let historyViewModel: HistoryViewModel
     let templateViewModel: TemplateViewModel
+    let analyticsViewModel: WorkoutAnalyticsViewModel
     let userPreferencesService: UserPreferencesService
     let connectivityManager: ConnectivityManager?
 
@@ -17,6 +18,7 @@ struct ContentView: View {
         TabView(selection: $selectedTab) {
             DashboardView(
                 viewModel: dashboardViewModel,
+                analyticsViewModel: analyticsViewModel,
                 userPreferencesService: userPreferencesService,
                 connectivityManager: connectivityManager,
                 onStartWorkout: {
@@ -49,13 +51,13 @@ struct ContentView: View {
                 }
                 .tag(2)
 
-            ExerciseListView(viewModel: exerciseListViewModel, progressViewModel: progressViewModel)
+            ExerciseListView(viewModel: exerciseListViewModel, progressViewModel: progressViewModel, analyticsViewModel: analyticsViewModel)
                 .tabItem {
                     Label("Exercises", systemImage: "dumbbell")
                 }
                 .tag(3)
 
-            WorkoutHistoryView(viewModel: historyViewModel)
+            WorkoutHistoryView(viewModel: historyViewModel, analyticsViewModel: analyticsViewModel)
                 .tabItem {
                     Label("History", systemImage: "clock.arrow.circlepath")
                 }

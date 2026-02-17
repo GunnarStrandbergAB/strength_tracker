@@ -32,6 +32,7 @@ public final class WatchWorkoutViewModel {
     private let healthKitService: any HealthKitServiceProtocol
     private let connectivityManager: ConnectivityManager
     private let userPreferencesService: UserPreferencesService?
+    private let analyticsService: WorkoutAnalyticsService?
     private var restTimer: Timer?
     private var restStartDate: Date?
 
@@ -42,12 +43,14 @@ public final class WatchWorkoutViewModel {
         workoutRepository: any WorkoutRepository,
         healthKitService: any HealthKitServiceProtocol,
         connectivityManager: ConnectivityManager,
-        userPreferencesService: UserPreferencesService? = nil
+        userPreferencesService: UserPreferencesService? = nil,
+        analyticsService: WorkoutAnalyticsService? = nil
     ) {
         self.workoutRepository = workoutRepository
         self.healthKitService = healthKitService
         self.connectivityManager = connectivityManager
         self.userPreferencesService = userPreferencesService
+        self.analyticsService = analyticsService
         if let prefs = userPreferencesService {
             self.restDuration = TimeInterval(prefs.defaultRestSeconds)
         }
@@ -360,6 +363,12 @@ public final class WatchWorkoutViewModel {
         // Notify iPhone workout ended, then send full workout via transferUserInfo
         connectivityManager.sendWorkoutEnded()
         connectivityManager.sendWorkoutCompleted(saved)
+
+        // Vectorize workout for analytics in background
+        Task {
+            let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? 70.0
+            try? await analyticsService?.vectorizeWorkout(saved, bodyWeightKg: bodyWeightKg)
+        }
 
         // Set isActive = false LAST so the view stays alive until all work is done
         isActive = false

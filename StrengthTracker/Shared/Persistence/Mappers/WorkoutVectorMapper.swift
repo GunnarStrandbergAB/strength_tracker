@@ -55,9 +55,18 @@ public enum WorkoutVectorMapper {
     }
 
     /// Updates an existing WorkoutVectorEntity with values from a WorkoutVector domain model
-    public static func updateEntity(_ entity: WorkoutVectorEntity, from domain: WorkoutVector) {
+    public static func updateEntity(
+        _ entity: WorkoutVectorEntity,
+        from domain: WorkoutVector,
+        totalVolume: Double,
+        workoutDate: Date,
+        primaryMuscleGroups: [String]
+    ) {
         entity.vectorData = doublesToData(domain.dimensions)
         entity.createdAt = domain.createdAt
+        entity.totalVolume = totalVolume
+        entity.workoutDate = workoutDate
+        entity.primaryMuscleGroups = primaryMuscleGroups
     }
     #endif
 }

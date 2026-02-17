@@ -24,15 +24,21 @@ public final class WorkoutVectorizer: Sendable {
     /// - Parameters:
     ///   - workout: The workout to vectorize
     ///   - historicalWorkouts: Recent workouts for computing relative features (7d/30d averages)
-    public func vectorize(_ workout: Workout, historicalWorkouts: [Workout] = []) -> WorkoutVector {
+    ///   - bodyWeightKg: User's body weight for pure bodyweight exercise volume (default 70kg)
+    public func vectorize(_ workout: Workout, historicalWorkouts: [Workout] = [], bodyWeightKg: Double = 70.0) -> WorkoutVector {
         var features = [Double](repeating: 0.0, count: 18)
 
-        // 0: Total volume (normalized)
-        features[0] = min(workout.totalVolume / maxVolume, 1.0)
+        // 0: Total volume (normalized) — use body-weight-aware calculation
+        let totalVol = calculateTotalVolume(workout, bodyWeightKg: bodyWeightKg)
+        features[0] = min(totalVol / maxVolume, 1.0)
 
-        // 1: Average weight across all sets
+        // 1: Average weight across all sets (bodyweight fallback for bodyweightReps)
         let allSets = workout.exercises.flatMap { $0.sets.filter(\.isCompleted) }
-        let weights = allSets.compactMap(\.weight)
+        let weights = zip(workout.exercises, workout.exercises.map { ex in
+            ex.sets.filter(\.isCompleted).map { s in
+                s.weight ?? (ex.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : 0.0)
+            }
+        }).flatMap(\.1)
         let avgWeight = weights.isEmpty ? 0.0 : weights.reduce(0, +) / Double(weights.count)
         features[1] = min(avgWeight / maxWeight, 1.0)
 
@@ -54,22 +60,22 @@ public final class WorkoutVectorizer: Sendable {
         }
 
         // 6-11: Muscle group ratios (percentage of total volume)
-        let muscleVolumes = calculateMuscleGroupVolumes(workout)
-        let totalVol = workout.totalVolume > 0 ? workout.totalVolume : 1.0
+        let muscleVolumes = calculateMuscleGroupVolumes(workout, bodyWeightKg: bodyWeightKg)
+        let totalVolDenom = totalVol > 0 ? totalVol : 1.0
 
-        features[6] = (muscleVolumes[.chest] ?? 0.0) / totalVol
-        features[7] = (muscleVolumes[.back] ?? 0.0) / totalVol
+        features[6] = (muscleVolumes[.chest] ?? 0.0) / totalVolDenom
+        features[7] = (muscleVolumes[.back] ?? 0.0) / totalVolDenom
 
         let legsVol = (muscleVolumes[.quadriceps] ?? 0.0) + (muscleVolumes[.hamstrings] ?? 0.0) +
                       (muscleVolumes[.glutes] ?? 0.0) + (muscleVolumes[.calves] ?? 0.0)
-        features[8] = legsVol / totalVol
+        features[8] = legsVol / totalVolDenom
 
-        features[9] = (muscleVolumes[.shoulders] ?? 0.0) / totalVol
+        features[9] = (muscleVolumes[.shoulders] ?? 0.0) / totalVolDenom
 
         let armsVol = (muscleVolumes[.biceps] ?? 0.0) + (muscleVolumes[.triceps] ?? 0.0)
-        features[10] = armsVol / totalVol
+        features[10] = armsVol / totalVolDenom
 
-        features[11] = (muscleVolumes[.core] ?? 0.0) / totalVol
+        features[11] = (muscleVolumes[.core] ?? 0.0) / totalVolDenom
 
         // 12: Compound exercise ratio (barbell exercises)
         let compoundCount = workout.exercises.filter { $0.exercise.category == .barbell }.count
@@ -81,7 +87,7 @@ public final class WorkoutVectorizer: Sendable {
         features[13] = avgRPE / 10.0
 
         // 14-15: Volume vs historical moving averages
-        let (vol7d, vol30d) = calculateHistoricalVolumes(workout, historicalWorkouts: historicalWorkouts)
+        let (vol7d, vol30d) = calculateHistoricalVolumes(workout, historicalWorkouts: historicalWorkouts, bodyWeightKg: bodyWeightKg)
         features[14] = vol7d
         features[15] = vol30d
 
@@ -106,11 +112,24 @@ public final class WorkoutVectorizer: Sendable {
 
     // MARK: - Helper Methods
 
-    private func calculateMuscleGroupVolumes(_ workout: Workout) -> [MuscleGroup: Double] {
+    /// Compute total volume with body-weight fallback for pure bodyweight exercises.
+    func calculateTotalVolume(_ workout: Workout, bodyWeightKg: Double) -> Double {
+        workout.exercises.reduce(0) { total, exercise in
+            total + exercise.sets.filter(\.isCompleted).filter { $0.setType != .warmup }.reduce(0) { setTotal, set in
+                let weight = set.weight ?? (exercise.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : 0.0)
+                return setTotal + weight * Double(set.reps ?? 0)
+            }
+        }
+    }
+
+    private func calculateMuscleGroupVolumes(_ workout: Workout, bodyWeightKg: Double) -> [MuscleGroup: Double] {
         var volumes: [MuscleGroup: Double] = [:]
 
         for exercise in workout.exercises {
-            let exerciseVolume = exercise.exerciseVolume
+            let exerciseVolume = exercise.sets.filter(\.isCompleted).filter { $0.setType != .warmup }.reduce(0.0) { sum, set in
+                let weight = set.weight ?? (exercise.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : 0.0)
+                return sum + weight * Double(set.reps ?? 0)
+            }
 
             // Primary muscle gets 70% of volume
             volumes[exercise.exercise.primaryMuscleGroup, default: 0] += exerciseVolume * 0.7
@@ -128,10 +147,12 @@ public final class WorkoutVectorizer: Sendable {
 
     private func calculateHistoricalVolumes(
         _ workout: Workout,
-        historicalWorkouts: [Workout]
+        historicalWorkouts: [Workout],
+        bodyWeightKg: Double
     ) -> (vol7d: Double, vol30d: Double) {
         let calendar = Calendar.current
         let workoutDate = workout.startedAt
+        let currentVol = calculateTotalVolume(workout, bodyWeightKg: bodyWeightKg)
 
         // 7-day moving average (excluding current workout)
         let last7Days = historicalWorkouts.filter {
@@ -139,8 +160,8 @@ public final class WorkoutVectorizer: Sendable {
             let daysDiff = calendar.dateComponents([.day], from: completedAt, to: workoutDate).day ?? 0
             return daysDiff >= 0 && daysDiff <= 7 && $0.id != workout.id
         }
-        let avg7d = last7Days.isEmpty ? 0.0 : last7Days.map(\.totalVolume).reduce(0, +) / Double(last7Days.count)
-        let change7d = avg7d > 0 ? (workout.totalVolume - avg7d) / avg7d : 0.0
+        let avg7d = last7Days.isEmpty ? 0.0 : last7Days.map { calculateTotalVolume($0, bodyWeightKg: bodyWeightKg) }.reduce(0, +) / Double(last7Days.count)
+        let change7d = avg7d > 0 ? (currentVol - avg7d) / avg7d : 0.0
 
         // 30-day moving average
         let last30Days = historicalWorkouts.filter {
@@ -148,8 +169,8 @@ public final class WorkoutVectorizer: Sendable {
             let daysDiff = calendar.dateComponents([.day], from: completedAt, to: workoutDate).day ?? 0
             return daysDiff >= 0 && daysDiff <= 30 && $0.id != workout.id
         }
-        let avg30d = last30Days.isEmpty ? 0.0 : last30Days.map(\.totalVolume).reduce(0, +) / Double(last30Days.count)
-        let change30d = avg30d > 0 ? (workout.totalVolume - avg30d) / avg30d : 0.0
+        let avg30d = last30Days.isEmpty ? 0.0 : last30Days.map { calculateTotalVolume($0, bodyWeightKg: bodyWeightKg) }.reduce(0, +) / Double(last30Days.count)
+        let change30d = avg30d > 0 ? (currentVol - avg30d) / avg30d : 0.0
 
         return (
             vol7d: max(-1.0, min(1.0, change7d)),

@@ -14,20 +14,20 @@ public final class SwiftDataAnalyticsRepository: AnalyticsRepository, Sendable {
 
     // MARK: - Vector CRUD
 
-    public func storeVector(_ vector: WorkoutVector) async throws {
+    public func storeVector(_ vector: WorkoutVector, totalVolume: Double, workoutDate: Date, primaryMuscleGroups: [String]) async throws {
         let workoutId = vector.workoutId
         let descriptor = FetchDescriptor<WorkoutVectorEntity>(
             predicate: #Predicate { $0.workoutId == workoutId }
         )
 
         if let existing = try modelContext.fetch(descriptor).first {
-            WorkoutVectorMapper.updateEntity(existing, from: vector)
+            WorkoutVectorMapper.updateEntity(existing, from: vector, totalVolume: totalVolume, workoutDate: workoutDate, primaryMuscleGroups: primaryMuscleGroups)
         } else {
             let entity = WorkoutVectorMapper.toEntity(
                 vector,
-                totalVolume: 0,
-                workoutDate: vector.createdAt,
-                primaryMuscleGroups: []
+                totalVolume: totalVolume,
+                workoutDate: workoutDate,
+                primaryMuscleGroups: primaryMuscleGroups
             )
             modelContext.insert(entity)
         }

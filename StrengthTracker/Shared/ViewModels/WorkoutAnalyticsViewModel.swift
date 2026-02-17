@@ -19,7 +19,11 @@ public final class WorkoutAnalyticsViewModel {
     public var isQualityScoreLoading = false
 
     /// Feature gating
+    public var unlockedFeatures: Set<AnalyticsFeatureGate.Feature> = []
     public var nextFeatureUnlock: (feature: AnalyticsFeatureGate.Feature, workoutsNeeded: Int)?
+
+    /// Batch migration
+    public var isMigrating = false
 
     /// Error handling
     public var errorMessage: String?
@@ -29,6 +33,8 @@ public final class WorkoutAnalyticsViewModel {
     private let analyticsService: WorkoutAnalyticsService
     private let qualityScoreService: WorkoutQualityScoreService
     private let featureGate: AnalyticsFeatureGate
+
+    private static let migrationKey = "analytics_migration_complete"
 
     // MARK: - Init
 
@@ -50,10 +56,55 @@ public final class WorkoutAnalyticsViewModel {
         defer { isInsightsLoading = false }
 
         do {
-            insights = try await analyticsService.generateInsights()
+            // Batch migration: vectorize all existing workouts on first analytics access
+            if !UserDefaults.standard.bool(forKey: Self.migrationKey) {
+                isMigrating = true
+                try await analyticsService.vectorizeAllWorkouts()
+                UserDefaults.standard.set(true, forKey: Self.migrationKey)
+                isMigrating = false
+            }
+
+            // Load feature gate state
+            unlockedFeatures = try await featureGate.unlockedFeatures()
             nextFeatureUnlock = try? await featureGate.nextUnlock()
+
+            // Generate insights (only if we have enough data for Phase 2+)
+            guard unlockedFeatures.contains(.qualityScore) else {
+                insights = .empty
+                errorMessage = nil
+                return
+            }
+
+            var rawInsights = try await analyticsService.generateInsights()
+
+            // Enforce feature gate: only include data for unlocked features
+            if !unlockedFeatures.contains(.plateauDetection) {
+                rawInsights = WorkoutInsights(
+                    generatedAt: rawInsights.generatedAt,
+                    workoutCount: rawInsights.workoutCount,
+                    plateaus: [],
+                    muscleBalance: rawInsights.muscleBalance,
+                    recommendations: rawInsights.recommendations,
+                    recoveryPatterns: rawInsights.recoveryPatterns,
+                    optimalVolumes: rawInsights.optimalVolumes
+                )
+            }
+            if !unlockedFeatures.contains(.muscleBalance) {
+                rawInsights = WorkoutInsights(
+                    generatedAt: rawInsights.generatedAt,
+                    workoutCount: rawInsights.workoutCount,
+                    plateaus: rawInsights.plateaus,
+                    muscleBalance: nil,
+                    recommendations: rawInsights.recommendations,
+                    recoveryPatterns: rawInsights.recoveryPatterns,
+                    optimalVolumes: rawInsights.optimalVolumes
+                )
+            }
+
+            insights = rawInsights
             errorMessage = nil
         } catch {
+            isMigrating = false
             errorMessage = "Failed to load insights: \(error.localizedDescription)"
             insights = .empty
         }
@@ -89,6 +140,12 @@ public final class WorkoutAnalyticsViewModel {
         }
     }
 
+    // MARK: - Feature Gate Helpers
+
+    public func isFeatureUnlocked(_ feature: AnalyticsFeatureGate.Feature) -> Bool {
+        unlockedFeatures.contains(feature)
+    }
+
     // MARK: - Formatting Helpers
 
     public func formatSimilarity(_ score: Double) -> String {
@@ -111,6 +168,19 @@ public final class WorkoutAnalyticsViewModel {
         case .mild: return "yellow"
         case .moderate: return "orange"
         case .severe: return "red"
+        }
+    }
+
+    public func featureDisplayName(_ feature: AnalyticsFeatureGate.Feature) -> String {
+        switch feature {
+        case .similarWorkouts: return "Similar Workouts"
+        case .qualityScore: return "Quality Score"
+        case .strengthTrends: return "Strength Trends"
+        case .exerciseRecommendations: return "Recommendations"
+        case .plateauDetection: return "Plateau Detection"
+        case .muscleBalance: return "Muscle Balance"
+        case .recoveryTimeline: return "Recovery Timeline"
+        case .advancedInsights: return "Advanced Insights"
         }
     }
 }

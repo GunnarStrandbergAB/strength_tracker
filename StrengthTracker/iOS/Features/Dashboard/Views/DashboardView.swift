@@ -4,6 +4,7 @@ import StrengthTrackerShared
 
 struct DashboardView: View {
     @State private var viewModel: DashboardViewModel
+    let analyticsViewModel: WorkoutAnalyticsViewModel
     let userPreferencesService: UserPreferencesService
     let connectivityManager: ConnectivityManager?
     let onStartWorkout: () -> Void
@@ -11,12 +12,14 @@ struct DashboardView: View {
 
     init(
         viewModel: DashboardViewModel,
+        analyticsViewModel: WorkoutAnalyticsViewModel,
         userPreferencesService: UserPreferencesService,
         connectivityManager: ConnectivityManager? = nil,
         onStartWorkout: @escaping () -> Void,
         onHistoryTapped: @escaping () -> Void
     ) {
         self._viewModel = State(initialValue: viewModel)
+        self.analyticsViewModel = analyticsViewModel
         self.userPreferencesService = userPreferencesService
         self.connectivityManager = connectivityManager
         self.onStartWorkout = onStartWorkout
@@ -65,6 +68,10 @@ struct DashboardView: View {
                         prsCount: viewModel.prsThisWeek
                     )
 
+                    // Analytics Insights Card
+                    InsightsCardView(viewModel: analyticsViewModel)
+                        .padding(.horizontal, 20)
+
                     // Recent Workouts
                     RecentWorkoutsWidget(
                         workouts: viewModel.recentWorkouts,
@@ -100,9 +107,11 @@ struct DashboardView: View {
             }
             .task {
                 await viewModel.loadDashboard()
+                await analyticsViewModel.loadDashboardInsights()
             }
             .refreshable {
                 await viewModel.loadDashboard()
+                await analyticsViewModel.loadDashboardInsights()
             }
         }
     }

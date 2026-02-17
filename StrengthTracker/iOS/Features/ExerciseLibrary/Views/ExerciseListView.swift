@@ -4,10 +4,12 @@ import StrengthTrackerShared
 struct ExerciseListView: View {
     @State private var viewModel: ExerciseListViewModel
     let progressViewModel: ProgressViewModel
+    var analyticsViewModel: WorkoutAnalyticsViewModel? = nil
 
-    init(viewModel: ExerciseListViewModel, progressViewModel: ProgressViewModel) {
+    init(viewModel: ExerciseListViewModel, progressViewModel: ProgressViewModel, analyticsViewModel: WorkoutAnalyticsViewModel? = nil) {
         self._viewModel = State(initialValue: viewModel)
         self.progressViewModel = progressViewModel
+        self.analyticsViewModel = analyticsViewModel
     }
 
     var body: some View {
@@ -44,7 +46,7 @@ struct ExerciseListView: View {
                 }
             }
             .navigationDestination(for: Exercise.self) { exercise in
-                ExerciseDetailView(exercise: exercise, progressViewModel: progressViewModel)
+                ExerciseDetailView(exercise: exercise, progressViewModel: progressViewModel, analyticsViewModel: analyticsViewModel)
             }
             .overlay {
                 if viewModel.isLoading {
