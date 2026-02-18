@@ -46,6 +46,16 @@ public final class ExerciseListViewModel {
     }
     #endif
 
+    public func saveExercise(_ exercise: Exercise) async {
+        do {
+            let saved = try await exerciseRepository.save(exercise)
+            exercises.append(saved)
+            exercises.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     public func loadExercises() async {
         isLoading = true
         errorMessage = nil

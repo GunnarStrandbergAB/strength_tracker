@@ -53,7 +53,7 @@ struct TemplateEditorView: View {
                         } label: {
                             TemplateExerciseEditorRowView(templateExercise: exercises[index])
                         }
-                        .foregroundStyle(.primary)
+                        .buttonStyle(.plain)
                     }
                     .onDelete { indexSet in
                         exercises.remove(atOffsets: indexSet)

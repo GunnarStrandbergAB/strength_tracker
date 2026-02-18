@@ -5,6 +5,11 @@ struct ExerciseListView: View {
     @State private var viewModel: ExerciseListViewModel
     let progressViewModel: ProgressViewModel
     var analyticsViewModel: WorkoutAnalyticsViewModel? = nil
+    @State private var showAddExercise = false
+
+    private let filterGroups: [MuscleGroup] = [
+        .chest, .back, .shoulders, .biceps, .triceps, .quadriceps, .hamstrings, .glutes, .core
+    ]
 
     init(viewModel: ExerciseListViewModel, progressViewModel: ProgressViewModel, analyticsViewModel: WorkoutAnalyticsViewModel? = nil) {
         self._viewModel = State(initialValue: viewModel)
@@ -14,10 +19,32 @@ struct ExerciseListView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(viewModel.filteredExercises) { exercise in
-                    NavigationLink(value: exercise) {
-                        ExerciseRowView(exercise: exercise)
+            VStack(spacing: 0) {
+                // Muscle group filter pills
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        filterPill(title: "All", isSelected: viewModel.selectedMuscleGroup == nil) {
+                            viewModel.selectedMuscleGroup = nil
+                        }
+                        ForEach(filterGroups, id: \.self) { group in
+                            filterPill(
+                                title: group.pillLabel,
+                                isSelected: viewModel.selectedMuscleGroup == group
+                            ) {
+                                viewModel.selectedMuscleGroup = group
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+                .background(.bar)
+
+                List {
+                    ForEach(viewModel.filteredExercises) { exercise in
+                        NavigationLink(value: exercise) {
+                            ExerciseRowView(exercise: exercise)
+                        }
                     }
                 }
             }
@@ -25,25 +52,26 @@ struct ExerciseListView: View {
             .searchable(text: $viewModel.searchText, prompt: "Search exercises")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Picker("Category", selection: $viewModel.selectedCategory) {
-                            Text("All Categories").tag(ExerciseCategory?.none)
-                            ForEach(ExerciseCategory.allCases, id: \.self) { category in
-                                Text(category.rawValue.capitalized)
-                                    .tag(ExerciseCategory?.some(category))
-                            }
+                    HStack(spacing: 16) {
+                        Button { showAddExercise = true } label: {
+                            Image(systemName: "plus")
                         }
-                        Picker("Muscle Group", selection: $viewModel.selectedMuscleGroup) {
-                            Text("All Muscles").tag(MuscleGroup?.none)
-                            ForEach(MuscleGroup.allCases, id: \.self) { group in
-                                Text(group.rawValue.capitalized)
-                                    .tag(MuscleGroup?.some(group))
+                        Menu {
+                            Picker("Category", selection: $viewModel.selectedCategory) {
+                                Text("All Categories").tag(ExerciseCategory?.none)
+                                ForEach(ExerciseCategory.allCases, id: \.self) { category in
+                                    Text(category.rawValue.capitalized)
+                                        .tag(ExerciseCategory?.some(category))
+                                }
                             }
+                        } label: {
+                            Label("Filter", systemImage: "line.3.horizontal.decrease.circle")
                         }
-                    } label: {
-                        Label("Filter", systemImage: "line.3.horizontal.decrease.circle")
                     }
                 }
+            }
+            .sheet(isPresented: $showAddExercise) {
+                AddExerciseView(viewModel: viewModel)
             }
             .navigationDestination(for: Exercise.self) { exercise in
                 ExerciseDetailView(exercise: exercise, progressViewModel: progressViewModel, analyticsViewModel: analyticsViewModel)
@@ -72,6 +100,20 @@ struct ExerciseListView: View {
             }
         }
     }
+
+    @ViewBuilder
+    private func filterPill(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(isSelected ? Color.accentColor : Color(.secondarySystemFill))
+                .foregroundStyle(isSelected ? .white : .primary)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 private struct ExerciseRowView: View {
@@ -96,5 +138,24 @@ private struct ExerciseRowView: View {
             }
         }
         .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Pill Labels
+
+private extension MuscleGroup {
+    var pillLabel: String {
+        switch self {
+        case .chest: return "Chest"
+        case .back: return "Back"
+        case .shoulders: return "Shoulders"
+        case .biceps: return "Biceps"
+        case .triceps: return "Triceps"
+        case .quadriceps: return "Quads"
+        case .hamstrings: return "Hams"
+        case .glutes: return "Glutes"
+        case .core: return "Core"
+        default: return rawValue.capitalized
+        }
     }
 }
