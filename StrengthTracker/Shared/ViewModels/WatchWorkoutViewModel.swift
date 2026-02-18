@@ -424,6 +424,29 @@ public final class WatchWorkoutViewModel {
         }
     }
 
+    public func cancelWorkout() async {
+        guard !isCompleting else { return }
+        isCompleting = true
+        defer {
+            isCompleting = false
+            isActive = false
+        }
+
+        stopRestTimer()
+
+        await watchSessionManager?.discardWorkoutSession()
+
+        if let workout = activeWorkout {
+            try? await workoutRepository.delete(workout)
+        }
+
+        activeWorkout = nil
+        currentExerciseIndex = 0
+        workoutNotes = ""
+
+        connectivityManager.sendWorkoutEnded()
+    }
+
     // MARK: - Navigation
 
     public func nextExercise() {

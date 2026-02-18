@@ -77,15 +77,16 @@ struct WatchExercisePickerView: View {
                         onStartWorkout(selectedExercises)
                     } label: {
                         Text("START (\(selectedExercises.count))")
-                            .font(.system(size: 14, weight: .black))
+                            .font(.system(size: 12, weight: .black))
                             .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
+                            .padding(.vertical, 6)
                             .background(primaryYellow)
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 2)
                     .padding(.bottom, 4)
                 }
             }

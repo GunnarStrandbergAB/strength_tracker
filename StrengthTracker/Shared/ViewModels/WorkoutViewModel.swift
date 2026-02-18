@@ -372,6 +372,9 @@ public final class WorkoutViewModel {
 
     /// Cancel the current workout without saving completion.
     public func cancelWorkout() async {
+        if let workout = currentWorkout {
+            try? await workoutRepository.delete(workout)
+        }
         currentWorkout = nil
         isActive = false
     }

@@ -87,6 +87,15 @@ public final class WatchHealthKitManager: NSObject, WatchWorkoutSessionManager, 
         workoutBuilder = nil
     }
 
+    public func discardWorkoutSession() async {
+        workoutSession?.end()
+        workoutSession = nil
+        workoutBuilder = nil
+        finishedWorkoutUUID = nil
+        isSessionActive = false
+        print("[HealthKit] Workout session discarded (not saved to Apple Health)")
+    }
+
     public func pauseWorkout() {
         workoutSession?.pause()
     }

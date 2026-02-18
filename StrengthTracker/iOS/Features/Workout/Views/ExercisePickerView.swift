@@ -120,6 +120,7 @@ struct ExercisePickerView: View {
                     .foregroundStyle(.blue)
             }
         }
+        .buttonStyle(.plain)
     }
 
     private var groupedExercises: [(key: MuscleGroup, value: [Exercise])] {
