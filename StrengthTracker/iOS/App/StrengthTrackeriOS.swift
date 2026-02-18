@@ -35,10 +35,14 @@ struct StrengthTrackeriOSApp: App {
             let healthKit = container.healthKitService
             let calorieService = container.calorieEstimationService
             let prefs = container.userPreferencesService
+            let webhookService = container.webhookService
             container.connectivityManager.onWorkoutReceived = { workout in
                 Task { @MainActor in
                     do {
                         _ = try await workoutRepo.save(workout)
+
+                        // Send to webhook (fire-and-forget)
+                        await webhookService.send(workout)
 
                         // Calculate calories for the Watch workout
                         let bodyWeightKg = await healthKit.fetchBodyWeightKg() ?? prefs.bodyWeightKg

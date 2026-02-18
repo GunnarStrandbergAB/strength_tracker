@@ -23,6 +23,7 @@ public final class WorkoutViewModel {
     private let calorieEstimationService: CalorieEstimationService
     public let userPreferencesService: UserPreferencesService?
     private let analyticsService: WorkoutAnalyticsService?
+    private let webhookService: WebhookService?
 
     public init(
         workoutRepository: any WorkoutRepository,
@@ -31,7 +32,8 @@ public final class WorkoutViewModel {
         healthKitService: any HealthKitServiceProtocol,
         calorieEstimationService: CalorieEstimationService = CalorieEstimationService(),
         userPreferencesService: UserPreferencesService? = nil,
-        analyticsService: WorkoutAnalyticsService? = nil
+        analyticsService: WorkoutAnalyticsService? = nil,
+        webhookService: WebhookService? = nil
     ) {
         self.workoutRepository = workoutRepository
         self.templateRepository = templateRepository
@@ -40,6 +42,7 @@ public final class WorkoutViewModel {
         self.calorieEstimationService = calorieEstimationService
         self.userPreferencesService = userPreferencesService
         self.analyticsService = analyticsService
+        self.webhookService = webhookService
     }
 
     public func startWorkout(name: String, from template: WorkoutTemplate? = nil) async {
@@ -218,6 +221,11 @@ public final class WorkoutViewModel {
         Task {
             let bodyWeightKg = await resolveBodyWeightKg() ?? UserPreferencesService.defaultBodyWeightKg
             try? await analyticsService?.vectorizeWorkout(saved, bodyWeightKg: bodyWeightKg)
+        }
+
+        // Send to webhook in background (fire-and-forget)
+        Task {
+            await webhookService?.send(saved)
         }
     }
 

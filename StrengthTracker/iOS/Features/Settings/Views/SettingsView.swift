@@ -92,6 +92,21 @@ struct SettingsView: View {
                     }
                 }
 
+                // Webhook Section
+                Section {
+                    TextField("https://example.com/webhook", text: $preferencesService.webhookURL)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    SecureField("Bearer token (optional)", text: $preferencesService.webhookBearerToken)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } header: {
+                    Text("Webhook")
+                } footer: {
+                    Text("Posts workout JSON to this URL after every completed workout. Use with AI trainers, n8n, Zapier, or any HTTP endpoint.")
+                }
+
                 // About Section
                 Section("About") {
                     HStack {
