@@ -39,6 +39,7 @@ public final class AppContainer: Sendable {
     public let exerciseListViewModel: ExerciseListViewModel
     public let watchWorkoutViewModel: WatchWorkoutViewModel
     public let watchWorkoutListViewModel: WatchWorkoutListViewModel
+    public let workoutAnalyticsViewModel: WorkoutAnalyticsViewModel
 
     public init() throws {
         let schema = Schema([
@@ -131,6 +132,11 @@ public final class AppContainer: Sendable {
             workoutRepository: workoutRepository,
             templateRepository: templateRepository
         )
+        workoutAnalyticsViewModel = WorkoutAnalyticsViewModel(
+            analyticsService: analyticsService,
+            qualityScoreService: qualityScoreService,
+            featureGate: analyticsFeatureGate
+        )
     }
 
     // Factory methods for ViewModels
@@ -181,11 +187,7 @@ public final class AppContainer: Sendable {
     }
 
     public func makeWorkoutAnalyticsViewModel() -> WorkoutAnalyticsViewModel {
-        WorkoutAnalyticsViewModel(
-            analyticsService: analyticsService,
-            qualityScoreService: qualityScoreService,
-            featureGate: analyticsFeatureGate
-        )
+        workoutAnalyticsViewModel
     }
 }
 #endif
