@@ -8,6 +8,7 @@ struct WorkoutSummaryView: View {
     let workout: Workout
     @State private var viewModel: WatchWorkoutViewModel
     @State private var showCheckmark = false
+    @State private var showingCancelConfirmation = false
 
     init(workout: Workout, viewModel: WatchWorkoutViewModel) {
         self.workout = workout
@@ -134,9 +135,32 @@ struct WorkoutSummaryView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(viewModel.isCompleting)
+
+                // Cancel button — below DONE for intentional friction
+                Button {
+                    showingCancelConfirmation = true
+                } label: {
+                    Text("Cancel Workout")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color.red.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isCompleting)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
+        }
+        .confirmationDialog("Cancel this workout?", isPresented: $showingCancelConfirmation, titleVisibility: .visible) {
+            Button("Cancel Workout", role: .destructive) {
+                Task {
+                    await viewModel.cancelWorkout()
+                }
+            }
+            Button("Keep Going", role: .cancel) {}
         }
     }
 

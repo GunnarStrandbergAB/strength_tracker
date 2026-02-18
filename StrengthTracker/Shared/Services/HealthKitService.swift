@@ -58,6 +58,7 @@ public protocol WatchWorkoutSessionManager: AnyObject {
     func requestAuthorization() async throws
     func startWorkoutSession() async throws
     func endWorkoutSession() async throws
+    func discardWorkoutSession() async
 }
 
 // MARK: - Data Models
