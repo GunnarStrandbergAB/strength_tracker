@@ -20,13 +20,6 @@ public protocol HealthKitServiceProtocol: Sendable {
     ///   - calories: Estimated total calories burned
     func saveWorkout(_ workout: Workout, calories: Double) async throws
 
-    /// Add calorie data to an existing HealthKit workout (Watch-originated)
-    /// - Parameters:
-    ///   - healthKitWorkoutId: UUID of the existing HKWorkout from Apple Watch
-    ///   - calories: Estimated calories to attach
-    ///   - workout: The workout data (for date range)
-    func addCaloriesToExistingWorkout(healthKitWorkoutId: UUID, calories: Double, workout: Workout) async throws
-
     /// Fetch the user's latest body weight from HealthKit
     func fetchBodyWeightKg() async -> Double?
 
@@ -161,41 +154,6 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked
         }
     }
 
-    public func addCaloriesToExistingWorkout(healthKitWorkoutId: UUID, calories: Double, workout: Workout) async throws {
-        guard calories > 0, let endDate = workout.completedAt else { return }
-
-        // Find the existing HKWorkout by UUID
-        let predicate = HKQuery.predicateForObject(with: healthKitWorkoutId)
-        let workoutType = HKObjectType.workoutType()
-
-        let hkWorkout: HKWorkout? = await withCheckedContinuation { continuation in
-            let query = HKSampleQuery(
-                sampleType: workoutType,
-                predicate: predicate,
-                limit: 1,
-                sortDescriptors: nil
-            ) { _, samples, _ in
-                continuation.resume(returning: samples?.first as? HKWorkout)
-            }
-            healthStore.execute(query)
-        }
-
-        guard let existingWorkout = hkWorkout else {
-            // Watch workout not yet synced to iPhone's HealthKit — fall back to creating new
-            try await saveWorkout(workout, calories: calories)
-            return
-        }
-
-        // Add calorie sample associated with the Watch's workout
-        let energySample = HKQuantitySample(
-            type: HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!,
-            quantity: HKQuantity(unit: .kilocalorie(), doubleValue: calories),
-            start: workout.startedAt,
-            end: endDate
-        )
-        try await healthStore.addSamples([energySample], to: existingWorkout)
-    }
-
     public func fetchBodyWeightKg() async -> Double? {
         await withCheckedContinuation { continuation in
             let bodyMassType = HKQuantityType.quantityType(forIdentifier: .bodyMass)!
@@ -268,7 +226,6 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol {
     public func isAuthorized() -> Bool { false }
     public func saveWorkout(_ workout: Workout) async throws {}
     public func saveWorkout(_ workout: Workout, calories: Double) async throws {}
-    public func addCaloriesToExistingWorkout(healthKitWorkoutId: UUID, calories: Double, workout: Workout) async throws {}
     public func fetchBodyWeightKg() async -> Double? { nil }
     public func startWorkoutSession() async throws {}
     public func endWorkoutSession(_ workout: Workout) async throws {}
@@ -286,7 +243,6 @@ public final class NoOpHealthKitService: HealthKitServiceProtocol {
     public func isAuthorized() -> Bool { false }
     public func saveWorkout(_ workout: Workout) async throws {}
     public func saveWorkout(_ workout: Workout, calories: Double) async throws {}
-    public func addCaloriesToExistingWorkout(healthKitWorkoutId: UUID, calories: Double, workout: Workout) async throws {}
     public func fetchBodyWeightKg() async -> Double? { nil }
     public func startWorkoutSession() async throws {}
     public func endWorkoutSession(_ workout: Workout) async throws {}

@@ -30,38 +30,15 @@ struct StrengthTrackeriOSApp: App {
 
             container.exerciseSeeder.startSeeding()
 
-            // Wire up Watch → iPhone workout sync with calorie estimation
+            // Wire up Watch → iPhone workout sync (SwiftData + webhook only)
+            // Watch already saves HKWorkout with sensor-based calories — iPhone must NOT touch HealthKit
             let workoutRepo = container.workoutRepository
-            let healthKit = container.healthKitService
-            let calorieService = container.calorieEstimationService
-            let prefs = container.userPreferencesService
             let webhookService = container.webhookService
             container.connectivityManager.onWorkoutReceived = { workout in
                 Task { @MainActor in
                     do {
                         _ = try await workoutRepo.save(workout)
-
-                        // Send to webhook (fire-and-forget)
                         await webhookService.send(workout)
-
-                        // Calculate calories for the Watch workout
-                        let bodyWeightKg = await healthKit.fetchBodyWeightKg() ?? prefs.bodyWeightKg
-                        guard let bw = bodyWeightKg else { return }
-
-                        let result = calorieService.estimateCalories(workout: workout, bodyWeightKg: bw)
-                        guard result.totalCalories > 0 else { return }
-
-                        if let hkWorkoutId = workout.healthKitWorkoutId {
-                            // Attach calories to the Watch's existing HKWorkout
-                            try await healthKit.addCaloriesToExistingWorkout(
-                                healthKitWorkoutId: hkWorkoutId,
-                                calories: result.totalCalories,
-                                workout: workout
-                            )
-                        } else {
-                            // No Watch HKWorkout UUID — create a new HKWorkout with calories
-                            try await healthKit.saveWorkout(workout, calories: result.totalCalories)
-                        }
                     } catch {
                         print("Failed to save Watch workout: \(error)")
                     }
