@@ -55,6 +55,7 @@ public final class TemplateExerciseEntity {
     public var targetDurationSeconds: Int?
     public var targetDistanceMeters: Double?
     public var setTargetsJSON: String?
+    public var isWarmUp: Bool
 
     @Relationship(deleteRule: .nullify, inverse: \WorkoutTemplateEntity.exercises)
     public var template: WorkoutTemplateEntity?
@@ -79,7 +80,8 @@ public final class TemplateExerciseEntity {
         targetWeight: Double? = nil,
         targetDurationSeconds: Int? = nil,
         targetDistanceMeters: Double? = nil,
-        setTargetsJSON: String? = nil
+        setTargetsJSON: String? = nil,
+        isWarmUp: Bool = false
     ) {
         self.id = id
         self.exerciseId = exerciseId
@@ -101,6 +103,7 @@ public final class TemplateExerciseEntity {
         self.targetDurationSeconds = targetDurationSeconds
         self.targetDistanceMeters = targetDistanceMeters
         self.setTargetsJSON = setTargetsJSON
+        self.isWarmUp = isWarmUp
     }
 }
 

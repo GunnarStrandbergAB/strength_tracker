@@ -7,20 +7,29 @@ public final class WorkoutQualityScoreService: Sendable {
 
     private let workoutRepository: any WorkoutRepository
     private let muscleBalanceService: MuscleBalanceService
+    private let healthKitService: any HealthKitServiceProtocol
+    private let userPreferencesService: UserPreferencesService
 
     public init(
         workoutRepository: any WorkoutRepository,
-        muscleBalanceService: MuscleBalanceService
+        muscleBalanceService: MuscleBalanceService,
+        healthKitService: any HealthKitServiceProtocol,
+        userPreferencesService: UserPreferencesService
     ) {
         self.workoutRepository = workoutRepository
         self.muscleBalanceService = muscleBalanceService
+        self.healthKitService = healthKitService
+        self.userPreferencesService = userPreferencesService
     }
 
     /// Compute quality score for a completed workout
     public func computeScore(for workout: Workout) async throws -> WorkoutQualityScore {
         let recentWorkouts = try await workoutRepository.fetchAll()
 
-        let volumeScore = computeVolumeScore(workout, history: recentWorkouts)
+        let bodyWeightKg = await healthKitService.fetchBodyWeightKg()
+            ?? userPreferencesService.bodyWeightKg
+            ?? UserPreferencesService.defaultBodyWeightKg
+        let volumeScore = computeVolumeScore(workout, history: recentWorkouts, bodyWeightKg: bodyWeightKg)
         let intensityScore = computeIntensityScore(workout)
         let consistencyScore = computeConsistencyScore(workout)
         let balanceScore = computeBalanceScore(workout)
@@ -45,14 +54,14 @@ public final class WorkoutQualityScoreService: Sendable {
 
     // MARK: - Scoring Components (0-100 scale each)
 
-    private func computeVolumeScore(_ workout: Workout, history: [Workout]) -> Double {
+    private func computeVolumeScore(_ workout: Workout, history: [Workout], bodyWeightKg: Double) -> Double {
         let recentCompleted = history.filter { $0.completedAt != nil }.suffix(12)
         let avgVolume = recentCompleted.isEmpty ? 0.0 :
-            recentCompleted.map(\.totalVolume).reduce(0, +) / Double(recentCompleted.count)
+            recentCompleted.map { $0.totalVolume(bodyWeightKg: bodyWeightKg) }.reduce(0, +) / Double(recentCompleted.count)
 
         guard avgVolume > 0 else { return 80.0 }
 
-        let ratio = workout.totalVolume / avgVolume
+        let ratio = workout.totalVolume(bodyWeightKg: bodyWeightKg) / avgVolume
         switch ratio {
         case 0.8...1.2: return 100.0
         case 0.6...1.4: return 80.0

@@ -93,7 +93,9 @@ public final class AppContainer: Sendable {
         recommendationService = ExerciseRecommendationService()
         qualityScoreService = WorkoutQualityScoreService(
             workoutRepository: workoutRepository,
-            muscleBalanceService: muscleBalanceService
+            muscleBalanceService: muscleBalanceService,
+            healthKitService: healthKitService,
+            userPreferencesService: userPreferencesService
         )
         analyticsFeatureGate = AnalyticsFeatureGate(workoutRepository: workoutRepository)
         analyticsService = WorkoutAnalyticsService(

@@ -168,9 +168,21 @@ private struct TemplateExerciseEditorRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(templateExercise.exercise.name)
-                .font(.body)
-                .foregroundStyle(.primary)
+            HStack(spacing: 6) {
+                Text(templateExercise.exercise.name)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+
+                if templateExercise.isWarmUp {
+                    Text("Warm-up")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.orange, in: Capsule())
+                }
+            }
 
             HStack(spacing: 8) {
                 Text("\(templateExercise.targetSets) sets")
@@ -212,6 +224,7 @@ private struct TemplateExerciseConfigView: View {
     @State private var notes: String
     @State private var restTimerSeconds: Int?
     @State private var supersetGroup: Int?
+    @State private var isWarmUp: Bool
 
     private var exerciseType: ExerciseType { templateExercise.exercise.exerciseType }
     private var showsReps: Bool { exerciseType == .weightedReps || exerciseType == .bodyweightReps }
@@ -229,6 +242,7 @@ private struct TemplateExerciseConfigView: View {
         self._notes = State(initialValue: templateExercise.notes ?? "")
         self._restTimerSeconds = State(initialValue: templateExercise.restTimerSeconds)
         self._supersetGroup = State(initialValue: templateExercise.supersetGroup)
+        self._isWarmUp = State(initialValue: templateExercise.isWarmUp)
 
         // Build initial setTargets array: use existing per-set data or fill from flat values
         var targets: [TemplateSetTarget] = []
@@ -277,6 +291,8 @@ private struct TemplateExerciseConfigView: View {
                 }
 
                 Section("Optional") {
+                    Toggle("Warm-up Exercise", isOn: $isWarmUp)
+
                     HStack {
                         Text("Rest Timer (seconds)")
                         Spacer()
@@ -364,7 +380,8 @@ private struct TemplateExerciseConfigView: View {
             targetWeight: first?.targetWeight,
             targetDurationSeconds: first?.targetDurationSeconds,
             targetDistanceMeters: first?.targetDistanceMeters,
-            setTargets: orderedTargets
+            setTargets: orderedTargets,
+            isWarmUp: isWarmUp
         )
         onSave(updated)
     }

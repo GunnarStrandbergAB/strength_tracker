@@ -85,7 +85,8 @@ public enum TemplateExerciseMapper {
             targetWeight: entity.targetWeight,
             targetDurationSeconds: entity.targetDurationSeconds,
             targetDistanceMeters: entity.targetDistanceMeters,
-            setTargets: setTargets
+            setTargets: setTargets,
+            isWarmUp: entity.isWarmUp
         )
     }
 
@@ -117,7 +118,8 @@ public enum TemplateExerciseMapper {
             targetWeight: domain.targetWeight,
             targetDurationSeconds: domain.targetDurationSeconds,
             targetDistanceMeters: domain.targetDistanceMeters,
-            setTargetsJSON: encodeSetTargets(domain.setTargets)
+            setTargetsJSON: encodeSetTargets(domain.setTargets),
+            isWarmUp: domain.isWarmUp
         )
     }
 
@@ -142,6 +144,7 @@ public enum TemplateExerciseMapper {
         entity.targetDurationSeconds = domain.targetDurationSeconds
         entity.targetDistanceMeters = domain.targetDistanceMeters
         entity.setTargetsJSON = encodeSetTargets(domain.setTargets)
+        entity.isWarmUp = domain.isWarmUp
     }
 }
 #endif

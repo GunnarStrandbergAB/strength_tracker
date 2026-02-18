@@ -55,7 +55,7 @@ public final class WorkoutViewModel {
                     return ExerciseSet(
                         id: UUID(),
                         order: setIndex + 1,
-                        setType: .normal,
+                        setType: te.isWarmUp ? .warmup : .normal,
                         weight: target?.targetWeight ?? te.targetWeight,
                         reps: target?.targetReps ?? te.targetReps,
                         durationSeconds: target?.targetDurationSeconds ?? te.targetDurationSeconds,

@@ -51,8 +51,9 @@ public struct TemplateExercise: Identifiable, Hashable, Sendable, Codable {
     public var targetDurationSeconds: Int?
     public var targetDistanceMeters: Double?
     public var setTargets: [TemplateSetTarget]
+    public var isWarmUp: Bool
 
-    public init(id: UUID, exercise: Exercise, order: Int, supersetGroup: Int?, notes: String?, restTimerSeconds: Int?, targetSets: Int, targetReps: Int?, targetWeight: Double?, targetDurationSeconds: Int?, targetDistanceMeters: Double?, setTargets: [TemplateSetTarget] = []) {
+    public init(id: UUID, exercise: Exercise, order: Int, supersetGroup: Int?, notes: String?, restTimerSeconds: Int?, targetSets: Int, targetReps: Int?, targetWeight: Double?, targetDurationSeconds: Int?, targetDistanceMeters: Double?, setTargets: [TemplateSetTarget] = [], isWarmUp: Bool = false) {
         self.id = id
         self.exercise = exercise
         self.order = order
@@ -65,6 +66,7 @@ public struct TemplateExercise: Identifiable, Hashable, Sendable, Codable {
         self.targetDurationSeconds = targetDurationSeconds
         self.targetDistanceMeters = targetDistanceMeters
         self.setTargets = setTargets
+        self.isWarmUp = isWarmUp
     }
 }
 
