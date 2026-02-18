@@ -16,7 +16,7 @@ Built for lifters who want to log their workouts quickly and get back to the bar
 - **Workout History** — review past workouts with full exercise and set detail
 - **Progress Tracking** — automatic personal record detection. Hit a new PR and you'll know it.
 - **Workout Analytics** — on-device vector analytics with plateau detection, muscle balance tracking, exercise recommendations, and workout quality scoring. No cloud, no AI API calls — pure math on your device.
-- **Webhook Integration** — POST workout JSON to any external endpoint after every completed workout (AI trainers, n8n, Zapier, etc.)
+- **Webhook Integration** — POST workout JSON to any external endpoint after every completed workout (openClaw PT, AI trainers, n8n, Zapier, etc.)
 - **Settings** — weight unit (kg/lbs), rest timer duration, webhook configuration, and preferences
 - **Widgets** — home screen widgets via WidgetKit
 
@@ -204,6 +204,7 @@ StrengthTracker/
 ```
 
 **Key patterns:**
+
 - **DDD** — domain models, mappers, SwiftData entities, repositories, services, ViewModels
 - **MVVM** — `@Observable` ViewModels with SwiftUI views
 - **Repository** — protocol-based data access with SwiftData implementations
