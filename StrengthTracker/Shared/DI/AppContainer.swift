@@ -21,6 +21,7 @@ public final class AppContainer: Sendable {
     public let healthKitService: any HealthKitServiceProtocol
     public let connectivityManager: ConnectivityManager
     public let calorieEstimationService: CalorieEstimationService
+    public let webhookService: WebhookService
 
     // Analytics
     public let analyticsRepository: any AnalyticsRepository
@@ -79,6 +80,7 @@ public final class AppContainer: Sendable {
         #endif
         connectivityManager = ConnectivityManager()
         calorieEstimationService = CalorieEstimationService()
+        webhookService = WebhookService(preferencesService: userPreferencesService)
 
         // Analytics repository (vector-only, no workoutRepository dependency -- ADR-011)
         analyticsRepository = SwiftDataAnalyticsRepository(modelContext: modelContext)
@@ -113,7 +115,8 @@ public final class AppContainer: Sendable {
             healthKitService: healthKitService,
             calorieEstimationService: calorieEstimationService,
             userPreferencesService: userPreferencesService,
-            analyticsService: analyticsService
+            analyticsService: analyticsService,
+            webhookService: webhookService
         )
         templateViewModel = TemplateViewModel(
             templateRepository: templateRepository,

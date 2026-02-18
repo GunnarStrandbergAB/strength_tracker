@@ -16,7 +16,8 @@ Built for lifters who want to log their workouts quickly and get back to the bar
 - **Workout History** — review past workouts with full exercise and set detail
 - **Progress Tracking** — automatic personal record detection. Hit a new PR and you'll know it.
 - **Workout Analytics** — on-device vector analytics with plateau detection, muscle balance tracking, exercise recommendations, and workout quality scoring. No cloud, no AI API calls — pure math on your device.
-- **Settings** — weight unit (kg/lbs), rest timer duration, and preferences
+- **Webhook Integration** — POST workout JSON to any external endpoint after every completed workout (AI trainers, n8n, Zapier, etc.)
+- **Settings** — weight unit (kg/lbs), rest timer duration, webhook configuration, and preferences
 - **Widgets** — home screen widgets via WidgetKit
 
 ### Apple Watch
@@ -78,9 +79,38 @@ Every completed workout is saved to Apple Health with research-based calorie est
 
 The only personal data used is **body weight** (from HealthKit or user preferences). No age, height, or sex data is collected. Warmup sets are excluded. Results are cross-validated against [Joao et al. (2021)](https://doi.org/10.3390/app11125592) (~6 kcal/min average).
 
+### Webhook Integration
+
+After every completed workout (both iPhone and Watch-originated), the app can POST the full workout JSON to an external HTTP endpoint. This enables AI personal trainer integrations and automation workflows.
+
+**Setup:** Settings → Webhook → enter a URL and optional bearer token.
+
+**Compatible with:** OpenClaw, Claude/GPT API, n8n, Make, Zapier, or any HTTP endpoint that accepts JSON.
+
+**Payload:** The full `Workout` JSON object including all exercises, sets, weights, reps, timestamps, and notes.
+
+```json
+{
+  "id": "...",
+  "name": "Push Day",
+  "startedAt": "2026-02-18T10:00:00Z",
+  "completedAt": "2026-02-18T11:15:00Z",
+  "exercises": [
+    {
+      "exercise": { "name": "Bench Press", "muscleGroup": "chest", ... },
+      "sets": [
+        { "weight": 100, "reps": 5, "isCompleted": true, ... }
+      ]
+    }
+  ]
+}
+```
+
+**Behavior:** Fire-and-forget — failures never block workout saving or affect the app. The bearer token is sent as an `Authorization: Bearer <token>` header when configured.
+
 ### Privacy
 
-Zero data collection. No analytics. No tracking. No account required. Everything lives on your iPhone and Apple Watch.
+Zero data collection. No analytics. No tracking. No account required. Everything lives on your iPhone and Apple Watch — unless you configure a webhook, in which case workout data is sent to the endpoint you specify.
 
 ## Exercise Library — 326 Exercises
 
@@ -157,7 +187,7 @@ StrengthTracker/
 │   │   └── Analytics/       # Analytics domain (WorkoutVector, PlateauAnalysis, MuscleBalance)
 │   ├── Persistence/         # SwiftData entities, mappers, repository implementations
 │   ├── Repositories/        # Repository protocol definitions
-│   ├── Services/            # ConnectivityManager, HealthKit, RestTimer, UserPreferences
+│   ├── Services/            # ConnectivityManager, HealthKit, RestTimer, UserPreferences, Webhook
 │   │   └── Analytics/       # Vectorizer, VectorSearch, PlateauDetection, MuscleBalance
 │   ├── ViewModels/          # Shared ViewModels (WorkoutVM, TemplateVM, AnalyticsVM)
 │   └── DI/                  # AppContainer (dependency injection)

@@ -54,6 +54,19 @@ public final class UserPreferencesService {
         didSet { UserDefaults.standard.set(preferredRestTimerDuration, forKey: "preferredRestTimerDuration") }
     }
 
+    /// Webhook URL for posting completed workouts to an external endpoint
+    public var webhookURL: String {
+        didSet { UserDefaults.standard.set(webhookURL, forKey: "webhookURL") }
+    }
+
+    /// Bearer token for webhook authentication (optional)
+    public var webhookBearerToken: String {
+        didSet { UserDefaults.standard.set(webhookBearerToken, forKey: "webhookBearerToken") }
+    }
+
+    /// Whether the webhook is configured (non-empty URL)
+    public var isWebhookEnabled: Bool { !webhookURL.isEmpty }
+
     /// User's body weight in kg (last-resort fallback for calorie estimation)
     public var bodyWeightKg: Double? {
         didSet {
@@ -90,6 +103,9 @@ public final class UserPreferencesService {
 
         let restDuration = defaults.integer(forKey: "preferredRestTimerDuration")
         self.preferredRestTimerDuration = restDuration != 0 ? restDuration : Self.defaultRestSecondsValue
+
+        self.webhookURL = defaults.string(forKey: "webhookURL") ?? ""
+        self.webhookBearerToken = defaults.string(forKey: "webhookBearerToken") ?? ""
 
         let weight = defaults.double(forKey: "bodyWeightKg")
         self.bodyWeightKg = weight > 0 ? weight : nil
