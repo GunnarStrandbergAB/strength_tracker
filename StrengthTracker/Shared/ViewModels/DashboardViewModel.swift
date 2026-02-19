@@ -75,12 +75,12 @@ public final class DashboardViewModel {
             let sorted = completed.sorted { $0.startedAt > $1.startedAt }
             recentWorkouts = Array(sorted.prefix(3))
 
-            // Weekly trend: percentage change vs previous week
-            let currentCount = Double(currentWeekWorkouts.count)
-            let previousCount = Double(previousWeekWorkouts.count)
-            if previousCount > 0 {
-                weeklyTrend = ((currentCount - previousCount) / previousCount) * 100.0
-            } else if currentCount > 0 {
+            // Weekly trend: percentage change in avg quality score vs previous week
+            let currentAvg = await averageQualityScore(for: currentWeekWorkouts)
+            let previousAvg = await averageQualityScore(for: previousWeekWorkouts)
+            if let curr = currentAvg, let prev = previousAvg, prev > 0 {
+                weeklyTrend = ((curr - prev) / prev) * 100.0
+            } else if currentAvg != nil && previousAvg == nil {
                 weeklyTrend = 100.0
             } else {
                 weeklyTrend = 0
@@ -150,6 +150,18 @@ public final class DashboardViewModel {
             }
         }
         return scores
+    }
+
+    private func averageQualityScore(for workouts: [Workout]) async -> Double? {
+        guard !workouts.isEmpty else { return nil }
+        var scores: [Double] = []
+        for workout in workouts {
+            if let score = try? await qualityScoreService.computeScore(for: workout) {
+                scores.append(score.overallScore)
+            }
+        }
+        guard !scores.isEmpty else { return nil }
+        return scores.reduce(0, +) / Double(scores.count)
     }
 
     private func countPRsInWorkouts(_ workouts: [Workout]) -> Int {
