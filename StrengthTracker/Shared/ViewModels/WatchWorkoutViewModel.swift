@@ -22,6 +22,9 @@ public final class WatchWorkoutViewModel {
     // Set navigation (nil = active/next set)
     public var viewingSetIndex: Int? = nil
 
+    // Pending set type for quick-start (no sets exist yet)
+    public var pendingSetType: SetType = .normal
+
     // Completion guard (prevents double-tap and provides loading state)
     public var isCompleting = false
 
@@ -247,10 +250,14 @@ public final class WatchWorkoutViewModel {
         let workoutExercises = template.exercises.sorted { $0.order < $1.order }.enumerated().map { index, te in
             let sets = (0..<te.targetSets).map { setIndex in
                 let target = te.setTargets.indices.contains(setIndex) ? te.setTargets[setIndex] : nil
+                let resolvedSetType: SetType = {
+                    if let t = target, t.setType != .normal { return t.setType }
+                    return te.isWarmUp ? .warmup : .normal
+                }()
                 return ExerciseSet(
                     id: UUID(),
                     order: setIndex + 1,
-                    setType: .normal,
+                    setType: resolvedSetType,
                     weight: target?.targetWeight ?? te.targetWeight,
                     reps: target?.targetReps ?? te.targetReps,
                     durationSeconds: target?.targetDurationSeconds ?? te.targetDurationSeconds,
@@ -334,7 +341,7 @@ public final class WatchWorkoutViewModel {
             let newSet = ExerciseSet(
                 id: UUID(),
                 order: setOrder,
-                setType: .normal,
+                setType: pendingSetType,
                 weight: weight,
                 reps: reps,
                 durationSeconds: nil,
@@ -349,6 +356,7 @@ public final class WatchWorkoutViewModel {
 
         activeWorkout = workout
         viewingSetIndex = nil
+        pendingSetType = .normal
 
         // Send live snapshot to iPhone
         connectivityManager.sendWorkoutSnapshot(workout)
@@ -453,6 +461,7 @@ public final class WatchWorkoutViewModel {
         guard let workout = activeWorkout else { return }
         if currentExerciseIndex < workout.exercises.count - 1 {
             viewingSetIndex = nil
+            pendingSetType = .normal
             currentExerciseIndex += 1
         }
     }
@@ -460,6 +469,7 @@ public final class WatchWorkoutViewModel {
     public func previousExercise() {
         if currentExerciseIndex > 0 {
             viewingSetIndex = nil
+            pendingSetType = .normal
             currentExerciseIndex -= 1
         }
     }
@@ -487,6 +497,33 @@ public final class WatchWorkoutViewModel {
             viewingSetIndex = idx + 1
         } else {
             viewingSetIndex = nil
+        }
+    }
+
+    public var currentSetType: SetType {
+        guard let exercise = currentExercise else { return pendingSetType }
+        if let idx = viewingSetIndex, idx < exercise.sets.count {
+            return exercise.sets[idx].setType
+        }
+        if let nextIncomplete = exercise.sets.first(where: { !$0.isCompleted }) {
+            return nextIncomplete.setType
+        }
+        return pendingSetType
+    }
+
+    public func updateSetType(setType: SetType) {
+        guard var workout = activeWorkout,
+              currentExerciseIndex < workout.exercises.count else { return }
+        if let idx = viewingSetIndex,
+           idx < workout.exercises[currentExerciseIndex].sets.count {
+            workout.exercises[currentExerciseIndex].sets[idx].setType = setType
+            activeWorkout = workout
+        } else if let incompleteIdx = workout.exercises[currentExerciseIndex].sets.firstIndex(where: { !$0.isCompleted }) {
+            workout.exercises[currentExerciseIndex].sets[incompleteIdx].setType = setType
+            activeWorkout = workout
+        } else {
+            // No set exists yet (quick-start) — store for next logSet()
+            pendingSetType = setType
         }
     }
 

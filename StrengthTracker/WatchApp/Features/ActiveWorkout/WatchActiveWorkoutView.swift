@@ -139,13 +139,15 @@ struct WatchActiveWorkoutView: View {
                     Spacer(minLength: 0)
 
                     Button {
-                        withAnimation {
-                            selectedTab = viewModel.isResting ? 2 : 1
-                        }
+                        let next = viewModel.currentSetType.nextType
+                        viewModel.updateSetType(setType: next)
                     } label: {
-                        Image(systemName: "flag.checkered.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundStyle(Color.red.opacity(0.8))
+                        Text(setTypeBadgeLabel)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(setTypeBadgeColor)
+                            .frame(width: 24, height: 24)
+                            .background(setTypeBadgeColor.opacity(0.2))
+                            .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -167,12 +169,32 @@ struct WatchActiveWorkoutView: View {
         .padding(.top, 2)
     }
 
+    private var setTypeBadgeLabel: String {
+        switch viewModel.currentSetType {
+        case .normal: return "\(viewModel.currentSetNumber)"
+        case .warmup: return "W"
+        case .dropset: return "D"
+        case .failure: return "F"
+        case .restPause: return "R"
+        }
+    }
+
+    private var setTypeBadgeColor: Color {
+        switch viewModel.currentSetType {
+        case .normal: return .white
+        case .warmup: return .orange
+        case .dropset: return .purple
+        case .failure: return .red
+        case .restPause: return .blue
+        }
+    }
+
     @ViewBuilder
     private func setChip(set: ExerciseSet, index: Int) -> some View {
         VStack(spacing: 1) {
-            Text("S\(set.order)")
+            Text(chipLabel(for: set))
                 .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(Color.white.opacity(0.5))
+                .foregroundStyle(chipLabelColor(for: set))
             Text("\(Int(set.weight ?? 0))x\(set.reps ?? 0)")
                 .font(.system(size: 10, weight: .medium))
                 .monospacedDigit()
@@ -198,6 +220,26 @@ struct WatchActiveWorkoutView: View {
         .onLongPressGesture {
             // Swipe-to-delete alternative for Watch: long-press to delete
             viewModel.removeSetFromCurrentExercise(at: index)
+        }
+    }
+
+    private func chipLabel(for set: ExerciseSet) -> String {
+        switch set.setType {
+        case .normal: return "S\(set.order)"
+        case .warmup: return "W"
+        case .dropset: return "D"
+        case .failure: return "F"
+        case .restPause: return "R"
+        }
+    }
+
+    private func chipLabelColor(for set: ExerciseSet) -> Color {
+        switch set.setType {
+        case .normal: return Color.white.opacity(0.5)
+        case .warmup: return .orange
+        case .dropset: return .purple
+        case .failure: return .red
+        case .restPause: return .blue
         }
     }
 

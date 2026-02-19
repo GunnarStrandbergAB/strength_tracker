@@ -11,7 +11,7 @@ public enum TemplateMapper {
             sortOrder: entity.sortOrder,
             lastUsedAt: entity.lastUsedAt,
             timesUsed: entity.timesUsed,
-            exercises: entity.exercises.map { TemplateExerciseMapper.toDomain($0) }
+            exercises: entity.exercises.sorted(by: { $0.order < $1.order }).map { TemplateExerciseMapper.toDomain($0) }
         )
     }
 

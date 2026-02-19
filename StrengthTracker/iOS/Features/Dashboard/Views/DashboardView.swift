@@ -32,7 +32,7 @@ struct DashboardView: View {
                 VStack(spacing: 16) {
                     // Weekly Frequency Chart
                     WeeklyFrequencyChart(
-                        weeklyWorkoutCounts: viewModel.weeklyWorkoutCounts,
+                        weeklyQualityScores: viewModel.weeklyQualityScores,
                         totalWorkouts: viewModel.weeklyWorkoutTotal,
                         trend: viewModel.weeklyTrend,
                         trendIsPositive: viewModel.trendIsPositive(),

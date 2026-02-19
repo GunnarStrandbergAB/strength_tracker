@@ -9,6 +9,7 @@ struct SetRowGridView: View {
     let onWeightChange: (Double?) -> Void
     let onRepsChange: (Int?) -> Void
     let onToggleComplete: () -> Void
+    let onSetTypeChange: (SetType) -> Void
 
     @State private var weightText: String
     @State private var repsText: String
@@ -27,7 +28,8 @@ struct SetRowGridView: View {
         previousText: String? = nil,
         onWeightChange: @escaping (Double?) -> Void,
         onRepsChange: @escaping (Int?) -> Void,
-        onToggleComplete: @escaping () -> Void
+        onToggleComplete: @escaping () -> Void,
+        onSetTypeChange: @escaping (SetType) -> Void = { _ in }
     ) {
         self.setNumber = setNumber
         self.exerciseSet = exerciseSet
@@ -35,6 +37,7 @@ struct SetRowGridView: View {
         self.onWeightChange = onWeightChange
         self.onRepsChange = onRepsChange
         self.onToggleComplete = onToggleComplete
+        self.onSetTypeChange = onSetTypeChange
 
         _weightText = State(
             initialValue: exerciseSet.weight.map { String(format: "%g", $0) } ?? ""
@@ -47,13 +50,17 @@ struct SetRowGridView: View {
     // 12-column grid: SET(1) PREVIOUS(4) KG(3) REPS(2) DONE(2)
     var body: some View {
         HStack(spacing: 8) {
-            // SET column (1fr)
-            Text("\(setNumber)")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(
-                    exerciseSet.isCompleted ? STColors.primary : STColors.textSecondary
-                )
-                .frame(width: 28, alignment: .center)
+            // SET column (1fr) — tappable to cycle set type
+            Button {
+                let next = exerciseSet.setType.nextType
+                onSetTypeChange(next)
+            } label: {
+                Text(setTypeLabel)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(setTypeLabelColor)
+                    .frame(width: 28, alignment: .center)
+            }
+            .buttonStyle(.plain)
 
             // PREVIOUS column (4fr)
             Text(previousText ?? "--")
@@ -95,7 +102,7 @@ struct SetRowGridView: View {
                     onRepsChange(Int(newValue))
                 }
             }
-            .frame(width: 52)
+            .frame(width: 60)
 
             // DONE column (2fr)
             STCheckbox(isChecked: exerciseSet.isCompleted) {
@@ -105,11 +112,40 @@ struct SetRowGridView: View {
         }
         .padding(.horizontal, STSpacing.setRowHorizontal)
         .padding(.vertical, STSpacing.setRowVertical)
-        .background(
-            exerciseSet.isCompleted
-                ? STColors.primary.opacity(0.05)
-                : Color.clear
-        )
+        .background(setRowBackground)
+    }
+
+    // MARK: - Set Type Helpers
+
+    private var setTypeLabel: String {
+        switch exerciseSet.setType {
+        case .normal: return "\(setNumber)"
+        case .warmup: return "W"
+        case .dropset: return "D"
+        case .failure: return "F"
+        case .restPause: return "R"
+        }
+    }
+
+    private var setTypeLabelColor: Color {
+        switch exerciseSet.setType {
+        case .normal:
+            return exerciseSet.isCompleted ? STColors.primary : STColors.textSecondary
+        case .warmup: return .orange
+        case .dropset: return .purple
+        case .failure: return STColors.danger
+        case .restPause: return .blue
+        }
+    }
+
+    private var setRowBackground: Color {
+        if exerciseSet.isCompleted {
+            return STColors.primary.opacity(0.05)
+        }
+        if exerciseSet.setType == .warmup {
+            return Color.orange.opacity(0.06)
+        }
+        return Color.clear
     }
 }
 

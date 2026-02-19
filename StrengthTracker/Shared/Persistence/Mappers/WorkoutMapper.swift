@@ -12,7 +12,7 @@ public enum WorkoutMapper {
             notes: entity.notes,
             templateId: entity.templateId,
             healthKitWorkoutId: entity.healthKitWorkoutId,
-            exercises: entity.exercises.map { WorkoutExerciseMapper.toDomain($0) }
+            exercises: entity.exercises.sorted(by: { $0.order < $1.order }).map { WorkoutExerciseMapper.toDomain($0) }
         )
     }
 
@@ -86,7 +86,7 @@ public enum WorkoutExerciseMapper {
             supersetGroup: entity.supersetGroup,
             notes: entity.notes,
             restTimerSeconds: entity.restTimerSeconds,
-            sets: entity.sets.map { ExerciseSetMapper.toDomain($0) }
+            sets: entity.sets.sorted(by: { $0.order < $1.order }).map { ExerciseSetMapper.toDomain($0) }
         )
     }
 

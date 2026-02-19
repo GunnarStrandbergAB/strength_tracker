@@ -49,13 +49,17 @@ public final class WorkoutViewModel {
         var exercises: [WorkoutExercise] = []
 
         if let template = template {
-            exercises = template.exercises.enumerated().map { index, te in
+            exercises = template.exercises.sorted(by: { $0.order < $1.order }).enumerated().map { index, te in
                 let sets = (0..<te.targetSets).map { setIndex in
                     let target = te.setTargets.indices.contains(setIndex) ? te.setTargets[setIndex] : nil
+                    let resolvedSetType: SetType = {
+                        if let t = target, t.setType != .normal { return t.setType }
+                        return te.isWarmUp ? .warmup : .normal
+                    }()
                     return ExerciseSet(
                         id: UUID(),
                         order: setIndex + 1,
-                        setType: te.isWarmUp ? .warmup : .normal,
+                        setType: resolvedSetType,
                         weight: target?.targetWeight ?? te.targetWeight,
                         reps: target?.targetReps ?? te.targetReps,
                         durationSeconds: target?.targetDurationSeconds ?? te.targetDurationSeconds,
@@ -359,6 +363,23 @@ public final class WorkoutViewModel {
         }
     }
 
+    /// Update the type of a specific set (normal, warmup, dropset, etc.).
+    public func updateSetType(exerciseId: UUID, setId: UUID, setType: SetType) async {
+        guard var workout = currentWorkout else { return }
+
+        guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              let setIndex = workout.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setId }) else {
+            return
+        }
+
+        workout.exercises[exerciseIndex].sets[setIndex].setType = setType
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            currentWorkout = workout
+        }
+    }
+
     /// Toggle the completion status of a specific set.
     public func toggleSetCompletion(exerciseId: UUID, setId: UUID) async {
         guard var workout = currentWorkout else { return }
@@ -371,6 +392,17 @@ public final class WorkoutViewModel {
         let wasCompleted = workout.exercises[exerciseIndex].sets[setIndex].isCompleted
         workout.exercises[exerciseIndex].sets[setIndex].isCompleted = !wasCompleted
         workout.exercises[exerciseIndex].sets[setIndex].completedAt = wasCompleted ? nil : Date()
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            currentWorkout = workout
+        }
+    }
+
+    public func updateExerciseNotes(exerciseId: UUID, notes: String) async {
+        guard var workout = currentWorkout,
+              let idx = workout.exercises.firstIndex(where: { $0.id == exerciseId }) else { return }
+        workout.exercises[idx].notes = notes.isEmpty ? nil : notes
         do {
             currentWorkout = try await workoutRepository.save(workout)
         } catch {

@@ -7,6 +7,7 @@ public final class DashboardViewModel {
     // MARK: - Published State
 
     public var weeklyWorkoutCounts: [Int] = Array(repeating: 0, count: 7) // Mon-Sun
+    public var weeklyQualityScores: [Double?] = Array(repeating: nil, count: 7) // Mon-Sun, nil = no workout
     public var totalVolume: Double = 0
     public var totalDurationHours: Double = 0
     public var prsThisWeek: Int = 0
@@ -19,15 +20,18 @@ public final class DashboardViewModel {
 
     private let workoutRepository: any WorkoutRepository
     private let personalRecordRepository: any PersonalRecordRepository
+    private let qualityScoreService: WorkoutQualityScoreService
 
     // MARK: - Init
 
     public init(
         workoutRepository: any WorkoutRepository,
-        personalRecordRepository: any PersonalRecordRepository
+        personalRecordRepository: any PersonalRecordRepository,
+        qualityScoreService: WorkoutQualityScoreService
     ) {
         self.workoutRepository = workoutRepository
         self.personalRecordRepository = personalRecordRepository
+        self.qualityScoreService = qualityScoreService
     }
 
     // MARK: - Data Loading
@@ -53,6 +57,9 @@ public final class DashboardViewModel {
 
             // Weekly total
             weeklyWorkoutTotal = currentWeekWorkouts.count
+
+            // Quality scores per day (Mon-Sun)
+            weeklyQualityScores = await calculateDailyQualityScores(for: currentWeekWorkouts, calendar: calendar)
 
             // Total volume this week
             totalVolume = currentWeekWorkouts.reduce(0) { $0 + $1.totalVolume }
@@ -81,6 +88,7 @@ public final class DashboardViewModel {
         } catch {
             // Reset state on error
             weeklyWorkoutCounts = Array(repeating: 0, count: 7)
+            weeklyQualityScores = Array(repeating: nil, count: 7)
             totalVolume = 0
             totalDurationHours = 0
             prsThisWeek = 0
@@ -116,6 +124,32 @@ public final class DashboardViewModel {
         }
 
         return counts
+    }
+
+    private func calculateDailyQualityScores(for workouts: [Workout], calendar: Calendar) async -> [Double?] {
+        var cal = calendar
+        cal.firstWeekday = 2 // Monday
+        // Group workouts by weekday index (Mon=0 .. Sun=6)
+        var grouped: [Int: [Workout]] = [:]
+        for workout in workouts {
+            let weekday = cal.component(.weekday, from: workout.startedAt)
+            let index = (weekday + 5) % 7
+            grouped[index, default: []].append(workout)
+        }
+
+        var scores: [Double?] = Array(repeating: nil, count: 7)
+        for (index, dayWorkouts) in grouped {
+            var dayScores: [Double] = []
+            for workout in dayWorkouts {
+                if let score = try? await qualityScoreService.computeScore(for: workout) {
+                    dayScores.append(score.overallScore)
+                }
+            }
+            if !dayScores.isEmpty {
+                scores[index] = dayScores.reduce(0, +) / Double(dayScores.count)
+            }
+        }
+        return scores
     }
 
     private func countPRsInWorkouts(_ workouts: [Workout]) -> Int {

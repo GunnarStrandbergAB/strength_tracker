@@ -141,35 +141,9 @@ private struct TemplateExerciseRowView: View {
                 }
             }
 
-            HStack(spacing: 12) {
-                Label("\(templateExercise.targetSets) sets", systemImage: "number")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if let reps = templateExercise.targetReps {
-                    Label("\(reps) reps", systemImage: "repeat")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let weight = templateExercise.targetWeight {
-                    Label("\(weight, specifier: "%.1f") kg", systemImage: "scalemass")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let duration = templateExercise.targetDurationSeconds {
-                    Label("\(duration)s", systemImage: "timer")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let distance = templateExercise.targetDistanceMeters {
-                    Label("\(distance, specifier: "%.0f")m", systemImage: "figure.run")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            Text(detailTargetsSummary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
             if let notes = templateExercise.notes, !notes.isEmpty {
                 Text(notes)
@@ -178,6 +152,58 @@ private struct TemplateExerciseRowView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private var detailTargetsSummary: String {
+        let te = templateExercise
+        let targets = te.setTargets
+        let sets = te.targetSets
+
+        guard !targets.isEmpty else {
+            var parts: [String] = ["\(sets) sets"]
+            if let reps = te.targetReps { parts.append("\(reps) reps") }
+            if let w = te.targetWeight { parts.append("\(detailFormatWeight(w)) kg") }
+            if let d = te.targetDurationSeconds { parts.append("\(d)s") }
+            if let dist = te.targetDistanceMeters { parts.append("\(Int(dist))m") }
+            return parts.joined(separator: " \u{00B7} ")
+        }
+
+        let weights = targets.compactMap(\.targetWeight)
+        let reps = targets.compactMap(\.targetReps)
+        let durations = targets.compactMap(\.targetDurationSeconds)
+        let distances = targets.compactMap(\.targetDistanceMeters)
+
+        var result = "\(sets)"
+
+        if !reps.isEmpty {
+            let allSame = Set(reps).count == 1
+            let repsStr = allSame ? "\(reps[0])" : reps.map { String($0) }.joined(separator: "/")
+            result += "\u{00D7}\(repsStr)"
+        }
+
+        if !weights.isEmpty {
+            let allSame = Set(weights).count == 1
+            let wStr = allSame ? detailFormatWeight(weights[0]) : weights.map { detailFormatWeight($0) }.joined(separator: "/")
+            result += " @ \(wStr) kg"
+        }
+
+        if !durations.isEmpty && weights.isEmpty {
+            let allSame = Set(durations).count == 1
+            let dStr = allSame ? "\(durations[0])" : durations.map { String($0) }.joined(separator: "/")
+            result += " \u{00D7} \(dStr)s"
+        }
+
+        if !distances.isEmpty && weights.isEmpty {
+            let allSame = Set(distances).count == 1
+            let distStr = allSame ? "\(Int(distances[0]))" : distances.map { String(Int($0)) }.joined(separator: "/")
+            result += " \u{00D7} \(distStr)m"
+        }
+
+        return result
+    }
+
+    private func detailFormatWeight(_ w: Double) -> String {
+        w.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(w)) : String(format: "%.1f", w)
     }
 }
 #endif

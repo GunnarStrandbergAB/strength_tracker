@@ -3,7 +3,7 @@ import SwiftUI
 import StrengthTrackerShared
 
 struct WeeklyFrequencyChart: View {
-    let weeklyWorkoutCounts: [Int]
+    let weeklyQualityScores: [Double?]
     let totalWorkouts: Int
     let trend: Double
     let trendIsPositive: Bool
@@ -16,7 +16,7 @@ struct WeeklyFrequencyChart: View {
             // Header row: title + trend badge
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("WEEKLY FREQUENCY")
+                    Text("WEEKLY QUALITY")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(STColors.textSecondary)
                         .tracking(0.8)
@@ -47,11 +47,8 @@ struct WeeklyFrequencyChart: View {
             HStack(alignment: .bottom, spacing: 8) {
                 ForEach(0..<7, id: \.self) { index in
                     VStack(spacing: 8) {
-                        BarView(
-                            value: weeklyWorkoutCounts[index],
-                            maxValue: maxCount
-                        )
-                        .frame(height: 96)
+                        BarView(qualityScore: weeklyQualityScores[index])
+                            .frame(height: 96)
 
                         Text(dayLabels[index])
                             .font(.system(size: 10, weight: .bold))
@@ -69,24 +66,16 @@ struct WeeklyFrequencyChart: View {
                 .stroke(Color.white.opacity(0.05), lineWidth: 1)
         )
     }
-
-    private var maxCount: Int {
-        max(weeklyWorkoutCounts.max() ?? 1, 1)
-    }
 }
 
 // MARK: - Bar View
 
 private struct BarView: View {
-    let value: Int
-    let maxValue: Int
+    let qualityScore: Double?
 
     var body: some View {
         GeometryReader { geometry in
             let totalHeight = geometry.size.height
-            let fillFraction = value > 0 ? CGFloat(value) / CGFloat(maxValue) : 0
-            let fillHeight = totalHeight * fillFraction
-            let minFillHeight: CGFloat = value > 0 ? 8 : 0
 
             ZStack(alignment: .bottom) {
                 // Background bar
@@ -94,13 +83,26 @@ private struct BarView: View {
                     .fill(STColors.border.opacity(0.5))
                     .frame(height: totalHeight)
 
-                // Filled portion
-                if value > 0 {
+                // Filled portion based on quality score (0-100)
+                if let score = qualityScore {
+                    let fillFraction = CGFloat(min(max(score, 0), 100)) / 100.0
+                    let minFillHeight: CGFloat = 8
+
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(STColors.primary)
-                        .frame(height: max(fillHeight, minFillHeight))
+                        .fill(barColor(for: score))
+                        .frame(height: max(totalHeight * fillFraction, minFillHeight))
                 }
             }
+        }
+    }
+
+    private func barColor(for score: Double) -> Color {
+        if score >= 70 {
+            return STColors.primary   // Gold/Yellow
+        } else if score >= 40 {
+            return .orange
+        } else {
+            return STColors.danger    // Red
         }
     }
 }

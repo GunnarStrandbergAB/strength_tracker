@@ -256,6 +256,23 @@ struct ActiveWorkoutView: View {
                 Task {
                     await viewModel.removeExercise(exerciseId: workoutExercise.id)
                 }
+            },
+            onSetTypeChange: { setId, setType in
+                Task {
+                    await viewModel.updateSetType(
+                        exerciseId: workoutExercise.id,
+                        setId: setId,
+                        setType: setType
+                    )
+                }
+            },
+            onNoteChange: { notes in
+                Task {
+                    await viewModel.updateExerciseNotes(
+                        exerciseId: workoutExercise.id,
+                        notes: notes
+                    )
+                }
             }
         )
     }
