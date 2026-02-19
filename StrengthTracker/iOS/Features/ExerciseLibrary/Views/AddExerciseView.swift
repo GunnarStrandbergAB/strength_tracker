@@ -10,6 +10,7 @@ struct AddExerciseView: View {
     @State private var primaryMuscleGroup: MuscleGroup = .chest
     @State private var category: ExerciseCategory = .barbell
     @State private var exerciseType: ExerciseType = .weightedReps
+    @State private var secondaryMuscleGroups: Set<MuscleGroup> = []
     @State private var instructions = ""
 
     var body: some View {
@@ -42,10 +43,35 @@ struct AddExerciseView: View {
                     }
                 }
 
+                Section("Secondary Muscle Groups (optional)") {
+                    ForEach(MuscleGroup.allCases.filter { $0 != primaryMuscleGroup }, id: \.self) { group in
+                        Button {
+                            if secondaryMuscleGroups.contains(group) {
+                                secondaryMuscleGroups.remove(group)
+                            } else {
+                                secondaryMuscleGroups.insert(group)
+                            }
+                        } label: {
+                            HStack {
+                                Text(group.rawValue.localizedCapitalized)
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                if secondaryMuscleGroups.contains(group) {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(.blue)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Section("Instructions (optional)") {
                     TextField("How to perform this exercise", text: $instructions, axis: .vertical)
                         .lineLimit(3...6)
                 }
+            }
+            .onChange(of: primaryMuscleGroup) { _, newValue in
+                secondaryMuscleGroups.remove(newValue)
             }
             .navigationTitle("New Exercise")
             .navigationBarTitleDisplayMode(.inline)
@@ -59,7 +85,7 @@ struct AddExerciseView: View {
                             id: UUID(),
                             name: name.trimmingCharacters(in: .whitespaces),
                             primaryMuscleGroup: primaryMuscleGroup,
-                            secondaryMuscleGroups: [],
+                            secondaryMuscleGroups: Array(secondaryMuscleGroups),
                             category: category,
                             exerciseType: exerciseType,
                             instructions: instructions.isEmpty ? nil : instructions,

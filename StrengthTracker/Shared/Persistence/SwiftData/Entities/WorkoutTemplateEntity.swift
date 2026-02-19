@@ -10,6 +10,7 @@ public final class WorkoutTemplateEntity {
     public var sortOrder: Int
     public var lastUsedAt: Date?
     public var timesUsed: Int
+    public var isCustom: Bool = true
 
     @Relationship(deleteRule: .cascade)
     public var exercises: [TemplateExerciseEntity]
@@ -21,6 +22,7 @@ public final class WorkoutTemplateEntity {
         sortOrder: Int,
         lastUsedAt: Date? = nil,
         timesUsed: Int,
+        isCustom: Bool = true,
         exercises: [TemplateExerciseEntity] = []
     ) {
         self.id = id
@@ -29,6 +31,7 @@ public final class WorkoutTemplateEntity {
         self.sortOrder = sortOrder
         self.lastUsedAt = lastUsedAt
         self.timesUsed = timesUsed
+        self.isCustom = isCustom
         self.exercises = exercises
     }
 }

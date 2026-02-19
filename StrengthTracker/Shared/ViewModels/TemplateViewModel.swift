@@ -9,6 +9,9 @@ public final class TemplateViewModel {
     public var isLoading = false
     public var errorMessage: String? = nil
 
+    public var userTemplates: [WorkoutTemplate] { templates.filter { $0.isCustom } }
+    public var libraryTemplates: [WorkoutTemplate] { templates.filter { !$0.isCustom } }
+
     private let templateRepository: any TemplateRepository
     private let exerciseRepository: any ExerciseRepository
     private let connectivityManager: ConnectivityManager?
@@ -71,6 +74,43 @@ public final class TemplateViewModel {
             exercises: exercises
         )
         await saveTemplate(template)
+    }
+
+    /// Copies a library template as a new user-owned template
+    public func addLibraryTemplate(_ template: WorkoutTemplate) async {
+        let copiedExercises = template.exercises.map { ex in
+            TemplateExercise(
+                id: UUID(),
+                exercise: ex.exercise,
+                order: ex.order,
+                supersetGroup: ex.supersetGroup,
+                notes: ex.notes,
+                restTimerSeconds: ex.restTimerSeconds,
+                targetSets: ex.targetSets,
+                targetReps: ex.targetReps,
+                targetWeight: ex.targetWeight,
+                targetDurationSeconds: ex.targetDurationSeconds,
+                targetDistanceMeters: ex.targetDistanceMeters,
+                setTargets: ex.setTargets,
+                isWarmUp: ex.isWarmUp
+            )
+        }
+        let copy = WorkoutTemplate(
+            id: UUID(),
+            name: template.name,
+            notes: template.notes,
+            sortOrder: userTemplates.count,
+            lastUsedAt: nil,
+            timesUsed: 0,
+            exercises: copiedExercises,
+            isCustom: true
+        )
+        await saveTemplate(copy)
+    }
+
+    /// Checks if a library template has already been added to user templates (by name match)
+    public func isLibraryTemplateAdded(_ template: WorkoutTemplate) -> Bool {
+        userTemplates.contains { $0.name == template.name }
     }
 
     #if os(iOS)

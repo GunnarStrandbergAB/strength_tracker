@@ -29,6 +29,7 @@ struct StrengthTrackeriOSApp: App {
             #endif
 
             container.exerciseSeeder.startSeeding()
+            container.templateSeedService.startSeeding()
 
             // Wire up Watch → iPhone workout sync (SwiftData + webhook only)
             // Watch already saves HKWorkout with sensor-based calories — iPhone must NOT touch HealthKit

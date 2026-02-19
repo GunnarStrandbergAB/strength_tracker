@@ -11,7 +11,8 @@ public enum TemplateMapper {
             sortOrder: entity.sortOrder,
             lastUsedAt: entity.lastUsedAt,
             timesUsed: entity.timesUsed,
-            exercises: entity.exercises.sorted(by: { $0.order < $1.order }).map { TemplateExerciseMapper.toDomain($0) }
+            exercises: entity.exercises.sorted(by: { $0.order < $1.order }).map { TemplateExerciseMapper.toDomain($0) },
+            isCustom: entity.isCustom
         )
     }
 
@@ -23,7 +24,8 @@ public enum TemplateMapper {
             notes: domain.notes,
             sortOrder: domain.sortOrder,
             lastUsedAt: domain.lastUsedAt,
-            timesUsed: domain.timesUsed
+            timesUsed: domain.timesUsed,
+            isCustom: domain.isCustom
         )
         let exerciseEntities = domain.exercises.map { TemplateExerciseMapper.toEntity($0) }
         for ex in exerciseEntities {
@@ -40,6 +42,7 @@ public enum TemplateMapper {
         entity.sortOrder = domain.sortOrder
         entity.lastUsedAt = domain.lastUsedAt
         entity.timesUsed = domain.timesUsed
+        entity.isCustom = domain.isCustom
 
         // Remove old exercise entities before replacing
         entity.exercises.removeAll()

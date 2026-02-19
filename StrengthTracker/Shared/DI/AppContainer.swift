@@ -18,6 +18,7 @@ public final class AppContainer: Sendable {
     public let restTimerService: RestTimerService
     public let userPreferencesService: UserPreferencesService
     public let exerciseSeeder: ExerciseSeeder
+    public let templateSeedService: TemplateSeedService
     public let healthKitService: any HealthKitServiceProtocol
     public let connectivityManager: ConnectivityManager
     public let calorieEstimationService: CalorieEstimationService
@@ -71,6 +72,7 @@ public final class AppContainer: Sendable {
         restTimerService = RestTimerService()
         userPreferencesService = UserPreferencesService()
         exerciseSeeder = ExerciseSeeder(exerciseRepository: exerciseRepository)
+        templateSeedService = TemplateSeedService(templateRepository: templateRepository, exerciseSeeder: exerciseSeeder)
 
         // Platform-specific services
         #if canImport(HealthKit)
