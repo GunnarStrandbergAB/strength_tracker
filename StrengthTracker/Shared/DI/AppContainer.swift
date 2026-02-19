@@ -164,7 +164,8 @@ public final class AppContainer: Sendable {
     public func makeDashboardViewModel() -> DashboardViewModel {
         DashboardViewModel(
             workoutRepository: workoutRepository,
-            personalRecordRepository: personalRecordRepository
+            personalRecordRepository: personalRecordRepository,
+            qualityScoreService: qualityScoreService
         )
     }
 
