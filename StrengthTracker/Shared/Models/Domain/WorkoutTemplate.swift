@@ -27,14 +27,28 @@ public struct TemplateSetTarget: Identifiable, Hashable, Sendable, Codable {
     public var targetWeight: Double?
     public var targetDurationSeconds: Int?
     public var targetDistanceMeters: Double?
+    public var setType: SetType
 
-    public init(id: UUID = UUID(), order: Int, targetReps: Int? = nil, targetWeight: Double? = nil, targetDurationSeconds: Int? = nil, targetDistanceMeters: Double? = nil) {
+    public init(id: UUID = UUID(), order: Int, targetReps: Int? = nil, targetWeight: Double? = nil, targetDurationSeconds: Int? = nil, targetDistanceMeters: Double? = nil, setType: SetType = .normal) {
         self.id = id
         self.order = order
         self.targetReps = targetReps
         self.targetWeight = targetWeight
         self.targetDurationSeconds = targetDurationSeconds
         self.targetDistanceMeters = targetDistanceMeters
+        self.setType = setType
+    }
+
+    // Custom decoding for backward compatibility — existing JSON without setType decodes as .normal
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        order = try container.decode(Int.self, forKey: .order)
+        targetReps = try container.decodeIfPresent(Int.self, forKey: .targetReps)
+        targetWeight = try container.decodeIfPresent(Double.self, forKey: .targetWeight)
+        targetDurationSeconds = try container.decodeIfPresent(Int.self, forKey: .targetDurationSeconds)
+        targetDistanceMeters = try container.decodeIfPresent(Double.self, forKey: .targetDistanceMeters)
+        setType = try container.decodeIfPresent(SetType.self, forKey: .setType) ?? .normal
     }
 }
 

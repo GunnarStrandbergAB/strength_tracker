@@ -52,10 +52,14 @@ public final class WorkoutViewModel {
             exercises = template.exercises.enumerated().map { index, te in
                 let sets = (0..<te.targetSets).map { setIndex in
                     let target = te.setTargets.indices.contains(setIndex) ? te.setTargets[setIndex] : nil
+                    let resolvedSetType: SetType = {
+                        if let t = target, t.setType != .normal { return t.setType }
+                        return te.isWarmUp ? .warmup : .normal
+                    }()
                     return ExerciseSet(
                         id: UUID(),
                         order: setIndex + 1,
-                        setType: te.isWarmUp ? .warmup : .normal,
+                        setType: resolvedSetType,
                         weight: target?.targetWeight ?? te.targetWeight,
                         reps: target?.targetReps ?? te.targetReps,
                         durationSeconds: target?.targetDurationSeconds ?? te.targetDurationSeconds,

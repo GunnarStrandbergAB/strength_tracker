@@ -149,15 +149,4 @@ struct SetRowGridView: View {
     }
 }
 
-// MARK: - SetType cycling
-
-extension SetType {
-    var nextType: SetType {
-        let all = SetType.allCases
-        guard let idx = all.firstIndex(of: self) else { return .normal }
-        let next = all.index(after: idx)
-        return next < all.endIndex ? all[next] : all[all.startIndex]
-    }
-}
-
 #endif

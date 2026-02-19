@@ -185,7 +185,7 @@ private struct TemplateExerciseEditorRowView: View {
             }
 
             HStack(spacing: 8) {
-                Text("\(templateExercise.targetSets) sets")
+                Text(setsSummary)
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -209,6 +209,27 @@ private struct TemplateExerciseEditorRowView: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private var setsSummary: String {
+        let nonNormal = templateExercise.setTargets.filter { $0.setType != .normal }
+        guard !nonNormal.isEmpty else {
+            return "\(templateExercise.targetSets) sets"
+        }
+        var parts: [String] = []
+        let grouped = Dictionary(grouping: nonNormal, by: \.setType)
+        let order: [SetType] = [.warmup, .dropset, .failure, .restPause]
+        let abbrev: [SetType: String] = [.warmup: "W", .dropset: "D", .failure: "F", .restPause: "R"]
+        for type in order {
+            if let count = grouped[type]?.count {
+                parts.append("\(count)\(abbrev[type]!)")
+            }
+        }
+        let normalCount = templateExercise.setTargets.filter { $0.setType == .normal }.count
+        if normalCount > 0 {
+            parts.append("\(normalCount)")
+        }
+        return parts.joined(separator: "+") + " sets"
     }
 }
 
@@ -350,7 +371,8 @@ private struct TemplateExerciseConfigView: View {
                 targetReps: last?.targetReps,
                 targetWeight: last?.targetWeight,
                 targetDurationSeconds: last?.targetDurationSeconds,
-                targetDistanceMeters: last?.targetDistanceMeters
+                targetDistanceMeters: last?.targetDistanceMeters,
+                setType: last?.setType ?? .normal
             ))
         }
         while setTargets.count > newCount {
@@ -399,10 +421,15 @@ private struct SetTargetRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text("Set \(index + 1)")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .frame(width: 44, alignment: .leading)
+            Button {
+                target.setType = target.setType.nextType
+            } label: {
+                Text(setTypeLabel)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(setTypeLabelColor)
+                    .frame(width: 44, alignment: .leading)
+            }
+            .buttonStyle(.plain)
 
             if showsReps {
                 TextField("Reps", value: $target.targetReps, format: .number)
@@ -445,6 +472,26 @@ private struct SetTargetRow: View {
             }
 
             Spacer()
+        }
+    }
+
+    private var setTypeLabel: String {
+        switch target.setType {
+        case .normal: return "Set \(index + 1)"
+        case .warmup: return "W"
+        case .dropset: return "D"
+        case .failure: return "F"
+        case .restPause: return "R"
+        }
+    }
+
+    private var setTypeLabelColor: Color {
+        switch target.setType {
+        case .normal: return .secondary
+        case .warmup: return .orange
+        case .dropset: return .purple
+        case .failure: return .red
+        case .restPause: return .blue
         }
     }
 }

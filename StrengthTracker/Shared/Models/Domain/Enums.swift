@@ -57,3 +57,14 @@ public enum WeightUnit: String, Codable, Sendable {
 public enum DistanceUnit: String, Codable, Sendable {
     case km, miles
 }
+
+// MARK: - SetType cycling
+
+extension SetType {
+    public var nextType: SetType {
+        let all = SetType.allCases
+        guard let idx = all.firstIndex(of: self) else { return .normal }
+        let next = all.index(after: idx)
+        return next < all.endIndex ? all[next] : all[all.startIndex]
+    }
+}

@@ -247,10 +247,14 @@ public final class WatchWorkoutViewModel {
         let workoutExercises = template.exercises.sorted { $0.order < $1.order }.enumerated().map { index, te in
             let sets = (0..<te.targetSets).map { setIndex in
                 let target = te.setTargets.indices.contains(setIndex) ? te.setTargets[setIndex] : nil
+                let resolvedSetType: SetType = {
+                    if let t = target, t.setType != .normal { return t.setType }
+                    return te.isWarmUp ? .warmup : .normal
+                }()
                 return ExerciseSet(
                     id: UUID(),
                     order: setIndex + 1,
-                    setType: .normal,
+                    setType: resolvedSetType,
                     weight: target?.targetWeight ?? te.targetWeight,
                     reps: target?.targetReps ?? te.targetReps,
                     durationSeconds: target?.targetDurationSeconds ?? te.targetDurationSeconds,
@@ -488,6 +492,29 @@ public final class WatchWorkoutViewModel {
         } else {
             viewingSetIndex = nil
         }
+    }
+
+    public var currentSetType: SetType {
+        guard let exercise = currentExercise else { return .normal }
+        if let idx = viewingSetIndex, idx < exercise.sets.count {
+            return exercise.sets[idx].setType
+        }
+        if let nextIncomplete = exercise.sets.first(where: { !$0.isCompleted }) {
+            return nextIncomplete.setType
+        }
+        return .normal
+    }
+
+    public func updateSetType(setType: SetType) {
+        guard var workout = activeWorkout,
+              currentExerciseIndex < workout.exercises.count else { return }
+        if let idx = viewingSetIndex,
+           idx < workout.exercises[currentExerciseIndex].sets.count {
+            workout.exercises[currentExerciseIndex].sets[idx].setType = setType
+        } else if let incompleteIdx = workout.exercises[currentExerciseIndex].sets.firstIndex(where: { !$0.isCompleted }) {
+            workout.exercises[currentExerciseIndex].sets[incompleteIdx].setType = setType
+        }
+        activeWorkout = workout
     }
 
     public func updateSet(weight: Double?, reps: Int?) {
