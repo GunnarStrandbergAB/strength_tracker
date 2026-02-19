@@ -359,6 +359,23 @@ public final class WorkoutViewModel {
         }
     }
 
+    /// Update the type of a specific set (normal, warmup, dropset, etc.).
+    public func updateSetType(exerciseId: UUID, setId: UUID, setType: SetType) async {
+        guard var workout = currentWorkout else { return }
+
+        guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              let setIndex = workout.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setId }) else {
+            return
+        }
+
+        workout.exercises[exerciseIndex].sets[setIndex].setType = setType
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            currentWorkout = workout
+        }
+    }
+
     /// Toggle the completion status of a specific set.
     public func toggleSetCompletion(exerciseId: UUID, setId: UUID) async {
         guard var workout = currentWorkout else { return }

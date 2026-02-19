@@ -12,6 +12,7 @@ struct ExerciseCardView: View {
     let onAddSet: () -> Void
     let onRemoveSet: ((UUID) -> Void)?
     let onRemoveExercise: (() -> Void)?
+    let onSetTypeChange: (UUID, SetType) -> Void
 
     init(
         workoutExercise: WorkoutExercise,
@@ -22,7 +23,8 @@ struct ExerciseCardView: View {
         onToggleComplete: @escaping (UUID) -> Void,
         onAddSet: @escaping () -> Void,
         onRemoveSet: ((UUID) -> Void)? = nil,
-        onRemoveExercise: (() -> Void)? = nil
+        onRemoveExercise: (() -> Void)? = nil,
+        onSetTypeChange: @escaping (UUID, SetType) -> Void = { _, _ in }
     ) {
         self.workoutExercise = workoutExercise
         self.isActiveExercise = isActiveExercise
@@ -33,6 +35,7 @@ struct ExerciseCardView: View {
         self.onAddSet = onAddSet
         self.onRemoveSet = onRemoveSet
         self.onRemoveExercise = onRemoveExercise
+        self.onSetTypeChange = onSetTypeChange
     }
 
     var body: some View {
@@ -60,6 +63,9 @@ struct ExerciseCardView: View {
                     },
                     onToggleComplete: {
                         onToggleComplete(exerciseSet.id)
+                    },
+                    onSetTypeChange: { setType in
+                        onSetTypeChange(exerciseSet.id, setType)
                     }
                 )
 
