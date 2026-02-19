@@ -313,6 +313,12 @@ private struct TemplateExerciseConfigView: View {
 
                 Section("Optional") {
                     Toggle("Warm-up Exercise", isOn: $isWarmUp)
+                        .onChange(of: isWarmUp) { _, newValue in
+                            let newType: SetType = newValue ? .warmup : .normal
+                            for i in setTargets.indices {
+                                setTargets[i].setType = newType
+                            }
+                        }
 
                     HStack {
                         Text("Rest Timer (seconds)")
@@ -421,15 +427,10 @@ private struct SetTargetRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Button {
-                target.setType = target.setType.nextType
-            } label: {
-                Text(setTypeLabel)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(setTypeLabelColor)
-                    .frame(width: 44, alignment: .leading)
-            }
-            .buttonStyle(.plain)
+            Text("Set \(index + 1)")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: 44, alignment: .leading)
 
             if showsReps {
                 TextField("Reps", value: $target.targetReps, format: .number)
@@ -472,12 +473,34 @@ private struct SetTargetRow: View {
             }
 
             Spacer()
+
+            Menu {
+                ForEach(SetType.allCases, id: \.self) { type in
+                    Button {
+                        target.setType = type
+                    } label: {
+                        if target.setType == type {
+                            Label(type.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(type.displayName)
+                        }
+                    }
+                }
+            } label: {
+                Text(setTypeBadge)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(setTypeBadgeColor)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(setTypeBadgeColor.opacity(0.12))
+                    .clipShape(Capsule())
+            }
         }
     }
 
-    private var setTypeLabel: String {
+    private var setTypeBadge: String {
         switch target.setType {
-        case .normal: return "Set \(index + 1)"
+        case .normal: return "N"
         case .warmup: return "W"
         case .dropset: return "D"
         case .failure: return "F"
@@ -485,7 +508,7 @@ private struct SetTargetRow: View {
         }
     }
 
-    private var setTypeLabelColor: Color {
+    private var setTypeBadgeColor: Color {
         switch target.setType {
         case .normal: return .secondary
         case .warmup: return .orange

@@ -22,6 +22,9 @@ public final class WatchWorkoutViewModel {
     // Set navigation (nil = active/next set)
     public var viewingSetIndex: Int? = nil
 
+    // Pending set type for quick-start (no sets exist yet)
+    public var pendingSetType: SetType = .normal
+
     // Completion guard (prevents double-tap and provides loading state)
     public var isCompleting = false
 
@@ -338,7 +341,7 @@ public final class WatchWorkoutViewModel {
             let newSet = ExerciseSet(
                 id: UUID(),
                 order: setOrder,
-                setType: .normal,
+                setType: pendingSetType,
                 weight: weight,
                 reps: reps,
                 durationSeconds: nil,
@@ -353,6 +356,7 @@ public final class WatchWorkoutViewModel {
 
         activeWorkout = workout
         viewingSetIndex = nil
+        pendingSetType = .normal
 
         // Send live snapshot to iPhone
         connectivityManager.sendWorkoutSnapshot(workout)
@@ -457,6 +461,7 @@ public final class WatchWorkoutViewModel {
         guard let workout = activeWorkout else { return }
         if currentExerciseIndex < workout.exercises.count - 1 {
             viewingSetIndex = nil
+            pendingSetType = .normal
             currentExerciseIndex += 1
         }
     }
@@ -464,6 +469,7 @@ public final class WatchWorkoutViewModel {
     public func previousExercise() {
         if currentExerciseIndex > 0 {
             viewingSetIndex = nil
+            pendingSetType = .normal
             currentExerciseIndex -= 1
         }
     }
@@ -495,14 +501,14 @@ public final class WatchWorkoutViewModel {
     }
 
     public var currentSetType: SetType {
-        guard let exercise = currentExercise else { return .normal }
+        guard let exercise = currentExercise else { return pendingSetType }
         if let idx = viewingSetIndex, idx < exercise.sets.count {
             return exercise.sets[idx].setType
         }
         if let nextIncomplete = exercise.sets.first(where: { !$0.isCompleted }) {
             return nextIncomplete.setType
         }
-        return .normal
+        return pendingSetType
     }
 
     public func updateSetType(setType: SetType) {
@@ -511,10 +517,14 @@ public final class WatchWorkoutViewModel {
         if let idx = viewingSetIndex,
            idx < workout.exercises[currentExerciseIndex].sets.count {
             workout.exercises[currentExerciseIndex].sets[idx].setType = setType
+            activeWorkout = workout
         } else if let incompleteIdx = workout.exercises[currentExerciseIndex].sets.firstIndex(where: { !$0.isCompleted }) {
             workout.exercises[currentExerciseIndex].sets[incompleteIdx].setType = setType
+            activeWorkout = workout
+        } else {
+            // No set exists yet (quick-start) — store for next logSet()
+            pendingSetType = setType
         }
-        activeWorkout = workout
     }
 
     public func updateSet(weight: Double?, reps: Int?) {
