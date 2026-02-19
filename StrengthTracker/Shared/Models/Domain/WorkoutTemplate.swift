@@ -8,8 +8,9 @@ public struct WorkoutTemplate: Identifiable, Hashable, Sendable, Codable {
     public var lastUsedAt: Date?
     public var timesUsed: Int
     public var exercises: [TemplateExercise]
+    public var isCustom: Bool
 
-    public init(id: UUID, name: String, notes: String?, sortOrder: Int, lastUsedAt: Date?, timesUsed: Int, exercises: [TemplateExercise]) {
+    public init(id: UUID, name: String, notes: String?, sortOrder: Int, lastUsedAt: Date?, timesUsed: Int, exercises: [TemplateExercise], isCustom: Bool = true) {
         self.id = id
         self.name = name
         self.notes = notes
@@ -17,6 +18,7 @@ public struct WorkoutTemplate: Identifiable, Hashable, Sendable, Codable {
         self.lastUsedAt = lastUsedAt
         self.timesUsed = timesUsed
         self.exercises = exercises
+        self.isCustom = isCustom
     }
 }
 

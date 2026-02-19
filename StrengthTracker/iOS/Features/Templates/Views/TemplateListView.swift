@@ -7,6 +7,7 @@ struct TemplateListView: View {
     let exerciseListViewModel: ExerciseListViewModel
     let workoutViewModel: WorkoutViewModel
     @State private var showingEditor = false
+    @State private var showingLibrary = false
 
     init(viewModel: TemplateViewModel, exerciseListViewModel: ExerciseListViewModel, workoutViewModel: WorkoutViewModel) {
         self._viewModel = State(initialValue: viewModel)
@@ -17,14 +18,44 @@ struct TemplateListView: View {
     var body: some View {
         NavigationStack {
             List {
-                ForEach(viewModel.templates) { template in
+                if !viewModel.libraryTemplates.isEmpty {
+                    Section {
+                        Button {
+                            showingLibrary = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "tray.full.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(.blue)
+                                    .frame(width: 36)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Browse Library")
+                                        .font(.body)
+                                        .fontWeight(.medium)
+                                        .foregroundStyle(.primary)
+                                    Text("\(viewModel.libraryTemplates.count) pre-built templates")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+
+                ForEach(viewModel.userTemplates) { template in
                     NavigationLink(value: template) {
                         TemplateRowView(template: template)
                     }
                 }
                 .onDelete { indexSet in
+                    let userList = viewModel.userTemplates
                     for index in indexSet {
-                        let template = viewModel.templates[index]
+                        let template = userList[index]
                         Task {
                             await viewModel.deleteTemplate(template)
                         }
@@ -49,10 +80,15 @@ struct TemplateListView: View {
             }) {
                 TemplateEditorView(viewModel: viewModel, exerciseListViewModel: exerciseListViewModel, template: nil)
             }
+            .sheet(isPresented: $showingLibrary, onDismiss: {
+                Task { await viewModel.loadTemplates() }
+            }) {
+                TemplateLibraryView(viewModel: viewModel)
+            }
             .overlay {
                 if viewModel.isLoading {
                     ProgressView()
-                } else if viewModel.templates.isEmpty {
+                } else if viewModel.userTemplates.isEmpty && viewModel.libraryTemplates.isEmpty {
                     ContentUnavailableView(
                         "No Templates",
                         systemImage: "doc.text",

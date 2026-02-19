@@ -10,8 +10,10 @@ Built for lifters who want to log their workouts quickly and get back to the bar
 
 - **Dashboard** — overview of recent workouts, quick-start buttons, and active Watch workout banner
 - **Workout Templates** — create templates for your favorite routines. Start a workout from a template and adjust on the fly — add exercises, skip exercises, change the weight. Templates save time without locking you in.
+- **Template Library** — 9 pre-built templates (Push/Pull/Leg Day, Upper/Lower Body, Full Body A & B, Chest & Triceps, Back & Biceps). Browse, preview exercises, and add to your collection as fully editable copies.
 - **Quick Start** — no template? Start an empty workout and add exercises as you go. The full exercise library is always one tap away.
-- **Active Workout** — log sets with weight/reps, RPE tracking, automatic rest timer, exercise navigation
+- **Active Workout** — log sets with weight/reps, RPE tracking, automatic rest timer, exercise navigation. Tap set number to change type — warm-up, drop set, failure, or rest-pause.
+- **Set Types** — five set types (normal, warm-up, drop set, failure, rest-pause). Configure per-set in templates or toggle during workout. Warm-up sets are automatically excluded from personal records, volume totals, and calorie estimates.
 - **Exercise Library** — 326 built-in exercises covering barbell, dumbbell, kettlebell, cable, machine, bodyweight, calisthenics, and more. Custom exercise support included.
 - **Workout History** — review past workouts with full exercise and set detail
 - **Progress Tracking** — automatic personal record detection. Hit a new PR and you'll know it.
@@ -24,7 +26,7 @@ Built for lifters who want to log their workouts quickly and get back to the bar
 
 - **Quick Start** — pick exercises and start a workout directly from the wrist
 - **Template Workouts** — start workouts from templates synced from iPhone
-- **Set Logging** — weight and reps input with +/- buttons and Digital Crown rotation
+- **Set Logging** — weight and reps input with +/- buttons and Digital Crown rotation. Set type badges (warm-up, drop, etc.) shown per set.
 - **Unit-Aware Steps** — 2.5 kg or 5 lbs increments based on user preference
 - **Live Metrics** — real-time heart rate, active calories, and duration via HealthKit
 - **Rest Timer** — automatic rest countdown between sets with dedicated timer view
@@ -187,7 +189,7 @@ StrengthTracker/
 │   │   └── Analytics/       # Analytics domain (WorkoutVector, PlateauAnalysis, MuscleBalance)
 │   ├── Persistence/         # SwiftData entities, mappers, repository implementations
 │   ├── Repositories/        # Repository protocol definitions
-│   ├── Services/            # ConnectivityManager, HealthKit, RestTimer, UserPreferences, Webhook
+│   ├── Services/            # ConnectivityManager, HealthKit, RestTimer, UserPreferences, Webhook, ExerciseSeeder, TemplateSeedService
 │   │   └── Analytics/       # Vectorizer, VectorSearch, PlateauDetection, MuscleBalance
 │   ├── ViewModels/          # Shared ViewModels (WorkoutVM, TemplateVM, AnalyticsVM)
 │   └── DI/                  # AppContainer (dependency injection)
