@@ -102,7 +102,7 @@ struct SetRowGridView: View {
                     onRepsChange(Int(newValue))
                 }
             }
-            .frame(width: 52)
+            .frame(width: 60)
 
             // DONE column (2fr)
             STCheckbox(isChecked: exerciseSet.isCompleted) {

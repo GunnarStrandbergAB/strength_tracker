@@ -49,7 +49,7 @@ public final class WorkoutViewModel {
         var exercises: [WorkoutExercise] = []
 
         if let template = template {
-            exercises = template.exercises.enumerated().map { index, te in
+            exercises = template.exercises.sorted(by: { $0.order < $1.order }).enumerated().map { index, te in
                 let sets = (0..<te.targetSets).map { setIndex in
                     let target = te.setTargets.indices.contains(setIndex) ? te.setTargets[setIndex] : nil
                     let resolvedSetType: SetType = {
@@ -392,6 +392,17 @@ public final class WorkoutViewModel {
         let wasCompleted = workout.exercises[exerciseIndex].sets[setIndex].isCompleted
         workout.exercises[exerciseIndex].sets[setIndex].isCompleted = !wasCompleted
         workout.exercises[exerciseIndex].sets[setIndex].completedAt = wasCompleted ? nil : Date()
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            currentWorkout = workout
+        }
+    }
+
+    public func updateExerciseNotes(exerciseId: UUID, notes: String) async {
+        guard var workout = currentWorkout,
+              let idx = workout.exercises.firstIndex(where: { $0.id == exerciseId }) else { return }
+        workout.exercises[idx].notes = notes.isEmpty ? nil : notes
         do {
             currentWorkout = try await workoutRepository.save(workout)
         } catch {

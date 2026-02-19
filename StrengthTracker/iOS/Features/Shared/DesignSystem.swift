@@ -25,7 +25,7 @@ enum STSpacing {
     static let setRowHorizontal: CGFloat = 16
     static let setRowVertical: CGFloat = 8
     static let cardGap: CGFloat = 24
-    static let inputHeight: CGFloat = 36
+    static let inputHeight: CGFloat = 44
     static let checkboxSize: CGFloat = 28
 }
 

@@ -13,6 +13,11 @@ struct ExerciseCardView: View {
     let onRemoveSet: ((UUID) -> Void)?
     let onRemoveExercise: (() -> Void)?
     let onSetTypeChange: (UUID, SetType) -> Void
+    let onNoteChange: ((String) -> Void)?
+
+    @State private var isEditingNote: Bool = false
+    @State private var noteText: String = ""
+    @State private var noteDebounceTask: Task<Void, Never>?
 
     init(
         workoutExercise: WorkoutExercise,
@@ -24,7 +29,8 @@ struct ExerciseCardView: View {
         onAddSet: @escaping () -> Void,
         onRemoveSet: ((UUID) -> Void)? = nil,
         onRemoveExercise: (() -> Void)? = nil,
-        onSetTypeChange: @escaping (UUID, SetType) -> Void = { _, _ in }
+        onSetTypeChange: @escaping (UUID, SetType) -> Void = { _, _ in },
+        onNoteChange: ((String) -> Void)? = nil
     ) {
         self.workoutExercise = workoutExercise
         self.isActiveExercise = isActiveExercise
@@ -36,6 +42,9 @@ struct ExerciseCardView: View {
         self.onRemoveSet = onRemoveSet
         self.onRemoveExercise = onRemoveExercise
         self.onSetTypeChange = onSetTypeChange
+        self.onNoteChange = onNoteChange
+        self._noteText = State(initialValue: workoutExercise.notes ?? "")
+        self._isEditingNote = State(initialValue: workoutExercise.notes != nil && !workoutExercise.notes!.isEmpty)
     }
 
     var body: some View {
@@ -45,6 +54,11 @@ struct ExerciseCardView: View {
 
             Divider()
                 .background(STColors.border)
+
+            // Inline note
+            if isEditingNote {
+                noteEditor
+            }
 
             // Column headers
             columnHeaders
@@ -119,7 +133,12 @@ struct ExerciseCardView: View {
 
                 Menu {
                     Button("Reorder Sets", systemImage: "arrow.up.arrow.down") {}
-                    Button("Add Note", systemImage: "note.text") {}
+                    Button(
+                        workoutExercise.notes != nil && !workoutExercise.notes!.isEmpty ? "Edit Note" : "Add Note",
+                        systemImage: "note.text"
+                    ) {
+                        isEditingNote = true
+                    }
                     Divider()
                     Button("Remove Exercise", systemImage: "trash", role: .destructive) {
                         onRemoveExercise?()
@@ -149,7 +168,7 @@ struct ExerciseCardView: View {
                 .frame(width: 72)
 
             STColumnHeader(title: "REPS")
-                .frame(width: 52)
+                .frame(width: 60)
 
             STColumnHeader(title: "")
                 .frame(width: 48)
@@ -180,6 +199,39 @@ struct ExerciseCardView: View {
                 .foregroundStyle(STColors.border),
             alignment: .top
         )
+    }
+
+    // MARK: - Note Editor
+
+    private var noteEditor: some View {
+        HStack(spacing: 8) {
+            TextField("Add a note...", text: $noteText, axis: .vertical)
+                .lineLimit(1...3)
+                .font(.system(size: 13))
+                .foregroundStyle(STColors.textPrimary)
+                .onChange(of: noteText) { _, newValue in
+                    noteDebounceTask?.cancel()
+                    noteDebounceTask = Task {
+                        try? await Task.sleep(for: .milliseconds(500))
+                        guard !Task.isCancelled else { return }
+                        onNoteChange?(newValue)
+                    }
+                }
+
+            Button {
+                noteText = ""
+                isEditingNote = false
+                onNoteChange?("")
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(STColors.textTertiary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, STSpacing.cardPadding)
+        .padding(.vertical, 8)
+        .background(STColors.background.opacity(0.3))
     }
 
     // MARK: - Helpers

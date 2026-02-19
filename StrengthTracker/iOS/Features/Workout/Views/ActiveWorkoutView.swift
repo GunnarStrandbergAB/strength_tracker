@@ -265,6 +265,14 @@ struct ActiveWorkoutView: View {
                         setType: setType
                     )
                 }
+            },
+            onNoteChange: { notes in
+                Task {
+                    await viewModel.updateExerciseNotes(
+                        exerciseId: workoutExercise.id,
+                        notes: notes
+                    )
+                }
             }
         )
     }

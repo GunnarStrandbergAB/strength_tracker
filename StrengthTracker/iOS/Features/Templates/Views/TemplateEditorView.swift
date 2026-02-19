@@ -184,52 +184,15 @@ private struct TemplateExerciseEditorRowView: View {
                 }
             }
 
-            HStack(spacing: 8) {
-                Text(setsSummary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if !templateExercise.setTargets.isEmpty {
-                    Text("per-set targets")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    if let reps = templateExercise.targetReps {
-                        Text("\(reps) reps")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let weight = templateExercise.targetWeight {
-                        Text("\(weight, specifier: "%.1f") kg")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
+            Text(targetsSummary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
     }
 
-    private var setsSummary: String {
-        let nonNormal = templateExercise.setTargets.filter { $0.setType != .normal }
-        guard !nonNormal.isEmpty else {
-            return "\(templateExercise.targetSets) sets"
-        }
-        var parts: [String] = []
-        let grouped = Dictionary(grouping: nonNormal, by: \.setType)
-        let order: [SetType] = [.warmup, .dropset, .failure, .restPause]
-        let abbrev: [SetType: String] = [.warmup: "W", .dropset: "D", .failure: "F", .restPause: "R"]
-        for type in order {
-            if let count = grouped[type]?.count {
-                parts.append("\(count)\(abbrev[type]!)")
-            }
-        }
-        let normalCount = templateExercise.setTargets.filter { $0.setType == .normal }.count
-        if normalCount > 0 {
-            parts.append("\(normalCount)")
-        }
-        return parts.joined(separator: "+") + " sets"
+    private var targetsSummary: String {
+        compactTargetSummary(for: templateExercise)
     }
 }
 
@@ -436,7 +399,7 @@ private struct SetTargetRow: View {
                 TextField("Reps", value: $target.targetReps, format: .number)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
-                    .frame(width: 56)
+                    .frame(width: 64)
                 Text("reps")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -446,7 +409,7 @@ private struct SetTargetRow: View {
                 TextField("kg", value: $target.targetWeight, format: .number)
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)
-                    .frame(width: 56)
+                    .frame(width: 64)
                 Text("kg")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -456,7 +419,7 @@ private struct SetTargetRow: View {
                 TextField("Sec", value: $target.targetDurationSeconds, format: .number)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
-                    .frame(width: 56)
+                    .frame(width: 64)
                 Text("sec")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -466,7 +429,7 @@ private struct SetTargetRow: View {
                 TextField("m", value: $target.targetDistanceMeters, format: .number)
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)
-                    .frame(width: 56)
+                    .frame(width: 64)
                 Text("m")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -517,6 +480,64 @@ private struct SetTargetRow: View {
         case .restPause: return .blue
         }
     }
+}
+
+// MARK: - Compact Target Summary
+
+private func compactTargetSummary(for te: TemplateExercise) -> String {
+    let targets = te.setTargets
+    let sets = te.targetSets
+
+    // Use flat values when no per-set targets
+    guard !targets.isEmpty else {
+        var parts: [String] = ["\(sets) sets"]
+        if let reps = te.targetReps { parts.append("\(reps) reps") }
+        if let w = te.targetWeight { parts.append("\(formatWeight(w)) kg") }
+        if let d = te.targetDurationSeconds { parts.append("\(d)s") }
+        if let dist = te.targetDistanceMeters { parts.append("\(Int(dist))m") }
+        return parts.joined(separator: " \u{00B7} ")
+    }
+
+    let weights = targets.compactMap(\.targetWeight)
+    let reps = targets.compactMap(\.targetReps)
+    let durations = targets.compactMap(\.targetDurationSeconds)
+    let distances = targets.compactMap(\.targetDistanceMeters)
+
+    var result = "\(sets)"
+
+    // Reps portion
+    if !reps.isEmpty {
+        let allSame = Set(reps).count == 1
+        let repsStr = allSame ? "\(reps[0])" : reps.map { String($0) }.joined(separator: "/")
+        result += "\u{00D7}\(repsStr)"
+    }
+
+    // Weight portion
+    if !weights.isEmpty {
+        let allSame = Set(weights).count == 1
+        let wStr = allSame ? formatWeight(weights[0]) : weights.map { formatWeight($0) }.joined(separator: "/")
+        result += " @ \(wStr) kg"
+    }
+
+    // Duration
+    if !durations.isEmpty && weights.isEmpty {
+        let allSame = Set(durations).count == 1
+        let dStr = allSame ? "\(durations[0])" : durations.map { String($0) }.joined(separator: "/")
+        result += " \u{00D7} \(dStr)s"
+    }
+
+    // Distance
+    if !distances.isEmpty && weights.isEmpty {
+        let allSame = Set(distances).count == 1
+        let distStr = allSame ? "\(Int(distances[0]))" : distances.map { String(Int($0)) }.joined(separator: "/")
+        result += " \u{00D7} \(distStr)m"
+    }
+
+    return result
+}
+
+private func formatWeight(_ w: Double) -> String {
+    w.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(w)) : String(format: "%.1f", w)
 }
 
 #endif
