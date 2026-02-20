@@ -22,6 +22,22 @@ struct WatchWorkoutViewModelTests {
         )
     }
 
+    /// Convenience: wraps exercise(s) into a single-set template for tests that used the old exercises: API.
+    private func makeTemplateFrom(_ exercises: [Exercise], setsPerExercise: Int = 3) -> WorkoutTemplate {
+        let templateExercises = exercises.enumerated().map { i, ex in
+            TemplateExercise(
+                id: UUID(), exercise: ex, order: i,
+                supersetGroup: nil, notes: nil, restTimerSeconds: nil,
+                targetSets: setsPerExercise, targetReps: 10, targetWeight: 80,
+                targetDurationSeconds: nil, targetDistanceMeters: nil
+            )
+        }
+        return WorkoutTemplate(
+            id: UUID(), name: "Test", notes: nil, sortOrder: 0,
+            lastUsedAt: nil, timesUsed: 0, exercises: templateExercises
+        )
+    }
+
     private func makeViewModel() -> (WatchWorkoutViewModel, InMemoryWorkoutRepository) {
         let repo = InMemoryWorkoutRepository()
         let vm = WatchWorkoutViewModel(workoutRepository: repo, healthKitService: NoOpHealthKitService(), connectivityManager: ConnectivityManager())
@@ -35,7 +51,7 @@ struct WatchWorkoutViewModelTests {
         let (vm, _) = makeViewModel()
         let exercises = [makeExercise(name: "Bench"), makeExercise(name: "OHP")]
 
-        await vm.startWorkout(name: "Push", exercises: exercises)
+        await vm.startWorkout(name: "Push", from: makeTemplateFrom(exercises))
 
         #expect(vm.activeWorkout != nil)
         #expect(vm.activeWorkout?.exercises.count == 2)
@@ -48,13 +64,15 @@ struct WatchWorkoutViewModelTests {
     @Test("logSet records weight/reps for current exercise")
     func logSet() async throws {
         let (vm, _) = makeViewModel()
-        await vm.startWorkout(name: "Push", exercises: [makeExercise()])
+        await vm.startWorkout(name: "Push", from: makeTemplateFrom([makeExercise()]))
 
         try await vm.logSet(weight: 100, reps: 10)
 
-        #expect(vm.activeWorkout?.exercises[0].sets.count == 1)
+        // Template pre-populates 3 sets; logSet completes the first incomplete one
+        #expect(vm.activeWorkout?.exercises[0].sets.count == 3)
         #expect(vm.activeWorkout?.exercises[0].sets[0].weight == 100)
         #expect(vm.activeWorkout?.exercises[0].sets[0].reps == 10)
+        #expect(vm.activeWorkout?.exercises[0].sets[0].isCompleted == true)
     }
 
     @Test("logSet throws when no active workout")
@@ -71,7 +89,7 @@ struct WatchWorkoutViewModelTests {
     @Test("nextExercise advances currentExerciseIndex")
     func nextExercise() async {
         let (vm, _) = makeViewModel()
-        await vm.startWorkout(name: "Push", exercises: [makeExercise(name: "A"), makeExercise(name: "B")])
+        await vm.startWorkout(name: "Push", from: makeTemplateFrom([makeExercise(name: "A"), makeExercise(name: "B")]))
 
         #expect(vm.currentExerciseIndex == 0)
         vm.nextExercise()
@@ -81,7 +99,7 @@ struct WatchWorkoutViewModelTests {
     @Test("nextExercise does not go past last exercise")
     func nextExerciseBounds() async {
         let (vm, _) = makeViewModel()
-        await vm.startWorkout(name: "Push", exercises: [makeExercise()])
+        await vm.startWorkout(name: "Push", from: makeTemplateFrom([makeExercise()]))
 
         vm.nextExercise()
         #expect(vm.currentExerciseIndex == 0)
@@ -90,7 +108,7 @@ struct WatchWorkoutViewModelTests {
     @Test("previousExercise goes back")
     func previousExercise() async {
         let (vm, _) = makeViewModel()
-        await vm.startWorkout(name: "Push", exercises: [makeExercise(name: "A"), makeExercise(name: "B")])
+        await vm.startWorkout(name: "Push", from: makeTemplateFrom([makeExercise(name: "A"), makeExercise(name: "B")]))
 
         vm.nextExercise()
         #expect(vm.currentExerciseIndex == 1)
@@ -102,7 +120,7 @@ struct WatchWorkoutViewModelTests {
     @Test("previousExercise does not go below 0")
     func previousExerciseBounds() async {
         let (vm, _) = makeViewModel()
-        await vm.startWorkout(name: "Push", exercises: [makeExercise()])
+        await vm.startWorkout(name: "Push", from: makeTemplateFrom([makeExercise()]))
 
         vm.previousExercise()
         #expect(vm.currentExerciseIndex == 0)
@@ -113,7 +131,7 @@ struct WatchWorkoutViewModelTests {
     @Test("completeWorkout marks complete and saves")
     func completeWorkout() async throws {
         let (vm, repo) = makeViewModel()
-        await vm.startWorkout(name: "Push", exercises: [makeExercise()])
+        await vm.startWorkout(name: "Push", from: makeTemplateFrom([makeExercise()]))
 
         try await vm.logSet(weight: 100, reps: 10)
         try await vm.completeWorkout()
@@ -168,7 +186,7 @@ struct WatchWorkoutViewModelTests {
     @Test("plannedSetsComplete returns false for quick-start workout")
     func plannedSetsCompleteFalseForQuickStart() async throws {
         let (vm, _) = makeViewModel()
-        await vm.startWorkout(name: "Quick", exercises: [makeExercise()])
+        await vm.startWorkout(name: "Quick", from: makeTemplateFrom([makeExercise()]))
 
         try await vm.logSet(weight: 80, reps: 10)
 
@@ -257,7 +275,7 @@ struct WatchWorkoutViewModelTests {
         let (vm, _) = makeViewModel()
         let exercises = [makeExercise()]
 
-        await vm.startWorkout(name: "Offline Push", exercises: exercises)
+        await vm.startWorkout(name: "Offline Push", from: makeTemplateFrom(exercises))
 
         #expect(vm.isActive == true)
         #expect(vm.activeWorkout != nil)
