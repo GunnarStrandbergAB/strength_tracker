@@ -167,7 +167,8 @@ public final class AppContainer: Sendable {
             trainingStatusDetector: trainingStatusDetector,
             programDesignService: programDesignService,
             planAnalyticsService: planAnalyticsService,
-            exerciseRepository: exerciseRepository
+            exerciseRepository: exerciseRepository,
+            templateRepository: templateRepository
         )
     }
 

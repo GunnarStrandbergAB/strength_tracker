@@ -46,15 +46,11 @@ struct ActivePlanDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .stNavigationBarStyle()
         .sheet(item: $templatePickerSession) { session in
-            if let plan = viewModel.activePlan {
-                TemplateMergePickerView(
-                    session: session,
-                    planId: plan.id,
-                    templateViewModel: templateViewModel,
-                    progressionPlanViewModel: viewModel,
-                    onStartSession: onStartSession
-                )
-            }
+            TemplateMergePickerView(
+                session: session,
+                templateViewModel: templateViewModel,
+                progressionPlanViewModel: viewModel
+            )
         }
         .confirmationDialog("Pause Plan?", isPresented: $showPauseConfirmation) {
             Button("Pause Plan") {
@@ -267,11 +263,23 @@ struct ActivePlanDetailView: View {
         let isPreparing = preparingSessionId == session.id
 
         return VStack(alignment: .leading, spacing: 8) {
-            // Header: label + completion badge
+            // Header: label + linked badge + completion badge
             HStack {
-                Text(session.sessionLabel)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(isCompleted ? STColors.textTertiary : STColors.textPrimary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(session.sessionLabel)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(isCompleted ? STColors.textTertiary : STColors.textPrimary)
+
+                    if let tid = session.templateId {
+                        HStack(spacing: 4) {
+                            Image(systemName: "link")
+                                .font(.system(size: 10))
+                            Text(viewModel.linkedTemplateNames[tid] ?? "Template")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(STColors.primary)
+                    }
+                }
 
                 Spacer()
 
@@ -345,8 +353,8 @@ struct ActivePlanDetailView: View {
                     templatePickerSession = session
                 } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: "doc.on.doc")
-                        Text("START WITH TEMPLATE")
+                        Image(systemName: "link")
+                        Text(session.templateId != nil ? "CHANGE TEMPLATE" : "LINK TEMPLATE")
                             .font(.system(size: 13, weight: .bold))
                             .tracking(0.5)
                     }

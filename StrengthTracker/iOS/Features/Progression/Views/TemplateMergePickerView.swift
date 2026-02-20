@@ -4,17 +4,15 @@ import StrengthTrackerShared
 
 struct TemplateMergePickerView: View {
     let session: PlannedSession
-    let planId: UUID
     let templateViewModel: TemplateViewModel
     let progressionPlanViewModel: ProgressionPlanViewModel
-    let onStartSession: (WorkoutTemplate, UUID, UUID) async -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var isStarting = false
+    @State private var isLinking = false
 
     var body: some View {
         NavigationStack {
             Group {
-                if templateViewModel.templates.isEmpty {
+                if templateViewModel.userTemplates.isEmpty {
                     ContentUnavailableView(
                         "No Templates",
                         systemImage: "list.clipboard",
@@ -22,15 +20,15 @@ struct TemplateMergePickerView: View {
                     )
                 } else {
                     List {
-                        ForEach(templateViewModel.templates) { template in
+                        ForEach(templateViewModel.userTemplates) { template in
                             let matchCount = countMatches(template: template)
+                            let isAlreadyLinked = session.templateId == template.id
                             Button {
                                 Task {
-                                    isStarting = true
-                                    let merged = progressionPlanViewModel.mergeSessionIntoTemplate(
-                                        session: session, template: template
+                                    isLinking = true
+                                    await progressionPlanViewModel.linkTemplate(
+                                        templateId: template.id, toSession: session.id
                                     )
-                                    await onStartSession(merged, session.id, planId)
                                     dismiss()
                                 }
                             } label: {
@@ -47,18 +45,21 @@ struct TemplateMergePickerView: View {
 
                                     Spacer()
 
-                                    if matchCount > 0 {
+                                    if isAlreadyLinked {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(STColors.primary)
+                                    } else if matchCount > 0 {
                                         Image(systemName: "checkmark.circle.fill")
                                             .foregroundStyle(STColors.success)
                                     }
                                 }
                             }
-                            .disabled(isStarting)
+                            .disabled(isLinking)
                         }
                     }
                 }
             }
-            .navigationTitle("Pick Template")
+            .navigationTitle("Link Template")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

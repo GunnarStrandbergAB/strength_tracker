@@ -129,17 +129,33 @@ struct ContentViewWrapper: View {
                         // Sync planned sessions from active progression plan
                         if let plan = try await container.progressionPlanRepository.fetchActive(),
                            let week = plan.currentWeek {
+                            let allTemplates = try await container.templateRepository.fetchAll()
+                            let templateLookup = Dictionary(
+                                allTemplates.map { ($0.id, $0) },
+                                uniquingKeysWith: { first, _ in first }
+                            )
+                            let vm = container.progressionPlanViewModel
+
                             let sessions: [PlannedSessionSync] = week.sessions
                                 .filter { !$0.isCompleted }
                                 .map { session in
-                                    PlannedSessionSync(
+                                    let template: WorkoutTemplate
+                                    if let tid = session.templateId,
+                                       let linked = templateLookup[tid] {
+                                        template = vm.mergeSessionIntoTemplate(
+                                            session: session, template: linked
+                                        )
+                                    } else {
+                                        template = session.toWorkoutTemplate(exercises: exercises)
+                                    }
+                                    return PlannedSessionSync(
                                         id: session.id,
                                         planId: plan.id,
                                         planName: plan.name,
                                         sessionLabel: session.sessionLabel,
                                         weekLabel: "Week \(week.absoluteWeekNumber)",
                                         blockName: plan.currentBlock?.name,
-                                        template: session.toWorkoutTemplate(exercises: exercises)
+                                        template: template
                                     )
                                 }
                             print("[iOS Sync] Syncing \(sessions.count) planned sessions to Watch for plan '\(plan.name)'")

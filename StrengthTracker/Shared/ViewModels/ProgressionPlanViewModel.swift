@@ -43,6 +43,10 @@ public final class ProgressionPlanViewModel {
     public var isSavingPlan = false
     public var errorMessage: String?
 
+    // MARK: - Linked Template Cache
+
+    public var linkedTemplateNames: [UUID: String] = [:]
+
     // MARK: - Dependencies
 
     private let progressionPlanRepository: any ProgressionPlanRepository
@@ -50,6 +54,7 @@ public final class ProgressionPlanViewModel {
     private let programDesignService: ProgramDesignService
     private let planAnalyticsService: PlanAnalyticsService
     private let exerciseRepository: any ExerciseRepository
+    private let templateRepository: any TemplateRepository
 
     // MARK: - Init
 
@@ -58,13 +63,15 @@ public final class ProgressionPlanViewModel {
         trainingStatusDetector: TrainingStatusDetector,
         programDesignService: ProgramDesignService,
         planAnalyticsService: PlanAnalyticsService,
-        exerciseRepository: any ExerciseRepository
+        exerciseRepository: any ExerciseRepository,
+        templateRepository: any TemplateRepository
     ) {
         self.progressionPlanRepository = progressionPlanRepository
         self.trainingStatusDetector = trainingStatusDetector
         self.programDesignService = programDesignService
         self.planAnalyticsService = planAnalyticsService
         self.exerciseRepository = exerciseRepository
+        self.templateRepository = templateRepository
     }
 
     // MARK: - Active Plan
@@ -77,13 +84,33 @@ public final class ProgressionPlanViewModel {
             activePlan = try await progressionPlanRepository.fetchActive()
             if let plan = activePlan {
                 planProgress = try await planAnalyticsService.generateProgress(for: plan)
+                await refreshLinkedTemplateNames(for: plan)
             } else {
                 planProgress = nil
+                linkedTemplateNames = [:]
             }
             errorMessage = nil
         } catch {
             errorMessage = "Failed to load plan: \(error.localizedDescription)"
         }
+    }
+
+    private func refreshLinkedTemplateNames(for plan: ProgressionPlan) async {
+        var templateIds = Set<UUID>()
+        for block in plan.blocks {
+            for week in block.weeks {
+                for session in week.sessions {
+                    if let tid = session.templateId { templateIds.insert(tid) }
+                }
+            }
+        }
+        guard !templateIds.isEmpty else { linkedTemplateNames = [:]; return }
+        let allTemplates = (try? await templateRepository.fetchAll()) ?? []
+        var names: [UUID: String] = [:]
+        for t in allTemplates where templateIds.contains(t.id) {
+            names[t.id] = t.name
+        }
+        linkedTemplateNames = names
     }
 
     // MARK: - Training Status Detection
@@ -253,10 +280,39 @@ public final class ProgressionPlanViewModel {
     public func prepareSessionTemplate(for session: PlannedSession) async -> WorkoutTemplate? {
         do {
             let exercises = try await exerciseRepository.fetchAll()
+            if let templateId = session.templateId {
+                let allTemplates = try await templateRepository.fetchAll()
+                if let linked = allTemplates.first(where: { $0.id == templateId }) {
+                    return mergeSessionIntoTemplate(session: session, template: linked)
+                }
+            }
             return session.toWorkoutTemplate(exercises: exercises)
         } catch {
             errorMessage = "Failed to prepare session: \(error.localizedDescription)"
             return nil
+        }
+    }
+
+    // MARK: - Template Linking
+
+    public func linkTemplate(templateId: UUID, toSession sessionId: UUID) async {
+        guard var plan = activePlan else { return }
+        for bi in plan.blocks.indices {
+            for wi in plan.blocks[bi].weeks.indices {
+                if let si = plan.blocks[bi].weeks[wi].sessions
+                    .firstIndex(where: { $0.id == sessionId }) {
+                    plan.blocks[bi].weeks[wi].sessions[si].templateId = templateId
+                    plan.updatedAt = Date()
+                    do {
+                        try await progressionPlanRepository.save(plan)
+                        activePlan = plan
+                        await refreshLinkedTemplateNames(for: plan)
+                    } catch {
+                        errorMessage = "Failed to link template: \(error.localizedDescription)"
+                    }
+                    return
+                }
+            }
         }
     }
 
