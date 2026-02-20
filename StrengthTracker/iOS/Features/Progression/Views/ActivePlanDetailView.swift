@@ -4,11 +4,13 @@ import StrengthTrackerShared
 
 struct ActivePlanDetailView: View {
     let viewModel: ProgressionPlanViewModel
-    let onStartSession: (WorkoutTemplate) async -> Void
+    let templateViewModel: TemplateViewModel
+    let onStartSession: (WorkoutTemplate, UUID, UUID) async -> Void
     @State private var expandedWeekId: UUID?
     @State private var preparingSessionId: UUID?
     @State private var showPauseConfirmation = false
     @State private var showAbandonConfirmation = false
+    @State private var templatePickerSession: PlannedSession?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -43,6 +45,17 @@ struct ActivePlanDetailView: View {
         .navigationTitle("Training Plan")
         .navigationBarTitleDisplayMode(.inline)
         .stNavigationBarStyle()
+        .sheet(item: $templatePickerSession) { session in
+            if let plan = viewModel.activePlan {
+                TemplateMergePickerView(
+                    session: session,
+                    planId: plan.id,
+                    templateViewModel: templateViewModel,
+                    progressionPlanViewModel: viewModel,
+                    onStartSession: onStartSession
+                )
+            }
+        }
         .confirmationDialog("Pause Plan?", isPresented: $showPauseConfirmation) {
             Button("Pause Plan") {
                 Task { await viewModel.pausePlan() }
@@ -299,7 +312,7 @@ struct ActivePlanDetailView: View {
                     Task {
                         preparingSessionId = session.id
                         if let template = await viewModel.prepareSessionTemplate(for: session) {
-                            await onStartSession(template)
+                            await onStartSession(template, session.id, plan.id)
                         }
                         preparingSessionId = nil
                     }
@@ -327,6 +340,23 @@ struct ActivePlanDetailView: View {
                 .buttonStyle(.plain)
                 .disabled(isPreparing)
                 .padding(.top, 2)
+
+                Button {
+                    templatePickerSession = session
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "doc.on.doc")
+                        Text("START WITH TEMPLATE")
+                            .font(.system(size: 13, weight: .bold))
+                            .tracking(0.5)
+                    }
+                    .foregroundStyle(STColors.primary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 42)
+                    .background(STColors.primary.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(12)

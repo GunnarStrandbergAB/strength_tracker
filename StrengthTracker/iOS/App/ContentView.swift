@@ -22,6 +22,7 @@ struct ContentView: View {
                 analyticsViewModel: analyticsViewModel,
                 progressionPlanViewModel: progressionPlanViewModel,
                 exerciseListViewModel: exerciseListViewModel,
+                templateViewModel: templateViewModel,
                 userPreferencesService: userPreferencesService,
                 connectivityManager: connectivityManager,
                 onStartWorkout: {
@@ -30,7 +31,9 @@ struct ContentView: View {
                         await workoutViewModel.startWorkout(name: "Quick Workout", from: nil)
                     }
                 },
-                onStartSession: { template in
+                onStartSession: { template, sessionId, planId in
+                    workoutViewModel.plannedSessionId = sessionId
+                    workoutViewModel.plannedPlanId = planId
                     await workoutViewModel.startWorkout(name: template.name, from: template)
                 },
                 onHistoryTapped: {
@@ -77,6 +80,17 @@ struct ContentView: View {
             if isActive {
                 selectedTab = 1
             } else if oldValue {
+                if let sessionId = workoutViewModel.plannedSessionId,
+                   let planId = workoutViewModel.plannedPlanId,
+                   let workoutId = workoutViewModel.currentWorkout?.id {
+                    Task {
+                        await progressionPlanViewModel.handleSessionCompleted(
+                            sessionId: sessionId, planId: planId, workoutId: workoutId
+                        )
+                    }
+                }
+                workoutViewModel.plannedSessionId = nil
+                workoutViewModel.plannedPlanId = nil
                 selectedTab = 0
             }
         }

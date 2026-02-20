@@ -16,11 +16,11 @@ struct PlanCreationStep3ExercisesView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(STColors.primary)
 
-                    Text("Select Exercises")
+                    Text("Exercises & Starting Weights")
                         .font(.system(size: 22, weight: .bold))
                         .foregroundStyle(STColors.textPrimary)
 
-                    Text("Choose exercises and enter your estimated 1RM for each.")
+                    Text("Add exercises and enter your current 1RM. The plan calculates working weights as a percentage of this.")
                         .font(.system(size: 14))
                         .foregroundStyle(STColors.textSecondary)
                 }

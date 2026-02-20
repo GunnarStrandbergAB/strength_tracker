@@ -259,5 +259,54 @@ public final class ProgressionPlanViewModel {
             return nil
         }
     }
+
+    // MARK: - Session Completion
+
+    public func handleSessionCompleted(sessionId: UUID, planId: UUID, workoutId: UUID) async {
+        do {
+            try await progressionPlanRepository.markSessionCompleted(sessionId, workoutId: workoutId, inPlan: planId)
+            await loadActivePlan()
+        } catch {
+            errorMessage = "Failed to mark session completed: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Template Merge
+
+    public func mergeSessionIntoTemplate(session: PlannedSession, template: WorkoutTemplate) -> WorkoutTemplate {
+        let plannedLookup = Dictionary(
+            session.plannedExercises.map { ($0.exerciseId, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        let mergedExercises = template.exercises.map { te -> TemplateExercise in
+            guard let planned = plannedLookup[te.exercise.id] else { return te }
+            return TemplateExercise(
+                id: te.id,
+                exercise: te.exercise,
+                order: te.order,
+                supersetGroup: te.supersetGroup,
+                notes: planned.notes ?? te.notes,
+                restTimerSeconds: planned.restSeconds,
+                targetSets: planned.sets,
+                targetReps: planned.targetReps,
+                targetWeight: planned.targetWeight,
+                targetDurationSeconds: te.targetDurationSeconds,
+                targetDistanceMeters: te.targetDistanceMeters,
+                setTargets: planned.generateSetTargets(),
+                isWarmUp: planned.isWarmup
+            )
+        }
+
+        return WorkoutTemplate(
+            id: UUID(),
+            name: template.name,
+            notes: template.notes,
+            sortOrder: 0,
+            lastUsedAt: nil,
+            timesUsed: 0,
+            exercises: mergedExercises
+        )
+    }
 }
 #endif

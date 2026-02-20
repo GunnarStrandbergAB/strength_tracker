@@ -7,10 +7,11 @@ struct DashboardView: View {
     let analyticsViewModel: WorkoutAnalyticsViewModel
     let progressionPlanViewModel: ProgressionPlanViewModel
     let exerciseListViewModel: ExerciseListViewModel
+    let templateViewModel: TemplateViewModel
     let userPreferencesService: UserPreferencesService
     let connectivityManager: ConnectivityManager?
     let onStartWorkout: () -> Void
-    let onStartSession: (WorkoutTemplate) async -> Void
+    let onStartSession: (WorkoutTemplate, UUID, UUID) async -> Void
     let onHistoryTapped: () -> Void
 
     init(
@@ -18,16 +19,18 @@ struct DashboardView: View {
         analyticsViewModel: WorkoutAnalyticsViewModel,
         progressionPlanViewModel: ProgressionPlanViewModel,
         exerciseListViewModel: ExerciseListViewModel,
+        templateViewModel: TemplateViewModel,
         userPreferencesService: UserPreferencesService,
         connectivityManager: ConnectivityManager? = nil,
         onStartWorkout: @escaping () -> Void,
-        onStartSession: @escaping (WorkoutTemplate) async -> Void,
+        onStartSession: @escaping (WorkoutTemplate, UUID, UUID) async -> Void,
         onHistoryTapped: @escaping () -> Void
     ) {
         self._viewModel = State(initialValue: viewModel)
         self.analyticsViewModel = analyticsViewModel
         self.progressionPlanViewModel = progressionPlanViewModel
         self.exerciseListViewModel = exerciseListViewModel
+        self.templateViewModel = templateViewModel
         self.userPreferencesService = userPreferencesService
         self.connectivityManager = connectivityManager
         self.onStartWorkout = onStartWorkout
@@ -54,6 +57,7 @@ struct DashboardView: View {
                     ProgressionPlanCardView(
                         viewModel: progressionPlanViewModel,
                         exerciseListViewModel: exerciseListViewModel,
+                        templateViewModel: templateViewModel,
                         onStartSession: onStartSession
                     )
                     .padding(.horizontal, 20)

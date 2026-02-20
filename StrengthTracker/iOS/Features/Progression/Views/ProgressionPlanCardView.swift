@@ -5,7 +5,8 @@ import StrengthTrackerShared
 struct ProgressionPlanCardView: View {
     let viewModel: ProgressionPlanViewModel
     let exerciseListViewModel: ExerciseListViewModel
-    let onStartSession: (WorkoutTemplate) async -> Void
+    let templateViewModel: TemplateViewModel
+    let onStartSession: (WorkoutTemplate, UUID, UUID) async -> Void
     @State private var showCreationSheet = false
     @State private var showActivePlanDetail = false
 
@@ -132,7 +133,7 @@ struct ProgressionPlanCardView: View {
         }
         .buttonStyle(.plain)
         .navigationDestination(isPresented: $showActivePlanDetail) {
-            ActivePlanDetailView(viewModel: viewModel, onStartSession: onStartSession)
+            ActivePlanDetailView(viewModel: viewModel, templateViewModel: templateViewModel, onStartSession: onStartSession)
         }
     }
 }
