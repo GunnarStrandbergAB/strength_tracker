@@ -36,6 +36,27 @@ struct WorkoutListView: View {
                     }
                 }
 
+                // Planned sessions section (from active progression plan)
+                if !listViewModel.plannedSessions.isEmpty {
+                    Section("Today's Plan") {
+                        ForEach(listViewModel.plannedSessions) { session in
+                            Button {
+                                Task {
+                                    await workoutViewModel.startPlannedSession(session)
+                                }
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(session.sessionLabel)
+                                        .font(.headline)
+                                    Text("\(session.weekLabel) \u{00B7} \(session.template.exercises.count) exercises")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Templates section
                 if !listViewModel.templates.isEmpty {
                     Section("Templates") {

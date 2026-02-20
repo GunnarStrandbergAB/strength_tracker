@@ -5,24 +5,36 @@ import StrengthTrackerShared
 struct DashboardView: View {
     @State private var viewModel: DashboardViewModel
     let analyticsViewModel: WorkoutAnalyticsViewModel
+    let progressionPlanViewModel: ProgressionPlanViewModel
+    let exerciseListViewModel: ExerciseListViewModel
+    let templateViewModel: TemplateViewModel
     let userPreferencesService: UserPreferencesService
     let connectivityManager: ConnectivityManager?
     let onStartWorkout: () -> Void
+    let onStartSession: (WorkoutTemplate, UUID, UUID) async -> Void
     let onHistoryTapped: () -> Void
 
     init(
         viewModel: DashboardViewModel,
         analyticsViewModel: WorkoutAnalyticsViewModel,
+        progressionPlanViewModel: ProgressionPlanViewModel,
+        exerciseListViewModel: ExerciseListViewModel,
+        templateViewModel: TemplateViewModel,
         userPreferencesService: UserPreferencesService,
         connectivityManager: ConnectivityManager? = nil,
         onStartWorkout: @escaping () -> Void,
+        onStartSession: @escaping (WorkoutTemplate, UUID, UUID) async -> Void,
         onHistoryTapped: @escaping () -> Void
     ) {
         self._viewModel = State(initialValue: viewModel)
         self.analyticsViewModel = analyticsViewModel
+        self.progressionPlanViewModel = progressionPlanViewModel
+        self.exerciseListViewModel = exerciseListViewModel
+        self.templateViewModel = templateViewModel
         self.userPreferencesService = userPreferencesService
         self.connectivityManager = connectivityManager
         self.onStartWorkout = onStartWorkout
+        self.onStartSession = onStartSession
         self.onHistoryTapped = onHistoryTapped
     }
 
@@ -40,6 +52,15 @@ struct DashboardView: View {
                     )
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
+
+                    // Progression Plan Card
+                    ProgressionPlanCardView(
+                        viewModel: progressionPlanViewModel,
+                        exerciseListViewModel: exerciseListViewModel,
+                        templateViewModel: templateViewModel,
+                        onStartSession: onStartSession
+                    )
+                    .padding(.horizontal, 20)
 
                     // Start Workout Button
                     Button(action: onStartWorkout) {
@@ -110,10 +131,12 @@ struct DashboardView: View {
             .task {
                 await viewModel.loadDashboard()
                 await analyticsViewModel.loadDashboardInsights()
+                await progressionPlanViewModel.loadActivePlan()
             }
             .refreshable {
                 await viewModel.loadDashboard()
                 await analyticsViewModel.loadDashboardInsights()
+                await progressionPlanViewModel.loadActivePlan()
             }
         }
     }

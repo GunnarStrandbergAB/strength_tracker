@@ -11,6 +11,7 @@ struct ContentView: View {
     let historyViewModel: HistoryViewModel
     let templateViewModel: TemplateViewModel
     let analyticsViewModel: WorkoutAnalyticsViewModel
+    let progressionPlanViewModel: ProgressionPlanViewModel
     let userPreferencesService: UserPreferencesService
     let connectivityManager: ConnectivityManager?
 
@@ -19,6 +20,9 @@ struct ContentView: View {
             DashboardView(
                 viewModel: dashboardViewModel,
                 analyticsViewModel: analyticsViewModel,
+                progressionPlanViewModel: progressionPlanViewModel,
+                exerciseListViewModel: exerciseListViewModel,
+                templateViewModel: templateViewModel,
                 userPreferencesService: userPreferencesService,
                 connectivityManager: connectivityManager,
                 onStartWorkout: {
@@ -26,6 +30,11 @@ struct ContentView: View {
                     Task {
                         await workoutViewModel.startWorkout(name: "Quick Workout", from: nil)
                     }
+                },
+                onStartSession: { template, sessionId, planId in
+                    workoutViewModel.plannedSessionId = sessionId
+                    workoutViewModel.plannedPlanId = planId
+                    await workoutViewModel.startWorkout(name: template.name, from: template)
                 },
                 onHistoryTapped: {
                     selectedTab = 4
@@ -71,6 +80,17 @@ struct ContentView: View {
             if isActive {
                 selectedTab = 1
             } else if oldValue {
+                if let sessionId = workoutViewModel.plannedSessionId,
+                   let planId = workoutViewModel.plannedPlanId,
+                   let workoutId = workoutViewModel.currentWorkout?.id {
+                    Task {
+                        await progressionPlanViewModel.handleSessionCompleted(
+                            sessionId: sessionId, planId: planId, workoutId: workoutId
+                        )
+                    }
+                }
+                workoutViewModel.plannedSessionId = nil
+                workoutViewModel.plannedPlanId = nil
                 selectedTab = 0
             }
         }

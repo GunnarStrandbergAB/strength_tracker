@@ -11,6 +11,8 @@ public enum WorkoutError: Error, Sendable {
 public final class WorkoutViewModel {
     public var currentWorkout: Workout? = nil
     public var isActive = false
+    public var plannedSessionId: UUID? = nil
+    public var plannedPlanId: UUID? = nil
     public var errorMessage: String? = nil
     public var lastPR: PersonalRecord? = nil
     public var previousSetDataCache: [String: String] = [:]

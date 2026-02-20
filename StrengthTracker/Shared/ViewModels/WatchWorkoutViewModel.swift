@@ -8,6 +8,8 @@ public final class WatchWorkoutViewModel {
     public var currentExerciseIndex: Int = 0
     public var isActive = false
     public var isQuickStart: Bool = false
+    public var plannedSessionId: UUID? = nil
+    public var plannedPlanId: UUID? = nil
 
     // Template target data per exercise index
     public var plannedSetsPerExercise: [Int: Int] = [:]
@@ -319,6 +321,13 @@ public final class WatchWorkoutViewModel {
         connectivityManager.sendWorkoutStarted(workout)
     }
 
+    /// Start a workout from a planned session (progression plan sync from iPhone).
+    public func startPlannedSession(_ session: PlannedSessionSync) async {
+        plannedSessionId = session.id
+        plannedPlanId = session.planId
+        await startWorkout(name: session.sessionLabel, from: session.template)
+    }
+
     public func logSet(weight: Double?, reps: Int?, rpe: Double? = nil) async throws {
         guard var workout = activeWorkout else {
             throw WorkoutError.noActiveWorkout
@@ -423,7 +432,16 @@ public final class WatchWorkoutViewModel {
 
         // Notify iPhone workout ended, then send full workout via transferUserInfo
         connectivityManager.sendWorkoutEnded()
-        connectivityManager.sendWorkoutCompleted(saved)
+        var metadata: [String: String]? = nil
+        if let sid = plannedSessionId, let pid = plannedPlanId {
+            metadata = [
+                "plannedSessionId": sid.uuidString,
+                "plannedPlanId": pid.uuidString
+            ]
+        }
+        connectivityManager.sendWorkoutCompleted(saved, metadata: metadata)
+        plannedSessionId = nil
+        plannedPlanId = nil
 
         // Vectorize workout for analytics in background
         Task {
@@ -453,6 +471,8 @@ public final class WatchWorkoutViewModel {
         workoutNotes = ""
 
         connectivityManager.sendWorkoutEnded()
+        plannedSessionId = nil
+        plannedPlanId = nil
     }
 
     // MARK: - Navigation

@@ -13,9 +13,10 @@ public final class ConnectivityManager: NSObject, @unchecked Sendable {
 
     // Callbacks for received data
     public var onExercisesReceived: (([Exercise]) -> Void)?
-    public var onWorkoutReceived: ((Workout) -> Void)?
+    public var onWorkoutReceived: ((Workout, [String: String]?) -> Void)?
     public var onSettingsReceived: (([String: Any]) -> Void)?
     public var onTemplatesReceived: (([WorkoutTemplate]) -> Void)?
+    public var onPlannedSessionsReceived: (([PlannedSessionSync]) -> Void)?
     public var onWatchWorkoutSnapshot: ((Workout) -> Void)?
     public var onWatchWorkoutStarted: ((Workout) -> Void)?
     public var onWatchWorkoutEnded: (() -> Void)?
@@ -79,14 +80,34 @@ public final class ConnectivityManager: NSObject, @unchecked Sendable {
         #endif
     }
 
+    /// Sync planned sessions to Watch (iPhone -> Watch via applicationContext)
+    public func syncPlannedSessions(_ sessions: [PlannedSessionSync]) {
+        #if canImport(WatchConnectivity)
+        guard WCSession.default.activationState == .activated else { return }
+
+        do {
+            let data = try encoder.encode(sessions)
+            var context = WCSession.default.applicationContext
+            context["plannedSessionSync"] = [
+                "type": SyncMessageType.plannedSessionSync.rawValue,
+                "timestamp": Date().timeIntervalSince1970,
+                "payload": data.base64EncodedString()
+            ] as [String: Any]
+            try WCSession.default.updateApplicationContext(context)
+        } catch {
+            print("ConnectivityManager: Failed to sync planned sessions - \(error)")
+        }
+        #endif
+    }
+
     /// Send completed workout to iPhone (Watch -> iPhone via transferUserInfo)
-    public func sendWorkoutCompleted(_ workout: Workout) {
+    public func sendWorkoutCompleted(_ workout: Workout, metadata: [String: String]? = nil) {
         #if canImport(WatchConnectivity)
         guard WCSession.default.activationState == .activated else { return }
 
         do {
             let data = try encoder.encode(workout)
-            let message = SyncMessage(type: .workoutCompleted, payload: data)
+            let message = SyncMessage(type: .workoutCompleted, payload: data, metadata: metadata)
             WCSession.default.transferUserInfo(message.asDictionary)
         } catch {
             print("ConnectivityManager: Failed to send workout - \(error)")
@@ -170,6 +191,12 @@ public final class ConnectivityManager: NSObject, @unchecked Sendable {
             settingsData = try? JSONSerialization.data(withJSONObject: settings)
         }
 
+        var plannedSessionData: Data?
+        if let dict = applicationContext["plannedSessionSync"] as? [String: Any],
+           let payloadStr = dict["payload"] as? String {
+            plannedSessionData = Data(base64Encoded: payloadStr)
+        }
+
         Task { @MainActor in
             self.lastSyncDate = Date()
 
@@ -186,6 +213,11 @@ public final class ConnectivityManager: NSObject, @unchecked Sendable {
             if let data = settingsData,
                let settings = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 self.onSettingsReceived?(settings)
+            }
+
+            if let data = plannedSessionData,
+               let sessions = try? decoder.decode([PlannedSessionSync].self, from: data) {
+                self.onPlannedSessionsReceived?(sessions)
             }
         }
     }
@@ -231,11 +263,11 @@ extension ConnectivityManager: WCSessionDelegate {
         }
     }
 
-    // Receive applicationContext (multi-key: exerciseSync, templateSync, settings)
+    // Receive applicationContext (multi-key: exerciseSync, templateSync, settings, plannedSessionSync)
+    // Delegates to processReceivedContext — extracts Sendable data before crossing isolation boundary.
     nonisolated public func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         let decoder = JSONDecoder()
 
-        // Extract sendable data before crossing isolation boundary (Swift 6 concurrency)
         var exerciseData: Data?
         if let exerciseDict = applicationContext["exerciseSync"] as? [String: Any],
            let payloadStr = exerciseDict["payload"] as? String {
@@ -251,6 +283,12 @@ extension ConnectivityManager: WCSessionDelegate {
         var settingsData: Data?
         if let settings = applicationContext["settings"] {
             settingsData = try? JSONSerialization.data(withJSONObject: settings)
+        }
+
+        var plannedSessionData: Data?
+        if let dict = applicationContext["plannedSessionSync"] as? [String: Any],
+           let payloadStr = dict["payload"] as? String {
+            plannedSessionData = Data(base64Encoded: payloadStr)
         }
 
         Task { @MainActor in
@@ -270,6 +308,11 @@ extension ConnectivityManager: WCSessionDelegate {
                let settings = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 self.onSettingsReceived?(settings)
             }
+
+            if let data = plannedSessionData,
+               let sessions = try? decoder.decode([PlannedSessionSync].self, from: data) {
+                self.onPlannedSessionsReceived?(sessions)
+            }
         }
     }
 
@@ -277,13 +320,14 @@ extension ConnectivityManager: WCSessionDelegate {
     nonisolated public func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
         guard let message = SyncMessage.from(dictionary: userInfo) else { return }
         let decoder = JSONDecoder()
+        let metadata = message.metadata
 
         Task { @MainActor in
             self.lastSyncDate = Date()
 
             if message.type == .workoutCompleted,
                let workout = try? decoder.decode(Workout.self, from: message.payload) {
-                self.onWorkoutReceived?(workout)
+                self.onWorkoutReceived?(workout, metadata)
             }
         }
     }

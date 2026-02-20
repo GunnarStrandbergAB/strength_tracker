@@ -243,7 +243,9 @@ final class WorkoutAnalyticsViewModelTests: XCTestCase {
         )
         let qualityScoreService = WorkoutQualityScoreService(
             workoutRepository: workoutRepo,
-            muscleBalanceService: MuscleBalanceService()
+            muscleBalanceService: MuscleBalanceService(),
+            healthKitService: NoOpHealthKitService(),
+            userPreferencesService: UserPreferencesService()
         )
         let featureGate = AnalyticsFeatureGate(workoutRepository: workoutRepo)
 

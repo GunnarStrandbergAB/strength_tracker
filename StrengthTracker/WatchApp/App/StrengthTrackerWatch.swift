@@ -73,6 +73,13 @@ struct StrengthTrackerWatchApp: App {
                 }
             }
 
+            // Wire planned session sync: when planned sessions arrive from iPhone, update list
+            container.connectivityManager.onPlannedSessionsReceived = { sessions in
+                Task { @MainActor in
+                    listVM.plannedSessions = sessions
+                }
+            }
+
             // Wire exercise sync: when exercises arrive from iPhone, upsert local data
             let exerciseRepo = container.exerciseRepository
             container.connectivityManager.onExercisesReceived = { receivedExercises in
