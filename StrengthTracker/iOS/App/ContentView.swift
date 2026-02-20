@@ -11,6 +11,7 @@ struct ContentView: View {
     let historyViewModel: HistoryViewModel
     let templateViewModel: TemplateViewModel
     let analyticsViewModel: WorkoutAnalyticsViewModel
+    let progressionPlanViewModel: ProgressionPlanViewModel
     let userPreferencesService: UserPreferencesService
     let connectivityManager: ConnectivityManager?
 
@@ -19,6 +20,8 @@ struct ContentView: View {
             DashboardView(
                 viewModel: dashboardViewModel,
                 analyticsViewModel: analyticsViewModel,
+                progressionPlanViewModel: progressionPlanViewModel,
+                exerciseListViewModel: exerciseListViewModel,
                 userPreferencesService: userPreferencesService,
                 connectivityManager: connectivityManager,
                 onStartWorkout: {
@@ -26,6 +29,9 @@ struct ContentView: View {
                     Task {
                         await workoutViewModel.startWorkout(name: "Quick Workout", from: nil)
                     }
+                },
+                onStartSession: { template in
+                    await workoutViewModel.startWorkout(name: template.name, from: template)
                 },
                 onHistoryTapped: {
                     selectedTab = 4
