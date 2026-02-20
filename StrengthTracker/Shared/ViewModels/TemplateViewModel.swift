@@ -115,7 +115,7 @@ public final class TemplateViewModel {
 
     #if os(iOS)
     private func syncTemplatesToWatch() {
-        connectivityManager?.syncTemplates(templates)
+        connectivityManager?.syncTemplates(userTemplates)
     }
     #else
     private func syncTemplatesToWatch() {}

@@ -119,8 +119,9 @@ struct ContentViewWrapper: View {
                 // Sync templates, exercises, settings, and planned sessions to Watch when app becomes active
                 Task { @MainActor in
                     do {
-                        let templates = try await container.templateRepository.fetchAll()
-                        container.connectivityManager.syncTemplates(templates)
+                        let allTemplates = try await container.templateRepository.fetchAll()
+                        // Only sync user-created templates to Watch (not seed/library templates)
+                        container.connectivityManager.syncTemplates(allTemplates.filter { $0.isCustom })
 
                         let exercises = try await container.exerciseRepository.fetchAll()
                         container.connectivityManager.syncExercises(exercises)
@@ -141,13 +142,14 @@ struct ContentViewWrapper: View {
                                         template: session.toWorkoutTemplate(exercises: exercises)
                                     )
                                 }
+                            print("[iOS Sync] Syncing \(sessions.count) planned sessions to Watch for plan '\(plan.name)'")
                             container.connectivityManager.syncPlannedSessions(sessions)
                         } else {
-                            // No active plan or no uncompleted sessions — clear Watch
+                            print("[iOS Sync] No active plan or no current week — clearing Watch planned sessions")
                             container.connectivityManager.syncPlannedSessions([])
                         }
                     } catch {
-                        print("Failed to sync data on activation: \(error)")
+                        print("[iOS Sync] Failed to sync data on activation: \(error)")
                     }
 
                     let prefs = container.userPreferencesService
