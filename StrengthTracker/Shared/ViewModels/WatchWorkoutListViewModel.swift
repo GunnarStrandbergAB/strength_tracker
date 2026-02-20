@@ -10,6 +10,7 @@ import SwiftData
 public final class WatchWorkoutListViewModel: Sendable {
     public var recentWorkouts: [Workout] = []
     public var templates: [WorkoutTemplate] = []
+    public var plannedSessions: [PlannedSessionSync] = []
     public var syncStatus: SyncStatus = .idle
     public var errorMessage: String?
 

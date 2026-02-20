@@ -35,11 +35,22 @@ struct StrengthTrackeriOSApp: App {
             // Watch already saves HKWorkout with sensor-based calories — iPhone must NOT touch HealthKit
             let workoutRepo = container.workoutRepository
             let webhookService = container.webhookService
-            container.connectivityManager.onWorkoutReceived = { workout in
+            let progressionPlanRepo = container.progressionPlanRepository
+            container.connectivityManager.onWorkoutReceived = { workout, metadata in
                 Task { @MainActor in
                     do {
                         _ = try await workoutRepo.save(workout)
                         await webhookService.send(workout)
+
+                        // Mark planned session completed if Watch sent session/plan IDs
+                        if let sessionIdStr = metadata?["plannedSessionId"],
+                           let planIdStr = metadata?["plannedPlanId"],
+                           let sessionId = UUID(uuidString: sessionIdStr),
+                           let planId = UUID(uuidString: planIdStr) {
+                            try? await progressionPlanRepo.markSessionCompleted(
+                                sessionId, workoutId: workout.id, inPlan: planId
+                            )
+                        }
                     } catch {
                         print("Failed to save Watch workout: \(error)")
                     }
@@ -105,7 +116,7 @@ struct ContentViewWrapper: View {
                 WidgetCenter.shared.reloadAllTimelines()
                 #endif
 
-                // Sync templates, exercises, and settings to Watch when app becomes active
+                // Sync templates, exercises, settings, and planned sessions to Watch when app becomes active
                 Task { @MainActor in
                     do {
                         let templates = try await container.templateRepository.fetchAll()
@@ -113,6 +124,28 @@ struct ContentViewWrapper: View {
 
                         let exercises = try await container.exerciseRepository.fetchAll()
                         container.connectivityManager.syncExercises(exercises)
+
+                        // Sync planned sessions from active progression plan
+                        if let plan = try await container.progressionPlanRepository.fetchActive(),
+                           let week = plan.currentWeek {
+                            let sessions: [PlannedSessionSync] = week.sessions
+                                .filter { !$0.isCompleted }
+                                .map { session in
+                                    PlannedSessionSync(
+                                        id: session.id,
+                                        planId: plan.id,
+                                        planName: plan.name,
+                                        sessionLabel: session.sessionLabel,
+                                        weekLabel: "Week \(week.absoluteWeekNumber)",
+                                        blockName: plan.currentBlock?.name,
+                                        template: session.toWorkoutTemplate(exercises: exercises)
+                                    )
+                                }
+                            container.connectivityManager.syncPlannedSessions(sessions)
+                        } else {
+                            // No active plan or no uncompleted sessions — clear Watch
+                            container.connectivityManager.syncPlannedSessions([])
+                        }
                     } catch {
                         print("Failed to sync data on activation: \(error)")
                     }
