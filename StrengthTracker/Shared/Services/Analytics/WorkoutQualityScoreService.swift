@@ -55,7 +55,7 @@ public final class WorkoutQualityScoreService: Sendable {
     // MARK: - Scoring Components (0-100 scale each)
 
     private func computeVolumeScore(_ workout: Workout, history: [Workout], bodyWeightKg: Double) -> Double {
-        let recentCompleted = history.filter { $0.completedAt != nil }.suffix(12)
+        let recentCompleted = history.filter { $0.completedAt != nil }.prefix(12)
         let avgVolume = recentCompleted.isEmpty ? 0.0 :
             recentCompleted.map { $0.totalVolume(bodyWeightKg: bodyWeightKg) }.reduce(0, +) / Double(recentCompleted.count)
 
