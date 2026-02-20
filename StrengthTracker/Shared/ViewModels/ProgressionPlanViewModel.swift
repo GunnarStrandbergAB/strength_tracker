@@ -334,9 +334,15 @@ public final class ProgressionPlanViewModel {
             session.plannedExercises.map { ($0.exerciseId, $0) },
             uniquingKeysWith: { first, _ in first }
         )
+        let plannedByName = Dictionary(
+            session.plannedExercises.map { ($0.exerciseName.lowercased(), $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
 
         let mergedExercises = template.exercises.map { te -> TemplateExercise in
-            guard let planned = plannedLookup[te.exercise.id] else { return te }
+            let planned = plannedLookup[te.exercise.id]
+                ?? plannedByName[te.exercise.name.lowercased()]
+            guard let planned else { return te }
             return TemplateExercise(
                 id: te.id,
                 exercise: te.exercise,
