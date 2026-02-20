@@ -12,6 +12,7 @@ public final class AppContainer: Sendable {
     public let workoutRepository: any WorkoutRepository
     public let templateRepository: any TemplateRepository
     public let personalRecordRepository: any PersonalRecordRepository
+    public let progressionPlanRepository: any ProgressionPlanRepository
 
     // Services
     public let personalRecordService: PersonalRecordService
@@ -35,6 +36,13 @@ public final class AppContainer: Sendable {
     public let analyticsFeatureGate: AnalyticsFeatureGate
     public let analyticsService: WorkoutAnalyticsService
 
+    // Progression
+    public let trainingStatusDetector: TrainingStatusDetector
+    public let programDesignService: ProgramDesignService
+    public let sessionExecutionService: SessionExecutionService
+    public let adaptiveAdjustmentService: AdaptiveAdjustmentService
+    public let planAnalyticsService: PlanAnalyticsService
+
     // Cached ViewModels (shared across multiple views)
     public let workoutViewModel: WorkoutViewModel
     public let templateViewModel: TemplateViewModel
@@ -52,7 +60,8 @@ public final class AppContainer: Sendable {
             WorkoutTemplateEntity.self,
             TemplateExerciseEntity.self,
             PersonalRecordEntity.self,
-            WorkoutVectorEntity.self
+            WorkoutVectorEntity.self,
+            ProgressionPlanEntity.self
         ])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         modelContainer = try ModelContainer(for: schema, configurations: [config])
@@ -63,6 +72,7 @@ public final class AppContainer: Sendable {
         workoutRepository = SwiftDataWorkoutRepository(modelContext: modelContext)
         templateRepository = SwiftDataTemplateRepository(modelContext: modelContext)
         personalRecordRepository = SwiftDataPersonalRecordRepository(modelContext: modelContext)
+        progressionPlanRepository = SwiftDataProgressionPlanRepository(modelContext: modelContext)
 
         // Wire up services
         personalRecordService = PersonalRecordService(
@@ -110,6 +120,13 @@ public final class AppContainer: Sendable {
             muscleBalanceService: muscleBalanceService,
             recommendationService: recommendationService
         )
+
+        // Progression services (stateless -- ADR-014)
+        trainingStatusDetector = TrainingStatusDetector(workoutRepository: workoutRepository)
+        programDesignService = ProgramDesignService()
+        sessionExecutionService = SessionExecutionService()
+        adaptiveAdjustmentService = AdaptiveAdjustmentService(workoutRepository: workoutRepository)
+        planAnalyticsService = PlanAnalyticsService(workoutRepository: workoutRepository)
 
         // Initialize cached ViewModels
         workoutViewModel = WorkoutViewModel(

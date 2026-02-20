@@ -27,14 +27,49 @@ public struct InsightReport: Sendable {
     public var deloadSignals: [DeloadSignal]
     public var plateauSignals: [PlateauSignal]
     public var regressionSignals: [RegressionSignal]
+    public var subjectiveSignals: SubjectiveSignals?  // m12: v3 extension
+
+    /// m12: Signals derived from workout note NLP analysis (Apple Intelligence).
+    public struct SubjectiveSignals: Sendable {
+        public let painReported: Bool
+        public let fatigueLevel: Double?  // 0-1
+        public let motivationLevel: Double?  // 0-1
+        public let sleepQuality: Double?  // 0-1
+
+        public init(
+            painReported: Bool = false,
+            fatigueLevel: Double? = nil,
+            motivationLevel: Double? = nil,
+            sleepQuality: Double? = nil
+        ) {
+            self.painReported = painReported
+            self.fatigueLevel = fatigueLevel
+            self.motivationLevel = motivationLevel
+            self.sleepQuality = sleepQuality
+        }
+    }
 
     public struct DeloadSignal: Sendable {
         public let source: DeloadTrigger
         public let severity: Double  // 0-1
+        public let daysSinceLastWorkout: Int?  // M4: for detraining % mapping
 
-        public init(source: DeloadTrigger, severity: Double) {
+        public init(source: DeloadTrigger, severity: Double, daysSinceLastWorkout: Int? = nil) {
             self.source = source
             self.severity = severity
+            self.daysSinceLastWorkout = daysSinceLastWorkout
+        }
+
+        /// M4: Maps detraining tier to spec-required intensity reduction percentage.
+        /// 10-21 days -> 5%, 21-42 days -> 10%, 42+ days -> 15%
+        public var reductionPercent: Double {
+            guard let days = daysSinceLastWorkout else { return 0 }
+            switch days {
+            case 10..<21: return 0.05
+            case 21..<42: return 0.10
+            case 42...: return 0.15
+            default: return 0
+            }
         }
     }
 
@@ -42,11 +77,21 @@ public struct InsightReport: Sendable {
         public let exerciseId: UUID
         public let exerciseName: String
         public let weeksStalled: Int
+        public let suggestedSwapId: UUID?       // m10: v3 spec fields
+        public let suggestedSwapName: String?   // m10: v3 spec fields
 
-        public init(exerciseId: UUID, exerciseName: String, weeksStalled: Int) {
+        public init(
+            exerciseId: UUID,
+            exerciseName: String,
+            weeksStalled: Int,
+            suggestedSwapId: UUID? = nil,
+            suggestedSwapName: String? = nil
+        ) {
             self.exerciseId = exerciseId
             self.exerciseName = exerciseName
             self.weeksStalled = weeksStalled
+            self.suggestedSwapId = suggestedSwapId
+            self.suggestedSwapName = suggestedSwapName
         }
     }
 
@@ -65,11 +110,13 @@ public struct InsightReport: Sendable {
     public init(
         deloadSignals: [DeloadSignal] = [],
         plateauSignals: [PlateauSignal] = [],
-        regressionSignals: [RegressionSignal] = []
+        regressionSignals: [RegressionSignal] = [],
+        subjectiveSignals: SubjectiveSignals? = nil
     ) {
         self.deloadSignals = deloadSignals
         self.plateauSignals = plateauSignals
         self.regressionSignals = regressionSignals
+        self.subjectiveSignals = subjectiveSignals
     }
 }
 
@@ -100,11 +147,14 @@ public final class AdaptiveAdjustmentService: Sendable {
     // MARK: - Insight Collection
 
     /// Collects signals from workout data and plan state.
+    /// - Parameter subjectiveSignals: M13 — Optional signals from Apple Intelligence workout note analysis.
     internal func collectInsights(
         plan: ProgressionPlan,
-        recentWorkouts: [Workout]
+        recentWorkouts: [Workout],
+        subjectiveSignals: InsightReport.SubjectiveSignals? = nil
     ) -> InsightReport {
         var report = InsightReport()
+        report.subjectiveSignals = subjectiveSignals
 
         // Detraining detection
         detectDetraining(recentWorkouts: recentWorkouts, report: &report)
@@ -126,9 +176,12 @@ public final class AdaptiveAdjustmentService: Sendable {
     /// 10-21 days -> severity 0.3
     /// 21-42 days -> severity 0.6
     /// 42+ days -> severity 0.9
+    ///
+    /// - Parameter referenceDate: m13 — Injectable reference date for testability (defaults to `Date()`).
     private func detectDetraining(
         recentWorkouts: [Workout],
-        report: inout InsightReport
+        report: inout InsightReport,
+        referenceDate: Date = Date()
     ) {
         let completedWorkouts = recentWorkouts
             .filter { $0.completedAt != nil }
@@ -140,7 +193,7 @@ public final class AdaptiveAdjustmentService: Sendable {
         }
 
         let daysSinceLastWorkout = Calendar.current.dateComponents(
-            [.day], from: lastDate, to: Date()
+            [.day], from: lastDate, to: referenceDate
         ).day ?? 0
 
         let severity: Double?
@@ -159,7 +212,8 @@ public final class AdaptiveAdjustmentService: Sendable {
             report.deloadSignals.append(
                 InsightReport.DeloadSignal(
                     source: .reactiveRecovery,
-                    severity: severity
+                    severity: severity,
+                    daysSinceLastWorkout: daysSinceLastWorkout
                 )
             )
         }
@@ -305,6 +359,29 @@ public final class AdaptiveAdjustmentService: Sendable {
     ) -> [ProposedAdjustment] {
         var proposals: [ProposedAdjustment] = []
 
+        // M4: Detraining-specific intensity reduction proposals
+        let detrainingSignals = insights.deloadSignals.filter { $0.daysSinceLastWorkout != nil && $0.reductionPercent > 0 }
+        for signal in detrainingSignals {
+            let pct = Int(signal.reductionPercent * 100)
+            let days = signal.daysSinceLastWorkout ?? 0
+            var detrainAdj = PlanAdjustment(
+                adjustmentType: .loadDecrease,
+                trigger: .recoverySignal,
+                description: "Detraining detected (\(days) days gap). Intensity reduced by \(pct)%.",
+                affectedBlockIds: plan.currentBlock.map { [$0.id] } ?? [],
+                newValues: ["reductionPercent": String(pct)]
+            )
+            // M4: 42+ day tier gets repeat-block
+            if days >= 42 {
+                detrainAdj.newValues["repeatBlock"] = "true"
+            }
+            proposals.append(ProposedAdjustment(
+                adjustment: detrainAdj,
+                priority: 1,
+                reasoning: "Detraining gap of \(days) days. Recommending \(pct)% intensity reduction\(days >= 42 ? " with repeat-block" : "")."
+            ))
+        }
+
         // Multi-signal deload (Review Fix #12): if deloadSignals.count >= 2, trigger deload
         if insights.deloadSignals.count >= 2 {
             let maxSeverity = insights.deloadSignals.map(\.severity).max() ?? 0.5
@@ -346,6 +423,23 @@ public final class AdaptiveAdjustmentService: Sendable {
                 priority: 3,
                 reasoning: "Beginner regression detected: \(regression.consecutiveMisses) consecutive sessions below target reps for \(regression.exerciseName)."
             ))
+
+            // M5: 3+ misses also generates repeat-week adjustment
+            if regression.consecutiveMisses >= 3 {
+                let repeatAdj = PlanAdjustment(
+                    adjustmentType: .blockExtension,
+                    trigger: .performanceDecline,
+                    description: "Repeat current week for \(regression.exerciseName) due to \(regression.consecutiveMisses) consecutive misses",
+                    affectedExerciseIds: [regression.exerciseId],
+                    affectedBlockIds: plan.currentBlock.map { [$0.id] } ?? [],
+                    newValues: ["repeatWeek": "true"]
+                )
+                proposals.append(ProposedAdjustment(
+                    adjustment: repeatAdj,
+                    priority: 2,
+                    reasoning: "Beginner 3+ consecutive misses warrants repeating the current week at reduced load."
+                ))
+            }
             affectedExerciseIds.insert(regression.exerciseId)
         }
 

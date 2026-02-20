@@ -1,6 +1,6 @@
 import Foundation
 
-public struct PlanProgress: Identifiable, Codable, Sendable {
+public struct PlanProgress: Identifiable, Codable, Equatable, Sendable {
     public let id: UUID
     public let planId: UUID
     public var snapshotDate: Date
@@ -40,7 +40,7 @@ public struct PlanProgress: Identifiable, Codable, Sendable {
     }
 }
 
-public struct ExerciseProgress: Identifiable, Codable, Sendable {
+public struct ExerciseProgress: Identifiable, Codable, Equatable, Sendable {
     public let id: UUID
     public let planExerciseId: UUID
     public var exerciseName: String
@@ -83,7 +83,7 @@ public struct ExerciseProgress: Identifiable, Codable, Sendable {
     }
 }
 
-public struct BlockProgress: Identifiable, Codable, Sendable {
+public struct BlockProgress: Identifiable, Codable, Equatable, Sendable {
     public let id: UUID
     public let blockId: UUID
     public var blockName: String
@@ -108,7 +108,7 @@ public struct BlockProgress: Identifiable, Codable, Sendable {
     }
 }
 
-public struct WeeklyVolume: Identifiable, Codable, Sendable {
+public struct WeeklyVolume: Identifiable, Codable, Equatable, Sendable {
     public let id: UUID
     public var weekNumber: Int
     public var totalVolume: Double

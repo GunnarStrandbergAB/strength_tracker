@@ -237,4 +237,366 @@ final class PlanAnalyticsServiceTests: XCTestCase {
         // 0 adherence is NOT >= 0.75, so isOnTrack should be false
         XCTAssertFalse(progress.isOnTrack)
     }
+
+    // MARK: - M20: Session-Linkage 3-Tier Resolution Tests
+
+    func testResolveWorkout_tier1_completedWorkoutId() async throws {
+        // Session has completedWorkoutId pointing directly to a workout.
+        // Tier 1 should resolve it and exercise progress should reflect that workout's data.
+        let exerciseId = UUID()
+        let workoutId = UUID()
+
+        let workout = makeWorkout(
+            id: workoutId,
+            completedAt: Date(),
+            exercises: [
+                makeWorkoutExercise(
+                    exerciseId: exerciseId,
+                    sets: [makeSet(weight: 100, reps: 5)]
+                )
+            ]
+        )
+
+        let session = ProgressionTestHelpers.makeTestPlannedSession(
+            completedWorkoutId: workoutId,
+            completedAt: Date()
+        )
+        let week = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: [session])
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week])
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(exerciseId: exerciseId)
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block], exercises: [planExercise])
+
+        let sut = makeSUT(workouts: [workout])
+        let progress = try await sut.generateProgress(for: plan)
+
+        let ep = try XCTUnwrap(progress.exerciseProgress.first)
+        // 100kg * 5 reps = 500 total volume from the resolved workout
+        XCTAssertEqual(ep.totalVolumeLifted, 500, accuracy: 0.01)
+        XCTAssertEqual(ep.totalSetsCompleted, 1)
+    }
+
+    func testResolveWorkout_tier2_templateId() async throws {
+        // Session has no completedWorkoutId but shares a templateId with a workout.
+        // Tier 2 should resolve by matching templateId.
+        let exerciseId = UUID()
+        let sharedTemplateId = UUID()
+
+        let workout = makeWorkout(
+            completedAt: Date(),
+            templateId: sharedTemplateId,
+            exercises: [
+                makeWorkoutExercise(
+                    exerciseId: exerciseId,
+                    sets: [makeSet(weight: 80, reps: 8)]
+                )
+            ]
+        )
+
+        var session = ProgressionTestHelpers.makeTestPlannedSession(
+            completedWorkoutId: nil,
+            completedAt: nil
+        )
+        session.templateId = sharedTemplateId
+
+        let week = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: [session])
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week])
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(exerciseId: exerciseId)
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block], exercises: [planExercise])
+
+        let sut = makeSUT(workouts: [workout])
+        let progress = try await sut.generateProgress(for: plan)
+
+        let ep = try XCTUnwrap(progress.exerciseProgress.first)
+        // 80kg * 8 reps = 640 total volume from the tier-2 resolved workout
+        XCTAssertEqual(ep.totalVolumeLifted, 640, accuracy: 0.01)
+        XCTAssertEqual(ep.totalSetsCompleted, 1)
+    }
+
+    func testResolveWorkout_tier3_dateProximity() async throws {
+        // Session has scheduledDate and no other linkage. Workout completed within 2 days.
+        // Tier 3 should resolve by date proximity.
+        let exerciseId = UUID()
+        let scheduledDate = Date(timeIntervalSinceReferenceDate: 0)
+        // Workout completed 1 day after the scheduled date (within 2-day window)
+        let completedAt = scheduledDate.addingTimeInterval(86400)
+
+        let workout = makeWorkout(
+            completedAt: completedAt,
+            exercises: [
+                makeWorkoutExercise(
+                    exerciseId: exerciseId,
+                    sets: [makeSet(weight: 60, reps: 10)]
+                )
+            ]
+        )
+
+        let session = ProgressionTestHelpers.makeTestPlannedSession(
+            completedWorkoutId: nil,
+            completedAt: nil,
+            scheduledDate: scheduledDate
+        )
+        let week = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: [session])
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week])
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(exerciseId: exerciseId)
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block], exercises: [planExercise])
+
+        let sut = makeSUT(workouts: [workout])
+        let progress = try await sut.generateProgress(for: plan)
+
+        let ep = try XCTUnwrap(progress.exerciseProgress.first)
+        // 60kg * 10 reps = 600 total volume from the tier-3 proximity-resolved workout
+        XCTAssertEqual(ep.totalVolumeLifted, 600, accuracy: 0.01)
+    }
+
+    func testResolveWorkout_tier3_picksClosestMatch() async throws {
+        // Two workouts both within 2 days of scheduledDate. The closer one should be picked.
+        let exerciseId = UUID()
+        let scheduledDate = Date(timeIntervalSinceReferenceDate: 0)
+
+        // Workout A: 6 hours away (closer)
+        let workoutA = makeWorkout(
+            completedAt: scheduledDate.addingTimeInterval(6 * 3600),
+            exercises: [
+                makeWorkoutExercise(
+                    exerciseId: exerciseId,
+                    sets: [makeSet(weight: 100, reps: 5)] // volume = 500
+                )
+            ]
+        )
+
+        // Workout B: 36 hours away (further, but still within 2 days)
+        let workoutB = makeWorkout(
+            completedAt: scheduledDate.addingTimeInterval(36 * 3600),
+            exercises: [
+                makeWorkoutExercise(
+                    exerciseId: exerciseId,
+                    sets: [makeSet(weight: 50, reps: 5)] // volume = 250, distinguishable
+                )
+            ]
+        )
+
+        let session = ProgressionTestHelpers.makeTestPlannedSession(
+            completedWorkoutId: nil,
+            completedAt: nil,
+            scheduledDate: scheduledDate
+        )
+        let week = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: [session])
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week])
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(exerciseId: exerciseId)
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block], exercises: [planExercise])
+
+        let sut = makeSUT(workouts: [workoutA, workoutB])
+        let progress = try await sut.generateProgress(for: plan)
+
+        let ep = try XCTUnwrap(progress.exerciseProgress.first)
+        // Should have picked workoutA (closer) with volume = 500
+        XCTAssertEqual(ep.totalVolumeLifted, 500, accuracy: 0.01)
+    }
+
+    func testResolveWorkout_noMatch_returnsNoData() async throws {
+        // Session has no completedWorkoutId, no templateId, and scheduledDate is
+        // far outside the 2-day proximity window. No workout should be resolved.
+        let exerciseId = UUID()
+        let scheduledDate = Date(timeIntervalSinceReferenceDate: 0)
+        // Workout completed 5 days away - outside the 2-day window
+        let completedAt = scheduledDate.addingTimeInterval(5 * 86400)
+
+        let workout = makeWorkout(
+            completedAt: completedAt,
+            exercises: [
+                makeWorkoutExercise(
+                    exerciseId: exerciseId,
+                    sets: [makeSet(weight: 80, reps: 5)]
+                )
+            ]
+        )
+
+        let session = ProgressionTestHelpers.makeTestPlannedSession(
+            completedWorkoutId: nil,
+            completedAt: nil,
+            scheduledDate: scheduledDate
+        )
+        let week = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: [session])
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week])
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(exerciseId: exerciseId)
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block], exercises: [planExercise])
+
+        let sut = makeSUT(workouts: [workout])
+        let progress = try await sut.generateProgress(for: plan)
+
+        let ep = try XCTUnwrap(progress.exerciseProgress.first)
+        // No workout resolved; no volume or sets attributed
+        XCTAssertEqual(ep.totalVolumeLifted, 0, accuracy: 0.01)
+        XCTAssertEqual(ep.totalSetsCompleted, 0)
+    }
+
+    // MARK: - M21: Block Progress volumeTrend and averageRPE Tests
+
+    func testBlockProgress_volumeTrend_positive() async throws {
+        // Block with 2 weeks: first week lower volume, last week higher.
+        // volumeTrend = (lastVolume - firstVolume) / firstVolume, expected positive.
+        let workoutId1 = UUID()
+        let workoutId2 = UUID()
+
+        // Week 1: 1 set of 80kg x 5 = 400 volume
+        let workout1 = makeWorkout(
+            id: workoutId1,
+            completedAt: Date(),
+            exercises: [makeWorkoutExercise(exerciseId: UUID(), sets: [makeSet(weight: 80, reps: 5)])]
+        )
+        // Week 2: 1 set of 100kg x 5 = 500 volume
+        let workout2 = makeWorkout(
+            id: workoutId2,
+            completedAt: Date(),
+            exercises: [makeWorkoutExercise(exerciseId: UUID(), sets: [makeSet(weight: 100, reps: 5)])]
+        )
+
+        let session1 = ProgressionTestHelpers.makeTestPlannedSession(
+            completedWorkoutId: workoutId1,
+            completedAt: Date()
+        )
+        let session2 = ProgressionTestHelpers.makeTestPlannedSession(
+            completedWorkoutId: workoutId2,
+            completedAt: Date()
+        )
+
+        let week1 = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: [session1])
+        let week2 = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 2, sessions: [session2])
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week1, week2])
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block])
+
+        let sut = makeSUT(workouts: [workout1, workout2])
+        let progress = try await sut.generateProgress(for: plan)
+
+        let bp = try XCTUnwrap(progress.blockProgress.first)
+        // (500 - 400) / 400 = 0.25 -> positive trend
+        XCTAssertGreaterThan(bp.volumeTrend, 0)
+        XCTAssertEqual(bp.volumeTrend, 0.25, accuracy: 0.001)
+    }
+
+    func testBlockProgress_averageRPE_calculated() async throws {
+        // Block where resolved workout sets carry RPE values.
+        // averageRPE should be computed from those values.
+        let workoutId = UUID()
+
+        let setWithRPE1 = ExerciseSet(
+            id: UUID(), order: 0, setType: .normal,
+            weight: 80, reps: 5,
+            durationSeconds: nil, distanceMeters: nil,
+            rpe: 7.0, isCompleted: true, isPersonalRecord: false, completedAt: nil
+        )
+        let setWithRPE2 = ExerciseSet(
+            id: UUID(), order: 1, setType: .normal,
+            weight: 80, reps: 5,
+            durationSeconds: nil, distanceMeters: nil,
+            rpe: 9.0, isCompleted: true, isPersonalRecord: false, completedAt: nil
+        )
+
+        let workout = makeWorkout(
+            id: workoutId,
+            completedAt: Date(),
+            exercises: [makeWorkoutExercise(exerciseId: UUID(), sets: [setWithRPE1, setWithRPE2])]
+        )
+
+        let session = ProgressionTestHelpers.makeTestPlannedSession(
+            completedWorkoutId: workoutId,
+            completedAt: Date()
+        )
+        let week = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: [session])
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week])
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block])
+
+        let sut = makeSUT(workouts: [workout])
+        let progress = try await sut.generateProgress(for: plan)
+
+        let bp = try XCTUnwrap(progress.blockProgress.first)
+        let averageRPE = try XCTUnwrap(bp.averageRPE)
+        // (7.0 + 9.0) / 2 = 8.0
+        XCTAssertEqual(averageRPE, 8.0, accuracy: 0.001)
+    }
+
+    // MARK: - M21: Weekly Volume History Tests
+
+    func testWeeklyVolumeHistory_completedWeeksOnly() async throws {
+        // Week 1 is fully completed (all sessions done), week 2 is not.
+        // Only week 1 should appear in weeklyVolumeHistory.
+        let workoutId = UUID()
+
+        let workout = makeWorkout(
+            id: workoutId,
+            completedAt: Date(),
+            exercises: [makeWorkoutExercise(exerciseId: UUID(), sets: [makeSet(weight: 100, reps: 5)])]
+        )
+
+        let completedSession = ProgressionTestHelpers.makeTestPlannedSession(
+            completedWorkoutId: workoutId,
+            completedAt: Date()
+        )
+        let incompleteSession = ProgressionTestHelpers.makeIncompleteSession(label: "S2")
+
+        let week1 = ProgressionTestHelpers.makeTestTrainingWeek(
+            weekNumber: 1,
+            absoluteWeekNumber: 1,
+            sessions: [completedSession]
+        )
+        let week2 = ProgressionTestHelpers.makeTestTrainingWeek(
+            weekNumber: 2,
+            absoluteWeekNumber: 2,
+            sessions: [incompleteSession]
+        )
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week1, week2])
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block])
+
+        let sut = makeSUT(workouts: [workout])
+        let progress = try await sut.generateProgress(for: plan)
+
+        // Only week 1 (all sessions completed) appears in history
+        XCTAssertEqual(progress.weeklyVolumeHistory.count, 1)
+        let wv = try XCTUnwrap(progress.weeklyVolumeHistory.first)
+        XCTAssertEqual(wv.weekNumber, 1)
+        // 100kg * 5 reps = 500 volume
+        XCTAssertEqual(wv.totalVolume, 500, accuracy: 0.01)
+    }
+
+    // MARK: - Exercise Progress: Personal Records Tests
+
+    func testExerciseProgress_personalRecordsHit_counted() async throws {
+        // Workouts with PR-flagged sets should increment personalRecordsHit.
+        let exerciseId = UUID()
+        let workoutId = UUID()
+
+        let prSet = ExerciseSet(
+            id: UUID(), order: 0, setType: .normal,
+            weight: 120, reps: 3,
+            durationSeconds: nil, distanceMeters: nil,
+            rpe: nil, isCompleted: true, isPersonalRecord: true, completedAt: nil
+        )
+        let normalSet = ExerciseSet(
+            id: UUID(), order: 1, setType: .normal,
+            weight: 100, reps: 5,
+            durationSeconds: nil, distanceMeters: nil,
+            rpe: nil, isCompleted: true, isPersonalRecord: false, completedAt: nil
+        )
+
+        let workout = makeWorkout(
+            id: workoutId,
+            completedAt: Date(),
+            exercises: [makeWorkoutExercise(exerciseId: exerciseId, sets: [prSet, normalSet])]
+        )
+
+        let session = ProgressionTestHelpers.makeTestPlannedSession(
+            completedWorkoutId: workoutId,
+            completedAt: Date()
+        )
+        let week = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: [session])
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week])
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(exerciseId: exerciseId)
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block], exercises: [planExercise])
+
+        let sut = makeSUT(workouts: [workout])
+        let progress = try await sut.generateProgress(for: plan)
+
+        let ep = try XCTUnwrap(progress.exerciseProgress.first)
+        XCTAssertEqual(ep.personalRecordsHit, 1)
+    }
 }

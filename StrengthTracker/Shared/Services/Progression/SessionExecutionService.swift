@@ -3,6 +3,16 @@ import Foundation
 /// Bridges planned sessions with actual workout execution.
 /// Handles session preparation (PlannedSession -> WorkoutTemplate),
 /// session completion with APRE adjustments, and 1RM estimation with EWMA smoothing.
+///
+/// Design notes (i8):
+/// - This service computes *ongoing* 1RM with EWMA smoothing for progressive updates.
+/// - TrainingStatusDetector computes *baseline* 1RM without EWMA for plan creation.
+/// - These are intentionally separate estimation paths with different purposes.
+///
+/// EWMA behavior (M16):
+/// - Outlier rejection compares against stored (rounded) 1RM, not a running accumulator.
+/// - This is a deliberate simplification for v1 — acceptable because the 15% threshold
+///   is wide enough to absorb rounding artifacts.
 public struct SessionExecutionService: Sendable {
 
     /// EWMA smoothing factor for 1RM updates
@@ -103,35 +113,54 @@ public struct SessionExecutionService: Sendable {
             // Estimate 1RM from completed sets
             if let estimated1RM = estimateCurrent1RM(from: workoutExercise.sets) {
                 let current = planExercise.current1RM
-                let deviation = abs(estimated1RM - current) / max(current, 1.0)
 
-                // Outlier rejection: skip if deviation > 15%
-                if deviation <= outlierThreshold {
-                    // EWMA smoothing
-                    let smoothed1RM = alpha * estimated1RM + (1.0 - alpha) * current
-                    let rounded1RM = smoothed1RM.rounded(toNearest: 2.5)
-
-                    // Regression guard: only apply downward if estimated < 95% of current
-                    let shouldUpdate: Bool
-                    if rounded1RM < current {
-                        shouldUpdate = estimated1RM < regressionThreshold * current
-                    } else {
-                        shouldUpdate = true
-                    }
-
-                    if shouldUpdate && rounded1RM != current {
-                        let previousValue = current
+                // M17: When current1RM is 0 (first use), direct assign without EWMA
+                if current == 0 {
+                    let rounded1RM = estimated1RM.rounded(toNearest: 2.5)
+                    if rounded1RM > 0 {
                         updatedExercises[planIndex].current1RM = rounded1RM
-
                         let adjustment = PlanAdjustment(
-                            adjustmentType: rounded1RM > previousValue ? .loadIncrease : .loadDecrease,
+                            adjustmentType: .loadIncrease,
                             trigger: .oneRMUpdate,
-                            description: "\(planExercise.exerciseName) 1RM updated: \(previousValue) -> \(rounded1RM)",
+                            description: "\(planExercise.exerciseName) 1RM initial estimate: \(rounded1RM)",
                             affectedExerciseIds: [planExercise.id],
-                            previousValues: ["current1RM": String(previousValue)],
+                            previousValues: ["current1RM": "0.0"],
                             newValues: ["current1RM": String(rounded1RM)]
                         )
                         adjustments.append(adjustment)
+                    }
+                } else {
+                    let deviation = abs(estimated1RM - current) / current
+
+                    // Outlier rejection: skip if deviation > 15%
+                    if deviation <= outlierThreshold {
+                        // EWMA smoothing
+                        let smoothed1RM = alpha * estimated1RM + (1.0 - alpha) * current
+                        let rounded1RM = smoothed1RM.rounded(toNearest: 2.5)
+
+                        // Regression guard: only apply downward if estimated < 95% of current
+                        // (strict >5% drop, documented behavior per m18)
+                        let shouldUpdate: Bool
+                        if rounded1RM < current {
+                            shouldUpdate = estimated1RM < regressionThreshold * current
+                        } else {
+                            shouldUpdate = true
+                        }
+
+                        if shouldUpdate && rounded1RM != current {
+                            let previousValue = current
+                            updatedExercises[planIndex].current1RM = rounded1RM
+
+                            let adjustment = PlanAdjustment(
+                                adjustmentType: rounded1RM > previousValue ? .loadIncrease : .loadDecrease,
+                                trigger: .oneRMUpdate,
+                                description: "\(planExercise.exerciseName) 1RM updated: \(previousValue) -> \(rounded1RM)",
+                                affectedExerciseIds: [planExercise.id],
+                                previousValues: ["current1RM": String(previousValue)],
+                                newValues: ["current1RM": String(rounded1RM)]
+                            )
+                            adjustments.append(adjustment)
+                        }
                     }
                 }
             }

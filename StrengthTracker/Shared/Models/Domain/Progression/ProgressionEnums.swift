@@ -1,11 +1,16 @@
 import Foundation
 
 // MARK: - Training Status
-/// Derived from workout history count + time span
+/// Derived from workout history count + time span + weekly frequency.
+///
+/// Classification thresholds (m17):
+/// - **Beginner**: < 3 months AND < 50 workouts, OR weekly frequency < 2.0
+/// - **Intermediate**: (>= 3 months OR >= 50 workouts) AND weekly frequency >= 2.0
+/// - **Advanced**: > 18 months AND > 200 workouts AND weekly frequency >= 3.0
 public enum TrainingStatus: String, Codable, CaseIterable, Sendable {
-    case beginner       // < 3 months consistent training OR < 50 workouts
-    case intermediate   // 3–18 months OR 50–200 workouts
-    case advanced       // > 18 months AND > 200 workouts
+    case beginner       // < 3 months AND < 50 workouts, OR freq < 2.0
+    case intermediate   // (>= 3mo OR >= 50 workouts) AND freq >= 2.0
+    case advanced       // > 18 months AND > 200 workouts AND freq >= 3.0
 
     public var recommendedProgramType: ProgramType {
         switch self {
@@ -28,6 +33,15 @@ public enum TrainingStatus: String, Codable, CaseIterable, Sendable {
         case .beginner: return "Session-to-session (2.5–5 kg/week)"
         case .intermediate: return "Weekly (1–2.5 kg/week)"
         case .advanced: return "Monthly (0.5–1 kg/month)"
+        }
+    }
+
+    /// m2: Per-level coaching tone for Apple Intelligence communication layer.
+    public var coachingTone: String {
+        switch self {
+        case .beginner: return "Encouraging and educational – explain the 'why' behind each recommendation."
+        case .intermediate: return "Supportive and data-driven – reference metrics and trends."
+        case .advanced: return "Concise and technical – focus on periodization details and marginal gains."
         }
     }
 }

@@ -110,18 +110,27 @@ public final class PlanAnalyticsService: Sendable {
             return workout
         }
 
-        // 2. Match by templateId (sessions have planned exercises that reference exerciseIds)
-        // Use the session's templateId if the workout has one
-        if let scheduledDate = session.scheduledDate {
-            // Try templateId matching first - check if any workout shares the same templateId
-            // (PlannedSession doesn't have a templateId directly, so skip to date proximity)
-
-            // 3. Date proximity: within 2 days of scheduledDate
-            let twoDays: TimeInterval = 2 * 24 * 3600
-            let match = allWorkouts.first { workout in
-                guard let completedAt = workout.completedAt else { return false }
-                return abs(completedAt.timeIntervalSince(scheduledDate)) <= twoDays
+        // 2. M6: Match by templateId — session.templateId matches workout.templateId
+        if let sessionTemplateId = session.templateId {
+            let templateMatch = allWorkouts.first { $0.templateId == sessionTemplateId }
+            if let templateMatch = templateMatch {
+                return templateMatch
             }
+        }
+
+        // 3. Date proximity: within 2 days of scheduledDate
+        if let scheduledDate = session.scheduledDate {
+            let twoDays: TimeInterval = 2 * 24 * 3600
+            let match = allWorkouts
+                .filter { workout in
+                    guard let completedAt = workout.completedAt else { return false }
+                    return abs(completedAt.timeIntervalSince(scheduledDate)) <= twoDays
+                }
+                .min { a, b in  // m3: Use closest match, not arbitrary first
+                    let aDistance = abs((a.completedAt ?? a.startedAt).timeIntervalSince(scheduledDate))
+                    let bDistance = abs((b.completedAt ?? b.startedAt).timeIntervalSince(scheduledDate))
+                    return aDistance < bDistance
+                }
             if let match = match {
                 return match
             }
@@ -143,6 +152,7 @@ public final class PlanAnalyticsService: Sendable {
             var totalReps = 0
             var totalVolume: Double = 0
             var lastDate: Date?
+            var prCount = 0  // m4
 
             for workout in allLinkedWorkouts {
                 for workoutExercise in workout.exercises {
@@ -152,6 +162,7 @@ public final class PlanAnalyticsService: Sendable {
                         let reps = set.reps ?? 0
                         totalReps += reps
                         totalVolume += (set.weight ?? 0) * Double(reps)
+                        if set.isPersonalRecord { prCount += 1 }  // m4
                     }
                     if let completedAt = workout.completedAt {
                         if lastDate == nil || completedAt > lastDate! {
@@ -180,7 +191,8 @@ public final class PlanAnalyticsService: Sendable {
                 lastPerformedDate: lastDate,
                 totalSetsCompleted: totalSets,
                 totalRepsCompleted: totalReps,
-                totalVolumeLifted: totalVolume
+                totalVolumeLifted: totalVolume,
+                personalRecordsHit: prCount  // m4
             )
         }
     }
@@ -209,10 +221,29 @@ public final class PlanAnalyticsService: Sendable {
                 volumeTrend = 0
             }
 
+            // m5: Calculate averageRPE from resolved workout sets
+            var totalRPE: Double = 0
+            var rpeCount = 0
+            for week in block.weeks {
+                for session in week.sessions {
+                    guard let workout = resolvedWorkouts[session.id] else { continue }
+                    for workoutExercise in workout.exercises {
+                        for set in workoutExercise.sets where set.isCompleted {
+                            if let rpe = set.rpe {
+                                totalRPE += rpe
+                                rpeCount += 1
+                            }
+                        }
+                    }
+                }
+            }
+            let averageRPE: Double? = rpeCount > 0 ? totalRPE / Double(rpeCount) : nil
+
             return BlockProgress(
                 blockId: block.id,
                 blockName: block.name,
                 weeklyAdherence: weeklyAdherence,
+                averageRPE: averageRPE,
                 volumeTrend: volumeTrend
             )
         }

@@ -51,9 +51,11 @@ public final class TrainingStatusDetector: Sendable {
 
         let count = completed.count
 
-        // Sort by startedAt to find the earliest workout
-        let sorted = completed.sorted { $0.startedAt < $1.startedAt }
-        let firstWorkoutDate = sorted.first!.startedAt
+        // m15: Sort by completedAt (per spec) to find the earliest completed workout
+        let sorted = completed.sorted {
+            ($0.completedAt ?? $0.startedAt) < ($1.completedAt ?? $1.startedAt)
+        }
+        let firstWorkoutDate = sorted.first!.completedAt ?? sorted.first!.startedAt
         let now = Date()
 
         let monthsTraining = Calendar.current.dateComponents(
@@ -176,8 +178,11 @@ public final class TrainingStatusDetector: Sendable {
 
         guard !recentWorkouts.isEmpty else { return 0.0 }
 
-        // 3 months is approximately 13 weeks
-        let weeks: Double = 13.0
+        // m16: Use Calendar for precise week count instead of hardcoded 13.0
+        let weeksBetween = Calendar.current.dateComponents(
+            [.weekOfYear], from: threeMonthsAgo, to: referenceDate
+        ).weekOfYear ?? 13
+        let weeks = max(1.0, Double(weeksBetween))
         return Double(recentWorkouts.count) / weeks
     }
 

@@ -208,6 +208,168 @@ final class ProgressionPersistenceTests: XCTestCase {
         XCTAssertEqual(fetchedSession?.completedWorkoutId, workoutId)
         XCTAssertNotNil(fetchedSession?.completedAt)
     }
+
+    // MARK: - M22: Optimistic Concurrency
+
+    func testSave_withStaleUpdatedAt_throwsConcurrencyError() async throws {
+        let repository = makeRepository()
+
+        // Save the plan at T1
+        let t1 = Date(timeIntervalSinceReferenceDate: 1_000_000)
+        let plan = ProgressionTestHelpers.makeTestPlan(
+            name: "Concurrency Plan",
+            status: .draft
+        )
+        // Establish T1 as updatedAt by creating a plan with an explicit timestamp
+        var initialPlan = plan
+        initialPlan.updatedAt = t1
+        try await repository.save(initialPlan)
+
+        // Save again at T2 (later), advancing the stored updatedAt
+        let t2 = t1.addingTimeInterval(60)
+        var newerPlan = initialPlan
+        newerPlan.name = "Updated at T2"
+        newerPlan.updatedAt = t2
+        try await repository.save(newerPlan)
+
+        // Now attempt to save a stale copy that still has T1 as updatedAt
+        // The repository has T2 stored, so T2 > T1 -> should throw staleData
+        var stalePlan = initialPlan
+        stalePlan.name = "Stale write"
+        stalePlan.updatedAt = t1
+
+        do {
+            try await repository.save(stalePlan)
+            XCTFail("Expected ProgressionPlanConcurrencyError.staleData to be thrown")
+        } catch let error as ProgressionPlanConcurrencyError {
+            if case .staleData(let planId, _, _) = error {
+                XCTAssertEqual(planId, plan.id)
+            } else {
+                XCTFail("Unexpected ProgressionPlanConcurrencyError case: \(error)")
+            }
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    // MARK: - M22: Partial Update Methods with Non-Existent Plan ID
+
+    func testUpdateStatus_nonExistentId_throwsPlanNotFound() async throws {
+        let repository = makeRepository()
+        let nonExistentId = UUID()
+
+        do {
+            try await repository.updateStatus(nonExistentId, status: .active)
+            XCTFail("Expected ProgressionPlanRepositoryError.planNotFound to be thrown")
+        } catch let error as ProgressionPlanRepositoryError {
+            if case .planNotFound(let id) = error {
+                XCTAssertEqual(id, nonExistentId)
+            } else {
+                XCTFail("Unexpected ProgressionPlanRepositoryError case: \(error)")
+            }
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func testAddAdjustment_nonExistentId_throwsPlanNotFound() async throws {
+        let repository = makeRepository()
+        let nonExistentId = UUID()
+        let adjustment = PlanAdjustment(
+            adjustmentType: .loadIncrease,
+            trigger: .apre,
+            description: "Phantom adjustment"
+        )
+
+        do {
+            try await repository.addAdjustment(adjustment, toPlan: nonExistentId)
+            XCTFail("Expected ProgressionPlanRepositoryError.planNotFound to be thrown")
+        } catch let error as ProgressionPlanRepositoryError {
+            if case .planNotFound(let id) = error {
+                XCTAssertEqual(id, nonExistentId)
+            } else {
+                XCTFail("Unexpected ProgressionPlanRepositoryError case: \(error)")
+            }
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func testUpdateExercise_nonExistentId_throwsPlanNotFound() async throws {
+        let repository = makeRepository()
+        let nonExistentId = UUID()
+        let exercise = ProgressionTestHelpers.makeTestPlanExercise(name: "Squat", current1RM: 120.0)
+
+        do {
+            try await repository.updateExercise(exercise, inPlan: nonExistentId)
+            XCTFail("Expected ProgressionPlanRepositoryError.planNotFound to be thrown")
+        } catch let error as ProgressionPlanRepositoryError {
+            if case .planNotFound(let id) = error {
+                XCTAssertEqual(id, nonExistentId)
+            } else {
+                XCTFail("Unexpected ProgressionPlanRepositoryError case: \(error)")
+            }
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func testUpdateBlock_nonExistentId_throwsPlanNotFound() async throws {
+        let repository = makeRepository()
+        let nonExistentId = UUID()
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(name: "Ghost Block")
+
+        do {
+            try await repository.updateBlock(block, inPlan: nonExistentId)
+            XCTFail("Expected ProgressionPlanRepositoryError.planNotFound to be thrown")
+        } catch let error as ProgressionPlanRepositoryError {
+            if case .planNotFound(let id) = error {
+                XCTAssertEqual(id, nonExistentId)
+            } else {
+                XCTFail("Unexpected ProgressionPlanRepositoryError case: \(error)")
+            }
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func testMarkSessionCompleted_nonExistentId_throwsPlanNotFound() async throws {
+        let repository = makeRepository()
+        let nonExistentId = UUID()
+
+        do {
+            try await repository.markSessionCompleted(UUID(), workoutId: UUID(), inPlan: nonExistentId)
+            XCTFail("Expected ProgressionPlanRepositoryError.planNotFound to be thrown")
+        } catch let error as ProgressionPlanRepositoryError {
+            if case .planNotFound(let id) = error {
+                XCTAssertEqual(id, nonExistentId)
+            } else {
+                XCTFail("Unexpected ProgressionPlanRepositoryError case: \(error)")
+            }
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func testDelete_nonExistentPlan_doesNotThrow() async throws {
+        let repository = makeRepository()
+        // Save one plan so the repository is not empty, confirming delete is selective
+        let existingPlan = ProgressionTestHelpers.makeTestPlan(name: "Existing")
+        try await repository.save(existingPlan)
+
+        let phantom = ProgressionTestHelpers.makeTestPlan(name: "Phantom")
+        // delete uses removeAll { $0.id == plan.id }, so a missing plan is a no-op
+        do {
+            try await repository.delete(phantom)
+        } catch {
+            XCTFail("delete should not throw for non-existent plan: \(error)")
+        }
+
+        // The existing plan must remain untouched
+        let remaining = try await repository.fetchAll()
+        XCTAssertEqual(remaining.count, 1)
+        XCTAssertEqual(remaining.first?.name, "Existing")
+    }
 }
 
 // MARK: - Mapper Tests (SwiftData-only, won't run on Linux)
@@ -284,6 +446,66 @@ final class ProgressionPlanMapperTests: XCTestCase {
         XCTAssertNil(decoded?.secondaryGoal)
         XCTAssertNil(decoded?.creationSource)
         XCTAssertNil(decoded?.notes)
+    }
+
+    // MARK: - M19: Round-trip with v3 fields
+
+    func testRoundTrip_v3Fields_surviveMappingRoundTrip() throws {
+        let targetEndDate = Date(timeIntervalSinceReferenceDate: 2_000_000)
+        let actualEndDate = Date(timeIntervalSinceReferenceDate: 2_100_000)
+
+        var original = ProgressionTestHelpers.makeTestPlan(
+            name: "V3 Fields Plan",
+            status: .completed
+        )
+        original.creationSource = .naturalLanguage
+        original.secondaryGoal = .hypertrophy
+        original.notes = "Focus on technique before adding load"
+        original.targetEndDate = targetEndDate
+        original.actualEndDate = actualEndDate
+
+        let entity = ProgressionPlanMapper.toEntity(original)
+        let roundTripped = ProgressionPlanMapper.toDomain(entity)
+
+        XCTAssertNotNil(roundTripped, "Round-tripped plan must not be nil")
+        XCTAssertEqual(roundTripped?.creationSource, .naturalLanguage)
+        XCTAssertEqual(roundTripped?.secondaryGoal, .hypertrophy)
+        XCTAssertEqual(roundTripped?.notes, "Focus on technique before adding load")
+        XCTAssertEqual(
+            roundTripped?.targetEndDate?.timeIntervalSinceReferenceDate ?? 0,
+            targetEndDate.timeIntervalSinceReferenceDate,
+            accuracy: 1.0,
+            "targetEndDate should survive the round-trip"
+        )
+        XCTAssertEqual(
+            roundTripped?.actualEndDate?.timeIntervalSinceReferenceDate ?? 0,
+            actualEndDate.timeIntervalSinceReferenceDate,
+            accuracy: 1.0,
+            "actualEndDate should survive the round-trip"
+        )
+    }
+
+    // MARK: - M20: Corrupt JSON resilience
+
+    func testToDomain_corruptExercisesJSON_returnsEmptyExercisesNotNil() throws {
+        let plan = ProgressionTestHelpers.makeTestPlan(
+            name: "Corrupt JSON Plan",
+            exercises: [ProgressionTestHelpers.makeTestPlanExercise(name: "Deadlift")]
+        )
+        let entity = ProgressionPlanMapper.toEntity(plan)
+
+        // Overwrite the exercises JSON with invalid data
+        entity.exercisesJSON = Data("not-json".utf8)
+
+        let decoded = ProgressionPlanMapper.toDomain(entity)
+        XCTAssertNotNil(decoded, "toDomain should return a plan even when exercisesJSON is corrupt")
+        XCTAssertEqual(
+            decoded?.exercises.count,
+            0,
+            "Corrupt exercisesJSON should fall back to an empty array, not crash or return nil"
+        )
+        // All non-corrupt fields should still be present
+        XCTAssertEqual(decoded?.name, "Corrupt JSON Plan")
     }
 }
 #endif

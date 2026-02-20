@@ -7,6 +7,8 @@ import Foundation
 /// - **DUP**: Hypertrophy/strength/power sessions rotate within each week with %-based overload.
 /// - **WUP**: Rep schemes alternate week-to-week (hypertrophy, strength, power cycle).
 /// - **Block**: Accumulation -> Transmutation -> Realization -> Deload phases.
+/// m9: v1 uses a fixed 12-week mesocycle for all program types. Configurable duration
+/// is a planned v2 enhancement (consider adding `targetDurationWeeks` on ProgressionPlan).
 public final class ProgramDesignService: Sendable {
 
     // MARK: - Constants
@@ -74,6 +76,8 @@ public final class ProgramDesignService: Sendable {
         var absoluteWeek = 1
         var blockOrder = 0
         var currentWeekInCycle = 0
+        // m7: Separate counter for non-deload weeks so deload doesn't skip an intensity step
+        var progressionWeekCount = 0
 
         // Build weeks, grouping into blocks of ~4 weeks
         var currentBlockWeeks: [TrainingWeek] = []
@@ -89,9 +93,10 @@ public final class ProgramDesignService: Sendable {
                 // Deload: use start intensity of current block
                 weekIntensity = blockStartIntensity
             } else {
-                // Progressive: step up from start
-                let rawIntensity = startIntensity + (Double(weekIndex) * step)
+                // Progressive: step up based on actual training weeks only
+                let rawIntensity = startIntensity + (Double(progressionWeekCount) * step)
                 weekIntensity = min(rawIntensity, maxIntensity)
+                progressionWeekCount += 1
             }
 
             // Sets decrease as intensity rises
@@ -172,6 +177,7 @@ public final class ProgramDesignService: Sendable {
         let restSeconds = middleRest(for: plan.primaryGoal)
         let days = Self.daySpread[plan.weeklyFrequency] ?? Self.daySpread[3]!
         let sessionTypes: [DUPSessionType] = [.hypertrophy, .strength, .power]
+        let needsScheduledDeload = plan.trainingStatus != .advanced // M1
 
         var blocks: [TrainingBlock] = []
         var absoluteWeek = 1
@@ -180,9 +186,10 @@ public final class ProgramDesignService: Sendable {
 
         for weekIndex in 0..<totalWeeks {
             let weekInBlock = (weekIndex % 4) + 1
-            let isDeloadWeek = weekInBlock == 4
+            let isDeloadWeek = needsScheduledDeload && weekInBlock == 4
 
-            let overloadMultiplier = 1.0 + (Double(weekIndex) * Defaults.weeklyOverload)
+            // M2: Reset overload per block, not across entire program
+            let overloadMultiplier = 1.0 + (Double(weekInBlock - 1) * Defaults.weeklyOverload)
 
             var sessions: [PlannedSession] = []
             for (dayIndex, day) in days.enumerated() {
@@ -193,7 +200,11 @@ public final class ProgramDesignService: Sendable {
                 let reps: Int
 
                 if isDeloadWeek {
-                    intensity = baseIntensity
+                    // M3: Deload maintains previous working intensity, only reduces volume
+                    intensity = min(
+                        baseIntensity * overloadMultiplier,
+                        dupType.intensityRange.upperBound
+                    )
                     sets = max(2, dupType.sets - 1)
                     reps = dupType.repRange.upperBound
                 } else {
@@ -271,6 +282,7 @@ public final class ProgramDesignService: Sendable {
         let restSeconds = middleRest(for: plan.primaryGoal)
         let days = Self.daySpread[plan.weeklyFrequency] ?? Self.daySpread[3]!
         let schemeRotation: [DUPSessionType] = [.hypertrophy, .strength, .power]
+        let needsScheduledDeload = plan.trainingStatus != .advanced // M1
 
         var blocks: [TrainingBlock] = []
         var absoluteWeek = 1
@@ -279,10 +291,11 @@ public final class ProgramDesignService: Sendable {
 
         for weekIndex in 0..<totalWeeks {
             let weekInBlock = (weekIndex % 4) + 1
-            let isDeloadWeek = weekInBlock == 4
+            let isDeloadWeek = needsScheduledDeload && weekInBlock == 4
 
             let scheme = schemeRotation[weekIndex % schemeRotation.count]
-            let overloadMultiplier = 1.0 + (Double(weekIndex) * Defaults.weeklyOverload)
+            // M2: Reset overload per block, not across entire program
+            let overloadMultiplier = 1.0 + (Double(weekInBlock - 1) * Defaults.weeklyOverload)
 
             let baseIntensity = (scheme.intensityRange.lowerBound + scheme.intensityRange.upperBound) / 2.0
             let intensity: Double
@@ -290,7 +303,11 @@ public final class ProgramDesignService: Sendable {
             let reps: Int
 
             if isDeloadWeek {
-                intensity = baseIntensity
+                // M3: Deload maintains previous working intensity, only reduces volume
+                intensity = min(
+                    baseIntensity * overloadMultiplier,
+                    scheme.intensityRange.upperBound
+                )
                 sets = max(2, scheme.sets - 1)
                 reps = scheme.repRange.upperBound
             } else {
@@ -472,6 +489,9 @@ public final class ProgramDesignService: Sendable {
         let reps: Int
     }
 
+    /// m8: Block periodization uses fixed intra-phase templates — week-over-week progression
+    /// within each phase is intentional (volume/intensity ramp within each mesocycle block).
+    /// This differs from DUP/WUP where the entire scheme is fixed per session type.
     private func blockPhaseParams(_ phase: BlockPhase, weekInPhase: Int, totalPhaseWeeks: Int) -> PhaseParams {
         switch phase {
         case .accumulation:

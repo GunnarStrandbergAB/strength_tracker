@@ -496,4 +496,223 @@ final class AdaptiveAdjustmentServiceTests: XCTestCase {
             )
         }
     }
+
+    // MARK: - m25: Detraining Severity Tier Value Tests
+
+    func testAnalyze_detraining_10days_proposesLoadDecrease5pct() async throws {
+        // 10 days gap falls in the 10-21 day tier -> severity 0.3 -> reductionPercent 5%
+        // Use a matching 1RM so no performance decline signal fires.
+        let exerciseId = UUID()
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(
+            exerciseId: exerciseId,
+            name: "Squat",
+            current1RM: 100.0
+        )
+
+        // Single at 100kg -> estimate = 100.0, decline = 0% -> no performance decline signal
+        let sets = [makeSet(weight: 100, reps: 1)]
+        let we = makeWorkoutExercise(exerciseId: exerciseId, name: "Squat", sets: sets)
+        let workout = makeWorkout(completedAt: daysAgo(10), exercises: [we])
+
+        let plan = ProgressionTestHelpers.makeTestPlan(exercises: [planExercise])
+        let sut = makeSUT()
+
+        let proposals = try await sut.analyzeAndPropose(plan: plan, recentWorkouts: [workout])
+
+        // Only 1 deload signal (detraining), so no multi-signal deload.
+        // The detraining-specific loadDecrease proposal should be present with reductionPercent=5.
+        let detrainProposals = proposals.filter { proposal in
+            proposal.adjustment.adjustmentType == .loadDecrease
+                && proposal.adjustment.newValues["reductionPercent"] == "5"
+        }
+        XCTAssertFalse(
+            detrainProposals.isEmpty,
+            "10-day gap should produce a loadDecrease with reductionPercent=5. Got: \(proposals.map { "\($0.adjustment.adjustmentType) \($0.adjustment.newValues)" })"
+        )
+    }
+
+    func testAnalyze_detraining_30days_proposesLoadDecrease10pct() async throws {
+        // 30 days gap falls in the 21-42 day tier -> severity 0.6 -> reductionPercent 10%
+        // Use a matching 1RM so no performance decline signal fires.
+        let exerciseId = UUID()
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(
+            exerciseId: exerciseId,
+            name: "Squat",
+            current1RM: 100.0
+        )
+
+        // Single at 100kg -> estimate = 100.0, decline = 0% -> no performance decline signal
+        let sets = [makeSet(weight: 100, reps: 1)]
+        let we = makeWorkoutExercise(exerciseId: exerciseId, name: "Squat", sets: sets)
+        let workout = makeWorkout(completedAt: daysAgo(30), exercises: [we])
+
+        let plan = ProgressionTestHelpers.makeTestPlan(exercises: [planExercise])
+        let sut = makeSUT()
+
+        let proposals = try await sut.analyzeAndPropose(plan: plan, recentWorkouts: [workout])
+
+        // Only 1 deload signal (detraining), so no multi-signal deload.
+        // The detraining-specific loadDecrease proposal should be present with reductionPercent=10.
+        let detrainProposals = proposals.filter { proposal in
+            proposal.adjustment.adjustmentType == .loadDecrease
+                && proposal.adjustment.newValues["reductionPercent"] == "10"
+        }
+        XCTAssertFalse(
+            detrainProposals.isEmpty,
+            "30-day gap should produce a loadDecrease with reductionPercent=10. Got: \(proposals.map { "\($0.adjustment.adjustmentType) \($0.adjustment.newValues)" })"
+        )
+    }
+
+    func testAnalyze_detraining_50days_proposesLoadDecrease15pct() async throws {
+        // 50 days gap falls in the 42+ day tier -> severity 0.9 -> reductionPercent 15%
+        // Use a matching 1RM so no performance decline signal fires.
+        let exerciseId = UUID()
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(
+            exerciseId: exerciseId,
+            name: "Squat",
+            current1RM: 100.0
+        )
+
+        // Single at 100kg -> estimate = 100.0, decline = 0% -> no performance decline signal
+        let sets = [makeSet(weight: 100, reps: 1)]
+        let we = makeWorkoutExercise(exerciseId: exerciseId, name: "Squat", sets: sets)
+        let workout = makeWorkout(completedAt: daysAgo(50), exercises: [we])
+
+        let plan = ProgressionTestHelpers.makeTestPlan(exercises: [planExercise])
+        let sut = makeSUT()
+
+        let proposals = try await sut.analyzeAndPropose(plan: plan, recentWorkouts: [workout])
+
+        // Only 1 deload signal (detraining), so no multi-signal deload.
+        // The detraining-specific loadDecrease proposal should be present with reductionPercent=15.
+        // Additionally, repeatBlock=true is set for 42+ days.
+        let detrainProposals = proposals.filter { proposal in
+            proposal.adjustment.adjustmentType == .loadDecrease
+                && proposal.adjustment.newValues["reductionPercent"] == "15"
+        }
+        XCTAssertFalse(
+            detrainProposals.isEmpty,
+            "50-day gap should produce a loadDecrease with reductionPercent=15. Got: \(proposals.map { "\($0.adjustment.adjustmentType) \($0.adjustment.newValues)" })"
+        )
+        // Verify 42+ day tier also sets repeatBlock flag
+        if let proposal = detrainProposals.first {
+            XCTAssertEqual(
+                proposal.adjustment.newValues["repeatBlock"],
+                "true",
+                "50-day gap (42+ tier) should include repeatBlock=true"
+            )
+        }
+    }
+
+    // MARK: - m26: Non-Beginner Regression Behavior
+
+    func testAnalyze_intermediateStatus_doesNotTriggerRegressionProposals() async throws {
+        // Intermediate athletes should NOT get beginner regression proposals
+        // even with multiple consecutive missed reps, because detectBeginnerRegression
+        // is only invoked when plan.trainingStatus == .beginner.
+        let exerciseId = UUID()
+        let planExerciseId = UUID()
+
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(
+            id: planExerciseId,
+            exerciseId: exerciseId,
+            name: "Bench Press",
+            current1RM: 100.0
+        )
+
+        let plannedSet = ProgressionTestHelpers.makeTestPlannedExerciseSet(
+            planExerciseId: planExerciseId,
+            exerciseId: exerciseId,
+            exerciseName: "Bench Press",
+            targetReps: 8
+        )
+        let session = ProgressionTestHelpers.makeTestPlannedSession(
+            label: "S1",
+            exercises: [plannedSet]
+        )
+        let week = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: [session])
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week])
+
+        // Intermediate plan - regression detection should be skipped entirely
+        let plan = ProgressionTestHelpers.makeTestPlan(
+            blocks: [block],
+            exercises: [planExercise],
+            trainingStatus: .intermediate
+        )
+
+        // 3 consecutive workouts with reps well below target (same pattern as beginner 3-miss test)
+        // Performance also matches current1RM (100kg single) to avoid performance decline signal
+        let workouts = (0..<3).map { i in
+            let sets = [makeSet(weight: 50, reps: 5)] // 5 < 8 target, and 1RM ~58 < 100 (decline)
+            let we = makeWorkoutExercise(exerciseId: exerciseId, name: "Bench Press", sets: sets)
+            return makeWorkout(completedAt: daysAgo(i + 1), exercises: [we])
+        }
+
+        let sut = makeSUT()
+        let proposals = try await sut.analyzeAndPropose(plan: plan, recentWorkouts: workouts)
+
+        // Should have no beginner regression loadDecrease proposals with "decreasePercent" key
+        let regressionProposals = proposals.filter { proposal in
+            proposal.adjustment.adjustmentType == .loadDecrease
+                && proposal.adjustment.newValues["decreasePercent"] != nil
+        }
+        XCTAssertTrue(
+            regressionProposals.isEmpty,
+            "Intermediate plan should not produce beginner regression proposals. Got: \(proposals.map { $0.adjustment.description })"
+        )
+    }
+
+    func testAnalyze_advancedStatus_doesNotTriggerRegressionProposals() async throws {
+        // Advanced athletes should NOT get beginner regression proposals,
+        // regardless of how many consecutive missed-rep sessions they have.
+        let exerciseId = UUID()
+        let planExerciseId = UUID()
+
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(
+            id: planExerciseId,
+            exerciseId: exerciseId,
+            name: "Deadlift",
+            current1RM: 200.0
+        )
+
+        let plannedSet = ProgressionTestHelpers.makeTestPlannedExerciseSet(
+            planExerciseId: planExerciseId,
+            exerciseId: exerciseId,
+            exerciseName: "Deadlift",
+            targetReps: 5
+        )
+        let session = ProgressionTestHelpers.makeTestPlannedSession(
+            label: "S1",
+            exercises: [plannedSet]
+        )
+        let week = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: [session])
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week])
+
+        // Advanced plan - regression detection should be skipped entirely
+        let plan = ProgressionTestHelpers.makeTestPlan(
+            blocks: [block],
+            exercises: [planExercise],
+            trainingStatus: .advanced
+        )
+
+        // 3 consecutive workouts with reps below target
+        let workouts = (0..<3).map { i in
+            let sets = [makeSet(weight: 100, reps: 3)] // 3 < 5 target
+            let we = makeWorkoutExercise(exerciseId: exerciseId, name: "Deadlift", sets: sets)
+            return makeWorkout(completedAt: daysAgo(i + 1), exercises: [we])
+        }
+
+        let sut = makeSUT()
+        let proposals = try await sut.analyzeAndPropose(plan: plan, recentWorkouts: workouts)
+
+        // Should have no beginner regression proposals (keyed by "decreasePercent")
+        let regressionProposals = proposals.filter { proposal in
+            proposal.adjustment.adjustmentType == .loadDecrease
+                && proposal.adjustment.newValues["decreasePercent"] != nil
+        }
+        XCTAssertTrue(
+            regressionProposals.isEmpty,
+            "Advanced plan should not produce beginner regression proposals. Got: \(proposals.map { $0.adjustment.description })"
+        )
+    }
 }

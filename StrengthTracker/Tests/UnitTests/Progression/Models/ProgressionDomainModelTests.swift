@@ -1204,3 +1204,71 @@ final class ProgressionEnumRawValueTests: XCTestCase {
         XCTAssertEqual(AdjustmentTrigger.subjectiveSignal.rawValue, "subjectiveSignal")
     }
 }
+
+// MARK: - CoachingTone Tests
+
+final class CoachingToneTests: XCTestCase {
+    func testBeginnerCoachingTone() {
+        let tone = TrainingStatus.beginner.coachingTone
+        XCTAssertTrue(tone.contains("Encouraging"), "Beginner tone should be encouraging. Got: \(tone)")
+    }
+
+    func testIntermediateCoachingTone() {
+        let tone = TrainingStatus.intermediate.coachingTone
+        XCTAssertTrue(tone.contains("data-driven"), "Intermediate tone should be data-driven. Got: \(tone)")
+    }
+
+    func testAdvancedCoachingTone() {
+        let tone = TrainingStatus.advanced.coachingTone
+        XCTAssertTrue(tone.contains("technical"), "Advanced tone should be technical. Got: \(tone)")
+    }
+}
+
+// MARK: - PlanCreationSource Tests
+
+final class PlanCreationSourceTests: XCTestCase {
+    func testStructuredFlowRawValue() {
+        XCTAssertEqual(ProgressionPlan.PlanCreationSource.structuredFlow.rawValue, "structuredFlow")
+    }
+
+    func testNaturalLanguageRawValue() {
+        XCTAssertEqual(ProgressionPlan.PlanCreationSource.naturalLanguage.rawValue, "naturalLanguage")
+    }
+
+    func testPlanCreationSourceCodable() throws {
+        let encoder = JSONEncoder()
+        let decoder = JSONDecoder()
+
+        let source = ProgressionPlan.PlanCreationSource.naturalLanguage
+        let data = try encoder.encode(source)
+        let decoded = try decoder.decode(ProgressionPlan.PlanCreationSource.self, from: data)
+        XCTAssertEqual(decoded, source)
+    }
+}
+
+// MARK: - APRE Lower-Body Rounding Tests
+
+extension APREAdjustedWeightTests {
+    func testAPRERoundingLowerBodyCompoundRoundsTo5() {
+        // Lower-body compound, heavy weight (>= 40): rounds to 5.0
+        let set = ProgressionTestHelpers.makeTestPlannedExerciseSet(targetReps: 6)
+        let result = set.apreAdjustedWeight(actualReps: 8, workingWeight: 100.0, isCompound: true, isLowerBody: true)
+        // 100 * 1.025 = 102.5 -> round to nearest 5.0 -> 105.0
+        XCTAssertEqual(result, 105.0)
+    }
+
+    func testAPRERoundingLowerBodyCompoundRoundsDown() {
+        let set = ProgressionTestHelpers.makeTestPlannedExerciseSet(targetReps: 6)
+        let result = set.apreAdjustedWeight(actualReps: 6, workingWeight: 102.0, isCompound: true, isLowerBody: true)
+        // 102 * 1.0 = 102.0 -> round to nearest 5.0 -> 100.0
+        XCTAssertEqual(result, 100.0)
+    }
+
+    func testAPRERoundingLowerBodyLightWeightRoundsTo1() {
+        // Lower-body compound but rawAdjusted < 40: still rounds to 1.0 (light weight override)
+        let set = ProgressionTestHelpers.makeTestPlannedExerciseSet(targetReps: 6)
+        let result = set.apreAdjustedWeight(actualReps: 6, workingWeight: 30.0, isCompound: true, isLowerBody: true)
+        // 30 * 1.0 = 30.0 -> rawAdjusted < 40, rounds to 1.0 -> 30.0
+        XCTAssertEqual(result, 30.0)
+    }
+}

@@ -94,13 +94,28 @@ public struct PlannedExerciseSet: Identifiable, Codable, Equatable, Sendable {
 
         let rawAdjusted = workingWeight * (1.0 + adjustmentPct)
 
+        // m6: Lower-body compounds use 5kg rounding for plate-friendly jumps
         let increment: Double
         if rawAdjusted < 40.0 || !isCompound {
             increment = 1.0
+        } else if isLowerBody {
+            increment = 5.0
         } else {
             increment = 2.5
         }
 
         return max(0, rawAdjusted.rounded(toNearest: increment))
+    }
+
+    /// M12: Generates TemplateSetTarget array for workout template creation.
+    public func generateSetTargets() -> [TemplateSetTarget] {
+        (0..<sets).map { setIndex in
+            TemplateSetTarget(
+                order: setIndex,
+                targetReps: targetReps,
+                targetWeight: targetWeight,
+                setType: isWarmup ? .warmup : .normal
+            )
+        }
     }
 }

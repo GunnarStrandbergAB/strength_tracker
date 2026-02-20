@@ -336,6 +336,115 @@ struct SessionExecutionServiceTests {
         #expect(result == 100.0)
     }
 
+    // MARK: - m23: Warmup set exclusion in 1RM estimation
+
+    @Test("estimateCurrent1RM excludes warmup sets")
+    func testEstimateCurrent1RM_excludesWarmupSets() {
+        let sets = [
+            makeCompletedSet(weight: 40.0, reps: 10, order: 0, setType: .warmup),  // Warmup - should be ignored
+            makeCompletedSet(weight: 60.0, reps: 5, order: 1, setType: .warmup),   // Warmup - should be ignored
+            makeCompletedSet(weight: 80.0, reps: 5, order: 2),                      // Working: Epley 80*(1+5/30)=93.33 -> 92.5
+        ]
+        let result = sut.estimateCurrent1RM(from: sets)
+        // Only the working set (80x5) should count: 80*(1+5/30) = 93.33 -> rounded to 92.5
+        #expect(result == 92.5)
+    }
+
+    // MARK: - m24: EWMA 15% boundary tests
+
+    @Test("completeSession accepts 1RM estimate at exactly 15% deviation boundary")
+    func testCompleteSession_accepts1RM_atExactBoundary() {
+        let planEx = ProgressionTestHelpers.makeTestPlanExercise(
+            id: benchPlanExId,
+            exerciseId: benchId,
+            name: "Bench Press",
+            current1RM: 100.0
+        )
+        let planned = ProgressionTestHelpers.makeTestPlannedExerciseSet(
+            planExerciseId: benchPlanExId,
+            exerciseId: benchId,
+            exerciseName: "Bench Press",
+            sets: 1,
+            targetReps: 1,
+            targetWeight: 100.0
+        )
+        let session = ProgressionTestHelpers.makeTestPlannedSession(
+            label: "Day A",
+            exercises: [planned]
+        )
+
+        // Single at 115kg -> estimate = 115.0
+        // Deviation: |115-100|/100 = 0.15 which is exactly at the threshold (<=0.15) -> ACCEPTED
+        // EWMA: 0.3*115 + 0.7*100 = 34.5 + 70 = 104.5 -> rounded to 105.0
+        let sets = [makeCompletedSet(weight: 115.0, reps: 1, order: 0)]
+        let workout = makeWorkout(exercises: [
+            makeWorkoutExercise(exerciseId: benchId, name: "Bench Press", sets: sets)
+        ])
+
+        let result = sut.completeSession(session, workout: workout, planExercises: [planEx])
+
+        // Should be updated (deviation exactly 0.15 is accepted)
+        #expect(result.updatedExercises[0].current1RM == 105.0)
+        #expect(result.adjustments.contains(where: { $0.trigger == .oneRMUpdate }))
+    }
+
+    @Test("completeSession rejects 1RM estimate just over 15% deviation boundary")
+    func testCompleteSession_rejects1RM_justOverBoundary() {
+        let planEx = ProgressionTestHelpers.makeTestPlanExercise(
+            id: benchPlanExId,
+            exerciseId: benchId,
+            name: "Bench Press",
+            current1RM: 100.0
+        )
+        let planned = ProgressionTestHelpers.makeTestPlannedExerciseSet(
+            planExerciseId: benchPlanExId,
+            exerciseId: benchId,
+            exerciseName: "Bench Press",
+            sets: 1,
+            targetReps: 1,
+            targetWeight: 100.0
+        )
+        let session = ProgressionTestHelpers.makeTestPlannedSession(
+            label: "Day A",
+            exercises: [planned]
+        )
+
+        // Single at 116kg -> estimate = 116.0
+        // Deviation: |116-100|/100 = 0.16 > 0.15 -> REJECTED
+        let sets = [makeCompletedSet(weight: 116.0, reps: 1, order: 0)]
+        let workout = makeWorkout(exercises: [
+            makeWorkoutExercise(exerciseId: benchId, name: "Bench Press", sets: sets)
+        ])
+
+        let result = sut.completeSession(session, workout: workout, planExercises: [planEx])
+
+        // 1RM should NOT be updated (deviation just over threshold)
+        #expect(result.updatedExercises[0].current1RM == 100.0)
+        #expect(!result.adjustments.contains(where: { $0.trigger == .oneRMUpdate }))
+    }
+
+    // MARK: - m17: First-use direct assignment
+
+    @Test("completeSession direct assigns 1RM when current1RM is 0")
+    func testCompleteSession_directAssign_whenCurrent1RMIsZero() {
+        let planEx = ProgressionTestHelpers.makeTestPlanExercise(
+            id: benchPlanExId, exerciseId: benchId, name: "Bench Press", current1RM: 0.0
+        )
+        let planned = ProgressionTestHelpers.makeTestPlannedExerciseSet(
+            planExerciseId: benchPlanExId, exerciseId: benchId, exerciseName: "Bench Press",
+            sets: 1, targetReps: 5, targetWeight: 60.0
+        )
+        let session = ProgressionTestHelpers.makeTestPlannedSession(label: "Day A", exercises: [planned])
+        // 80kg x 5 -> Epley: 80*(1+5/30) = 93.33 -> rounded to 92.5
+        let sets = [makeCompletedSet(weight: 80.0, reps: 5, order: 0)]
+        let workout = makeWorkout(exercises: [
+            makeWorkoutExercise(exerciseId: benchId, name: "Bench Press", sets: sets)
+        ])
+        let result = sut.completeSession(session, workout: workout, planExercises: [planEx])
+        // Direct assign (no EWMA): 92.5
+        #expect(result.updatedExercises[0].current1RM == 92.5)
+    }
+
     // MARK: - Test Helpers
 
     private func makeCompletedSet(

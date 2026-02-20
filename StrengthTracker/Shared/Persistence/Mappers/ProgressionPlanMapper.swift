@@ -28,13 +28,9 @@ public enum ProgressionPlanMapper {
     /// Converts a ProgressionPlanEntity (SwiftData) to a ProgressionPlan (domain model).
     /// Returns nil if critical JSON decoding fails.
     public static func toDomain(_ entity: ProgressionPlanEntity) -> ProgressionPlan? {
-        // Decode nested arrays with tolerant strategy
-        guard let exercises = try? decoder.decode([PlanExercise].self, from: entity.exercisesJSON),
-              let blocks = try? decoder.decode([TrainingBlock].self, from: entity.blocksJSON) else {
-            return nil
-        }
-
-        // Adjustments: tolerate decoding failure (default to empty)
+        // Tolerant decoding: fallback to empty arrays on failure (M10)
+        let exercises = (try? decoder.decode([PlanExercise].self, from: entity.exercisesJSON)) ?? []
+        let blocks = (try? decoder.decode([TrainingBlock].self, from: entity.blocksJSON)) ?? []
         let adjustments = (try? decoder.decode([PlanAdjustment].self, from: entity.adjustmentsJSON)) ?? []
 
         // Enum decoding with fallbacks for forward compatibility
@@ -76,9 +72,9 @@ public enum ProgressionPlanMapper {
 
     /// Converts a ProgressionPlan (domain model) to a ProgressionPlanEntity (SwiftData).
     public static func toEntity(_ plan: ProgressionPlan) -> ProgressionPlanEntity {
-        let exercisesData = (try? encoder.encode(plan.exercises)) ?? Data()
-        let blocksData = (try? encoder.encode(plan.blocks)) ?? Data()
-        let adjustmentsData = (try? encoder.encode(plan.adjustments)) ?? Data()
+        let exercisesData = encodeOrWarn(plan.exercises, label: "exercises")
+        let blocksData = encodeOrWarn(plan.blocks, label: "blocks")
+        let adjustmentsData = encodeOrWarn(plan.adjustments, label: "adjustments")
 
         return ProgressionPlanEntity(
             id: plan.id,
@@ -117,13 +113,24 @@ public enum ProgressionPlanMapper {
         entity.startDate = plan.startDate
         entity.targetEndDate = plan.targetEndDate
         entity.actualEndDate = plan.actualEndDate
-        entity.exercisesJSON = (try? encoder.encode(plan.exercises)) ?? Data()
-        entity.blocksJSON = (try? encoder.encode(plan.blocks)) ?? Data()
-        entity.adjustmentsJSON = (try? encoder.encode(plan.adjustments)) ?? Data()
+        entity.exercisesJSON = encodeOrWarn(plan.exercises, label: "exercises")
+        entity.blocksJSON = encodeOrWarn(plan.blocks, label: "blocks")
+        entity.adjustmentsJSON = encodeOrWarn(plan.adjustments, label: "adjustments")
         entity.updatedAt = plan.updatedAt
         entity.notes = plan.notes
         entity.creationSource = plan.creationSource?.rawValue
         entity.schemaVersion = currentSchemaVersion
+    }
+    // MARK: - Encoding Helper
+
+    /// Encodes a value, logging a warning on failure instead of silently returning empty data (M11).
+    private static func encodeOrWarn<T: Encodable>(_ value: T, label: String) -> Data {
+        do {
+            return try encoder.encode(value)
+        } catch {
+            assertionFailure("ProgressionPlanMapper: Failed to encode \(label): \(error)")
+            return Data("[]".utf8)
+        }
     }
 }
 #endif

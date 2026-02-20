@@ -25,7 +25,8 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
     public func fetchActive() async throws -> ProgressionPlan? {
         let activeStatus = PlanStatus.active.rawValue
         let descriptor = FetchDescriptor<ProgressionPlanEntity>(
-            predicate: #Predicate { $0.status == activeStatus }
+            predicate: #Predicate { $0.status == activeStatus },
+            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]  // m14: deterministic ordering
         )
         guard let entity = try modelContext.fetch(descriptor).first else { return nil }
         return ProgressionPlanMapper.toDomain(entity)
@@ -86,7 +87,9 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
             predicate: #Predicate { $0.id == planId }
         )
 
-        guard let entity = try modelContext.fetch(descriptor).first else { return }
+        guard let entity = try modelContext.fetch(descriptor).first else {
+            throw ProgressionPlanRepositoryError.planNotFound(planId)
+        }
         entity.status = status.rawValue
         entity.updatedAt = Date()
         try modelContext.save()
@@ -98,7 +101,9 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
         )
 
         guard let entity = try modelContext.fetch(descriptor).first,
-              var plan = ProgressionPlanMapper.toDomain(entity) else { return }
+              var plan = ProgressionPlanMapper.toDomain(entity) else {
+            throw ProgressionPlanRepositoryError.planNotFound(planId)
+        }
 
         plan.adjustments.append(adjustment)
         plan.updatedAt = Date()
@@ -112,7 +117,9 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
         )
 
         guard let entity = try modelContext.fetch(descriptor).first,
-              var plan = ProgressionPlanMapper.toDomain(entity) else { return }
+              var plan = ProgressionPlanMapper.toDomain(entity) else {
+            throw ProgressionPlanRepositoryError.planNotFound(planId)
+        }
 
         if let index = plan.exercises.firstIndex(where: { $0.id == exercise.id }) {
             plan.exercises[index] = exercise
@@ -128,7 +135,9 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
         )
 
         guard let entity = try modelContext.fetch(descriptor).first,
-              var plan = ProgressionPlanMapper.toDomain(entity) else { return }
+              var plan = ProgressionPlanMapper.toDomain(entity) else {
+            throw ProgressionPlanRepositoryError.planNotFound(planId)
+        }
 
         if let index = plan.blocks.firstIndex(where: { $0.id == block.id }) {
             plan.blocks[index] = block
@@ -144,7 +153,9 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
         )
 
         guard let entity = try modelContext.fetch(descriptor).first,
-              var plan = ProgressionPlanMapper.toDomain(entity) else { return }
+              var plan = ProgressionPlanMapper.toDomain(entity) else {
+            throw ProgressionPlanRepositoryError.planNotFound(planId)
+        }
 
         for blockIndex in plan.blocks.indices {
             for weekIndex in plan.blocks[blockIndex].weeks.indices {
@@ -157,6 +168,19 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
                     return
                 }
             }
+        }
+    }
+}
+
+// MARK: - Repository Error
+
+public enum ProgressionPlanRepositoryError: Error, LocalizedError {
+    case planNotFound(UUID)
+
+    public var errorDescription: String? {
+        switch self {
+        case .planNotFound(let id):
+            return "Progression plan not found: \(id)"
         }
     }
 }

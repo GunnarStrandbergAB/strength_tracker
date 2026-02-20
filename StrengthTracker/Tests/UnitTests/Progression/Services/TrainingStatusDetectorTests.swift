@@ -187,6 +187,73 @@ final class TrainingStatusDetectorTests: XCTestCase {
 
     // MARK: - estimateOneRM() Tests
 
+    // MARK: - Boundary Value Tests (C5, M19)
+
+    func testDetect_exactly3Months50Workouts_frequencyGated_intermediate() async throws {
+        // Exactly 3 months, 50 workouts, frequency >= 2.0 -> intermediate
+        let workouts = generateWorkouts(count: 50, startingMonthsAgo: 3)
+        let sut = makeSUT(workouts: workouts)
+        let status = try await sut.detect()
+        XCTAssertEqual(status, .intermediate)
+    }
+
+    func testDetect_exactly50Workouts_lowFrequency_staysBeginner() async throws {
+        // 60 workouts over 13 months, only ~5 in last 3 months => freq < 2.0 -> beginner (M19)
+        // Spread 55 workouts over months 13..3 ago, 5 workouts in last 3 months
+        let earlyWorkouts = generateWorkouts(count: 55, startingMonthsAgo: 13, endingMonthsAgo: 3)
+        let recentWorkouts = generateWorkouts(count: 5, startingMonthsAgo: 3)
+        let allWorkouts = earlyWorkouts + recentWorkouts
+        let sut = makeSUT(workouts: allWorkouts)
+        let status = try await sut.detect()
+        // freq = 5/13 = 0.38 < 2.0 -> beginner despite 60 total workouts
+        XCTAssertEqual(status, .beginner)
+    }
+
+    func testDetect_50Workouts_adequateFrequency_intermediate() async throws {
+        // 50 workouts, all in last 3 months => freq = 50/13 ~3.8 -> intermediate (M19)
+        let workouts = generateWorkouts(count: 50, startingMonthsAgo: 3)
+        let sut = makeSUT(workouts: workouts)
+        let status = try await sut.detect()
+        XCTAssertEqual(status, .intermediate)
+    }
+
+    func testDetect_18MonthsExactly200Workouts_notAdvanced() async throws {
+        // Advanced requires > 18 months AND > 200 workouts
+        // Exactly 18 months and exactly 200 -> should NOT be advanced
+        let earlyWorkouts = generateWorkouts(count: 160, startingMonthsAgo: 18, endingMonthsAgo: 3)
+        let recentWorkouts = generateWorkouts(count: 40, startingMonthsAgo: 3)
+        let allWorkouts = earlyWorkouts + recentWorkouts
+        let sut = makeSUT(workouts: allWorkouts)
+        let status = try await sut.detect()
+        // 200 workouts, 18 months: > 18 fails (not strictly greater), > 200 fails
+        // Should be intermediate (3+ months, 200+ workouts, freq ~3.1)
+        XCTAssertNotEqual(status, .advanced)
+    }
+
+    func testDetect_19Months201Workouts_highFrequency_advanced() async throws {
+        // > 18 months, > 200 workouts, freq >= 3.0 -> advanced
+        let earlyWorkouts = generateWorkouts(count: 161, startingMonthsAgo: 19, endingMonthsAgo: 3)
+        let recentWorkouts = generateWorkouts(count: 40, startingMonthsAgo: 3)
+        let allWorkouts = earlyWorkouts + recentWorkouts
+        let sut = makeSUT(workouts: allWorkouts)
+        let status = try await sut.detect()
+        // 201 workouts, 19 months, freq = 40/13 ~3.1 -> advanced
+        XCTAssertEqual(status, .advanced)
+    }
+
+    func testDetect_advancedThresholds_lowFrequency_notAdvanced() async throws {
+        // > 18 months, > 200 workouts, but freq < 3.0 -> intermediate (not advanced)
+        let earlyWorkouts = generateWorkouts(count: 195, startingMonthsAgo: 24, endingMonthsAgo: 3)
+        let recentWorkouts = generateWorkouts(count: 30, startingMonthsAgo: 3)
+        let allWorkouts = earlyWorkouts + recentWorkouts
+        let sut = makeSUT(workouts: allWorkouts)
+        let status = try await sut.detect()
+        // freq = 30/13 ~2.31 < 3.0 -> not advanced; but intermediate thresholds met
+        XCTAssertEqual(status, .intermediate)
+    }
+
+    // MARK: - estimateOneRM() Tests
+
     func testEstimateOneRM_recentData_returnsEstimate() async throws {
         // Workout 2 months ago with bench press 100kg x 5
         // Expected: 100 * (1 + 5/30) = 100 * 1.1667 = 116.67 -> rounded to 117.5
