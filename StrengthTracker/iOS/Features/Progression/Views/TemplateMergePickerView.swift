@@ -67,6 +67,7 @@ struct TemplateMergePickerView: View {
                 }
             }
         }
+        .preferredColorScheme(.dark)
         .task {
             await templateViewModel.loadTemplates()
         }
