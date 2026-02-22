@@ -121,9 +121,11 @@ public final class ProgressionPlanViewModel {
 
         do {
             let detected = try await trainingStatusDetector.detect()
+            guard !Task.isCancelled else { return }
             draftStatus = detected
             applyStatusRecommendation()
         } catch {
+            guard !Task.isCancelled else { return }
             draftStatus = .beginner
             applyStatusRecommendation()
         }

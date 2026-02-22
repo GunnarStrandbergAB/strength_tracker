@@ -30,6 +30,7 @@ public final class ProgramDesignService: Sendable {
     /// Fixed day-of-week templates keyed by weekly frequency.
     /// dayOfWeek uses ISO 8601: Monday = 2, Tuesday = 3, ... Saturday = 7, Sunday = 1.
     private static let daySpread: [Int: [Int]] = [
+        2: [2, 5],          // Mon / Thu
         3: [2, 4, 6],       // Mon / Wed / Fri
         4: [2, 3, 5, 6],    // Mon / Tue / Thu / Fri
         5: [2, 3, 4, 6, 7], // Mon / Tue / Wed / Fri / Sat
