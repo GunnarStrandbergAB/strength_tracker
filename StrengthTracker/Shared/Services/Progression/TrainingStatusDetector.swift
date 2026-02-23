@@ -127,7 +127,7 @@ public final class TrainingStatusDetector: Sendable {
                           reps > 0,
                           reps <= 15 else { continue }
 
-                    let estimate = calculateOneRM(weight: weight, reps: reps)
+                    let estimate = TrainingStatusDetector.calculateOneRM(weight: weight, reps: reps)
 
                     if isRecent {
                         if let current = bestRecentEstimate {
@@ -191,7 +191,8 @@ public final class TrainingStatusDetector: Sendable {
     /// - reps == 1: weight itself
     /// - reps <= 5: Epley-style: weight * (1 + reps/30)
     /// - reps <= 15: Brzycki: weight * 36 / (37 - reps)
-    private func calculateOneRM(weight: Double, reps: Int) -> Double {
+    /// - reps > 15: capped at 15 for formula input (unreliable above)
+    static func calculateOneRM(weight: Double, reps: Int) -> Double {
         if reps == 1 {
             return weight
         } else if reps <= 5 {

@@ -97,12 +97,11 @@ private struct BarView: View {
     }
 
     private func barColor(for score: Double) -> Color {
-        if score >= 70 {
-            return STColors.primary   // Gold/Yellow
-        } else if score >= 40 {
-            return .orange
-        } else {
-            return STColors.danger    // Red
+        switch score {
+        case 80...:   return STColors.success   // green — excellent
+        case 60..<80: return STColors.primary   // gold — good
+        case 40..<60: return .orange            // needs work
+        default:      return STColors.danger    // red — poor
         }
     }
 }

@@ -30,7 +30,7 @@ public final class WorkoutQualityScoreService: Sendable {
             ?? userPreferencesService.bodyWeightKg
             ?? UserPreferencesService.defaultBodyWeightKg
         let volumeScore = computeVolumeScore(workout, history: recentWorkouts, bodyWeightKg: bodyWeightKg)
-        let intensityScore = computeIntensityScore(workout)
+        let intensityScore = computeIntensityScore(workout, history: recentWorkouts)
         let consistencyScore = computeConsistencyScore(workout)
         let balanceScore = computeBalanceScore(workout)
 
@@ -70,19 +70,50 @@ public final class WorkoutQualityScoreService: Sendable {
         }
     }
 
-    private func computeIntensityScore(_ workout: Workout) -> Double {
-        let sets = workout.exercises.flatMap { $0.sets.filter(\.isCompleted) }
-        let rpes = sets.compactMap(\.rpe)
-
-        guard !rpes.isEmpty else { return 72.0 }
-
-        let avgRPE = rpes.reduce(0, +) / Double(rpes.count)
-        switch avgRPE {
-        case 6.0...8.5: return 100.0
-        case 5.0...9.0: return 80.0
-        case 4.0...9.5: return 50.0
-        default:        return 20.0
+    /// Effort-ratio intensity: compares each set's e1RM to the historical best
+    /// for that exercise (last 6 months). Returns 0-100.
+    private func computeIntensityScore(_ workout: Workout, history: [Workout]) -> Double {
+        let sixMonthsAgo = Calendar.current.date(byAdding: .month, value: -6, to: Date())!
+        let recentCompleted = history.filter {
+            $0.completedAt != nil && ($0.completedAt ?? $0.startedAt) >= sixMonthsAgo
         }
+
+        // Build lookup: exerciseId → best e1RM from history
+        var bestE1RM: [UUID: Double] = [:]
+        for past in recentCompleted {
+            for we in past.exercises {
+                for set in we.sets {
+                    guard set.isCompleted,
+                          set.setType != .warmup,
+                          let weight = set.weight, weight > 0,
+                          let reps = set.reps, reps > 0 else { continue }
+                    let cappedReps = min(reps, 15)
+                    let e1rm = TrainingStatusDetector.calculateOneRM(weight: weight, reps: cappedReps)
+                    bestE1RM[we.exercise.id] = max(bestE1RM[we.exercise.id] ?? 0, e1rm)
+                }
+            }
+        }
+
+        // Compute effort ratios for current workout
+        var ratios: [Double] = []
+        for we in workout.exercises {
+            for set in we.sets {
+                guard set.isCompleted,
+                      set.setType != .warmup,
+                      let weight = set.weight, weight > 0,
+                      let reps = set.reps, reps > 0 else { continue }
+                guard let historicalBest = bestE1RM[we.exercise.id], historicalBest > 0 else { continue }
+                let cappedReps = min(reps, 15)
+                let setE1RM = TrainingStatusDetector.calculateOneRM(weight: weight, reps: cappedReps)
+                ratios.append(setE1RM / historicalBest)
+            }
+        }
+
+        // No qualifying weighted sets → neutral fallback
+        guard !ratios.isEmpty else { return 72.0 }
+
+        let mean = ratios.reduce(0, +) / Double(ratios.count)
+        return min(max(mean * 100.0, 0), 100)
     }
 
     private func computeConsistencyScore(_ workout: Workout) -> Double {
