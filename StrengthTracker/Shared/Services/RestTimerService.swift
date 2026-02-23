@@ -15,6 +15,7 @@ public final class RestTimerService {
     public init() {}
 
     nonisolated(unsafe) private var timer: Timer?
+    private var startDate: Date?
 
     #if canImport(ActivityKit)
     private var currentActivity: Activity<RestTimerAttributes>?
@@ -37,6 +38,7 @@ public final class RestTimerService {
         }
 
         remainingSeconds = totalSeconds
+        startDate = Date()
         isRunning = true
 
         // Store Live Activity context
@@ -50,10 +52,13 @@ public final class RestTimerService {
 
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self = self else { return }
+                guard let self = self, let startDate = self.startDate else { return }
 
-                if self.remainingSeconds > 0 {
-                    self.remainingSeconds -= 1
+                let elapsed = Int(Date().timeIntervalSince(startDate))
+                let remaining = max(0, self.totalSeconds - elapsed)
+                self.remainingSeconds = remaining
+
+                if remaining > 0 {
                     self.updateLiveActivity()
                 } else {
                     self.timerCompleted()
@@ -66,6 +71,7 @@ public final class RestTimerService {
     public func stop() {
         timer?.invalidate()
         timer = nil
+        startDate = nil
         isRunning = false
         endLiveActivity()
     }
