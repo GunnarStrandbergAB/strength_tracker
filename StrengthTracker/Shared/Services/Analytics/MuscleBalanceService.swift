@@ -9,7 +9,10 @@ public final class MuscleBalanceService: Sendable {
     private let antagonistPairs: [(MuscleGroup, MuscleGroup)] = [
         (.chest, .back),
         (.quadriceps, .hamstrings),
-        (.biceps, .triceps)
+        (.biceps, .triceps),
+        (.shoulders, .lats),
+        (.core, .lowerBack),
+        (.glutes, .hipFlexors)
     ]
 
     private let mildImbalanceThreshold = 1.5

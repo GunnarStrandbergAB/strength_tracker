@@ -1557,156 +1557,137 @@ public final class ExerciseRecommendationService: Sendable {
 
 **File: `Shared/Services/Analytics/WorkoutQualityScoreService.swift`**
 
-```swift
-import Foundation
+#### Design Overview
 
-/// Computes a post-workout quality score (0-100) shown on the completion sheet.
-/// Evaluates volume, intensity, rest times, and muscle group balance relative
-/// to the user's historical patterns.
-///
-/// Score breakdown (25 points each):
-/// - Volume: Is total volume within the user's optimal range?
-/// - Intensity: Is average weight/1RM ratio appropriate?
-/// - Rest times: Were rest periods consistent and sufficient?
-/// - Balance: Did the workout hit muscle groups proportionally?
-@MainActor
-public final class WorkoutQualityScoreService: Sendable {
+Computes a post-workout quality score (0-100) shown on the completion sheet.
+Four equally-weighted components (25 points each): Volume, Intensity, Consistency, Balance.
 
-    private let workoutRepository: any WorkoutRepository
-    private let muscleBalanceService: MuscleBalanceService
+Key concept: **Intensity-Weighted Volume (IWV)** — a shared currency that normalises
+rep work across exercises of different absolute loads.
 
-    public init(
-        workoutRepository: any WorkoutRepository,
-        muscleBalanceService: MuscleBalanceService
-    ) {
-        self.workoutRepository = workoutRepository
-        self.muscleBalanceService = muscleBalanceService
-    }
-
-    /// Compute quality score for a completed workout
-    public func computeScore(for workout: Workout) async throws -> WorkoutQualityScore {
-        let recentWorkouts = try await workoutRepository.fetchAll()
-
-        // Volume score (0-25): compare to 4-week moving average
-        let volumeScore = computeVolumeScore(workout, history: recentWorkouts)
-
-        // Intensity score (0-25): RPE or weight/1RM within target
-        let intensityScore = computeIntensityScore(workout)
-
-        // Rest times score (0-25): consistency and sufficiency
-        let restScore = computeRestTimesScore(workout)
-
-        // Balance score (0-25): muscle group distribution
-        let balanceScore = computeBalanceScore(workout, history: recentWorkouts)
-
-        let overall = volumeScore.points + intensityScore.points +
-                      restScore.points + balanceScore.points
-        let stars = max(1, min(5, overall / 20))
-
-        // Detect highlights (PRs, records, streaks)
-        let highlights = detectHighlights(workout, history: recentWorkouts)
-
-        return WorkoutQualityScore(
-            id: UUID(),
-            workoutId: workout.id,
-            overallScore: overall,
-            starRating: stars,
-            volumeRating: volumeScore.rating,
-            intensityRating: intensityScore.rating,
-            restTimesRating: restScore.rating,
-            balanceRating: balanceScore.rating,
-            highlights: highlights
-        )
-    }
-
-    // MARK: - Scoring Components
-
-    private struct ComponentScore {
-        let points: Int // 0-25
-        let rating: QualityRating
-    }
-
-    private func computeVolumeScore(_ workout: Workout, history: [Workout]) -> ComponentScore {
-        let avgVolume = history.suffix(12).map(\.totalVolume).reduce(0, +) /
-                        Double(max(history.suffix(12).count, 1))
-
-        guard avgVolume > 0 else { return ComponentScore(points: 20, rating: .good) }
-
-        let ratio = workout.totalVolume / avgVolume
-        switch ratio {
-        case 0.8...1.2: return ComponentScore(points: 25, rating: .optimal)
-        case 0.6...1.4: return ComponentScore(points: 20, rating: .good)
-        case 0.4...1.6: return ComponentScore(points: 12, rating: .warning)
-        default:        return ComponentScore(points: 5, rating: .low)
-        }
-    }
-
-    private func computeIntensityScore(_ workout: Workout) -> ComponentScore {
-        let sets = workout.exercises.flatMap { $0.sets.filter(\.isCompleted) }
-        let rpes = sets.compactMap(\.rpe)
-
-        guard !rpes.isEmpty else { return ComponentScore(points: 18, rating: .good) }
-
-        let avgRPE = rpes.reduce(0, +) / Double(rpes.count)
-        switch avgRPE {
-        case 6.0...8.5: return ComponentScore(points: 25, rating: .optimal)
-        case 5.0...9.0: return ComponentScore(points: 20, rating: .good)
-        case 4.0...9.5: return ComponentScore(points: 12, rating: .warning)
-        default:        return ComponentScore(points: 5, rating: .low)
-        }
-    }
-
-    private func computeRestTimesScore(_ workout: Workout) -> ComponentScore {
-        // Rest time scoring based on consistency
-        // Without explicit rest tracking, give a good default score
-        let duration = workout.duration ?? 0
-        let setCount = workout.exercises.flatMap { $0.sets.filter(\.isCompleted) }.count
-
-        guard setCount > 0, duration > 0 else {
-            return ComponentScore(points: 18, rating: .good)
-        }
-
-        let avgTimePerSet = duration / Double(setCount) // seconds per set (includes rest)
-        switch avgTimePerSet {
-        case 60...180: return ComponentScore(points: 25, rating: .optimal)
-        case 45...240: return ComponentScore(points: 20, rating: .good)
-        case 30...300: return ComponentScore(points: 12, rating: .warning)
-        default:       return ComponentScore(points: 5, rating: .low)
-        }
-    }
-
-    private func computeBalanceScore(_ workout: Workout, history: [Workout]) -> ComponentScore {
-        let balance = muscleBalanceService.analyze(
-            workouts: [workout],
-            timeWindow: 0 // Just this workout
-        )
-
-        switch balance.overallScore {
-        case 0.8...1.0: return ComponentScore(points: 25, rating: .optimal)
-        case 0.6...0.8: return ComponentScore(points: 20, rating: .good)
-        case 0.4...0.6: return ComponentScore(points: 12, rating: .warning)
-        default:        return ComponentScore(points: 5, rating: .low)
-        }
-    }
-
-    private func detectHighlights(_ workout: Workout, history: [Workout]) -> [WorkoutHighlight] {
-        var highlights: [WorkoutHighlight] = []
-
-        // Check for PRs
-        let prSets = workout.exercises.flatMap { $0.sets.filter(\.isPersonalRecord) }
-        for prSet in prSets {
-            highlights.append(WorkoutHighlight(
-                id: UUID(),
-                type: .personalRecord,
-                title: "New PR!",
-                detail: "\(prSet.weight ?? 0)kg x \(prSet.reps ?? 0)"
-            ))
-        }
-
-        return highlights
-    }
-}
 ```
+For each completed non-warmup set on exercise e:
+  bestE1RM_e = max e1RM for exercise e over last 6 months (EXCLUDING current workout)
+  %1RM       = weight / bestE1RM_e          (clamped to [0.0, 1.5])
+  setIWV     = reps × %1RM
+
+Distribute to muscle groups (existing 70/30 model):
+  primary muscle   += 0.7 × setIWV
+  each secondary   += 0.3 × setIWV / count(secondaries)
+
+If no historical e1RM exists for the exercise, default %1RM = 0.75.
+```
+
+#### Shared Helpers
+
+Two private helpers are reused across components:
+
+- `buildBestE1RMMap(excluding:from:)` — scans 6-month history (excluding the
+  current workout) and returns `[exerciseId: bestE1RM]`.
+- `computeMuscleGroupIWV(workouts:bestE1RM:)` — distributes IWV to muscle groups
+  via the 70/30 primary/secondary split.
+
+#### 1. Volume Score — per-muscle-group comparison (0-100)
+
+Instead of comparing raw total volume against a whole-program average, each
+**muscle group trained in the current workout** is compared against its own
+12-week per-session average.
+
+```
+For each muscle group g trained in the current workout:
+  currentVol_g  = raw volume (weight × reps) attributed to group g (70/30 split)
+  histVol_g     = total raw volume for group g over last 12 weeks (excl. current)
+  sessions_g    = number of sessions that trained group g (excl. current)
+  perSessionAvg = histVol_g / sessions_g
+
+  ratio_g   = currentVol_g / perSessionAvg
+  deviation = |ratio_g − 1.0|
+  groupScore = max(0, 100 × (1 − max(0, deviation − 0.2) / 0.8))
+
+Volume score = average of per-group scores.
+```
+
+| ratio   | score |
+|---------|-------|
+| 0.8–1.2 | 100   |
+| 0.6/1.4 | 75    |
+| 0.4/1.6 | 50    |
+| 0.2/1.8 | 25    |
+| 0.0/2.0+| 0     |
+
+Fallback: 80 when no history exists for a group or overall.
+
+#### 2. Intensity Score — effort-ratio e1RM (0-100)
+
+Each set's estimated 1RM is compared to the historical best for that exercise
+(last 6 months, **excluding the current workout**).
+
+```
+For each completed non-warmup set:
+  setE1RM = Epley e1RM(weight, min(reps, 15))
+  ratio   = setE1RM / bestE1RM[exercise]
+
+Intensity score = mean(ratios) × 100, clamped [0, 100].
+```
+
+The critical fix vs the original design: the current workout is excluded from
+the bestE1RM lookup, so you compare against past performance, not yourself.
+
+Fallback: 75 when no historical data exists.
+
+#### 3. Consistency Score — unchanged (0-100)
+
+Average time per completed set (workout duration / set count):
+
+| avg time/set | score |
+|-------------|-------|
+| 60–180s     | 100   |
+| 45–240s     | 80    |
+| 30–300s     | 50    |
+| outside     | 20    |
+
+Fallback: 72 when no completed sets or no duration.
+
+#### 4. Balance Score — 12-week IWV window (0-100)
+
+Uses IWV aggregated over a **12-week window of all workouts** (including the
+current one) scored against 6 antagonist pairs:
+
+| Pair | Group A    | Group B     |
+|------|-----------|-------------|
+| 1    | chest      | back        |
+| 2    | quadriceps | hamstrings  |
+| 3    | biceps     | triceps     |
+| 4    | shoulders  | lats        |
+| 5    | core       | lowerBack   |
+| 6    | glutes     | hipFlexors  |
+
+Per-pair scoring (continuous):
+
+```
+iwv_a = sum of IWV for group A over 12 weeks
+iwv_b = sum of IWV for group B over 12 weeks
+
+ratio     = max(iwv_a, iwv_b) / min(iwv_a, iwv_b)
+pairScore = max(0, 100 × (1 − (ratio − 1.0) / 2.0))
+```
+
+| ratio | pairScore |
+|-------|-----------|
+| 1.0   | 100       |
+| 1.5   | 75        |
+| 2.0   | 50        |
+| 3.0+  | 0         |
+
+- Pairs where **both** sides have IWV > 0 are averaged.
+- Pairs where **neither** side was trained are excluded.
+- Pairs where **only one** side was trained score 0.
+- Fallback: 80 if fewer than 2 pairs have data.
+
+#### MuscleBalanceService Antagonist Pairs
+
+`MuscleBalanceService` (used independently for the balance analysis view) also
+uses the expanded 6-pair list for its own volume-based imbalance detection.
 
 ---
 
