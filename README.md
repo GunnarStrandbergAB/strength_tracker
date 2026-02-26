@@ -167,7 +167,7 @@ Analytics features are hidden until there's enough training data for them to be 
 | 5 | **Quality Score** | Rates each workout 0-100 across volume, intensity, balance, and consistency |
 | 5 | **Similar Workouts** | Finds past sessions that match your current training pattern |
 | 10 | **Plateau Detection** | Spots exercises where progress has stalled for 2+ weeks |
-| 20 | **Muscle Balance** | Checks if opposing muscle groups (chest/back, quads/hamstrings) are trained evenly |
+| 20 | **Muscle Balance** | Checks if opposing muscle groups (chest/back, quads/hamstrings, biceps/triceps, shoulders/lats, core/lower back, glutes/hip flexors) are trained evenly |
 | 20 | **Recommendations** | Suggests exercises based on training gaps, plateaus, and muscle imbalances |
 | 50 | **Advanced Insights** | Deep analysis across your full training history |
 
@@ -177,9 +177,14 @@ Analytics features are hidden until there's enough training data for them to be 
 
 **Plateau Detection** — sliding-window coefficient of variation analysis on per-exercise volume. When volume flatlines, the app identifies the stall and suggests variations.
 
-**Muscle Balance** — tracks antagonist muscle pair ratios and flags imbalances at three severity levels (mild/moderate/severe) with corrective exercise suggestions.
+**Muscle Balance** — tracks 6 antagonist muscle pair ratios (chest/back, quads/hamstrings, biceps/triceps, shoulders/lats, core/lower back, glutes/hip flexors) and flags imbalances at three severity levels (mild/moderate/severe) with corrective exercise suggestions.
 
-**Quality Score** — post-workout score across four dimensions: volume consistency, intensity (RPE), rest time pacing, and muscle balance.
+**Quality Score** — post-workout score (0-100) across four equally-weighted dimensions:
+
+- **Volume** — compares each muscle group's session volume against its own 12-week per-session average (70/30 primary/secondary split). A ±20% deadband scores 100; deviations taper linearly to 0 at ±100%.
+- **Intensity** — compares each set's estimated 1RM to the historical best for that exercise over the last 6 months. The current workout is excluded from the lookup so you're scored against past performance, not yourself.
+- **Consistency** — average time per completed set (workout duration / set count). 60-180s scores 100.
+- **Balance** — uses Intensity-Weighted Volume (IWV = reps × %1RM) aggregated over a 12-week window across all workouts, scored against 6 antagonist pairs. A 1:1 ratio scores 100; a 3:1 ratio scores 0. Pairs where only one side was trained score 0; untrained pairs are excluded.
 
 ---
 
