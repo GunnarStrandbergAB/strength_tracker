@@ -36,11 +36,11 @@ struct WorkoutQualityScoreView: View {
                             .foregroundStyle(STColors.textPrimary)
                     }
 
-                    // 4-dimension mini bars
+                    // 3-dimension mini bars (balance excluded — it reflects
+                    // 12-week program balance, not this single session)
                     VStack(spacing: 6) {
                         miniScoreBar("Volume", score: score.volumeScore)
                         miniScoreBar("Intensity", score: score.intensityScore)
-                        miniScoreBar("Balance", score: score.balanceScore)
                         miniScoreBar("Pacing", score: score.consistencyScore)
                     }
                 }
