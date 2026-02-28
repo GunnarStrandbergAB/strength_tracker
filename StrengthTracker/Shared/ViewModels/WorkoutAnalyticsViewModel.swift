@@ -33,6 +33,7 @@ public final class WorkoutAnalyticsViewModel {
     private let analyticsService: WorkoutAnalyticsService
     private let qualityScoreService: WorkoutQualityScoreService
     private let featureGate: AnalyticsFeatureGate
+    private let workoutRepository: (any WorkoutRepository)?
 
     private static let migrationKey = "analytics_migration_complete"
 
@@ -41,11 +42,13 @@ public final class WorkoutAnalyticsViewModel {
     public init(
         analyticsService: WorkoutAnalyticsService,
         qualityScoreService: WorkoutQualityScoreService,
-        featureGate: AnalyticsFeatureGate
+        featureGate: AnalyticsFeatureGate,
+        workoutRepository: (any WorkoutRepository)? = nil
     ) {
         self.analyticsService = analyticsService
         self.qualityScoreService = qualityScoreService
         self.featureGate = featureGate
+        self.workoutRepository = workoutRepository
     }
 
     // MARK: - Dashboard (loads WorkoutInsights aggregate)
@@ -110,6 +113,22 @@ public final class WorkoutAnalyticsViewModel {
 
             insights = rawInsights
             errorMessage = nil
+
+            // Auto-load quality score for latest workout if unlocked but not yet loaded
+            if unlockedFeatures.contains(.qualityScore) && qualityScore == nil,
+               let repo = workoutRepository {
+                do {
+                    let allWorkouts = try await repo.fetchAll()
+                    if let latest = allWorkouts
+                        .filter({ $0.completedAt != nil })
+                        .sorted(by: { $0.startedAt > $1.startedAt })
+                        .first {
+                        qualityScore = try await qualityScoreService.computeScore(for: latest)
+                    }
+                } catch {
+                    // Non-critical — quality score will load on demand
+                }
+            }
         } catch {
             isMigrating = false
             errorMessage = "Failed to load insights: \(error.localizedDescription)"

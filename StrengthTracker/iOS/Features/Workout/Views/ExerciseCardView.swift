@@ -82,6 +82,15 @@ struct ExerciseCardView: View {
                         onSetTypeChange(exerciseSet.id, setType)
                     }
                 )
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    if workoutExercise.sets.count > 1 {
+                        Button(role: .destructive) {
+                            onRemoveSet?(exerciseSet.id)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                }
 
                 if index < workoutExercise.sets.count - 1 {
                     Divider()
@@ -121,16 +130,6 @@ struct ExerciseCardView: View {
             Spacer()
 
             HStack(spacing: 4) {
-                Button {
-                    // History action (placeholder)
-                } label: {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 18))
-                        .foregroundStyle(STColors.textSecondary)
-                        .frame(width: 36, height: 36)
-                }
-                .buttonStyle(.plain)
-
                 Menu {
                     Button("Reorder Sets", systemImage: "arrow.up.arrow.down") {}
                     Button(

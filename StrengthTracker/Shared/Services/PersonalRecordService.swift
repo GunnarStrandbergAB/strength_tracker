@@ -97,6 +97,11 @@ public final class PersonalRecordService {
             ?? newRecords.first
     }
 
+    /// Save a manually entered personal record
+    public func saveManualRecord(_ record: PersonalRecord) async throws -> PersonalRecord {
+        return try await personalRecordRepository.save(record)
+    }
+
     /// Get all personal records for an exercise
     /// - Parameter exerciseId: The exercise ID
     /// - Returns: Array of personal records, sorted by achieved date descending

@@ -14,6 +14,7 @@ struct ContentView: View {
     let progressionPlanViewModel: ProgressionPlanViewModel
     let userPreferencesService: UserPreferencesService
     let connectivityManager: ConnectivityManager?
+    var personalRecordService: PersonalRecordService? = nil
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -40,6 +41,7 @@ struct ContentView: View {
                     selectedTab = 4
                 }
             )
+            .tint(STColors.textSecondary)
             .tabItem {
                 Label("Dashboard", systemImage: "square.grid.2x2")
             }
@@ -49,24 +51,28 @@ struct ContentView: View {
                 viewModel: workoutViewModel,
                 exerciseListViewModel: exerciseListViewModel
             )
+            .tint(STColors.textSecondary)
             .tabItem {
                 Label("Workout", systemImage: "figure.strengthtraining.traditional")
             }
             .tag(1)
 
             TemplateListView(viewModel: templateViewModel, exerciseListViewModel: exerciseListViewModel, workoutViewModel: workoutViewModel)
+                .tint(STColors.textSecondary)
                 .tabItem {
                     Label("Templates", systemImage: "list.clipboard")
                 }
                 .tag(2)
 
-            ExerciseListView(viewModel: exerciseListViewModel, progressViewModel: progressViewModel, analyticsViewModel: analyticsViewModel)
+            ExerciseListView(viewModel: exerciseListViewModel, progressViewModel: progressViewModel, analyticsViewModel: analyticsViewModel, personalRecordService: personalRecordService)
+                .tint(STColors.textSecondary)
                 .tabItem {
                     Label("Exercises", systemImage: "dumbbell")
                 }
                 .tag(3)
 
             WorkoutHistoryView(viewModel: historyViewModel, analyticsViewModel: analyticsViewModel)
+                .tint(STColors.textSecondary)
                 .tabItem {
                     Label("History", systemImage: "clock.arrow.circlepath")
                 }
