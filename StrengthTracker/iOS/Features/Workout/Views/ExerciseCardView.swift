@@ -82,15 +82,6 @@ struct ExerciseCardView: View {
                         onSetTypeChange(exerciseSet.id, setType)
                     }
                 )
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    if workoutExercise.sets.count > 1 {
-                        Button(role: .destructive) {
-                            onRemoveSet?(exerciseSet.id)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-                }
 
                 if index < workoutExercise.sets.count - 1 {
                     Divider()
@@ -137,6 +128,11 @@ struct ExerciseCardView: View {
                         systemImage: "note.text"
                     ) {
                         isEditingNote = true
+                    }
+                    if workoutExercise.sets.count > 1, let lastSet = workoutExercise.sets.last {
+                        Button("Remove Last Set", systemImage: "minus.circle") {
+                            onRemoveSet?(lastSet.id)
+                        }
                     }
                     Divider()
                     Button("Remove Exercise", systemImage: "trash", role: .destructive) {
