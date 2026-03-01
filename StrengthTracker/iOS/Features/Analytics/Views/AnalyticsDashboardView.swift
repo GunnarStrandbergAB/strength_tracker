@@ -231,13 +231,7 @@ struct AnalyticsDashboardView: View {
 
     private func muscleBalanceSection(_ balance: MuscleBalance) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                sectionHeader("Muscle Balance")
-                Spacer()
-                Text(String(format: "%.0f%%", balance.overallBalanceScore * 100))
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(scoreColor(balance.overallBalanceScore * 100))
-            }
+            sectionHeader("Muscle Balance")
 
             // Volume bars per muscle group
             let maxVol = balance.muscleGroupVolumes.map(\.weeklyVolume).max() ?? 1.0
@@ -250,15 +244,15 @@ struct AnalyticsDashboardView: View {
 
                     GeometryReader { geo in
                         RoundedRectangle(cornerRadius: 3)
-                            .fill(STColors.primary.opacity(0.8))
+                            .fill(barColor(for: vol.muscleGroup, imbalances: balance.imbalances))
                             .frame(width: geo.size.width * CGFloat(vol.weeklyVolume / max(maxVol, 1)), height: 12)
                     }
                     .frame(height: 12)
 
-                    Text("\(vol.weeklySetCount)s")
+                    Text("\(vol.weeklySetCount) sets")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(STColors.textTertiary)
-                        .frame(width: 28, alignment: .trailing)
+                        .frame(width: 50, alignment: .trailing)
                 }
             }
 
@@ -338,10 +332,6 @@ struct AnalyticsDashboardView: View {
                     }
 
                     Spacer()
-
-                    Text(String(format: "%.0f%%", rec.confidence * 100))
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(STColors.textTertiary)
                 }
             }
         }
@@ -366,6 +356,13 @@ struct AnalyticsDashboardView: View {
         case 40..<60: return .orange
         default: return STColors.danger
         }
+    }
+
+    private func barColor(for muscleGroup: String, imbalances: [MuscleImbalance]) -> Color {
+        if imbalances.contains(where: { $0.primaryGroup == muscleGroup }) {
+            return .orange
+        }
+        return STColors.primary.opacity(0.8)
     }
 
     private func severityColor(_ severity: ImbalanceSeverity) -> Color {
