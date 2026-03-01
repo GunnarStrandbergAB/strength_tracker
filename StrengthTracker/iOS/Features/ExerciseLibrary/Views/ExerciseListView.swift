@@ -5,16 +5,18 @@ struct ExerciseListView: View {
     @State private var viewModel: ExerciseListViewModel
     let progressViewModel: ProgressViewModel
     var analyticsViewModel: WorkoutAnalyticsViewModel? = nil
+    var personalRecordService: PersonalRecordService? = nil
     @State private var showAddExercise = false
 
     private let filterGroups: [MuscleGroup] = [
         .chest, .back, .shoulders, .biceps, .triceps, .quadriceps, .hamstrings, .glutes, .core
     ]
 
-    init(viewModel: ExerciseListViewModel, progressViewModel: ProgressViewModel, analyticsViewModel: WorkoutAnalyticsViewModel? = nil) {
+    init(viewModel: ExerciseListViewModel, progressViewModel: ProgressViewModel, analyticsViewModel: WorkoutAnalyticsViewModel? = nil, personalRecordService: PersonalRecordService? = nil) {
         self._viewModel = State(initialValue: viewModel)
         self.progressViewModel = progressViewModel
         self.analyticsViewModel = analyticsViewModel
+        self.personalRecordService = personalRecordService
     }
 
     var body: some View {
@@ -71,10 +73,10 @@ struct ExerciseListView: View {
                 }
             }
             .sheet(isPresented: $showAddExercise) {
-                AddExerciseView(viewModel: viewModel)
+                AddExerciseView(viewModel: viewModel, personalRecordService: personalRecordService)
             }
             .navigationDestination(for: Exercise.self) { exercise in
-                ExerciseDetailView(exercise: exercise, progressViewModel: progressViewModel, analyticsViewModel: analyticsViewModel)
+                ExerciseDetailView(exercise: exercise, progressViewModel: progressViewModel, analyticsViewModel: analyticsViewModel, personalRecordService: personalRecordService)
             }
             .overlay {
                 if viewModel.isLoading {
@@ -108,7 +110,7 @@ struct ExerciseListView: View {
                 .font(.subheadline.weight(.medium))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(isSelected ? Color.accentColor : Color(.secondarySystemFill))
+                .background(isSelected ? STColors.primary : Color(.secondarySystemFill))
                 .foregroundStyle(isSelected ? .white : .primary)
                 .clipShape(Capsule())
         }

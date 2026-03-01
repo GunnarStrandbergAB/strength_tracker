@@ -273,6 +273,15 @@ struct ActiveWorkoutView: View {
                         notes: notes
                     )
                 }
+            },
+            onMoveSet: { fromIndex, toIndex in
+                Task {
+                    await viewModel.moveSets(
+                        exerciseId: workoutExercise.id,
+                        from: fromIndex,
+                        to: toIndex
+                    )
+                }
             }
         )
     }

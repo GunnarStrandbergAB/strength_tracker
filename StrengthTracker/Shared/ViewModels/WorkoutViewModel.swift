@@ -122,6 +122,10 @@ public final class WorkoutViewModel {
         )
         workout.exercises.append(workoutExercise)
         currentWorkout = workout
+
+        Task {
+            await loadPreviousDataForExercise(workoutExercise.id)
+        }
     }
 
     public func logSet(exerciseId: UUID, weight: Double?, reps: Int?, setType: SetType = .normal) async throws {
@@ -289,8 +293,17 @@ public final class WorkoutViewModel {
     public func loadPreviousData() async {
         guard let workout = currentWorkout else { return }
         for exercise in workout.exercises {
-            for (index, _) in exercise.sets.enumerated() {
-                let key = "\(exercise.id)-\(index)"
+            await loadPreviousDataForExercise(exercise.id)
+        }
+    }
+
+    /// Load previous data for a single exercise (fills any missing cache keys)
+    public func loadPreviousDataForExercise(_ exerciseId: UUID) async {
+        guard let workout = currentWorkout,
+              let exercise = workout.exercises.first(where: { $0.id == exerciseId }) else { return }
+        for (index, _) in exercise.sets.enumerated() {
+            let key = "\(exercise.id)-\(index)"
+            if previousSetDataCache[key] == nil {
                 if let data = await previousSetData(for: exercise.id, setIndex: index) {
                     previousSetDataCache[key] = data
                 }
@@ -326,6 +339,7 @@ public final class WorkoutViewModel {
         workout.exercises[exerciseIndex].sets.append(newSet)
         do {
             currentWorkout = try await workoutRepository.save(workout)
+            await loadPreviousDataForExercise(exerciseId)
         } catch {
             currentWorkout = workout
         }
@@ -394,6 +408,23 @@ public final class WorkoutViewModel {
         let wasCompleted = workout.exercises[exerciseIndex].sets[setIndex].isCompleted
         workout.exercises[exerciseIndex].sets[setIndex].isCompleted = !wasCompleted
         workout.exercises[exerciseIndex].sets[setIndex].completedAt = wasCompleted ? nil : Date()
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            currentWorkout = workout
+        }
+    }
+
+    public func moveSets(exerciseId: UUID, from source: Int, to destination: Int) async {
+        guard var workout = currentWorkout,
+              let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }) else { return }
+        let sets = workout.exercises[exerciseIndex].sets
+        guard source >= 0, source < sets.count, destination >= 0, destination < sets.count, source != destination else { return }
+        let set = workout.exercises[exerciseIndex].sets.remove(at: source)
+        workout.exercises[exerciseIndex].sets.insert(set, at: destination)
+        for i in workout.exercises[exerciseIndex].sets.indices {
+            workout.exercises[exerciseIndex].sets[i].order = i + 1
+        }
         do {
             currentWorkout = try await workoutRepository.save(workout)
         } catch {

@@ -51,7 +51,9 @@ public final class PlateauDetectionService: Sendable {
                 workoutExercises: workoutExercises,
                 stallThreshold: stallThreshold
             )
-            analyses.append(analysis)
+            if analysis.consecutiveWeeksStalled >= 2 {
+                analyses.append(analysis)
+            }
         }
 
         return analyses.sorted { $0.consecutiveWeeksStalled > $1.consecutiveWeeksStalled }
@@ -100,9 +102,6 @@ public final class PlateauDetectionService: Sendable {
                 weeksStalled += 1
             }
         }
-
-        let thresholdToUse = stallThreshold > 0 ? stallThreshold : plateauThresholdCV
-        let plateauDetected = cv < thresholdToUse && weeksStalled >= 2
 
         return PlateauAnalysis(
             id: UUID(),

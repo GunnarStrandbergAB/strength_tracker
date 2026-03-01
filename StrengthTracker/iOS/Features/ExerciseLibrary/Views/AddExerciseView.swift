@@ -4,6 +4,7 @@ import StrengthTrackerShared
 
 struct AddExerciseView: View {
     let viewModel: ExerciseListViewModel
+    var personalRecordService: PersonalRecordService? = nil
     @Environment(\.dismiss) private var dismiss
 
     @State private var name = ""
@@ -12,6 +13,7 @@ struct AddExerciseView: View {
     @State private var exerciseType: ExerciseType = .weightedReps
     @State private var secondaryMuscleGroups: Set<MuscleGroup> = []
     @State private var instructions = ""
+    @State private var known1RM = ""
 
     var body: some View {
         NavigationStack {
@@ -69,6 +71,17 @@ struct AddExerciseView: View {
                     TextField("How to perform this exercise", text: $instructions, axis: .vertical)
                         .lineLimit(3...6)
                 }
+
+                if personalRecordService != nil {
+                    Section("Known 1RM (optional)") {
+                        HStack {
+                            TextField("e.g. 100", text: $known1RM)
+                                .keyboardType(.decimalPad)
+                            Text("kg")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
             .onChange(of: primaryMuscleGroup) { _, newValue in
                 secondaryMuscleGroups.remove(newValue)
@@ -94,6 +107,17 @@ struct AddExerciseView: View {
                         )
                         Task {
                             await viewModel.saveExercise(exercise)
+                            if let value = Double(known1RM), value > 0, let prService = personalRecordService {
+                                let record = PersonalRecord(
+                                    id: UUID(),
+                                    exerciseId: exercise.id,
+                                    recordType: .estimatedOneRepMax,
+                                    value: value,
+                                    setId: nil,
+                                    achievedAt: Date()
+                                )
+                                _ = try? await prService.saveManualRecord(record)
+                            }
                             dismiss()
                         }
                     }

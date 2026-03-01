@@ -160,7 +160,8 @@ public final class AppContainer: Sendable {
         workoutAnalyticsViewModel = WorkoutAnalyticsViewModel(
             analyticsService: analyticsService,
             qualityScoreService: qualityScoreService,
-            featureGate: analyticsFeatureGate
+            featureGate: analyticsFeatureGate,
+            workoutRepository: workoutRepository
         )
         progressionPlanViewModel = ProgressionPlanViewModel(
             progressionPlanRepository: progressionPlanRepository,

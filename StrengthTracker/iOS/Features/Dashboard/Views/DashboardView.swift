@@ -42,6 +42,19 @@ struct DashboardView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
+                    // Greeting
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(greeting)
+                            .font(.system(size: 26, weight: .bold))
+                            .foregroundStyle(STColors.textPrimary)
+                        Text(motivationalSubtitle)
+                            .font(.system(size: 14))
+                            .foregroundStyle(STColors.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 4)
+
                     // Weekly Frequency Chart
                     WeeklyFrequencyChart(
                         weeklyQualityScores: viewModel.weeklyQualityScores,
@@ -139,6 +152,31 @@ struct DashboardView: View {
                 await progressionPlanViewModel.loadActivePlan()
             }
         }
+    }
+
+    // MARK: - Greeting
+
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 5..<12: return "Good morning"
+        case 12..<17: return "Good afternoon"
+        case 17..<22: return "Good evening"
+        default: return "Late night grind"
+        }
+    }
+
+    private var motivationalSubtitle: String {
+        let phrases = [
+            "Let's get after it.",
+            "Time to build.",
+            "Ready to lift?",
+            "Consistency wins.",
+            "One rep at a time.",
+            "Earn it today."
+        ]
+        let dayOfYear = Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0
+        return phrases[dayOfYear % phrases.count]
     }
 }
 

@@ -5,6 +5,10 @@ struct ExerciseDetailView: View {
     let exercise: Exercise
     var progressViewModel: ProgressViewModel? = nil
     var analyticsViewModel: WorkoutAnalyticsViewModel? = nil
+    var personalRecordService: PersonalRecordService? = nil
+
+    @State private var records: [PersonalRecord] = []
+    @State private var showAddPR = false
 
     var body: some View {
         List {
@@ -32,6 +36,28 @@ struct ExerciseDetailView: View {
                 }
             }
 
+            if personalRecordService != nil {
+                Section("Personal Records") {
+                    if records.isEmpty {
+                        Text("No records yet")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(bestByType, id: \.recordType) { record in
+                            LabeledContent(record.recordType.displayName) {
+                                Text(record.formattedValue)
+                                    .fontWeight(.semibold)
+                            }
+                        }
+                    }
+
+                    Button {
+                        showAddPR = true
+                    } label: {
+                        Label("Add PR", systemImage: "plus.circle")
+                    }
+                }
+            }
+
             if let progressVM = progressViewModel {
                 Section("Progress") {
                     NavigationLink {
@@ -49,5 +75,147 @@ struct ExerciseDetailView: View {
             }
         }
         .navigationTitle(exercise.name)
+        .task {
+            await loadRecords()
+        }
+        .sheet(isPresented: $showAddPR) {
+            AddPRSheet(exercise: exercise, personalRecordService: personalRecordService!) { newRecord in
+                records.append(newRecord)
+            }
+        }
+    }
+
+    private func loadRecords() async {
+        guard let service = personalRecordService else { return }
+        records = (try? await service.getRecords(for: exercise.id)) ?? []
+    }
+
+    /// Returns the best (most recent) record per type for display.
+    private var bestByType: [PersonalRecord] {
+        var best: [RecordType: PersonalRecord] = [:]
+        for record in records {
+            if let existing = best[record.recordType] {
+                if record.achievedAt > existing.achievedAt {
+                    best[record.recordType] = record
+                }
+            } else {
+                best[record.recordType] = record
+            }
+        }
+        return best.values.sorted { $0.recordType.sortOrder < $1.recordType.sortOrder }
+    }
+}
+
+// MARK: - Add PR Sheet
+
+private struct AddPRSheet: View {
+    let exercise: Exercise
+    let personalRecordService: PersonalRecordService
+    let onSave: (PersonalRecord) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedType: RecordType = .estimatedOneRepMax
+    @State private var valueText = ""
+
+    private let availableTypes: [RecordType] = [.estimatedOneRepMax, .maxWeight, .maxReps]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Picker("Record Type", selection: $selectedType) {
+                    ForEach(availableTypes, id: \.self) { type in
+                        Text(type.displayName).tag(type)
+                    }
+                }
+
+                HStack {
+                    Text(selectedType.unitLabel)
+                        .foregroundStyle(.secondary)
+                    TextField("Value", text: $valueText)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+            .navigationTitle("Add Personal Record")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        guard let value = Double(valueText), value > 0 else { return }
+                        let record = PersonalRecord(
+                            id: UUID(),
+                            exerciseId: exercise.id,
+                            recordType: selectedType,
+                            value: value,
+                            setId: nil,
+                            achievedAt: Date()
+                        )
+                        Task {
+                            _ = try? await personalRecordService.saveManualRecord(record)
+                            onSave(record)
+                            dismiss()
+                        }
+                    }
+                    .disabled(Double(valueText) == nil || (Double(valueText) ?? 0) <= 0)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - RecordType Helpers
+
+extension RecordType {
+    var displayName: String {
+        switch self {
+        case .estimatedOneRepMax: return "Est. 1RM"
+        case .maxWeight: return "Max Weight"
+        case .maxReps: return "Max Reps"
+        case .maxVolume: return "Max Volume"
+        case .maxTotalVolume: return "Max Total Volume"
+        case .bestPace: return "Best Pace"
+        case .longestDuration: return "Longest Duration"
+        case .longestDistance: return "Longest Distance"
+        }
+    }
+
+    var unitLabel: String {
+        switch self {
+        case .estimatedOneRepMax, .maxWeight: return "kg"
+        case .maxReps: return "reps"
+        case .maxVolume, .maxTotalVolume: return "kg"
+        case .bestPace: return "min/km"
+        case .longestDuration: return "seconds"
+        case .longestDistance: return "meters"
+        }
+    }
+
+    var sortOrder: Int {
+        switch self {
+        case .estimatedOneRepMax: return 0
+        case .maxWeight: return 1
+        case .maxReps: return 2
+        case .maxVolume: return 3
+        case .maxTotalVolume: return 4
+        case .bestPace: return 5
+        case .longestDuration: return 6
+        case .longestDistance: return 7
+        }
+    }
+}
+
+extension PersonalRecord {
+    var formattedValue: String {
+        switch recordType {
+        case .maxReps:
+            return "\(Int(value))"
+        case .estimatedOneRepMax, .maxWeight, .maxVolume, .maxTotalVolume:
+            return String(format: "%g kg", value)
+        default:
+            return String(format: "%g", value)
+        }
     }
 }

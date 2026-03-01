@@ -14,7 +14,9 @@ struct ExerciseCardView: View {
     let onRemoveExercise: (() -> Void)?
     let onSetTypeChange: (UUID, SetType) -> Void
     let onNoteChange: ((String) -> Void)?
+    let onMoveSet: ((Int, Int) -> Void)?
 
+    @State private var isReorderingSets: Bool = false
     @State private var isEditingNote: Bool = false
     @State private var noteText: String = ""
     @State private var noteDebounceTask: Task<Void, Never>?
@@ -30,7 +32,8 @@ struct ExerciseCardView: View {
         onRemoveSet: ((UUID) -> Void)? = nil,
         onRemoveExercise: (() -> Void)? = nil,
         onSetTypeChange: @escaping (UUID, SetType) -> Void = { _, _ in },
-        onNoteChange: ((String) -> Void)? = nil
+        onNoteChange: ((String) -> Void)? = nil,
+        onMoveSet: ((Int, Int) -> Void)? = nil
     ) {
         self.workoutExercise = workoutExercise
         self.isActiveExercise = isActiveExercise
@@ -43,6 +46,7 @@ struct ExerciseCardView: View {
         self.onRemoveExercise = onRemoveExercise
         self.onSetTypeChange = onSetTypeChange
         self.onNoteChange = onNoteChange
+        self.onMoveSet = onMoveSet
         self._noteText = State(initialValue: workoutExercise.notes ?? "")
         self._isEditingNote = State(initialValue: workoutExercise.notes != nil && !workoutExercise.notes!.isEmpty)
     }
@@ -60,38 +64,66 @@ struct ExerciseCardView: View {
                 noteEditor
             }
 
-            // Column headers
-            columnHeaders
+            if isReorderingSets {
+                // Reorder mode
+                reorderSetsList
 
-            // Sets
-            ForEach(Array(workoutExercise.sets.enumerated()), id: \.element.id) { index, exerciseSet in
-                SetRowGridView(
-                    setNumber: index + 1,
-                    exerciseSet: exerciseSet,
-                    previousText: previousSetData[index],
-                    onWeightChange: { weight in
-                        onWeightChange(exerciseSet.id, weight)
-                    },
-                    onRepsChange: { reps in
-                        onRepsChange(exerciseSet.id, reps)
-                    },
-                    onToggleComplete: {
-                        onToggleComplete(exerciseSet.id)
-                    },
-                    onSetTypeChange: { setType in
-                        onSetTypeChange(exerciseSet.id, setType)
+                // Done button
+                Button {
+                    isReorderingSets = false
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("DONE")
+                            .font(.system(size: 12, weight: .bold))
+                            .tracking(1.5)
                     }
-                )
-
-                if index < workoutExercise.sets.count - 1 {
-                    Divider()
-                        .background(STColors.border.opacity(0.5))
-                        .padding(.horizontal, STSpacing.setRowHorizontal)
+                    .foregroundStyle(STColors.primary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
                 }
-            }
+                .buttonStyle(.plain)
+                .overlay(
+                    Rectangle()
+                        .frame(height: 1)
+                        .foregroundStyle(STColors.border),
+                    alignment: .top
+                )
+            } else {
+                // Column headers
+                columnHeaders
 
-            // Add Set button
-            addSetButton
+                // Sets
+                ForEach(Array(workoutExercise.sets.enumerated()), id: \.element.id) { index, exerciseSet in
+                    SetRowGridView(
+                        setNumber: index + 1,
+                        exerciseSet: exerciseSet,
+                        previousText: previousSetData[index],
+                        onWeightChange: { weight in
+                            onWeightChange(exerciseSet.id, weight)
+                        },
+                        onRepsChange: { reps in
+                            onRepsChange(exerciseSet.id, reps)
+                        },
+                        onToggleComplete: {
+                            onToggleComplete(exerciseSet.id)
+                        },
+                        onSetTypeChange: { setType in
+                            onSetTypeChange(exerciseSet.id, setType)
+                        }
+                    )
+
+                    if index < workoutExercise.sets.count - 1 {
+                        Divider()
+                            .background(STColors.border.opacity(0.5))
+                            .padding(.horizontal, STSpacing.setRowHorizontal)
+                    }
+                }
+
+                // Add Set button
+                addSetButton
+            }
         }
         .background(STColors.surface)
         .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
@@ -99,7 +131,7 @@ struct ExerciseCardView: View {
             RoundedRectangle(cornerRadius: STRadius.card)
                 .stroke(STColors.border, lineWidth: 1)
         )
-        .opacity(isActiveExercise ? 1.0 : 0.9)
+        .opacity(1.0)
     }
 
     // MARK: - Card Header
@@ -110,7 +142,7 @@ struct ExerciseCardView: View {
                 Text(workoutExercise.exercise.name)
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(
-                        isActiveExercise ? STColors.primary : STColors.textPrimary
+                        STColors.primary
                     )
 
                 Text(muscleGroupText)
@@ -121,23 +153,21 @@ struct ExerciseCardView: View {
             Spacer()
 
             HStack(spacing: 4) {
-                Button {
-                    // History action (placeholder)
-                } label: {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 18))
-                        .foregroundStyle(STColors.textSecondary)
-                        .frame(width: 36, height: 36)
-                }
-                .buttonStyle(.plain)
-
                 Menu {
-                    Button("Reorder Sets", systemImage: "arrow.up.arrow.down") {}
+                    Button("Reorder Sets", systemImage: "arrow.up.arrow.down") {
+                        isReorderingSets = true
+                    }
+                    .disabled(workoutExercise.sets.count < 2)
                     Button(
                         workoutExercise.notes != nil && !workoutExercise.notes!.isEmpty ? "Edit Note" : "Add Note",
                         systemImage: "note.text"
                     ) {
                         isEditingNote = true
+                    }
+                    if workoutExercise.sets.count > 1, let lastSet = workoutExercise.sets.last {
+                        Button("Remove Last Set", systemImage: "minus.circle") {
+                            onRemoveSet?(lastSet.id)
+                        }
                     }
                     Divider()
                     Button("Remove Exercise", systemImage: "trash", role: .destructive) {
@@ -232,6 +262,71 @@ struct ExerciseCardView: View {
         .padding(.horizontal, STSpacing.cardPadding)
         .padding(.vertical, 8)
         .background(STColors.background.opacity(0.3))
+    }
+
+    // MARK: - Reorder Sets
+
+    private var reorderSetsList: some View {
+        ForEach(Array(workoutExercise.sets.enumerated()), id: \.element.id) { index, exerciseSet in
+            HStack(spacing: 8) {
+                Text("\(index + 1)")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(STColors.textSecondary)
+                    .frame(width: 28)
+
+                if exerciseSet.setType != .normal {
+                    Text(exerciseSet.setType.rawValue.capitalized)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(STColors.primary)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(STColors.primary.opacity(0.15))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+
+                Text(setSummary(exerciseSet))
+                    .font(.system(size: 14))
+                    .foregroundStyle(STColors.textPrimary)
+
+                Spacer()
+
+                Button {
+                    onMoveSet?(index, index - 1)
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(index == 0 ? STColors.textTertiary : STColors.textPrimary)
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+                .disabled(index == 0)
+
+                Button {
+                    onMoveSet?(index, index + 1)
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(index == workoutExercise.sets.count - 1 ? STColors.textTertiary : STColors.textPrimary)
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+                .disabled(index == workoutExercise.sets.count - 1)
+            }
+            .padding(.horizontal, STSpacing.setRowHorizontal)
+            .padding(.vertical, 6)
+
+            if index < workoutExercise.sets.count - 1 {
+                Divider()
+                    .background(STColors.border.opacity(0.5))
+                    .padding(.horizontal, STSpacing.setRowHorizontal)
+            }
+        }
+    }
+
+    private func setSummary(_ set: ExerciseSet) -> String {
+        let weight = set.weight.map { String(format: "%g", $0) + " kg" } ?? "–"
+        let reps = set.reps.map { "\($0) reps" } ?? "–"
+        return "\(weight) × \(reps)"
     }
 
     // MARK: - Helpers

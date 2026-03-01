@@ -103,7 +103,8 @@ struct ContentViewWrapper: View {
             analyticsViewModel: container.makeWorkoutAnalyticsViewModel(),
             progressionPlanViewModel: container.makeProgressionPlanViewModel(),
             userPreferencesService: container.userPreferencesService,
-            connectivityManager: container.connectivityManager
+            connectivityManager: container.connectivityManager,
+            personalRecordService: container.personalRecordService
         )
         .onOpenURL { url in
             // Handle deep links from widgets
