@@ -415,6 +415,23 @@ public final class WorkoutViewModel {
         }
     }
 
+    public func moveSets(exerciseId: UUID, from source: Int, to destination: Int) async {
+        guard var workout = currentWorkout,
+              let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }) else { return }
+        let sets = workout.exercises[exerciseIndex].sets
+        guard source >= 0, source < sets.count, destination >= 0, destination < sets.count, source != destination else { return }
+        let set = workout.exercises[exerciseIndex].sets.remove(at: source)
+        workout.exercises[exerciseIndex].sets.insert(set, at: destination)
+        for i in workout.exercises[exerciseIndex].sets.indices {
+            workout.exercises[exerciseIndex].sets[i].order = i + 1
+        }
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            currentWorkout = workout
+        }
+    }
+
     public func updateExerciseNotes(exerciseId: UUID, notes: String) async {
         guard var workout = currentWorkout,
               let idx = workout.exercises.firstIndex(where: { $0.id == exerciseId }) else { return }
