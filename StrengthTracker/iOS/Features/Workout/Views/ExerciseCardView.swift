@@ -131,7 +131,7 @@ struct ExerciseCardView: View {
             RoundedRectangle(cornerRadius: STRadius.card)
                 .stroke(STColors.border, lineWidth: 1)
         )
-        .opacity(isActiveExercise ? 1.0 : 0.9)
+        .opacity(1.0)
     }
 
     // MARK: - Card Header
@@ -142,7 +142,7 @@ struct ExerciseCardView: View {
                 Text(workoutExercise.exercise.name)
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(
-                        isActiveExercise ? STColors.primary : STColors.textPrimary
+                        STColors.primary
                     )
 
                 Text(muscleGroupText)
