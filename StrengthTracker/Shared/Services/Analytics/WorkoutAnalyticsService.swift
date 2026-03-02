@@ -15,6 +15,15 @@ public final class WorkoutAnalyticsService: Sendable {
     private let muscleBalanceService: MuscleBalanceService
     private let recommendationService: ExerciseRecommendationService
 
+    // Advanced Insights services
+    private let volumeLandmarkService: VolumeLandmarkService?
+    private let recoveryEstimationService: RecoveryEstimationService?
+    private let driftService: TrainingDriftService?
+    private let phaseDetectionService: PhaseDetectionService?
+    private let blockComparisonService: BlockComparisonService?
+    private let anomalyDetectionService: AnomalyDetectionService?
+    private let insightGenerator: (any InsightTextGenerating)?
+
     // Cache
     private var cachedVectors: [UUID: WorkoutVector] = [:]
     private var cacheTimestamp: Date?
@@ -28,7 +37,14 @@ public final class WorkoutAnalyticsService: Sendable {
         searchService: VectorSearchService,
         plateauService: PlateauDetectionService,
         muscleBalanceService: MuscleBalanceService,
-        recommendationService: ExerciseRecommendationService
+        recommendationService: ExerciseRecommendationService,
+        volumeLandmarkService: VolumeLandmarkService? = nil,
+        recoveryEstimationService: RecoveryEstimationService? = nil,
+        driftService: TrainingDriftService? = nil,
+        phaseDetectionService: PhaseDetectionService? = nil,
+        blockComparisonService: BlockComparisonService? = nil,
+        anomalyDetectionService: AnomalyDetectionService? = nil,
+        insightGenerator: (any InsightTextGenerating)? = nil
     ) {
         self.analyticsRepository = analyticsRepository
         self.workoutRepository = workoutRepository
@@ -38,6 +54,13 @@ public final class WorkoutAnalyticsService: Sendable {
         self.plateauService = plateauService
         self.muscleBalanceService = muscleBalanceService
         self.recommendationService = recommendationService
+        self.volumeLandmarkService = volumeLandmarkService
+        self.recoveryEstimationService = recoveryEstimationService
+        self.driftService = driftService
+        self.phaseDetectionService = phaseDetectionService
+        self.blockComparisonService = blockComparisonService
+        self.anomalyDetectionService = anomalyDetectionService
+        self.insightGenerator = insightGenerator
     }
 
     // MARK: - Similar Workouts
@@ -118,14 +141,74 @@ public final class WorkoutAnalyticsService: Sendable {
             limit: 5
         )
 
+        // Recovery patterns (Phase 3)
+        let recoveryPatterns = try await recoveryEstimationService?.computeRecoveryPatterns() ?? []
+
+        // Volume landmarks (Phase 4)
+        let optimalVolumes = try await volumeLandmarkService?.computeVolumeLandmarks() ?? []
+
+        // Advanced Insights (50+ workouts)
+        var trainingLoad: TrainingLoad?
+        var overloadTrends: [OverloadTrend] = []
+        var deloadRecommendation: DeloadRecommendation?
+        var trainingDrift: TrainingDrift?
+        var trainingPhase: TrainingPhaseDetection?
+        var blockComparison: BlockComparison?
+        var anomalies: [WorkoutAnomaly] = []
+        var highlights: [AnalyticsHighlight] = []
+
+        if completedWorkouts.count >= 19 {
+            let bestE1RM = AnalyticsCalculations.buildBestE1RMMap(from: completedWorkouts)
+
+            // Core services (stateless)
+            trainingLoad = TrainingLoadService.computeTrainingLoad(
+                workouts: completedWorkouts, bestE1RM: bestE1RM
+            )
+            overloadTrends = OverloadTrackingService.computeOverloadTrends(workouts: completedWorkouts)
+            deloadRecommendation = DeloadDetectionService.detectDeload(
+                workouts: completedWorkouts,
+                overloadTrends: overloadTrends,
+                trainingLoad: trainingLoad,
+                bestE1RM: bestE1RM
+            )
+
+            // Vector-powered services
+            let allVectors = try await analyticsRepository.fetchAllVectors()
+            trainingDrift = driftService?.computeDrift(vectors: allVectors)
+            trainingPhase = phaseDetectionService?.detectPhases(vectors: allVectors)
+            blockComparison = blockComparisonService?.compareBlocks(vectors: allVectors)
+            anomalies = anomalyDetectionService?.detectAnomalies(vectors: allVectors) ?? []
+
+            // Smart highlights
+            if let generator = insightGenerator {
+                highlights = await generator.generateHighlights(
+                    trainingLoad: trainingLoad,
+                    overloadTrends: overloadTrends,
+                    deloadRecommendation: deloadRecommendation,
+                    trainingDrift: trainingDrift,
+                    trainingPhase: trainingPhase,
+                    recoveryPatterns: recoveryPatterns,
+                    optimalVolumes: optimalVolumes
+                )
+            }
+        }
+
         return WorkoutInsights(
             generatedAt: Date(),
             workoutCount: completedWorkouts.count,
             plateaus: plateausResult,
             muscleBalance: muscleBalanceResult,
             recommendations: recommendationsResult,
-            recoveryPatterns: [],  // Phase 3 feature — requires per-muscle-group date tracking
-            optimalVolumes: []     // Phase 4 feature — requires 50+ workouts of history
+            recoveryPatterns: recoveryPatterns,
+            optimalVolumes: optimalVolumes,
+            trainingLoad: trainingLoad,
+            overloadTrends: overloadTrends,
+            deloadRecommendation: deloadRecommendation,
+            trainingDrift: trainingDrift,
+            trainingPhase: trainingPhase,
+            blockComparison: blockComparison,
+            anomalies: anomalies,
+            highlights: highlights
         )
     }
 

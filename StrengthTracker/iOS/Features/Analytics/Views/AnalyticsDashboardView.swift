@@ -54,6 +54,12 @@ struct AnalyticsDashboardView: View {
                        !viewModel.insights.recommendations.isEmpty {
                         recommendationsSection(viewModel.insights.recommendations)
                     }
+
+                    // Advanced Insights card (50+ workouts)
+                    if viewModel.isFeatureUnlocked(.advancedInsights),
+                       viewModel.advancedInsightsLoaded {
+                        AdvancedInsightsCardView(viewModel: viewModel)
+                    }
                 }
 
                 Spacer().frame(height: 20)
@@ -95,7 +101,7 @@ struct AnalyticsDashboardView: View {
             featureRow(.qualityScore, threshold: 5, icon: "star.fill")
             featureRow(.plateauDetection, threshold: 10, icon: "exclamationmark.triangle.fill")
             featureRow(.muscleBalance, threshold: 20, icon: "arrow.left.arrow.right")
-            featureRow(.advancedInsights, threshold: 50, icon: "brain.head.profile")
+            featureRow(.advancedInsights, threshold: 19, icon: "brain.head.profile")
         }
         .padding(STSpacing.cardPadding)
         .background(STColors.surface)

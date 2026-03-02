@@ -88,8 +88,18 @@ struct InsightsCardView: View {
             )
         }
 
+        // Advanced insights top highlight
+        if let highlight = insights.highlights.first {
+            insightRow(
+                icon: highlightIcon(highlight.type),
+                iconColor: highlightColor(highlight.type),
+                title: highlight.title,
+                detail: highlight.detail
+            )
+        }
+
         // Fallback: show workout count if nothing notable
-        if insights.plateaus.isEmpty && (insights.muscleBalance?.imbalances.isEmpty ?? true) && insights.recommendations.isEmpty {
+        if insights.plateaus.isEmpty && (insights.muscleBalance?.imbalances.isEmpty ?? true) && insights.recommendations.isEmpty && insights.highlights.isEmpty {
             insightRow(
                 icon: "checkmark.circle.fill",
                 iconColor: STColors.success,
@@ -116,6 +126,26 @@ struct InsightsCardView: View {
             }
 
             Spacer()
+        }
+    }
+
+    private func highlightIcon(_ type: HighlightType) -> String {
+        switch type {
+        case .personalRecord: return "trophy.fill"
+        case .streak: return "flame.fill"
+        case .milestone: return "flag.fill"
+        case .improvement: return "arrow.up.right"
+        case .warning: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func highlightColor(_ type: HighlightType) -> Color {
+        switch type {
+        case .personalRecord: return STColors.primary
+        case .streak: return .orange
+        case .milestone: return STColors.primary
+        case .improvement: return STColors.success
+        case .warning: return STColors.danger
         }
     }
 

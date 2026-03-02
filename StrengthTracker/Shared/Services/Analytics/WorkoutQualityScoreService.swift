@@ -56,24 +56,7 @@ public final class WorkoutQualityScoreService: Sendable {
 
     /// Build per-exercise best e1RM map from history, excluding a specific workout.
     private func buildBestE1RMMap(excluding workoutId: UUID, from history: [Workout]) -> [UUID: Double] {
-        let sixMonthsAgo = Calendar.current.date(byAdding: .month, value: -6, to: Date())!
-        var bestE1RM: [UUID: Double] = [:]
-        for past in history {
-            guard past.id != workoutId,
-                  past.completedAt != nil,
-                  (past.completedAt ?? past.startedAt) >= sixMonthsAgo else { continue }
-            for we in past.exercises {
-                for set in we.sets {
-                    guard set.isCompleted,
-                          set.setType != .warmup,
-                          let weight = set.weight, weight > 0,
-                          let reps = set.reps, reps > 0 else { continue }
-                    let e1rm = TrainingStatusDetector.calculateOneRM(weight: weight, reps: min(reps, 15))
-                    bestE1RM[we.exercise.id] = max(bestE1RM[we.exercise.id] ?? 0, e1rm)
-                }
-            }
-        }
-        return bestE1RM
+        AnalyticsCalculations.buildBestE1RMMap(excluding: workoutId, from: history)
     }
 
     /// Compute Intensity-Weighted Volume per muscle group for a set of workouts.

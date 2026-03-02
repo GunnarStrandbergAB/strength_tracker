@@ -166,6 +166,53 @@ public final class WorkoutAnalyticsViewModel {
         }
     }
 
+    // MARK: - Advanced Insights Accessors
+
+    public var advancedInsightsLoaded: Bool {
+        isFeatureUnlocked(.advancedInsights) && insights.trainingLoad != nil
+    }
+
+    public var loadZoneColor: String {
+        switch insights.trainingLoad?.loadZone {
+        case .underTraining: return "blue"
+        case .optimal: return "green"
+        case .caution: return "orange"
+        case .danger: return "red"
+        case nil: return "gray"
+        }
+    }
+
+    public var readyMuscleCount: Int {
+        insights.recoveryPatterns.filter { $0.recoveryStatus == .ready }.count
+    }
+
+    public var recoveringMuscleCount: Int {
+        insights.recoveryPatterns.filter { $0.recoveryStatus != .ready }.count
+    }
+
+    public var topHighlight: AnalyticsHighlight? {
+        insights.highlights.first
+    }
+
+    public var currentPhaseDisplayName: String {
+        guard let phase = insights.trainingPhase?.currentPhase else { return "—" }
+        switch phase {
+        case .accumulation: return "Accumulation"
+        case .intensification: return "Intensification"
+        case .peaking: return "Peaking"
+        case .deload: return "Deload"
+        case .mixed: return "General"
+        }
+    }
+
+    public func formatACWR(_ acwr: Double) -> String {
+        String(format: "%.2f", acwr)
+    }
+
+    public func formatSlope(_ slope: Double) -> String {
+        String(format: "%+.1f kg/wk", slope)
+    }
+
     // MARK: - Feature Gate Helpers
 
     public func isFeatureUnlocked(_ feature: AnalyticsFeatureGate.Feature) -> Bool {
