@@ -13,6 +13,16 @@ public struct WorkoutInsights: Sendable {
     public let recoveryPatterns: [RecoveryPattern]
     public let optimalVolumes: [OptimalVolumeRange]
 
+    // Advanced Insights (50+ workouts)
+    public let trainingLoad: TrainingLoad?
+    public let overloadTrends: [OverloadTrend]
+    public let deloadRecommendation: DeloadRecommendation?
+    public let trainingDrift: TrainingDrift?
+    public let trainingPhase: TrainingPhaseDetection?
+    public let blockComparison: BlockComparison?
+    public let anomalies: [WorkoutAnomaly]
+    public let highlights: [AnalyticsHighlight]
+
     public init(
         generatedAt: Date,
         workoutCount: Int,
@@ -20,7 +30,15 @@ public struct WorkoutInsights: Sendable {
         muscleBalance: MuscleBalance?,
         recommendations: [ExerciseRecommendation],
         recoveryPatterns: [RecoveryPattern],
-        optimalVolumes: [OptimalVolumeRange]
+        optimalVolumes: [OptimalVolumeRange],
+        trainingLoad: TrainingLoad? = nil,
+        overloadTrends: [OverloadTrend] = [],
+        deloadRecommendation: DeloadRecommendation? = nil,
+        trainingDrift: TrainingDrift? = nil,
+        trainingPhase: TrainingPhaseDetection? = nil,
+        blockComparison: BlockComparison? = nil,
+        anomalies: [WorkoutAnomaly] = [],
+        highlights: [AnalyticsHighlight] = []
     ) {
         self.generatedAt = generatedAt
         self.workoutCount = workoutCount
@@ -29,6 +47,14 @@ public struct WorkoutInsights: Sendable {
         self.recommendations = recommendations
         self.recoveryPatterns = recoveryPatterns
         self.optimalVolumes = optimalVolumes
+        self.trainingLoad = trainingLoad
+        self.overloadTrends = overloadTrends
+        self.deloadRecommendation = deloadRecommendation
+        self.trainingDrift = trainingDrift
+        self.trainingPhase = trainingPhase
+        self.blockComparison = blockComparison
+        self.anomalies = anomalies
+        self.highlights = highlights
     }
 
     /// Empty insights for initial state before data loads.

@@ -8,6 +8,7 @@ public struct RecoveryPattern: Identifiable, Hashable, Sendable, Codable {
     public let optimalRestDays: Int
     public let lastTrainedDate: Date?
     public let readyToTrainDate: Date?
+    public let recoveryStatus: RecoveryStatus
 
     public init(
         id: UUID = UUID(),
@@ -15,7 +16,8 @@ public struct RecoveryPattern: Identifiable, Hashable, Sendable, Codable {
         averageRecoveryHours: Double,
         optimalRestDays: Int,
         lastTrainedDate: Date?,
-        readyToTrainDate: Date?
+        readyToTrainDate: Date?,
+        recoveryStatus: RecoveryStatus = .ready
     ) {
         self.id = id
         self.muscleGroup = muscleGroup
@@ -23,5 +25,13 @@ public struct RecoveryPattern: Identifiable, Hashable, Sendable, Codable {
         self.optimalRestDays = optimalRestDays
         self.lastTrainedDate = lastTrainedDate
         self.readyToTrainDate = readyToTrainDate
+        self.recoveryStatus = recoveryStatus
     }
+}
+
+/// Recovery readiness status for a muscle group.
+public enum RecoveryStatus: String, Codable, Sendable {
+    case ready       // >= 100% recovered
+    case recovering  // >= 70% recovered
+    case fatigued    // < 70% recovered
 }

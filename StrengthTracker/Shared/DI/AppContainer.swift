@@ -98,6 +98,9 @@ public final class AppContainer: Sendable {
         // Analytics repository (vector-only, no workoutRepository dependency -- ADR-011)
         analyticsRepository = SwiftDataAnalyticsRepository(modelContext: modelContext)
 
+        // Progression: TrainingStatusDetector needed by VolumeLandmarkService
+        trainingStatusDetector = TrainingStatusDetector(workoutRepository: workoutRepository)
+
         // Analytics services (stateless -- ADR-012)
         vectorizer = WorkoutVectorizer()
         searchService = VectorSearchService()
@@ -111,6 +114,25 @@ public final class AppContainer: Sendable {
             userPreferencesService: userPreferencesService
         )
         analyticsFeatureGate = AnalyticsFeatureGate(workoutRepository: workoutRepository)
+
+        // Advanced Insights services
+        let volumeLandmark = VolumeLandmarkService(
+            workoutRepository: workoutRepository,
+            trainingStatusDetector: trainingStatusDetector
+        )
+        let recoveryEstimation = RecoveryEstimationService(workoutRepository: workoutRepository)
+        let driftSvc = TrainingDriftService(searchService: searchService)
+        let phaseDetection = PhaseDetectionService(searchService: searchService)
+        let blockComparison = BlockComparisonService(searchService: searchService)
+        let anomalyDetection = AnomalyDetectionService(searchService: searchService)
+
+        let insightGen: any InsightTextGenerating
+        if #available(iOS 26, macOS 26, *) {
+            insightGen = AppleIntelligenceInsightGenerator(fallback: TemplateInsightGenerator())
+        } else {
+            insightGen = TemplateInsightGenerator()
+        }
+
         analyticsService = WorkoutAnalyticsService(
             analyticsRepository: analyticsRepository,
             workoutRepository: workoutRepository,
@@ -119,11 +141,17 @@ public final class AppContainer: Sendable {
             searchService: searchService,
             plateauService: plateauService,
             muscleBalanceService: muscleBalanceService,
-            recommendationService: recommendationService
+            recommendationService: recommendationService,
+            volumeLandmarkService: volumeLandmark,
+            recoveryEstimationService: recoveryEstimation,
+            driftService: driftSvc,
+            phaseDetectionService: phaseDetection,
+            blockComparisonService: blockComparison,
+            anomalyDetectionService: anomalyDetection,
+            insightGenerator: insightGen
         )
 
-        // Progression services (stateless -- ADR-014)
-        trainingStatusDetector = TrainingStatusDetector(workoutRepository: workoutRepository)
+        // Remaining progression services (stateless -- ADR-014)
         programDesignService = ProgramDesignService()
         sessionExecutionService = SessionExecutionService()
         adaptiveAdjustmentService = AdaptiveAdjustmentService(workoutRepository: workoutRepository)
