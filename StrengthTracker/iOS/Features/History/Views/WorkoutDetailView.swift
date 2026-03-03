@@ -3,40 +3,88 @@ import StrengthTrackerShared
 
 struct WorkoutDetailView: View {
     let workout: Workout
+    var historyViewModel: HistoryViewModel? = nil
     var analyticsViewModel: WorkoutAnalyticsViewModel? = nil
 
+    /// The displayed workout: use historyViewModel's selectedWorkout (live edits) if available.
+    private var displayedWorkout: Workout {
+        historyViewModel?.selectedWorkout ?? workout
+    }
+
     var body: some View {
+        let isEditing = historyViewModel?.isEditing ?? false
+
         List {
             Section("Summary") {
                 LabeledContent(
                     "Started",
-                    value: workout.startedAt.formatted(date: .abbreviated, time: .shortened)
+                    value: displayedWorkout.startedAt.formatted(date: .abbreviated, time: .shortened)
                 )
-                if let completedAt = workout.completedAt {
+                if let completedAt = displayedWorkout.completedAt {
                     LabeledContent(
                         "Completed",
                         value: completedAt.formatted(date: .abbreviated, time: .shortened)
                     )
                 }
-                if let duration = workout.duration {
+                if let duration = displayedWorkout.duration {
                     LabeledContent("Duration", value: formatDuration(duration))
                 }
-                LabeledContent("Total Volume", value: String(format: "%.0f kg", workout.totalVolume))
-                LabeledContent("Exercises", value: "\(workout.exercises.count)")
+                LabeledContent("Total Volume", value: String(format: "%.0f kg", displayedWorkout.totalVolume))
+                LabeledContent("Exercises", value: "\(displayedWorkout.exercises.count)")
             }
 
             // Quality Score section
             if let vm = analyticsViewModel, vm.isFeatureUnlocked(.qualityScore) {
                 Section("Quality Score") {
-                    WorkoutQualityScoreView(viewModel: vm, workout: workout)
+                    WorkoutQualityScoreView(viewModel: vm, workout: displayedWorkout)
                 }
             }
 
-            ForEach(workout.exercises) { workoutExercise in
+            ForEach(displayedWorkout.exercises) { workoutExercise in
                 Section(workoutExercise.exercise.name) {
-                    ForEach(workoutExercise.sets) { exerciseSet in
-                        SetRowView(exerciseSet: exerciseSet)
+                    if isEditing, let hvm = historyViewModel {
+                        ForEach(Array(workoutExercise.sets.enumerated()), id: \.element.id) { index, exerciseSet in
+                            SetRowGridView(
+                                setNumber: index + 1,
+                                exerciseSet: exerciseSet,
+                                onWeightChange: { weight in
+                                    Task { await hvm.updateSetWeight(exerciseId: workoutExercise.id, setId: exerciseSet.id, weight: weight) }
+                                },
+                                onRepsChange: { reps in
+                                    Task { await hvm.updateSetReps(exerciseId: workoutExercise.id, setId: exerciseSet.id, reps: reps) }
+                                },
+                                onToggleComplete: {
+                                    Task { await hvm.toggleSetCompletion(exerciseId: workoutExercise.id, setId: exerciseSet.id) }
+                                },
+                                onSetTypeChange: { setType in
+                                    Task { await hvm.updateSetType(exerciseId: workoutExercise.id, setId: exerciseSet.id, setType: setType) }
+                                }
+                            )
+                        }
+
+                        HStack(spacing: 12) {
+                            Button {
+                                Task { await hvm.addEmptySet(exerciseId: workoutExercise.id) }
+                            } label: {
+                                Label("Add Set", systemImage: "plus.circle")
+                                    .font(.system(size: 13))
+                            }
+
+                            if !workoutExercise.sets.isEmpty {
+                                Button(role: .destructive) {
+                                    Task { await hvm.removeLastSet(exerciseId: workoutExercise.id) }
+                                } label: {
+                                    Label("Remove Last", systemImage: "minus.circle")
+                                        .font(.system(size: 13))
+                                }
+                            }
+                        }
+                    } else {
+                        ForEach(workoutExercise.sets) { exerciseSet in
+                            SetRowView(exerciseSet: exerciseSet)
+                        }
                     }
+
                     if workoutExercise.exerciseVolume > 0 {
                         LabeledContent("Exercise Volume") {
                             Text(String(format: "%.0f kg", workoutExercise.exerciseVolume))
@@ -46,7 +94,7 @@ struct WorkoutDetailView: View {
                 }
             }
 
-            if let notes = workout.notes {
+            if let notes = displayedWorkout.notes {
                 Section("Notes") {
                     Text(notes)
                 }
@@ -56,14 +104,29 @@ struct WorkoutDetailView: View {
             if let vm = analyticsViewModel, vm.isFeatureUnlocked(.similarWorkouts) {
                 Section {
                     NavigationLink {
-                        SimilarWorkoutsView(viewModel: vm, workout: workout)
+                        SimilarWorkoutsView(viewModel: vm, workout: displayedWorkout)
                     } label: {
                         Label("Similar Workouts", systemImage: "doc.on.doc")
                     }
                 }
             }
         }
-        .navigationTitle(workout.name)
+        .navigationTitle(displayedWorkout.name)
+        .toolbar {
+            if let hvm = historyViewModel {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(hvm.isEditing ? "Done" : "Edit") {
+                        hvm.isEditing.toggle()
+                    }
+                }
+            }
+        }
+        .onAppear {
+            historyViewModel?.selectWorkout(workout)
+        }
+        .onDisappear {
+            historyViewModel?.isEditing = false
+        }
     }
 
     private func formatDuration(_ interval: TimeInterval) -> String {

@@ -38,6 +38,7 @@ public final class ProgressionPlanViewModel {
     public var draftGoal: TrainingGoal = .hypertrophy
     public var draftProgramType: ProgramType = .linear
     public var draftFrequency: Int = 3
+    public var draftTrainingDays: Set<Int> = []
     public var draftSelectedExercises: [DraftPlanExercise] = []
     public var draftPlanName: String = ""
     public var isSavingPlan = false
@@ -134,6 +135,29 @@ public final class ProgressionPlanViewModel {
     public func applyStatusRecommendation() {
         draftProgramType = draftStatus.recommendedProgramType
         draftFrequency = draftStatus.weeklyFrequencyRange.lowerBound
+        draftTrainingDays = Set(Self.defaultDaySpread[draftFrequency] ?? Self.defaultDaySpread[3]!)
+    }
+
+    // MARK: - Weekday Selection
+
+    /// Default day-of-week templates (ISO 8601: Mon=2..Sat=7, Sun=1).
+    public static let defaultDaySpread: [Int: [Int]] = [
+        2: [2, 5],              // Mon / Thu
+        3: [2, 4, 6],           // Mon / Wed / Fri
+        4: [2, 3, 5, 6],       // Mon / Tue / Thu / Fri
+        5: [2, 3, 4, 6, 7],    // Mon / Tue / Wed / Fri / Sat
+        6: [2, 3, 4, 5, 6, 7], // Mon - Sat
+    ]
+
+    public func toggleTrainingDay(_ day: Int) {
+        if draftTrainingDays.contains(day) {
+            guard draftTrainingDays.count > 2 else { return }
+            draftTrainingDays.remove(day)
+        } else {
+            guard draftTrainingDays.count < 6 else { return }
+            draftTrainingDays.insert(day)
+        }
+        draftFrequency = draftTrainingDays.count
     }
 
     // MARK: - Exercise Management
@@ -193,6 +217,8 @@ public final class ProgressionPlanViewModel {
                 )
             }
 
+            let sortedDays = draftTrainingDays.isEmpty ? nil : draftTrainingDays.sorted()
+
             var plan = ProgressionPlan(
                 name: draftPlanName.isEmpty ? "Training Plan" : draftPlanName,
                 status: .active,
@@ -200,6 +226,7 @@ public final class ProgressionPlanViewModel {
                 programType: draftProgramType,
                 primaryGoal: draftGoal,
                 weeklyFrequency: draftFrequency,
+                trainingDays: sortedDays,
                 exercises: planExercises,
                 creationSource: .structuredFlow
             )
@@ -228,6 +255,7 @@ public final class ProgressionPlanViewModel {
         draftGoal = .hypertrophy
         draftProgramType = .linear
         draftFrequency = 3
+        draftTrainingDays = []
         draftSelectedExercises = []
         draftPlanName = ""
         isSavingPlan = false

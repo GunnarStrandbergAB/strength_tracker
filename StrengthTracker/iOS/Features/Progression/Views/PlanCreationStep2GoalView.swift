@@ -56,26 +56,35 @@ struct PlanCreationStep2GoalView: View {
                 }
                 .padding(.horizontal, 20)
 
-                // Frequency
+                // Training Days
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("WEEKLY FREQUENCY")
+                    Text("TRAINING DAYS")
                         .font(.system(size: 10, weight: .bold))
                         .textCase(.uppercase)
                         .foregroundStyle(STColors.textSecondary)
 
-                    HStack {
-                        Text("\(viewModel.draftFrequency) days per week")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(STColors.textPrimary)
+                    Text("\(viewModel.draftTrainingDays.count) days per week")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(STColors.textPrimary)
 
-                        Spacer()
-
-                        Stepper("", value: $viewModel.draftFrequency, in: 2...6)
-                            .labelsHidden()
+                    HStack(spacing: 8) {
+                        ForEach(dayOptions, id: \.isoDay) { option in
+                            let isSelected = viewModel.draftTrainingDays.contains(option.isoDay)
+                            Button {
+                                viewModel.toggleTrainingDay(option.isoDay)
+                            } label: {
+                                Text(option.letter)
+                                    .font(.system(size: 14, weight: .bold))
+                                    .frame(width: 38, height: 38)
+                                    .foregroundStyle(isSelected ? STColors.background : STColors.textSecondary)
+                                    .background(isSelected ? STColors.primary : STColors.surface)
+                                    .clipShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    .padding(14)
-                    .background(STColors.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
                 }
                 .padding(.horizontal, 20)
 
@@ -83,6 +92,13 @@ struct PlanCreationStep2GoalView: View {
             }
         }
         .background(STColors.background)
+        .onAppear {
+            if viewModel.draftTrainingDays.isEmpty {
+                let defaults = ProgressionPlanViewModel.defaultDaySpread[viewModel.draftFrequency]
+                    ?? ProgressionPlanViewModel.defaultDaySpread[3]!
+                viewModel.draftTrainingDays = Set(defaults)
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             navigationButtons
         }
@@ -200,6 +216,23 @@ struct PlanCreationStep2GoalView: View {
         .padding(.bottom, 8)
         .background(STColors.background)
     }
+
+    // MARK: - Day Options
+
+    private struct DayOption {
+        let isoDay: Int   // ISO 8601: Sun=1, Mon=2..Sat=7
+        let letter: String
+    }
+
+    private let dayOptions: [DayOption] = [
+        DayOption(isoDay: 2, letter: "M"),
+        DayOption(isoDay: 3, letter: "T"),
+        DayOption(isoDay: 4, letter: "W"),
+        DayOption(isoDay: 5, letter: "T"),
+        DayOption(isoDay: 6, letter: "F"),
+        DayOption(isoDay: 7, letter: "S"),
+        DayOption(isoDay: 1, letter: "S"),
+    ]
 
     // MARK: - Helpers
 

@@ -50,7 +50,7 @@ struct PlanCreationStep4ReviewView: View {
                         Divider().overlay(STColors.border)
                         summaryRow(label: "Program", value: viewModel.draftProgramType.displayName)
                         Divider().overlay(STColors.border)
-                        summaryRow(label: "Frequency", value: "\(viewModel.draftFrequency) days/week")
+                        summaryRow(label: "Frequency", value: trainingDaysSummary)
                         Divider().overlay(STColors.border)
                         summaryRow(label: "Level", value: viewModel.draftStatus.rawValue.capitalized)
                         Divider().overlay(STColors.border)
@@ -176,6 +176,22 @@ struct PlanCreationStep4ReviewView: View {
     }
 
     // MARK: - Helpers
+
+    private static let shortDayNames: [Int: String] = [
+        1: "Sun", 2: "Mon", 3: "Tue", 4: "Wed",
+        5: "Thu", 6: "Fri", 7: "Sat"
+    ]
+
+    /// ISO weekday order: Mon(2)..Sat(7), Sun(1)
+    private static let dayDisplayOrder: [Int] = [2, 3, 4, 5, 6, 7, 1]
+
+    private var trainingDaysSummary: String {
+        let days = viewModel.draftTrainingDays
+        guard !days.isEmpty else { return "\(viewModel.draftFrequency) days/week" }
+        let sorted = Self.dayDisplayOrder.filter { days.contains($0) }
+        let names = sorted.compactMap { Self.shortDayNames[$0] }
+        return names.joined(separator: ", ")
+    }
 
     private func goalDisplayName(_ goal: TrainingGoal) -> String {
         switch goal {

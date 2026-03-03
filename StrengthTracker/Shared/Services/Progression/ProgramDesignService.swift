@@ -46,6 +46,11 @@ public final class ProgramDesignService: Sendable {
 
     public init() {}
 
+    /// Resolve training days: prefer explicit `trainingDays`, fall back to `daySpread` by frequency.
+    private func resolveDays(for plan: ProgressionPlan) -> [Int] {
+        plan.trainingDays ?? Self.daySpread[plan.weeklyFrequency] ?? Self.daySpread[3]!
+    }
+
     public func generateProgram(for plan: ProgressionPlan) -> [TrainingBlock] {
         switch plan.programType {
         case .linear:
@@ -68,7 +73,7 @@ public final class ProgramDesignService: Sendable {
         let startIntensity = goalRange.lowerBound
         let maxIntensity = goalRange.upperBound
         let restSeconds = middleRest(for: plan.primaryGoal)
-        let days = Self.daySpread[plan.weeklyFrequency] ?? Self.daySpread[3]!
+        let days = resolveDays(for: plan)
 
         // Determine if deloads apply (beginner/intermediate get auto-deload every 4th week)
         let needsScheduledDeload = plan.trainingStatus != .advanced
@@ -176,7 +181,7 @@ public final class ProgramDesignService: Sendable {
     private func generateDUPProgram(_ plan: ProgressionPlan) -> [TrainingBlock] {
         let totalWeeks = Defaults.linearWeeks
         let restSeconds = middleRest(for: plan.primaryGoal)
-        let days = Self.daySpread[plan.weeklyFrequency] ?? Self.daySpread[3]!
+        let days = resolveDays(for: plan)
         let sessionTypes: [DUPSessionType] = [.hypertrophy, .strength, .power]
         let needsScheduledDeload = plan.trainingStatus != .advanced // M1
 
@@ -281,7 +286,7 @@ public final class ProgramDesignService: Sendable {
     private func generateWUPProgram(_ plan: ProgressionPlan) -> [TrainingBlock] {
         let totalWeeks = Defaults.linearWeeks
         let restSeconds = middleRest(for: plan.primaryGoal)
-        let days = Self.daySpread[plan.weeklyFrequency] ?? Self.daySpread[3]!
+        let days = resolveDays(for: plan)
         let schemeRotation: [DUPSessionType] = [.hypertrophy, .strength, .power]
         let needsScheduledDeload = plan.trainingStatus != .advanced // M1
 
@@ -366,7 +371,7 @@ public final class ProgramDesignService: Sendable {
 
     private func generateBlockProgram(_ plan: ProgressionPlan) -> [TrainingBlock] {
         let restSeconds = middleRest(for: plan.primaryGoal)
-        let days = Self.daySpread[plan.weeklyFrequency] ?? Self.daySpread[3]!
+        let days = resolveDays(for: plan)
         let phases: [BlockPhase] = [.accumulation, .transmutation, .realization, .deload]
 
         var blocks: [TrainingBlock] = []
