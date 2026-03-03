@@ -5,6 +5,8 @@ import StrengthTrackerShared
 /// Compact analytics card for the Dashboard — shows top insights with navigation to full analytics.
 struct InsightsCardView: View {
     let viewModel: WorkoutAnalyticsViewModel
+    var storeService: StoreService? = nil
+    @State private var showUpgradeSheet = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -16,16 +18,21 @@ struct InsightsCardView: View {
 
                 Spacer()
 
-                NavigationLink {
-                    AnalyticsDashboardView(viewModel: viewModel)
-                } label: {
-                    Text("View All")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(STColors.primary)
+                if viewModel.hasProAccess {
+                    NavigationLink {
+                        AnalyticsDashboardView(viewModel: viewModel)
+                    } label: {
+                        Text("View All")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(STColors.primary)
+                    }
                 }
             }
 
-            if viewModel.isInsightsLoading || viewModel.isMigrating {
+            if !viewModel.hasProAccess {
+                // No Pro — show locked card
+                lockedAnalyticsView
+            } else if viewModel.isInsightsLoading || viewModel.isMigrating {
                 HStack(spacing: 8) {
                     ProgressView()
                         .tint(STColors.primary)
@@ -45,6 +52,49 @@ struct InsightsCardView: View {
         .padding(STSpacing.cardPadding)
         .background(STColors.surface)
         .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+        .sheet(isPresented: $showUpgradeSheet) {
+            if let storeService {
+                ProUpgradeView(storeService: storeService)
+            }
+        }
+    }
+
+    private var lockedAnalyticsView: some View {
+        Button {
+            showUpgradeSheet = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(STColors.textTertiary)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("Unlock Analytics")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(STColors.textPrimary)
+
+                        Text("PRO")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(STColors.background)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(STColors.primary)
+                            .clipShape(Capsule())
+                    }
+                    Text("Plateaus, muscle balance, quality scores & more")
+                        .font(.system(size: 11))
+                        .foregroundStyle(STColors.textSecondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "crown.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(STColors.primary)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder

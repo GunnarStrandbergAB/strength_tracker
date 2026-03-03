@@ -34,6 +34,7 @@ public final class WorkoutAnalyticsViewModel {
     private let qualityScoreService: WorkoutQualityScoreService
     private let featureGate: AnalyticsFeatureGate
     private let workoutRepository: (any WorkoutRepository)?
+    private let proFeatureGate: ProFeatureGate?
 
     private static let migrationKey = "analytics_migration_complete"
 
@@ -43,12 +44,14 @@ public final class WorkoutAnalyticsViewModel {
         analyticsService: WorkoutAnalyticsService,
         qualityScoreService: WorkoutQualityScoreService,
         featureGate: AnalyticsFeatureGate,
-        workoutRepository: (any WorkoutRepository)? = nil
+        workoutRepository: (any WorkoutRepository)? = nil,
+        proFeatureGate: ProFeatureGate? = nil
     ) {
         self.analyticsService = analyticsService
         self.qualityScoreService = qualityScoreService
         self.featureGate = featureGate
         self.workoutRepository = workoutRepository
+        self.proFeatureGate = proFeatureGate
     }
 
     // MARK: - Dashboard (loads WorkoutInsights aggregate)
@@ -216,7 +219,15 @@ public final class WorkoutAnalyticsViewModel {
     // MARK: - Feature Gate Helpers
 
     public func isFeatureUnlocked(_ feature: AnalyticsFeatureGate.Feature) -> Bool {
-        unlockedFeatures.contains(feature)
+        if let proFeatureGate, !proFeatureGate.hasProAccess {
+            return false
+        }
+        return unlockedFeatures.contains(feature)
+    }
+
+    /// Whether Pro subscription is active (or beta bypass). Nil gate means no restriction.
+    public var hasProAccess: Bool {
+        proFeatureGate?.hasProAccess ?? true
     }
 
     // MARK: - Formatting Helpers

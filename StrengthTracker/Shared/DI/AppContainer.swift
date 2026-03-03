@@ -14,6 +14,10 @@ public final class AppContainer: Sendable {
     public let personalRecordRepository: any PersonalRecordRepository
     public let progressionPlanRepository: any ProgressionPlanRepository
 
+    // Store
+    public let storeService: StoreService
+    public let proFeatureGate: ProFeatureGate
+
     // Services
     public let personalRecordService: PersonalRecordService
     public let restTimerService: RestTimerService
@@ -74,6 +78,10 @@ public final class AppContainer: Sendable {
         templateRepository = SwiftDataTemplateRepository(modelContext: modelContext)
         personalRecordRepository = SwiftDataPersonalRecordRepository(modelContext: modelContext)
         progressionPlanRepository = SwiftDataProgressionPlanRepository(modelContext: modelContext)
+
+        // Store
+        storeService = StoreService()
+        proFeatureGate = ProFeatureGate(storeService: storeService)
 
         // Wire up services
         personalRecordService = PersonalRecordService(
@@ -189,7 +197,8 @@ public final class AppContainer: Sendable {
             analyticsService: analyticsService,
             qualityScoreService: qualityScoreService,
             featureGate: analyticsFeatureGate,
-            workoutRepository: workoutRepository
+            workoutRepository: workoutRepository,
+            proFeatureGate: proFeatureGate
         )
         progressionPlanViewModel = ProgressionPlanViewModel(
             progressionPlanRepository: progressionPlanRepository,
