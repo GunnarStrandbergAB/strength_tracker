@@ -15,6 +15,7 @@ public final class ProgressionPlanEntity {
     public var primaryGoal: String         // TrainingGoal raw value
     public var secondaryGoal: String?      // TrainingGoal raw value (optional)
     public var weeklyFrequency: Int
+    public var trainingDaysJSON: Data?     // JSON-encoded [Int]? (ISO 8601 day numbers)
     public var startDate: Date
     public var targetEndDate: Date?
     public var actualEndDate: Date?
@@ -36,6 +37,7 @@ public final class ProgressionPlanEntity {
         primaryGoal: String,
         secondaryGoal: String?,
         weeklyFrequency: Int,
+        trainingDaysJSON: Data? = nil,
         startDate: Date,
         targetEndDate: Date?,
         actualEndDate: Date?,
@@ -56,6 +58,7 @@ public final class ProgressionPlanEntity {
         self.primaryGoal = primaryGoal
         self.secondaryGoal = secondaryGoal
         self.weeklyFrequency = weeklyFrequency
+        self.trainingDaysJSON = trainingDaysJSON
         self.startDate = startDate
         self.targetEndDate = targetEndDate
         self.actualEndDate = actualEndDate

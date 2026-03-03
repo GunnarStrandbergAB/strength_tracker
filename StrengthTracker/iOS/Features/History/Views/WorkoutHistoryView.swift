@@ -21,7 +21,11 @@ struct WorkoutHistoryView: View {
             }
             .navigationTitle("History")
             .navigationDestination(for: Workout.self) { workout in
-                WorkoutDetailView(workout: workout, analyticsViewModel: analyticsViewModel)
+                WorkoutDetailView(
+                    workout: workout,
+                    historyViewModel: viewModel,
+                    analyticsViewModel: analyticsViewModel
+                )
             }
             .overlay {
                 if viewModel.isLoading {

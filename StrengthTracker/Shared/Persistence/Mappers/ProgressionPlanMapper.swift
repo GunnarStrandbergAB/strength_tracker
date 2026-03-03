@@ -41,6 +41,9 @@ public enum ProgressionPlanMapper {
             return nil
         }
 
+        let trainingDays: [Int]? = entity.trainingDaysJSON.flatMap {
+            try? decoder.decode([Int].self, from: $0)
+        }
         let secondaryGoal: TrainingGoal? = entity.secondaryGoal.flatMap { TrainingGoal(rawValue: $0) }
         let creationSource: ProgressionPlan.PlanCreationSource? = entity.creationSource.flatMap {
             ProgressionPlan.PlanCreationSource(rawValue: $0)
@@ -55,6 +58,7 @@ public enum ProgressionPlanMapper {
             primaryGoal: primaryGoal,
             secondaryGoal: secondaryGoal,
             weeklyFrequency: entity.weeklyFrequency,
+            trainingDays: trainingDays,
             startDate: entity.startDate,
             targetEndDate: entity.targetEndDate,
             actualEndDate: entity.actualEndDate,
@@ -75,6 +79,7 @@ public enum ProgressionPlanMapper {
         let exercisesData = encodeOrWarn(plan.exercises, label: "exercises")
         let blocksData = encodeOrWarn(plan.blocks, label: "blocks")
         let adjustmentsData = encodeOrWarn(plan.adjustments, label: "adjustments")
+        let trainingDaysData: Data? = plan.trainingDays.flatMap { try? encoder.encode($0) }
 
         return ProgressionPlanEntity(
             id: plan.id,
@@ -85,6 +90,7 @@ public enum ProgressionPlanMapper {
             primaryGoal: plan.primaryGoal.rawValue,
             secondaryGoal: plan.secondaryGoal?.rawValue,
             weeklyFrequency: plan.weeklyFrequency,
+            trainingDaysJSON: trainingDaysData,
             startDate: plan.startDate,
             targetEndDate: plan.targetEndDate,
             actualEndDate: plan.actualEndDate,
@@ -110,6 +116,7 @@ public enum ProgressionPlanMapper {
         entity.primaryGoal = plan.primaryGoal.rawValue
         entity.secondaryGoal = plan.secondaryGoal?.rawValue
         entity.weeklyFrequency = plan.weeklyFrequency
+        entity.trainingDaysJSON = plan.trainingDays.flatMap { try? encoder.encode($0) }
         entity.startDate = plan.startDate
         entity.targetEndDate = plan.targetEndDate
         entity.actualEndDate = plan.actualEndDate
