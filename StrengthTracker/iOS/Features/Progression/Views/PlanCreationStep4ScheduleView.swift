@@ -43,6 +43,9 @@ struct PlanCreationStep4ScheduleView: View {
         .safeAreaInset(edge: .bottom) {
             navigationButtons
         }
+        .task {
+            await templateViewModel.loadTemplates()
+        }
     }
 
     // MARK: - Day Card
