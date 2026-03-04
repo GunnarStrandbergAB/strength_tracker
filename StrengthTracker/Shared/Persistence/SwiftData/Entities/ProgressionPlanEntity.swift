@@ -22,6 +22,7 @@ public final class ProgressionPlanEntity {
     public var exercisesJSON: Data         // JSON-encoded [PlanExercise]
     public var blocksJSON: Data            // JSON-encoded [TrainingBlock]
     public var adjustmentsJSON: Data       // JSON-encoded [PlanAdjustment]
+    public var dayScheduleJSON: Data?      // JSON-encoded [DayScheduleEntry] (nil = legacy)
     public var createdAt: Date
     public var updatedAt: Date
     public var notes: String?
@@ -44,6 +45,7 @@ public final class ProgressionPlanEntity {
         exercisesJSON: Data,
         blocksJSON: Data,
         adjustmentsJSON: Data,
+        dayScheduleJSON: Data? = nil,
         createdAt: Date,
         updatedAt: Date,
         notes: String?,
@@ -65,6 +67,7 @@ public final class ProgressionPlanEntity {
         self.exercisesJSON = exercisesJSON
         self.blocksJSON = blocksJSON
         self.adjustmentsJSON = adjustmentsJSON
+        self.dayScheduleJSON = dayScheduleJSON
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.notes = notes

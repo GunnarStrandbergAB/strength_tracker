@@ -41,8 +41,23 @@ public final class ProgressionPlanViewModel {
     public var draftTrainingDays: Set<Int> = []
     public var draftSelectedExercises: [DraftPlanExercise] = []
     public var draftPlanName: String = ""
+    public var draftDaySchedule: [Int: DraftDayEntry] = [:]  // keyed by ISO day
     public var isSavingPlan = false
     public var errorMessage: String?
+
+    // MARK: - Draft Day Entry
+
+    public struct DraftDayEntry {
+        public var templateId: UUID?
+        public var templateName: String?
+        public var exerciseIds: Set<UUID>   // library exercise IDs
+
+        public init(templateId: UUID? = nil, templateName: String? = nil, exerciseIds: Set<UUID> = []) {
+            self.templateId = templateId
+            self.templateName = templateName
+            self.exerciseIds = exerciseIds
+        }
+    }
 
     // MARK: - Linked Template Cache
 
@@ -195,6 +210,38 @@ public final class ProgressionPlanViewModel {
         }
     }
 
+    // MARK: - Day Schedule Management
+
+    public func setDraftTemplate(_ template: WorkoutTemplate?, forDay day: Int) {
+        guard let template else {
+            draftDaySchedule[day] = DraftDayEntry()
+            return
+        }
+        autoSuggestExercises(forDay: day, template: template)
+    }
+
+    public func toggleDraftExercise(_ exerciseId: UUID, forDay day: Int) {
+        var entry = draftDaySchedule[day] ?? DraftDayEntry()
+        if entry.exerciseIds.contains(exerciseId) {
+            entry.exerciseIds.remove(exerciseId)
+        } else {
+            entry.exerciseIds.insert(exerciseId)
+        }
+        draftDaySchedule[day] = entry
+    }
+
+    public func autoSuggestExercises(forDay day: Int, template: WorkoutTemplate) {
+        let templateExerciseIds = Set(template.exercises.map(\.exercise.id))
+        let matchingPlanExercises = draftSelectedExercises
+            .filter { templateExerciseIds.contains($0.id) }
+            .map(\.id)
+        draftDaySchedule[day] = DraftDayEntry(
+            templateId: template.id,
+            templateName: template.name,
+            exerciseIds: Set(matchingPlanExercises)
+        )
+    }
+
     // MARK: - Plan Generation
 
     public func generateAndSavePlan() async {
@@ -219,6 +266,17 @@ public final class ProgressionPlanViewModel {
 
             let sortedDays = draftTrainingDays.isEmpty ? nil : draftTrainingDays.sorted()
 
+            // Convert draft day schedule to domain model
+            let daySchedule: [DayScheduleEntry] = draftDaySchedule.compactMap { day, entry in
+                guard entry.templateId != nil || !entry.exerciseIds.isEmpty else { return nil }
+                return DayScheduleEntry(
+                    dayOfWeek: day,
+                    templateId: entry.templateId,
+                    templateName: entry.templateName,
+                    exerciseIds: Array(entry.exerciseIds)
+                )
+            }
+
             var plan = ProgressionPlan(
                 name: draftPlanName.isEmpty ? "Training Plan" : draftPlanName,
                 status: .active,
@@ -228,6 +286,7 @@ public final class ProgressionPlanViewModel {
                 weeklyFrequency: draftFrequency,
                 trainingDays: sortedDays,
                 exercises: planExercises,
+                daySchedule: daySchedule,
                 creationSource: .structuredFlow
             )
 
@@ -257,6 +316,7 @@ public final class ProgressionPlanViewModel {
         draftFrequency = 3
         draftTrainingDays = []
         draftSelectedExercises = []
+        draftDaySchedule = [:]
         draftPlanName = ""
         isSavingPlan = false
         errorMessage = nil

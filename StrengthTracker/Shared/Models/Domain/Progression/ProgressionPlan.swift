@@ -1,5 +1,22 @@
 import Foundation
 
+/// Maps a training day to a template and subset of exercises.
+public struct DayScheduleEntry: Codable, Equatable, Sendable, Identifiable {
+    public var id: UUID
+    public var dayOfWeek: Int          // ISO 8601 (Mon=2..Sat=7, Sun=1)
+    public var templateId: UUID?       // linked template for this day
+    public var templateName: String?   // denormalized for display
+    public var exerciseIds: [UUID]     // library exercise IDs to include
+
+    public init(id: UUID = UUID(), dayOfWeek: Int, templateId: UUID? = nil, templateName: String? = nil, exerciseIds: [UUID] = []) {
+        self.id = id
+        self.dayOfWeek = dayOfWeek
+        self.templateId = templateId
+        self.templateName = templateName
+        self.exerciseIds = exerciseIds
+    }
+}
+
 /// Root model: a user's progression plan
 public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
     public let id: UUID
@@ -19,6 +36,7 @@ public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
     public var adjustments: [PlanAdjustment]            // Historical modifications
     public var createdAt: Date
     public var updatedAt: Date
+    public var daySchedule: [DayScheduleEntry]          // Per-day template + exercise mapping (empty = legacy)
     public var notes: String?
     public var creationSource: PlanCreationSource?
 
@@ -43,6 +61,7 @@ public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
         exercises: [PlanExercise] = [],
         blocks: [TrainingBlock] = [],
         adjustments: [PlanAdjustment] = [],
+        daySchedule: [DayScheduleEntry] = [],
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         notes: String? = nil,
@@ -63,6 +82,7 @@ public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
         self.exercises = exercises
         self.blocks = blocks
         self.adjustments = adjustments
+        self.daySchedule = daySchedule
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.notes = notes

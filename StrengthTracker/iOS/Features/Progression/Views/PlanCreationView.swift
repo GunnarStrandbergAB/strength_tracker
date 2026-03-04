@@ -5,6 +5,7 @@ import StrengthTrackerShared
 struct PlanCreationView: View {
     let viewModel: ProgressionPlanViewModel
     let exerciseListViewModel: ExerciseListViewModel
+    let templateViewModel: TemplateViewModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -21,7 +22,12 @@ struct PlanCreationView: View {
                         exerciseListViewModel: exerciseListViewModel
                     )
                 case 4:
-                    PlanCreationStep4ReviewView(viewModel: viewModel) {
+                    PlanCreationStep4ScheduleView(
+                        viewModel: viewModel,
+                        templateViewModel: templateViewModel
+                    )
+                case 5:
+                    PlanCreationStep5ReviewView(viewModel: viewModel) {
                         viewModel.resetDraft()
                         dismiss()
                     }

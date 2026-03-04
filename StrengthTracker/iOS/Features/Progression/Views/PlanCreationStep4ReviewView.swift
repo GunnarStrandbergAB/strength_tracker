@@ -2,7 +2,7 @@
 import SwiftUI
 import StrengthTrackerShared
 
-struct PlanCreationStep4ReviewView: View {
+struct PlanCreationStep5ReviewView: View {
     @Bindable var viewModel: ProgressionPlanViewModel
     let onComplete: () -> Void
 
@@ -11,7 +11,7 @@ struct PlanCreationStep4ReviewView: View {
             VStack(alignment: .leading, spacing: 20) {
                 // Header
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Step 4 of 4")
+                    Text("Step 5 of 5")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(STColors.primary)
 
@@ -60,6 +60,11 @@ struct PlanCreationStep4ReviewView: View {
                     .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
                 }
                 .padding(.horizontal, 20)
+
+                // Training schedule (only if user assigned templates/exercises)
+                if !viewModel.draftDaySchedule.isEmpty {
+                    scheduleSummarySection
+                }
 
                 // Exercises list
                 VStack(alignment: .leading, spacing: 10) {
@@ -114,6 +119,55 @@ struct PlanCreationStep4ReviewView: View {
         }
     }
 
+    // MARK: - Schedule Summary
+
+    private var scheduleSummarySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("TRAINING SCHEDULE")
+                .font(.system(size: 10, weight: .bold))
+                .textCase(.uppercase)
+                .foregroundStyle(STColors.textSecondary)
+
+            VStack(spacing: 0) {
+                let sortedDays = Self.dayDisplayOrder.filter { viewModel.draftDaySchedule[$0] != nil }
+                ForEach(Array(sortedDays.enumerated()), id: \.element) { index, day in
+                    if index > 0 {
+                        Divider().overlay(STColors.border)
+                    }
+                    if let entry = viewModel.draftDaySchedule[day] {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(Self.fullDayNames[day] ?? "Day")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(STColors.textPrimary)
+                                Spacer()
+                                if let name = entry.templateName {
+                                    Text(name)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(STColors.primary)
+                                }
+                            }
+                            if !entry.exerciseIds.isEmpty {
+                                let names = viewModel.draftSelectedExercises
+                                    .filter { entry.exerciseIds.contains($0.id) }
+                                    .map(\.exercise.name)
+                                Text(names.joined(separator: ", "))
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(STColors.textSecondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                    }
+                }
+            }
+            .background(STColors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+        }
+        .padding(.horizontal, 20)
+    }
+
     // MARK: - Summary Row
 
     private func summaryRow(label: String, value: String) -> some View {
@@ -135,7 +189,7 @@ struct PlanCreationStep4ReviewView: View {
     private var navigationButtons: some View {
         HStack(spacing: 12) {
             Button {
-                viewModel.draftStep = 3
+                viewModel.draftStep = 4
             } label: {
                 Text("Back")
                     .font(.system(size: 16, weight: .semibold))
@@ -180,6 +234,11 @@ struct PlanCreationStep4ReviewView: View {
     private static let shortDayNames: [Int: String] = [
         1: "Sun", 2: "Mon", 3: "Tue", 4: "Wed",
         5: "Thu", 6: "Fri", 7: "Sat"
+    ]
+
+    private static let fullDayNames: [Int: String] = [
+        1: "Sunday", 2: "Monday", 3: "Tuesday", 4: "Wednesday",
+        5: "Thursday", 6: "Friday", 7: "Saturday"
     ]
 
     /// ISO weekday order: Mon(2)..Sat(7), Sun(1)

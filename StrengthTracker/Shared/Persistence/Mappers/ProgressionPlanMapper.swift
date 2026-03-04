@@ -44,6 +44,9 @@ public enum ProgressionPlanMapper {
         let trainingDays: [Int]? = entity.trainingDaysJSON.flatMap {
             try? decoder.decode([Int].self, from: $0)
         }
+        let daySchedule: [DayScheduleEntry] = entity.dayScheduleJSON.flatMap {
+            try? decoder.decode([DayScheduleEntry].self, from: $0)
+        } ?? []
         let secondaryGoal: TrainingGoal? = entity.secondaryGoal.flatMap { TrainingGoal(rawValue: $0) }
         let creationSource: ProgressionPlan.PlanCreationSource? = entity.creationSource.flatMap {
             ProgressionPlan.PlanCreationSource(rawValue: $0)
@@ -65,6 +68,7 @@ public enum ProgressionPlanMapper {
             exercises: exercises,
             blocks: blocks,
             adjustments: adjustments,
+            daySchedule: daySchedule,
             createdAt: entity.createdAt,
             updatedAt: entity.updatedAt,
             notes: entity.notes,
@@ -80,6 +84,7 @@ public enum ProgressionPlanMapper {
         let blocksData = encodeOrWarn(plan.blocks, label: "blocks")
         let adjustmentsData = encodeOrWarn(plan.adjustments, label: "adjustments")
         let trainingDaysData: Data? = plan.trainingDays.flatMap { try? encoder.encode($0) }
+        let dayScheduleData: Data? = plan.daySchedule.isEmpty ? nil : (try? encoder.encode(plan.daySchedule))
 
         return ProgressionPlanEntity(
             id: plan.id,
@@ -97,6 +102,7 @@ public enum ProgressionPlanMapper {
             exercisesJSON: exercisesData,
             blocksJSON: blocksData,
             adjustmentsJSON: adjustmentsData,
+            dayScheduleJSON: dayScheduleData,
             createdAt: plan.createdAt,
             updatedAt: plan.updatedAt,
             notes: plan.notes,
@@ -123,6 +129,7 @@ public enum ProgressionPlanMapper {
         entity.exercisesJSON = encodeOrWarn(plan.exercises, label: "exercises")
         entity.blocksJSON = encodeOrWarn(plan.blocks, label: "blocks")
         entity.adjustmentsJSON = encodeOrWarn(plan.adjustments, label: "adjustments")
+        entity.dayScheduleJSON = plan.daySchedule.isEmpty ? nil : (try? encoder.encode(plan.daySchedule))
         entity.updatedAt = plan.updatedAt
         entity.notes = plan.notes
         entity.creationSource = plan.creationSource?.rawValue
