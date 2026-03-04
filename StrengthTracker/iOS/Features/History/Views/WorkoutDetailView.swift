@@ -5,6 +5,8 @@ struct WorkoutDetailView: View {
     let workout: Workout
     var historyViewModel: HistoryViewModel? = nil
     var analyticsViewModel: WorkoutAnalyticsViewModel? = nil
+    @Environment(\.dismiss) private var dismiss
+    @State private var showingDeleteConfirmation = false
 
     /// The displayed workout: use historyViewModel's selectedWorkout (live edits) if available.
     private var displayedWorkout: Workout {
@@ -47,11 +49,15 @@ struct WorkoutDetailView: View {
                             SetRowGridView(
                                 setNumber: index + 1,
                                 exerciseSet: exerciseSet,
+                                showRPE: workoutExercise.sets.contains { $0.rpe != nil },
                                 onWeightChange: { weight in
                                     Task { await hvm.updateSetWeight(exerciseId: workoutExercise.id, setId: exerciseSet.id, weight: weight) }
                                 },
                                 onRepsChange: { reps in
                                     Task { await hvm.updateSetReps(exerciseId: workoutExercise.id, setId: exerciseSet.id, reps: reps) }
+                                },
+                                onRPEChange: { rpe in
+                                    Task { await hvm.updateSetRPE(exerciseId: workoutExercise.id, setId: exerciseSet.id, rpe: rpe) }
                                 },
                                 onToggleComplete: {
                                     Task { await hvm.toggleSetCompletion(exerciseId: workoutExercise.id, setId: exerciseSet.id) }
@@ -115,11 +121,36 @@ struct WorkoutDetailView: View {
         .toolbar {
             if let hvm = historyViewModel {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(hvm.isEditing ? "Done" : "Edit") {
-                        hvm.isEditing.toggle()
+                    HStack(spacing: 12) {
+                        Button(hvm.isEditing ? "Done" : "Edit") {
+                            hvm.isEditing.toggle()
+                        }
+                        Button {
+                            showingDeleteConfirmation = true
+                        } label: {
+                            Image(systemName: "trash")
+                                .foregroundStyle(.red)
+                        }
                     }
                 }
             }
+        }
+        .confirmationDialog(
+            "Delete Workout",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let hvm = historyViewModel {
+                    Task {
+                        await hvm.deleteWorkout(workout)
+                        dismiss()
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently delete the workout and all its data.")
         }
         .onAppear {
             historyViewModel?.selectWorkout(workout)

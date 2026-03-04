@@ -116,6 +116,30 @@ public final class HistoryViewModel {
         await saveAndSync(workout)
     }
 
+    // MARK: - Delete Workout
+
+    public func deleteWorkout(_ workout: Workout) async {
+        do {
+            try await workoutRepository.delete(workout)
+            workouts.removeAll { $0.id == workout.id }
+            if selectedWorkout?.id == workout.id {
+                selectedWorkout = nil
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - RPE Editing
+
+    public func updateSetRPE(exerciseId: UUID, setId: UUID, rpe: Double?) async {
+        guard var workout = selectedWorkout,
+              let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              let si = workout.exercises[ei].sets.firstIndex(where: { $0.id == setId }) else { return }
+        workout.exercises[ei].sets[si].rpe = rpe
+        await saveAndSync(workout)
+    }
+
     // MARK: - Save Helper
 
     private func saveAndSync(_ workout: Workout) async {

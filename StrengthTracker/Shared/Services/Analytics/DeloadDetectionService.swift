@@ -50,6 +50,12 @@ public enum DeloadDetectionService {
             urgencyWeights.append(0.2 * min(Double(weeksSinceDeload - 6) / 4.0, 1.0))
         }
 
+        // 5. RPE creep: average session RPE trending up over 3+ sessions
+        if let rpeUrgency = detectRPECreep(workouts: Array(completed.suffix(5))) {
+            triggers.append(.rpeCreep)
+            urgencyWeights.append(rpeUrgency)
+        }
+
         let urgency = urgencyWeights.reduce(0, +)
         guard urgency >= 0.15 else { return nil }
 
@@ -110,7 +116,7 @@ public enum DeloadDetectionService {
                     } else {
                         pct1RM = 0.75
                     }
-                    sessionLoad += Double(reps) * pct1RM
+                    sessionLoad += AnalyticsCalculations.setIWV(reps: reps, pct1RM: pct1RM, rpe: set.rpe)
                 }
             }
 
@@ -136,6 +142,33 @@ public enum DeloadDetectionService {
         return weeklyLoads.count - lastDeloadWeekIndex
     }
 
+    /// Detect if average session RPE is trending up over 3+ consecutive sessions.
+    /// Returns urgency weight if RPE creep is detected, nil otherwise.
+    private static func detectRPECreep(workouts: [Workout]) -> Double? {
+        // Compute average RPE per session (only sessions that have RPE data)
+        let sessionRPEs: [Double] = workouts.compactMap { workout -> Double? in
+            let rpes = workout.exercises.flatMap { we in
+                we.sets.compactMap { set -> Double? in
+                    guard set.isCompleted, set.setType != .warmup else { return nil }
+                    return set.rpe
+                }
+            }
+            guard !rpes.isEmpty else { return nil }
+            return rpes.reduce(0, +) / Double(rpes.count)
+        }
+
+        guard sessionRPEs.count >= 3 else { return nil }
+
+        // Check if RPE is monotonically increasing over the last 3 sessions
+        let recent = Array(sessionRPEs.suffix(3))
+        let isIncreasing = recent[1] > recent[0] && recent[2] > recent[1]
+        guard isIncreasing else { return nil }
+
+        // Severity proportional to total RPE increase
+        let increase = recent[2] - recent[0]
+        return 0.2 * min(increase / 2.0, 1.0)
+    }
+
     private static func suggestedAction(triggers: [DeloadSignal], urgency: Double) -> String {
         if urgency > 0.6 {
             return "Take a full deload week: reduce volume by 40-50% and intensity by 10-15%"
@@ -143,6 +176,8 @@ public enum DeloadDetectionService {
             return "Reduce training volume this week by 30% to bring load ratio back to optimal"
         } else if triggers.contains(.performanceDecline) {
             return "Consider a lighter week focusing on technique with reduced weights"
+        } else if triggers.contains(.rpeCreep) {
+            return "Subjective effort is rising — consider reducing intensity before performance drops"
         } else {
             return "Monitor fatigue levels; a planned deload within 1-2 weeks is recommended"
         }

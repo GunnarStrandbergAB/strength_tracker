@@ -29,4 +29,5 @@ public enum DeloadSignal: String, Codable, Sendable {
     case performanceDecline   // e1RM dropping in 40%+ exercises
     case overdue              // >6 weeks since volume dropped <60%
     case highACWR             // ACWR > 1.4 sustained 2+ weeks
+    case rpeCreep             // subjective RPE trending up over 3+ sessions
 }

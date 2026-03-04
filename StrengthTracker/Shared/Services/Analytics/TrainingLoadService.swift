@@ -49,7 +49,7 @@ public enum TrainingLoadService {
 
     // MARK: - Private
 
-    /// Session load = sum of IWV per working set = sum(reps * weight/bestE1RM).
+    /// Session load = sum of IWV per working set, optionally RPE-modulated.
     private static func computeSessionLoad(workout: Workout, bestE1RM: [UUID: Double]) -> Double {
         var load = 0.0
         for we in workout.exercises {
@@ -64,7 +64,7 @@ public enum TrainingLoadService {
                 } else {
                     pct1RM = 0.75
                 }
-                load += Double(reps) * pct1RM
+                load += AnalyticsCalculations.setIWV(reps: reps, pct1RM: pct1RM, rpe: set.rpe)
             }
         }
         return load
@@ -91,7 +91,7 @@ public enum TrainingLoadService {
                     } else {
                         pct1RM = 0.75
                     }
-                    let setIWV = Double(reps) * pct1RM
+                    let setIWV = AnalyticsCalculations.setIWV(reps: reps, pct1RM: pct1RM, rpe: set.rpe)
                     muscleLoad[we.exercise.primaryMuscleGroup.rawValue, default: 0] += setIWV
                 }
             }

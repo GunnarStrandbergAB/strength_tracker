@@ -23,11 +23,20 @@ public final class RecoveryEstimationService: Sendable {
 
         return muscleLastTrained.compactMap { entry in
             let muscleGroup = entry.key
-            let (lastDate, sets, effortRatios) = entry.value
+            let (lastDate, sets, effortRatios, avgRPE) = entry.value
             let baseHours = Self.baseRecoveryHours[muscleGroup] ?? 48.0
             let volumeModifier = 1.0 + max(0, Double(sets - 4)) * 0.08
             let meanEffort = effortRatios.isEmpty ? 0.75 : effortRatios.reduce(0, +) / Double(effortRatios.count)
-            let intensityModifier = 0.8 + meanEffort * 0.4
+
+            // Blend RPE into intensity when available
+            let blendedEffort: Double
+            if let rpe = avgRPE {
+                let rpeEffort = rpe / 10.0
+                blendedEffort = (meanEffort + rpeEffort) / 2.0
+            } else {
+                blendedEffort = meanEffort
+            }
+            let intensityModifier = 0.8 + blendedEffort * 0.4
 
             let adjustedHours = baseHours * volumeModifier * intensityModifier
             let hoursSinceTrained = Date().timeIntervalSince(lastDate) / 3600.0
@@ -58,14 +67,14 @@ public final class RecoveryEstimationService: Sendable {
 
     // MARK: - Private
 
-    /// Find last trained date, set count, and effort ratios for each muscle group.
+    /// Find last trained date, set count, effort ratios, and average RPE for each muscle group.
     private func findLastTrainedDates(
         workouts: [Workout]
-    ) -> [String: (lastDate: Date, sets: Int, effortRatios: [Double])] {
+    ) -> [String: (lastDate: Date, sets: Int, effortRatios: [Double], avgRPE: Double?)] {
         let bestE1RM = AnalyticsCalculations.buildBestE1RMMap(from: workouts)
         let twoWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -2, to: Date())!
 
-        var result: [String: (lastDate: Date, sets: Int, effortRatios: [Double])] = [:]
+        var result: [String: (lastDate: Date, sets: Int, effortRatios: [Double], avgRPE: Double?)] = [:]
 
         // Only look at recent workouts for current recovery state
         let recentWorkouts = workouts
@@ -91,16 +100,20 @@ public final class RecoveryEstimationService: Sendable {
                     }
                 }
 
+                // Calculate average RPE for this exercise
+                let rpeValues = hardSets.compactMap(\.rpe)
+                let avgRPE: Double? = rpeValues.isEmpty ? nil : rpeValues.reduce(0, +) / Double(rpeValues.count)
+
                 // Update primary muscle group
                 if result[primary] == nil || workoutDate > result[primary]!.lastDate {
-                    result[primary] = (workoutDate, hardSets.count, effortRatios)
+                    result[primary] = (workoutDate, hardSets.count, effortRatios, avgRPE)
                 }
 
                 // Update secondary muscle groups
                 for secondary in we.exercise.secondaryMuscleGroups {
                     let key = secondary.rawValue
                     if result[key] == nil || workoutDate > result[key]!.lastDate {
-                        result[key] = (workoutDate, Int(Double(hardSets.count) * 0.5), effortRatios)
+                        result[key] = (workoutDate, Int(Double(hardSets.count) * 0.5), effortRatios, avgRPE)
                     }
                 }
             }

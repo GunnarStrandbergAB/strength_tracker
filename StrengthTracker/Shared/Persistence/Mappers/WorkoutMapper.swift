@@ -1,5 +1,6 @@
 #if canImport(SwiftData)
 import Foundation
+import SwiftData
 
 public enum WorkoutMapper {
     /// Converts a WorkoutEntity (SwiftData) to a Workout (domain model)
@@ -31,8 +32,9 @@ public enum WorkoutMapper {
         return entity
     }
 
-    /// Updates an existing WorkoutEntity with values from a Workout domain model
-    public static func updateEntity(_ entity: WorkoutEntity, from domain: Workout) {
+    /// Updates an existing WorkoutEntity with values from a Workout domain model.
+    /// Pass `context` so orphaned child entities are properly deleted from the store.
+    public static func updateEntity(_ entity: WorkoutEntity, from domain: Workout, context: ModelContext? = nil) {
         entity.name = domain.name
         entity.startedAt = domain.startedAt
         entity.completedAt = domain.completedAt
@@ -44,16 +46,21 @@ public enum WorkoutMapper {
         let existingById = Dictionary(uniqueKeysWithValues: entity.exercises.map { ($0.id, $0) })
         let domainIds = Set(domain.exercises.map(\.id))
 
-        // Delete removed exercises
+        // Delete removed exercises from context
         for existing in entity.exercises where !domainIds.contains(existing.id) {
-            entity.exercises.removeAll { $0.id == existing.id }
+            // Delete child sets from context first
+            for setEntity in existing.sets {
+                context?.delete(setEntity)
+            }
+            context?.delete(existing)
         }
+        entity.exercises.removeAll { !domainIds.contains($0.id) }
 
         // Update existing or add new
         var updatedExercises: [WorkoutExerciseEntity] = []
         for domainExercise in domain.exercises {
             if let existing = existingById[domainExercise.id] {
-                WorkoutExerciseMapper.updateEntity(existing, from: domainExercise)
+                WorkoutExerciseMapper.updateEntity(existing, from: domainExercise, context: context)
                 updatedExercises.append(existing)
             } else {
                 let newEntity = WorkoutExerciseMapper.toEntity(domainExercise)
@@ -112,8 +119,9 @@ public enum WorkoutExerciseMapper {
         return entity
     }
 
-    /// Updates an existing WorkoutExerciseEntity with values from a WorkoutExercise domain model
-    public static func updateEntity(_ entity: WorkoutExerciseEntity, from domain: WorkoutExercise) {
+    /// Updates an existing WorkoutExerciseEntity with values from a WorkoutExercise domain model.
+    /// Pass `context` so orphaned set entities are properly deleted from the store.
+    public static func updateEntity(_ entity: WorkoutExerciseEntity, from domain: WorkoutExercise, context: ModelContext? = nil) {
         entity.exerciseId = domain.exercise.id
         entity.exerciseName = domain.exercise.name
         entity.primaryMuscleGroup = domain.exercise.primaryMuscleGroup.rawValue
@@ -132,10 +140,11 @@ public enum WorkoutExerciseMapper {
         let existingById = Dictionary(uniqueKeysWithValues: entity.sets.map { ($0.id, $0) })
         let domainIds = Set(domain.sets.map(\.id))
 
-        // Delete removed sets
+        // Delete removed sets from context
         for existing in entity.sets where !domainIds.contains(existing.id) {
-            entity.sets.removeAll { $0.id == existing.id }
+            context?.delete(existing)
         }
+        entity.sets.removeAll { !domainIds.contains($0.id) }
 
         // Update existing or add new
         var updatedSets: [ExerciseSetEntity] = []

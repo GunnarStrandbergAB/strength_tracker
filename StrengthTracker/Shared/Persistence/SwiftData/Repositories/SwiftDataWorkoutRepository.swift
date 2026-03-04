@@ -49,7 +49,7 @@ public final class SwiftDataWorkoutRepository: WorkoutRepository, Sendable {
         )
 
         if let existingEntity = try modelContext.fetch(descriptor).first {
-            WorkoutMapper.updateEntity(existingEntity, from: workout)
+            WorkoutMapper.updateEntity(existingEntity, from: workout, context: modelContext)
         } else {
             let newEntity = WorkoutMapper.toEntity(workout)
             modelContext.insert(newEntity)
