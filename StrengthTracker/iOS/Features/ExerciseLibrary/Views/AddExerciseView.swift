@@ -5,6 +5,7 @@ import StrengthTrackerShared
 struct AddExerciseView: View {
     let viewModel: ExerciseListViewModel
     var personalRecordService: PersonalRecordService? = nil
+    var onExerciseCreated: ((Exercise) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     @State private var name = ""
@@ -118,6 +119,7 @@ struct AddExerciseView: View {
                                 )
                                 _ = try? await prService.saveManualRecord(record)
                             }
+                            onExerciseCreated?(exercise)
                             dismiss()
                         }
                     }
