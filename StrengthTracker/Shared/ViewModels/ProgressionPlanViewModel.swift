@@ -264,7 +264,10 @@ public final class ProgressionPlanViewModel {
                 )
             }
 
-            let sortedDays = draftTrainingDays.isEmpty ? nil : draftTrainingDays.sorted()
+            let mondayFirstOrder = [2, 3, 4, 5, 6, 7, 1]
+            let sortedDays = draftTrainingDays.isEmpty
+                ? nil
+                : mondayFirstOrder.filter { draftTrainingDays.contains($0) }
 
             // Convert draft day schedule to domain model
             let daySchedule: [DayScheduleEntry] = draftDaySchedule.compactMap { day, entry in
@@ -373,7 +376,7 @@ public final class ProgressionPlanViewModel {
             if let templateId = session.templateId {
                 let allTemplates = try await templateRepository.fetchAll()
                 if let linked = allTemplates.first(where: { $0.id == templateId }) {
-                    return mergeSessionIntoTemplate(session: session, template: linked)
+                    return mergeSessionIntoTemplate(session: session, template: linked, exercises: exercises)
                 }
             }
             return session.toWorkoutTemplate(exercises: exercises)
@@ -419,7 +422,7 @@ public final class ProgressionPlanViewModel {
 
     // MARK: - Template Merge
 
-    public func mergeSessionIntoTemplate(session: PlannedSession, template: WorkoutTemplate) -> WorkoutTemplate {
+    public func mergeSessionIntoTemplate(session: PlannedSession, template: WorkoutTemplate, exercises: [Exercise]) -> WorkoutTemplate {
         let plannedLookup = Dictionary(
             session.plannedExercises.map { ($0.exerciseId, $0) },
             uniquingKeysWith: { first, _ in first }
@@ -429,7 +432,7 @@ public final class ProgressionPlanViewModel {
             uniquingKeysWith: { first, _ in first }
         )
 
-        let mergedExercises = template.exercises.map { te -> TemplateExercise in
+        var mergedExercises = template.exercises.map { te -> TemplateExercise in
             let planned = plannedLookup[te.exercise.id]
                 ?? plannedByName[te.exercise.name.lowercased()]
             guard let planned else { return te }
@@ -448,6 +451,41 @@ public final class ProgressionPlanViewModel {
                 setTargets: planned.generateSetTargets(),
                 isWarmUp: planned.isWarmup
             )
+        }
+
+        // Append plan exercises not already covered by the template
+        let coveredIds = Set(template.exercises.map { $0.exercise.id })
+        let exerciseLookup = Dictionary(exercises.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var nextOrder = mergedExercises.count
+
+        for planned in session.plannedExercises where !coveredIds.contains(planned.exerciseId) {
+            let exercise = exerciseLookup[planned.exerciseId] ?? Exercise(
+                id: planned.exerciseId,
+                name: planned.exerciseName,
+                primaryMuscleGroup: .other,
+                secondaryMuscleGroups: [],
+                category: .barbell,
+                exerciseType: .weightedReps,
+                instructions: nil,
+                isCustom: false,
+                isArchived: false
+            )
+            mergedExercises.append(TemplateExercise(
+                id: planned.id,
+                exercise: exercise,
+                order: nextOrder,
+                supersetGroup: nil,
+                notes: planned.notes,
+                restTimerSeconds: planned.restSeconds,
+                targetSets: planned.sets,
+                targetReps: planned.targetReps,
+                targetWeight: planned.targetWeight,
+                targetDurationSeconds: nil,
+                targetDistanceMeters: nil,
+                setTargets: planned.generateSetTargets(),
+                isWarmUp: planned.isWarmup
+            ))
+            nextOrder += 1
         }
 
         return WorkoutTemplate(
