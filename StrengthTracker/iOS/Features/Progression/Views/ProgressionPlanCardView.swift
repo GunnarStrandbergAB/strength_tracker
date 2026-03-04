@@ -6,9 +6,12 @@ struct ProgressionPlanCardView: View {
     let viewModel: ProgressionPlanViewModel
     let exerciseListViewModel: ExerciseListViewModel
     let templateViewModel: TemplateViewModel
+    let proFeatureGate: ProFeatureGate?
+    let storeService: StoreService?
     let onStartSession: (WorkoutTemplate, UUID, UUID) async -> Void
     @State private var showCreationSheet = false
     @State private var showActivePlanDetail = false
+    @State private var showUpgradeSheet = false
 
     var body: some View {
         Group {
@@ -22,19 +25,42 @@ struct ProgressionPlanCardView: View {
 
     // MARK: - No Plan CTA
 
+    private var isLocked: Bool {
+        if let proFeatureGate {
+            return !proFeatureGate.hasProAccess
+        }
+        return false
+    }
+
     private var noPlanCard: some View {
         Button {
-            showCreationSheet = true
+            if isLocked {
+                showUpgradeSheet = true
+            } else {
+                showCreationSheet = true
+            }
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: "chart.line.uptrend.xyaxis")
+                Image(systemName: isLocked ? "lock.fill" : "chart.line.uptrend.xyaxis")
                     .font(.system(size: 22))
-                    .foregroundStyle(STColors.success)
+                    .foregroundStyle(isLocked ? STColors.textTertiary : STColors.success)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("CREATE TRAINING PLAN")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(STColors.success)
+                    HStack(spacing: 6) {
+                        Text("CREATE TRAINING PLAN")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(isLocked ? STColors.textTertiary : STColors.success)
+
+                        if isLocked {
+                            Text("PRO")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(STColors.background)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(STColors.primary)
+                                .clipShape(Capsule())
+                        }
+                    }
 
                     Text("Periodized programming with auto-progression")
                         .font(.system(size: 11))
@@ -43,16 +69,16 @@ struct ProgressionPlanCardView: View {
 
                 Spacer()
 
-                Image(systemName: "chevron.right")
+                Image(systemName: isLocked ? "crown.fill" : "chevron.right")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(STColors.success.opacity(0.7))
+                    .foregroundStyle(isLocked ? STColors.primary : STColors.success.opacity(0.7))
             }
             .padding(STSpacing.cardPadding)
             .background(STColors.surface)
             .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
             .overlay(
                 RoundedRectangle(cornerRadius: STRadius.card)
-                    .stroke(STColors.success.opacity(0.3), lineWidth: 1)
+                    .stroke(isLocked ? STColors.primary.opacity(0.3) : STColors.success.opacity(0.3), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -61,6 +87,11 @@ struct ProgressionPlanCardView: View {
                 viewModel: viewModel,
                 exerciseListViewModel: exerciseListViewModel
             )
+        }
+        .sheet(isPresented: $showUpgradeSheet) {
+            if let storeService {
+                ProUpgradeView(storeService: storeService)
+            }
         }
     }
 

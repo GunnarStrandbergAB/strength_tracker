@@ -15,6 +15,8 @@ struct ContentView: View {
     let userPreferencesService: UserPreferencesService
     let connectivityManager: ConnectivityManager?
     var personalRecordService: PersonalRecordService? = nil
+    var proFeatureGate: ProFeatureGate? = nil
+    var storeService: StoreService? = nil
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -26,6 +28,8 @@ struct ContentView: View {
                 templateViewModel: templateViewModel,
                 userPreferencesService: userPreferencesService,
                 connectivityManager: connectivityManager,
+                proFeatureGate: proFeatureGate,
+                storeService: storeService,
                 onStartWorkout: {
                     selectedTab = 1
                     Task {

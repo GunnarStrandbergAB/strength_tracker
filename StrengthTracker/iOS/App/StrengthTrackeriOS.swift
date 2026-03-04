@@ -104,7 +104,9 @@ struct ContentViewWrapper: View {
             progressionPlanViewModel: container.makeProgressionPlanViewModel(),
             userPreferencesService: container.userPreferencesService,
             connectivityManager: container.connectivityManager,
-            personalRecordService: container.personalRecordService
+            personalRecordService: container.personalRecordService,
+            proFeatureGate: container.proFeatureGate,
+            storeService: container.storeService
         )
         .onOpenURL { url in
             // Handle deep links from widgets

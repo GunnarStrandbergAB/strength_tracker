@@ -1,19 +1,90 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import StoreKit
 import StrengthTrackerShared
 
 struct SettingsView: View {
     @State private var preferencesService: UserPreferencesService
     @State private var bodyWeightText: String = ""
     private var connectivityManager: ConnectivityManager?
+    var proFeatureGate: ProFeatureGate? = nil
+    var storeService: StoreService? = nil
+    @State private var showUpgradeSheet = false
 
-    init(preferencesService: UserPreferencesService, connectivityManager: ConnectivityManager? = nil) {
+    init(
+        preferencesService: UserPreferencesService,
+        connectivityManager: ConnectivityManager? = nil,
+        proFeatureGate: ProFeatureGate? = nil,
+        storeService: StoreService? = nil
+    ) {
         self.preferencesService = preferencesService
         self.connectivityManager = connectivityManager
+        self.proFeatureGate = proFeatureGate
+        self.storeService = storeService
     }
 
     var body: some View {
         Form {
+                // Subscription Section
+                if let proFeatureGate, let storeService {
+                    Section("Subscription") {
+                        if proFeatureGate.hasProAccess && storeService.isProUser {
+                            HStack {
+                                Image(systemName: "crown.fill")
+                                    .foregroundStyle(STColors.primary)
+                                Text("HellBentIron Pro")
+                                    .font(.system(size: 15, weight: .semibold))
+                                Spacer()
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(STColors.success)
+                            }
+                            Button("Manage Subscription") {
+                                Task {
+                                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                                        try? await AppStore.showManageSubscriptions(in: windowScene)
+                                    }
+                                }
+                            }
+                        } else if proFeatureGate.hasProAccess && ProFeatureGate.isBeta {
+                            HStack {
+                                Image(systemName: "crown.fill")
+                                    .foregroundStyle(STColors.primary)
+                                Text("HellBentIron Pro")
+                                    .font(.system(size: 15, weight: .semibold))
+                                Spacer()
+                                Text("Beta")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(STColors.textSecondary)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(STColors.surface)
+                                    .clipShape(Capsule())
+                            }
+                        } else {
+                            Button {
+                                showUpgradeSheet = true
+                            } label: {
+                                HStack {
+                                    Image(systemName: "crown")
+                                        .foregroundStyle(STColors.primary)
+                                    Text("Upgrade to Pro")
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(STColors.textTertiary)
+                                }
+                            }
+                        }
+
+                        Button("Restore Purchases") {
+                            Task {
+                                await storeService.restorePurchases()
+                            }
+                        }
+                        .foregroundStyle(STColors.textSecondary)
+                    }
+                }
+
                 // Profile Section
                 Section {
                     HStack {
@@ -107,6 +178,29 @@ struct SettingsView: View {
                     Text("Posts workout JSON to this URL after every completed workout. Use with AI trainers, n8n, Zapier, or any HTTP endpoint.")
                 }
 
+                // Legal Section
+                Section("Legal") {
+                    Link(destination: URL(string: "https://hellbentiron.com/privacy")!) {
+                        HStack {
+                            Text("Privacy Policy")
+                            Spacer()
+                            Image(systemName: "arrow.up.forward.square")
+                                .font(.system(size: 12))
+                                .foregroundStyle(STColors.textTertiary)
+                        }
+                    }
+
+                    Link(destination: URL(string: "https://hellbentiron.com/terms")!) {
+                        HStack {
+                            Text("Terms of Service")
+                            Spacer()
+                            Image(systemName: "arrow.up.forward.square")
+                                .font(.system(size: 12))
+                                .foregroundStyle(STColors.textTertiary)
+                        }
+                    }
+                }
+
                 // About Section
                 Section("About") {
                     HStack {
@@ -121,15 +215,6 @@ struct SettingsView: View {
                         Spacer()
                         Text(buildNumber)
                             .foregroundStyle(.secondary)
-                    }
-
-                    Link(destination: URL(string: "https://github.com")!) {
-                        HStack {
-                            Text("GitHub Repository")
-                            Spacer()
-                            Image(systemName: "arrow.up.forward.square")
-                                .foregroundStyle(.blue)
-                        }
                     }
                 }
 
@@ -147,6 +232,11 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .stNavigationBarStyle()
+            .sheet(isPresented: $showUpgradeSheet) {
+                if let storeService {
+                    ProUpgradeView(storeService: storeService)
+                }
+            }
             .onAppear { updateBodyWeightText() }
             .onChange(of: preferencesService.defaultRestSeconds) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.weightUnit) { _, _ in

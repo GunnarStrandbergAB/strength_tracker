@@ -10,6 +10,8 @@ struct DashboardView: View {
     let templateViewModel: TemplateViewModel
     let userPreferencesService: UserPreferencesService
     let connectivityManager: ConnectivityManager?
+    var proFeatureGate: ProFeatureGate? = nil
+    var storeService: StoreService? = nil
     let onStartWorkout: () -> Void
     let onStartSession: (WorkoutTemplate, UUID, UUID) async -> Void
     let onHistoryTapped: () -> Void
@@ -22,6 +24,8 @@ struct DashboardView: View {
         templateViewModel: TemplateViewModel,
         userPreferencesService: UserPreferencesService,
         connectivityManager: ConnectivityManager? = nil,
+        proFeatureGate: ProFeatureGate? = nil,
+        storeService: StoreService? = nil,
         onStartWorkout: @escaping () -> Void,
         onStartSession: @escaping (WorkoutTemplate, UUID, UUID) async -> Void,
         onHistoryTapped: @escaping () -> Void
@@ -33,6 +37,8 @@ struct DashboardView: View {
         self.templateViewModel = templateViewModel
         self.userPreferencesService = userPreferencesService
         self.connectivityManager = connectivityManager
+        self.proFeatureGate = proFeatureGate
+        self.storeService = storeService
         self.onStartWorkout = onStartWorkout
         self.onStartSession = onStartSession
         self.onHistoryTapped = onHistoryTapped
@@ -71,6 +77,8 @@ struct DashboardView: View {
                         viewModel: progressionPlanViewModel,
                         exerciseListViewModel: exerciseListViewModel,
                         templateViewModel: templateViewModel,
+                        proFeatureGate: proFeatureGate,
+                        storeService: storeService,
                         onStartSession: onStartSession
                     )
                     .padding(.horizontal, 20)
@@ -103,8 +111,8 @@ struct DashboardView: View {
                     )
 
                     // Analytics Insights Card (hidden until close to first unlock)
-                    if analyticsViewModel.insights.workoutCount >= 3 {
-                        InsightsCardView(viewModel: analyticsViewModel)
+                    if analyticsViewModel.insights.workoutCount >= 3 || !analyticsViewModel.hasProAccess {
+                        InsightsCardView(viewModel: analyticsViewModel, storeService: storeService)
                             .padding(.horizontal, 20)
                     }
 
@@ -129,7 +137,7 @@ struct DashboardView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
-                        SettingsView(preferencesService: userPreferencesService, connectivityManager: connectivityManager)
+                        SettingsView(preferencesService: userPreferencesService, connectivityManager: connectivityManager, proFeatureGate: proFeatureGate, storeService: storeService)
                     } label: {
                         Image(systemName: "gearshape")
                             .font(.system(size: 16))
