@@ -79,7 +79,7 @@ public final class WorkoutQualityScoreService: Sendable {
                     } else {
                         pct1RM = 0.75
                     }
-                    let setIWV = Double(reps) * pct1RM
+                    let setIWV = AnalyticsCalculations.setIWV(reps: reps, pct1RM: pct1RM, rpe: set.rpe)
 
                     iwv[we.exercise.primaryMuscleGroup, default: 0] += 0.7 * setIWV
                     let secondaries = we.exercise.secondaryMuscleGroups

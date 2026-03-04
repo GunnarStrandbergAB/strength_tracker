@@ -6,6 +6,7 @@ struct ExercisePickerView: View {
     @State private var viewModel: ExerciseListViewModel
     let onSelect: (Exercise) -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var showingAddExercise = false
 
     init(viewModel: ExerciseListViewModel, onSelect: @escaping (Exercise) -> Void) {
         self._viewModel = State(initialValue: viewModel)
@@ -24,7 +25,15 @@ struct ExercisePickerView: View {
                         description: Text(error)
                     )
                 } else if viewModel.filteredExercises.isEmpty {
-                    ContentUnavailableView.search
+                    VStack(spacing: 16) {
+                        ContentUnavailableView.search
+                        Button {
+                            showingAddExercise = true
+                        } label: {
+                            Label("Create Custom Exercise", systemImage: "plus.circle")
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
                 } else {
                     exerciseList
                 }
@@ -37,6 +46,15 @@ struct ExercisePickerView: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingAddExercise = true
+                    } label: {
+                        Image(systemName: "plus.square")
+                    }
+                    .accessibilityLabel("Create Custom Exercise")
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
@@ -61,6 +79,12 @@ struct ExercisePickerView: View {
                     } label: {
                         Image(systemName: "line.3.horizontal.decrease.circle")
                     }
+                }
+            }
+            .sheet(isPresented: $showingAddExercise) {
+                AddExerciseView(viewModel: viewModel) { exercise in
+                    onSelect(exercise)
+                    dismiss()
                 }
             }
             .task {

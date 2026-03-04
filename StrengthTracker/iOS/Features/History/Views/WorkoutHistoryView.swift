@@ -10,12 +10,21 @@ struct WorkoutHistoryView: View {
         self.analyticsViewModel = analyticsViewModel
     }
 
+    @State private var workoutToDelete: Workout? = nil
+
     var body: some View {
         NavigationStack {
             List {
                 ForEach(viewModel.workouts) { workout in
                     NavigationLink(value: workout) {
                         WorkoutHistoryRow(workout: workout)
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            workoutToDelete = workout
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
                     }
                 }
             }
@@ -48,6 +57,26 @@ struct WorkoutHistoryView: View {
                 Button("OK") { viewModel.errorMessage = nil }
             } message: {
                 Text(viewModel.errorMessage ?? "")
+            }
+            .confirmationDialog(
+                "Delete Workout",
+                isPresented: .init(
+                    get: { workoutToDelete != nil },
+                    set: { if !$0 { workoutToDelete = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    if let workout = workoutToDelete {
+                        Task { await viewModel.deleteWorkout(workout) }
+                        workoutToDelete = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    workoutToDelete = nil
+                }
+            } message: {
+                Text("This will permanently delete the workout and all its data.")
             }
         }
     }

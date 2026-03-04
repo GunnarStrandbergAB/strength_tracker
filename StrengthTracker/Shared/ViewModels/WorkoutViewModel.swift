@@ -379,6 +379,23 @@ public final class WorkoutViewModel {
         }
     }
 
+    /// Update the RPE of a specific set within an exercise.
+    public func updateSetRPE(exerciseId: UUID, setId: UUID, rpe: Double?) async {
+        guard var workout = currentWorkout else { return }
+
+        guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              let setIndex = workout.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setId }) else {
+            return
+        }
+
+        workout.exercises[exerciseIndex].sets[setIndex].rpe = rpe
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            currentWorkout = workout
+        }
+    }
+
     /// Update the type of a specific set (normal, warmup, dropset, etc.).
     public func updateSetType(exerciseId: UUID, setId: UUID, setType: SetType) async {
         guard var workout = currentWorkout else { return }

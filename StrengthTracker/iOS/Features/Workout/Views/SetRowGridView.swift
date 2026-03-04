@@ -6,36 +6,45 @@ struct SetRowGridView: View {
     let setNumber: Int
     let exerciseSet: ExerciseSet
     let previousText: String?
+    let showRPE: Bool
     let onWeightChange: (Double?) -> Void
     let onRepsChange: (Int?) -> Void
+    let onRPEChange: ((Double?) -> Void)?
     let onToggleComplete: () -> Void
     let onSetTypeChange: (SetType) -> Void
 
     @State private var weightText: String
     @State private var repsText: String
+    @State private var rpeText: String
     @FocusState private var focusedField: Field?
     @State private var weightDebounceTask: Task<Void, Never>?
     @State private var repsDebounceTask: Task<Void, Never>?
+    @State private var rpeDebounceTask: Task<Void, Never>?
 
     private enum Field: Hashable {
         case weight
         case reps
+        case rpe
     }
 
     init(
         setNumber: Int,
         exerciseSet: ExerciseSet,
         previousText: String? = nil,
+        showRPE: Bool = false,
         onWeightChange: @escaping (Double?) -> Void,
         onRepsChange: @escaping (Int?) -> Void,
+        onRPEChange: ((Double?) -> Void)? = nil,
         onToggleComplete: @escaping () -> Void,
         onSetTypeChange: @escaping (SetType) -> Void = { _ in }
     ) {
         self.setNumber = setNumber
         self.exerciseSet = exerciseSet
         self.previousText = previousText
+        self.showRPE = showRPE
         self.onWeightChange = onWeightChange
         self.onRepsChange = onRepsChange
+        self.onRPEChange = onRPEChange
         self.onToggleComplete = onToggleComplete
         self.onSetTypeChange = onSetTypeChange
 
@@ -44,6 +53,9 @@ struct SetRowGridView: View {
         )
         _repsText = State(
             initialValue: exerciseSet.reps.map { String($0) } ?? ""
+        )
+        _rpeText = State(
+            initialValue: exerciseSet.rpe.map { String(format: "%g", $0) } ?? ""
         )
     }
 
@@ -103,6 +115,29 @@ struct SetRowGridView: View {
                 }
             }
             .frame(width: 60)
+
+            // RPE column (optional)
+            if showRPE {
+                STNumberField(
+                    placeholder: "RPE",
+                    text: $rpeText,
+                    keyboardType: .numberPad
+                )
+                .focused($focusedField, equals: .rpe)
+                .onChange(of: rpeText) { _, newValue in
+                    rpeDebounceTask?.cancel()
+                    rpeDebounceTask = Task {
+                        try? await Task.sleep(for: .milliseconds(400))
+                        guard !Task.isCancelled else { return }
+                        if let val = Double(newValue) {
+                            onRPEChange?(min(max(val, 1), 10))
+                        } else {
+                            onRPEChange?(nil)
+                        }
+                    }
+                }
+                .frame(width: 44)
+            }
 
             // DONE column (2fr)
             STCheckbox(isChecked: exerciseSet.isCompleted) {

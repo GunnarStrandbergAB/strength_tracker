@@ -8,6 +8,7 @@ public struct ExerciseRecommendation: Identifiable, Hashable, Sendable, Codable 
     public let reason: RecommendationReason
     public let confidence: Double
     public let basedOnWorkoutCount: Int
+    public let targetMuscleGroup: String?
 
     public init(
         id: UUID = UUID(),
@@ -15,7 +16,8 @@ public struct ExerciseRecommendation: Identifiable, Hashable, Sendable, Codable 
         exerciseName: String,
         reason: RecommendationReason,
         confidence: Double,
-        basedOnWorkoutCount: Int
+        basedOnWorkoutCount: Int,
+        targetMuscleGroup: String? = nil
     ) {
         self.id = id
         self.exerciseId = exerciseId
@@ -23,6 +25,7 @@ public struct ExerciseRecommendation: Identifiable, Hashable, Sendable, Codable 
         self.reason = reason
         self.confidence = confidence
         self.basedOnWorkoutCount = basedOnWorkoutCount
+        self.targetMuscleGroup = targetMuscleGroup
     }
 }
 

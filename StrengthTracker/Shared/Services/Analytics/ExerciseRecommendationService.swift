@@ -42,7 +42,8 @@ public final class ExerciseRecommendationService: Sendable {
                         exerciseName: exercise.name,
                         reason: .fillsMuscleGap,
                         confidence: 0.9,
-                        basedOnWorkoutCount: workouts.count
+                        basedOnWorkoutCount: workouts.count,
+                        targetMuscleGroup: imbalance.comparisonGroup
                     ))
                 }
             }
@@ -93,7 +94,8 @@ public final class ExerciseRecommendationService: Sendable {
                     exerciseName: exercise.name,
                     reason: .fillsMuscleGap,
                     confidence: 0.7,
-                    basedOnWorkoutCount: workouts.count
+                    basedOnWorkoutCount: workouts.count,
+                    targetMuscleGroup: muscle.rawValue
                 ))
             }
         }

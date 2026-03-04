@@ -8,6 +8,7 @@ struct ExerciseCardView: View {
     let previousSetData: [Int: String]
     let onWeightChange: (UUID, Double?) -> Void
     let onRepsChange: (UUID, Int?) -> Void
+    let onRPEChange: ((UUID, Double?) -> Void)?
     let onToggleComplete: (UUID) -> Void
     let onAddSet: () -> Void
     let onRemoveSet: ((UUID) -> Void)?
@@ -18,6 +19,7 @@ struct ExerciseCardView: View {
 
     @State private var isReorderingSets: Bool = false
     @State private var isEditingNote: Bool = false
+    @State private var showRPE: Bool
     @State private var noteText: String = ""
     @State private var noteDebounceTask: Task<Void, Never>?
 
@@ -27,6 +29,7 @@ struct ExerciseCardView: View {
         previousSetData: [Int: String] = [:],
         onWeightChange: @escaping (UUID, Double?) -> Void,
         onRepsChange: @escaping (UUID, Int?) -> Void,
+        onRPEChange: ((UUID, Double?) -> Void)? = nil,
         onToggleComplete: @escaping (UUID) -> Void,
         onAddSet: @escaping () -> Void,
         onRemoveSet: ((UUID) -> Void)? = nil,
@@ -40,6 +43,7 @@ struct ExerciseCardView: View {
         self.previousSetData = previousSetData
         self.onWeightChange = onWeightChange
         self.onRepsChange = onRepsChange
+        self.onRPEChange = onRPEChange
         self.onToggleComplete = onToggleComplete
         self.onAddSet = onAddSet
         self.onRemoveSet = onRemoveSet
@@ -49,6 +53,8 @@ struct ExerciseCardView: View {
         self.onMoveSet = onMoveSet
         self._noteText = State(initialValue: workoutExercise.notes ?? "")
         self._isEditingNote = State(initialValue: workoutExercise.notes != nil && !workoutExercise.notes!.isEmpty)
+        // Show RPE column if any set already has RPE data
+        self._showRPE = State(initialValue: workoutExercise.sets.contains { $0.rpe != nil })
     }
 
     var body: some View {
@@ -100,12 +106,16 @@ struct ExerciseCardView: View {
                         setNumber: index + 1,
                         exerciseSet: exerciseSet,
                         previousText: previousSetData[index],
+                        showRPE: showRPE,
                         onWeightChange: { weight in
                             onWeightChange(exerciseSet.id, weight)
                         },
                         onRepsChange: { reps in
                             onRepsChange(exerciseSet.id, reps)
                         },
+                        onRPEChange: onRPEChange != nil ? { rpe in
+                            onRPEChange?(exerciseSet.id, rpe)
+                        } : nil,
                         onToggleComplete: {
                             onToggleComplete(exerciseSet.id)
                         },
@@ -158,6 +168,9 @@ struct ExerciseCardView: View {
                         isReorderingSets = true
                     }
                     .disabled(workoutExercise.sets.count < 2)
+                    Button(showRPE ? "Hide RPE" : "Show RPE", systemImage: "gauge.with.needle") {
+                        showRPE.toggle()
+                    }
                     Button(
                         workoutExercise.notes != nil && !workoutExercise.notes!.isEmpty ? "Edit Note" : "Add Note",
                         systemImage: "note.text"
@@ -199,6 +212,11 @@ struct ExerciseCardView: View {
 
             STColumnHeader(title: "REPS")
                 .frame(width: 60)
+
+            if showRPE {
+                STColumnHeader(title: "RPE")
+                    .frame(width: 44)
+            }
 
             STColumnHeader(title: "")
                 .frame(width: 48)

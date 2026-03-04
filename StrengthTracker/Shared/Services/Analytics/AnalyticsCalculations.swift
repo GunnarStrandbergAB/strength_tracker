@@ -37,6 +37,19 @@ public enum AnalyticsCalculations {
         return bestE1RM
     }
 
+    // MARK: - Set IWV (Intensity-Weighted Volume)
+
+    /// Compute IWV for a single set, optionally modulated by RPE.
+    /// When RPE is available: IWV = reps * pct1RM * (RPE / 10.0)
+    /// When RPE is not available: IWV = reps * pct1RM (unchanged)
+    public static func setIWV(reps: Int, pct1RM: Double, rpe: Double?) -> Double {
+        let base = Double(reps) * pct1RM
+        if let rpe, rpe > 0 {
+            return base * (rpe / 10.0)
+        }
+        return base
+    }
+
     // MARK: - e1RM Calculation (nonisolated copy)
 
     /// Estimated 1RM using Brzycki formula — nonisolated mirror of

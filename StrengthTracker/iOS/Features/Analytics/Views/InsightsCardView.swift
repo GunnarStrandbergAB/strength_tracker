@@ -134,7 +134,7 @@ struct InsightsCardView: View {
                 icon: "lightbulb.fill",
                 iconColor: STColors.primary,
                 title: rec.exerciseName,
-                detail: rec.reason.displayText
+                detail: rec.reason.displayText(targetMuscleGroup: rec.targetMuscleGroup)
             )
         }
 
@@ -240,9 +240,17 @@ struct InsightsCardView: View {
 
 extension RecommendationReason {
     var displayText: String {
+        displayText(targetMuscleGroup: nil)
+    }
+
+    func displayText(targetMuscleGroup: String?) -> String {
         switch self {
         case .similarToFavorites: return "Similar to your favorites"
-        case .fillsMuscleGap: return "Fills a muscle group gap"
+        case .fillsMuscleGap:
+            if let muscle = targetMuscleGroup {
+                return "Fills a gap in \(muscle.capitalized)"
+            }
+            return "Fills a muscle group gap"
         case .plateauBreaker: return "May help break plateau"
         case .recoveryAppropriate: return "Good for active recovery"
         }
