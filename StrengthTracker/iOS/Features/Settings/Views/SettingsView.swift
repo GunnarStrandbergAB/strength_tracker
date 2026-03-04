@@ -178,6 +178,29 @@ struct SettingsView: View {
                     Text("Posts workout JSON to this URL after every completed workout. Use with AI trainers, n8n, Zapier, or any HTTP endpoint.")
                 }
 
+                // Legal Section
+                Section("Legal") {
+                    Link(destination: URL(string: "https://hellbentiron.com/privacy")!) {
+                        HStack {
+                            Text("Privacy Policy")
+                            Spacer()
+                            Image(systemName: "arrow.up.forward.square")
+                                .font(.system(size: 12))
+                                .foregroundStyle(STColors.textTertiary)
+                        }
+                    }
+
+                    Link(destination: URL(string: "https://hellbentiron.com/terms")!) {
+                        HStack {
+                            Text("Terms of Service")
+                            Spacer()
+                            Image(systemName: "arrow.up.forward.square")
+                                .font(.system(size: 12))
+                                .foregroundStyle(STColors.textTertiary)
+                        }
+                    }
+                }
+
                 // About Section
                 Section("About") {
                     HStack {
@@ -192,15 +215,6 @@ struct SettingsView: View {
                         Spacer()
                         Text(buildNumber)
                             .foregroundStyle(.secondary)
-                    }
-
-                    Link(destination: URL(string: "https://github.com")!) {
-                        HStack {
-                            Text("GitHub Repository")
-                            Spacer()
-                            Image(systemName: "arrow.up.forward.square")
-                                .foregroundStyle(.blue)
-                        }
                     }
                 }
 

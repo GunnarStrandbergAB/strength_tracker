@@ -76,6 +76,13 @@ struct ProUpgradeView: View {
                             .foregroundStyle(STColors.textSecondary)
                     }
 
+                    // Auto-renewal disclosure
+                    Text("Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Payment is charged to your Apple ID account. Manage subscriptions in Settings \u{203A} Apple ID \u{203A} Subscriptions.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(STColors.textTertiary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 20)
+
                     // Legal links
                     HStack(spacing: 16) {
                         Link("Terms of Service", destination: URL(string: "https://hellbentiron.com/terms")!)
