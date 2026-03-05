@@ -15,7 +15,7 @@ struct PlanCreationStep2GoalView: View {
             VStack(alignment: .leading, spacing: 20) {
                 // Header
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Step 2 of 4")
+                    Text("Step 2 of 5")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(STColors.primary)
 

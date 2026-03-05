@@ -85,7 +85,8 @@ struct ProgressionPlanCardView: View {
         .sheet(isPresented: $showCreationSheet) {
             PlanCreationView(
                 viewModel: viewModel,
-                exerciseListViewModel: exerciseListViewModel
+                exerciseListViewModel: exerciseListViewModel,
+                templateViewModel: templateViewModel
             )
         }
         .sheet(isPresented: $showUpgradeSheet) {

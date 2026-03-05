@@ -131,7 +131,7 @@ public final class ProgramDesignService: Sendable {
 
             let sessions = buildSessions(
                 days: days,
-                exercises: plan.exercises,
+                plan: plan,
                 sets: sets,
                 targetReps: clampedReps,
                 intensity: weekIntensity,
@@ -229,7 +229,8 @@ public final class ProgramDesignService: Sendable {
                     ? "Deload - \(dupType.rawValue.capitalized)"
                     : "\(dayName) - \(dupType.rawValue.capitalized)"
 
-                let exerciseSets = plan.exercises.map { exercise in
+                let sessionExercises = exercisesForDay(day, in: plan) ?? plan.exercises
+                let exerciseSets = sessionExercises.map { exercise in
                     PlannedExerciseSet(
                         planExerciseId: exercise.id,
                         exerciseId: exercise.exerciseId,
@@ -247,7 +248,8 @@ public final class ProgramDesignService: Sendable {
                     dupSessionType: dupType,
                     sessionLabel: label,
                     plannedExercises: exerciseSets,
-                    estimatedDurationMinutes: estimateDuration(exerciseCount: plan.exercises.count, sets: sets, restSeconds: restSeconds)
+                    estimatedDurationMinutes: estimateDuration(exerciseCount: sessionExercises.count, sets: sets, restSeconds: restSeconds),
+                    templateId: templateIdForDay(day, in: plan)
                 )
                 sessions.append(session)
             }
@@ -327,7 +329,7 @@ public final class ProgramDesignService: Sendable {
 
             let sessions = buildSessions(
                 days: days,
-                exercises: plan.exercises,
+                plan: plan,
                 sets: sets,
                 targetReps: reps,
                 intensity: intensity,
@@ -386,7 +388,7 @@ public final class ProgramDesignService: Sendable {
 
                 let sessions = buildSessions(
                     days: days,
-                    exercises: plan.exercises,
+                    plan: plan,
                     sets: phaseParams.sets,
                     targetReps: phaseParams.reps,
                     intensity: phaseParams.intensity,
@@ -422,6 +424,22 @@ public final class ProgramDesignService: Sendable {
         return blocks
     }
 
+    // MARK: - Day Schedule Helpers
+
+    /// Returns the exercises assigned to a specific day via the plan's daySchedule,
+    /// or nil if no schedule exists for that day (fallback to all exercises).
+    private func exercisesForDay(_ day: Int, in plan: ProgressionPlan) -> [PlanExercise]? {
+        guard let entry = plan.daySchedule.first(where: { $0.dayOfWeek == day }),
+              !entry.exerciseIds.isEmpty else { return nil }
+        let filtered = plan.exercises.filter { entry.exerciseIds.contains($0.exerciseId) }
+        return filtered.isEmpty ? nil : filtered
+    }
+
+    /// Returns the templateId assigned to a specific day via the plan's daySchedule.
+    private func templateIdForDay(_ day: Int, in plan: ProgressionPlan) -> UUID? {
+        plan.daySchedule.first(where: { $0.dayOfWeek == day })?.templateId
+    }
+
     // MARK: - Helpers
 
     private func intensityStep(for status: TrainingStatus) -> Double {
@@ -446,9 +464,10 @@ public final class ProgramDesignService: Sendable {
     }
 
     /// Build sessions for a given week, distributing exercises across day slots.
+    /// Uses `plan.daySchedule` to filter exercises and assign templateId per day.
     private func buildSessions(
         days: [Int],
-        exercises: [PlanExercise],
+        plan: ProgressionPlan,
         sets: Int,
         targetReps: Int,
         intensity: Double,
@@ -459,8 +478,9 @@ public final class ProgramDesignService: Sendable {
         days.enumerated().map { dayIndex, day in
             let dayName = Self.dayNames[day] ?? "Day \(dayIndex + 1)"
             let sessionLabel = days.count > 1 ? "\(label) - \(dayName)" : label
+            let sessionExercises = exercisesForDay(day, in: plan) ?? plan.exercises
 
-            let exerciseSets = exercises.map { exercise in
+            let exerciseSets = sessionExercises.map { exercise in
                 PlannedExerciseSet(
                     planExerciseId: exercise.id,
                     exerciseId: exercise.exerciseId,
@@ -479,10 +499,11 @@ public final class ProgramDesignService: Sendable {
                 sessionLabel: sessionLabel,
                 plannedExercises: exerciseSets,
                 estimatedDurationMinutes: estimateDuration(
-                    exerciseCount: exercises.count,
+                    exerciseCount: sessionExercises.count,
                     sets: sets,
                     restSeconds: restSeconds
-                )
+                ),
+                templateId: templateIdForDay(day, in: plan)
             )
         }
     }

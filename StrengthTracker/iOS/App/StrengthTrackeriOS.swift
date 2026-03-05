@@ -146,7 +146,7 @@ struct ContentViewWrapper: View {
                                     if let tid = session.templateId,
                                        let linked = templateLookup[tid] {
                                         template = vm.mergeSessionIntoTemplate(
-                                            session: session, template: linked
+                                            session: session, template: linked, exercises: exercises
                                         )
                                     } else {
                                         template = session.toWorkoutTemplate(exercises: exercises)
