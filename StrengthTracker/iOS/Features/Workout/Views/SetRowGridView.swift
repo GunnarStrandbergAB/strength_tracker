@@ -141,6 +141,15 @@ struct SetRowGridView: View {
 
             // DONE column (2fr)
             STCheckbox(isChecked: exerciseSet.isCompleted) {
+                // Flush pending debounces so the toggle save includes latest values
+                weightDebounceTask?.cancel()
+                repsDebounceTask?.cancel()
+                rpeDebounceTask?.cancel()
+                onWeightChange(Double(weightText))
+                onRepsChange(Int(repsText))
+                if let rpeVal = Double(rpeText) {
+                    onRPEChange?(min(max(rpeVal, 1), 10))
+                }
                 onToggleComplete()
             }
             .frame(width: 48, alignment: .trailing)
