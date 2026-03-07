@@ -34,6 +34,9 @@ struct PlanCreationStep4ScheduleView: View {
                     ForEach(sortedDays, id: \.self) { day in
                         dayScheduleCard(day: day)
                     }
+
+                    // Per-exercise frequency summary
+                    exerciseFrequencySummary(days: sortedDays)
                 }
 
                 Spacer(minLength: 80)
@@ -63,6 +66,14 @@ struct PlanCreationStep4ScheduleView: View {
             ForEach(viewModel.draftSelectedExercises) { draft in
                 exerciseToggleRow(draft: draft, day: day)
             }
+
+            // Empty day indicator
+            if !exercisesSelectedForDay(day) {
+                Text("No progression exercises")
+                    .font(.system(size: 12))
+                    .foregroundStyle(STColors.textTertiary)
+                    .padding(.top, 2)
+            }
         }
         .padding(14)
         .background(STColors.surface)
@@ -74,7 +85,7 @@ struct PlanCreationStep4ScheduleView: View {
 
     private func templatePicker(forDay day: Int) -> some View {
         let entry = viewModel.draftDaySchedule[day]
-        let templates = templateViewModel.templates
+        let templates = templateViewModel.userTemplates
 
         return Menu {
             Button("None") {
@@ -187,6 +198,68 @@ struct PlanCreationStep4ScheduleView: View {
         .padding(.horizontal, 20)
         .padding(.bottom, 8)
         .background(STColors.background)
+    }
+
+    // MARK: - Frequency Summary
+
+    private func exerciseFrequencySummary(days: [Int]) -> some View {
+        let frequencies = exerciseFrequencies(days: days)
+        let isDUP = viewModel.draftProgramType == .dailyUndulating
+        let hasLowFrequency = isDUP && frequencies.contains { $0.value < 2 }
+
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("EXERCISE FREQUENCY")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(STColors.textSecondary)
+
+            ForEach(viewModel.draftSelectedExercises) { draft in
+                let count = frequencies[draft.id] ?? 0
+                HStack {
+                    Text(draft.exercise.name)
+                        .font(.system(size: 14))
+                        .foregroundStyle(STColors.textPrimary)
+                    Spacer()
+                    Text("\(count)x/week")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(count == 0 ? STColors.textTertiary : STColors.textSecondary)
+                }
+            }
+
+            if hasLowFrequency {
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12))
+                    Text("DUP works best with 2+ sessions per exercise to rotate schemes.")
+                        .font(.system(size: 12))
+                }
+                .foregroundStyle(.orange)
+                .padding(.top, 4)
+            }
+        }
+        .padding(14)
+        .background(STColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+        .padding(.horizontal, 20)
+    }
+
+    private func exerciseFrequencies(days: [Int]) -> [UUID: Int] {
+        var counts: [UUID: Int] = [:]
+        for draft in viewModel.draftSelectedExercises {
+            counts[draft.id] = 0
+        }
+        for day in days {
+            if let entry = viewModel.draftDaySchedule[day] {
+                for id in entry.exerciseIds {
+                    counts[id, default: 0] += 1
+                }
+            }
+        }
+        return counts
+    }
+
+    private func exercisesSelectedForDay(_ day: Int) -> Bool {
+        guard let entry = viewModel.draftDaySchedule[day] else { return false }
+        return !entry.exerciseIds.isEmpty
     }
 
     // MARK: - Helpers
