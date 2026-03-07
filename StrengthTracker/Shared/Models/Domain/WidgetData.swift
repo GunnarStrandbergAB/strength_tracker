@@ -100,7 +100,7 @@ public struct WidgetData: Codable, Sendable {
         lastWorkoutExerciseCount: 0,
         lastWorkoutDuration: nil,
         weeklyWorkoutCount: 0,
-        weeklyGoal: 4,
+        weeklyGoal: 0,
         currentStreak: 0,
         totalWorkoutsAllTime: 0,
         updatedAt: Date(),

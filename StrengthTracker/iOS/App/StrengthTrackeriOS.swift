@@ -227,9 +227,12 @@ struct ContentViewWrapper: View {
                 highlights = (try? await container.analyticsService.generateInsights().highlights) ?? []
             }
 
+            // Fetch active plan once — reused for next session + weekly goal
+            let activePlan = try await container.progressionPlanRepository.fetchActive()
+
             // Build next planned session
             var nextPlanned: WidgetPlannedSession? = nil
-            if let plan = try await container.progressionPlanRepository.fetchActive(),
+            if let plan = activePlan,
                let week = plan.currentWeek,
                let nextSession = week.sessions.first(where: { !$0.isCompleted }) {
                 nextPlanned = WidgetPlannedSession(
@@ -238,6 +241,54 @@ struct ContentViewWrapper: View {
                     planName: plan.name
                 )
             }
+
+            // Supplement with volume trend if room remains
+            if highlights.count < 3 {
+                let calendar = Calendar.current
+                let now = Date()
+                let completedWorkouts = workouts.filter { $0.completedAt != nil }
+                if let thisWeekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start {
+                    let lastWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeekStart)!
+                    let thisWeekVol = completedWorkouts
+                        .filter { ($0.completedAt ?? .distantPast) >= thisWeekStart }
+                        .reduce(0.0) { $0 + $1.totalVolume }
+                    let lastWeekVol = completedWorkouts
+                        .filter {
+                            let d = $0.completedAt ?? .distantPast
+                            return d >= lastWeekStart && d < thisWeekStart
+                        }
+                        .reduce(0.0) { $0 + $1.totalVolume }
+                    if thisWeekVol > 0 && lastWeekVol > 0 {
+                        let pct = ((thisWeekVol - lastWeekVol) / lastWeekVol) * 100
+                        if pct > 0 {
+                            highlights.append(AnalyticsHighlight(
+                                type: .improvement,
+                                title: "Volume Up",
+                                detail: "+\(Int(pct))% vs last week"
+                            ))
+                        } else if pct < -5 {
+                            highlights.append(AnalyticsHighlight(
+                                type: .warning,
+                                title: "Volume Down",
+                                detail: "\(Int(pct))% vs last week"
+                            ))
+                        }
+                    }
+                }
+            }
+
+            // Supplement with quality score if available and room remains
+            if highlights.count < 3,
+               let score = analyticsVM.qualityScore {
+                highlights.append(AnalyticsHighlight(
+                    type: .improvement,
+                    title: "Quality",
+                    detail: "\(Int(score.overallScore))/100"
+                ))
+            }
+
+            // Weekly goal from plan's frequency (0 = no active plan)
+            let weeklyGoal = activePlan?.weeklyFrequency ?? 0
 
             let workoutVM = container.workoutViewModel
             let restTimer = container.restTimerService
@@ -248,12 +299,13 @@ struct ContentViewWrapper: View {
                 isResting: restTimer.isRunning,
                 restEndDate: restTimer.endDate,
                 nextPlannedSession: nextPlanned,
-                weeklyGoal: 4
+                weeklyGoal: weeklyGoal
             )
             widgetService.updateWidgetData(data)
         } catch {
             print("[Widget] Failed to refresh widget data: \(error)")
         }
     }
+
 }
 #endif

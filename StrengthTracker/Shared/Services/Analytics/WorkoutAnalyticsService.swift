@@ -191,6 +191,14 @@ public final class WorkoutAnalyticsService: Sendable {
                     optimalVolumes: optimalVolumes
                 )
             }
+        } else if completedWorkouts.count >= 5, let generator = insightGenerator {
+            // Early highlights from Phase 2/3 data (plateaus, balance, recommendations)
+            highlights = await generator.generateEarlyHighlights(
+                plateaus: plateausResult,
+                muscleBalance: muscleBalanceResult,
+                recommendations: recommendationsResult,
+                workoutCount: completedWorkouts.count
+            )
         }
 
         return WorkoutInsights(

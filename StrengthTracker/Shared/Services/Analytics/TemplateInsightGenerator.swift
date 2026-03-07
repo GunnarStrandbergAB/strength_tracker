@@ -126,6 +126,67 @@ public final class TemplateInsightGenerator: InsightTextGenerating, @unchecked S
         return "Your recent training is \(pct) different from baseline. \(top.joined(separator: " and "))."
     }
 
+    @MainActor
+    public func generateEarlyHighlights(
+        plateaus: [PlateauAnalysis],
+        muscleBalance: MuscleBalance?,
+        recommendations: [ExerciseRecommendation],
+        workoutCount: Int
+    ) async -> [AnalyticsHighlight] {
+        var highlights: [AnalyticsHighlight] = []
+
+        // Priority 1 (Warning): Plateau warnings — top 2 by weeks stalled (need 3+ weeks)
+        if workoutCount >= 10 {
+            let stalledExercises = plateaus
+                .filter { $0.consecutiveWeeksStalled >= 3 }
+                .sorted { $0.consecutiveWeeksStalled > $1.consecutiveWeeksStalled }
+            for plateau in stalledExercises.prefix(2) {
+                let name = plateau.exerciseName ?? "Exercise"
+                highlights.append(AnalyticsHighlight(
+                    type: .warning,
+                    title: "\(name) Stalled",
+                    detail: "\(plateau.consecutiveWeeksStalled) weeks no progress"
+                ))
+            }
+        }
+
+        // Priority 2 (Warning): Muscle imbalances — moderate+ severity
+        if let balance = muscleBalance {
+            let significant = balance.imbalances.filter { $0.severity != .mild }
+            for imbalance in significant.prefix(1) {
+                let ratioStr = String(format: "%.1f", imbalance.ratio)
+                highlights.append(AnalyticsHighlight(
+                    type: .warning,
+                    title: "\(imbalance.primaryGroup.capitalized)/\(imbalance.comparisonGroup.capitalized) Imbalance",
+                    detail: "\(ratioStr)x ratio"
+                ))
+            }
+        }
+
+        // Priority 3 (Improvement): Top recommendation by confidence
+        if let top = recommendations.sorted(by: { $0.confidence > $1.confidence }).first {
+            let reasonText: String
+            switch top.reason {
+            case .fillsMuscleGap:
+                let muscle = top.targetMuscleGroup ?? "a gap"
+                reasonText = "fills \(muscle) gap"
+            case .plateauBreaker:
+                reasonText = "plateau breaker"
+            case .similarToFavorites:
+                reasonText = "matches your favorites"
+            case .recoveryAppropriate:
+                reasonText = "good for recovery"
+            }
+            highlights.append(AnalyticsHighlight(
+                type: .improvement,
+                title: "Try \(top.exerciseName)",
+                detail: reasonText.prefix(1).uppercased() + reasonText.dropFirst()
+            ))
+        }
+
+        return Array(highlights.prefix(3))
+    }
+
     // MARK: - Helpers
 
     private func phaseDisplayName(_ phase: DetectedPhase) -> String {

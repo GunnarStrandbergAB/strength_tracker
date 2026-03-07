@@ -101,7 +101,9 @@ struct AnalyticsMediumView: View {
                 calendarStrip
 
                 // Progress text
-                Text("\(entry.data.weeklyWorkoutCount)/\(entry.data.weeklyGoal) sessions")
+                Text(entry.data.weeklyGoal > 0
+                    ? "\(entry.data.weeklyWorkoutCount)/\(entry.data.weeklyGoal) sessions"
+                    : "\(entry.data.weeklyWorkoutCount) this week")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(WidgetColors.textSecondary)
             }
@@ -296,24 +298,33 @@ struct AnalyticsLargeView: View {
     }
 
     private var progressRing: some View {
-        let progress = entry.data.weeklyGoal > 0
+        let hasGoal = entry.data.weeklyGoal > 0
+        let progress = hasGoal
             ? min(Double(entry.data.weeklyWorkoutCount) / Double(entry.data.weeklyGoal), 1.0)
             : 0.0
 
         return ZStack {
             Circle()
                 .stroke(Color.gray.opacity(0.2), lineWidth: 6)
-            Circle()
-                .trim(from: 0, to: progress)
-                .stroke(WidgetColors.accent, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                .rotationEffect(.degrees(-90))
+            if hasGoal {
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(WidgetColors.accent, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
             VStack(spacing: 0) {
                 Text("\(entry.data.weeklyWorkoutCount)")
                     .font(.system(size: 18, weight: .bold, design: .rounded))
                     .foregroundStyle(WidgetColors.textPrimary)
-                Text("/\(entry.data.weeklyGoal)")
-                    .font(.system(size: 10))
-                    .foregroundStyle(WidgetColors.textSecondary)
+                if hasGoal {
+                    Text("/\(entry.data.weeklyGoal)")
+                        .font(.system(size: 10))
+                        .foregroundStyle(WidgetColors.textSecondary)
+                } else {
+                    Text("this week")
+                        .font(.system(size: 9))
+                        .foregroundStyle(WidgetColors.textSecondary)
+                }
             }
         }
         .frame(width: 56, height: 56)
