@@ -24,6 +24,8 @@
 	<string>HellBentIron reads your workout data to display history and progress.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>HellBentIron saves your strength training workouts to Apple Health.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

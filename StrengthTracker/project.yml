@@ -63,6 +63,7 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         NSHealthShareUsageDescription: "HellBentIron reads your workout data to display history and progress."
         NSHealthUpdateUsageDescription: "HellBentIron saves your strength training workouts to Apple Health."
+        NSSupportsLiveActivities: true
 
   StrengthTrackerWatch:
     type: application
