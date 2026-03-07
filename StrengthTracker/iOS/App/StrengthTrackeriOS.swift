@@ -11,6 +11,8 @@ import WatchConnectivity
 import WidgetKit
 #endif
 
+import UserNotifications
+
 @main
 struct StrengthTrackeriOSApp: App {
     let container: AppContainer
@@ -30,6 +32,9 @@ struct StrengthTrackeriOSApp: App {
 
             container.exerciseSeeder.startSeeding()
             container.templateSeedService.startSeeding()
+
+            // Request notification permission for rest timer background alerts
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
             // Wire up Watch → iPhone workout sync (SwiftData + webhook only)
             // Watch already saves HKWorkout with sensor-based calories — iPhone must NOT touch HealthKit

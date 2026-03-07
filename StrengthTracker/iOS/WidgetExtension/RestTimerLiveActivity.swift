@@ -5,6 +5,8 @@ import WidgetKit
 import StrengthTrackerShared
 
 struct RestTimerLiveActivity: Widget {
+    private static let accentColor = Color(red: 0.949, green: 0.800, blue: 0.051)
+
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: RestTimerAttributes.self) { context in
             // Lock Screen / Banner presentation
@@ -17,7 +19,7 @@ struct RestTimerLiveActivity: Widget {
                     HStack(spacing: 6) {
                         Image(systemName: "timer")
                             .font(.system(size: 14))
-                            .foregroundStyle(Color(red: 0.949, green: 0.800, blue: 0.051))
+                            .foregroundStyle(Self.accentColor)
                         Text("REST")
                             .font(.system(size: 11, weight: .bold))
                             .tracking(1.2)
@@ -26,27 +28,16 @@ struct RestTimerLiveActivity: Widget {
                 }
 
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(context.state.formattedTime)
+                    Text(timerInterval: context.state.timerRange, countsDown: true)
                         .font(.system(size: 22, weight: .bold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(Color(red: 0.949, green: 0.800, blue: 0.051))
+                        .foregroundStyle(Self.accentColor)
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(spacing: 6) {
-                        // Progress bar
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule()
-                                    .fill(Color.gray.opacity(0.3))
-                                    .frame(height: 6)
-
-                                Capsule()
-                                    .fill(Color(red: 0.949, green: 0.800, blue: 0.051))
-                                    .frame(width: geo.size.width * context.state.progress, height: 6)
-                            }
-                        }
-                        .frame(height: 6)
+                        ProgressView(timerInterval: context.state.timerRange, countsDown: true)
+                            .tint(Self.accentColor)
 
                         HStack {
                             Text(context.attributes.exerciseName)
@@ -64,18 +55,18 @@ struct RestTimerLiveActivity: Widget {
                 // Compact leading
                 Image(systemName: "timer")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color(red: 0.949, green: 0.800, blue: 0.051))
+                    .foregroundStyle(Self.accentColor)
             } compactTrailing: {
                 // Compact trailing
-                Text(context.state.formattedTime)
+                Text(timerInterval: context.state.timerRange, countsDown: true)
                     .font(.system(size: 14, weight: .bold))
                     .monospacedDigit()
-                    .foregroundStyle(Color(red: 0.949, green: 0.800, blue: 0.051))
+                    .foregroundStyle(Self.accentColor)
             } minimal: {
                 // Minimal
                 Image(systemName: "timer")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color(red: 0.949, green: 0.800, blue: 0.051))
+                    .foregroundStyle(Self.accentColor)
             }
         }
     }
@@ -89,18 +80,10 @@ struct RestTimerLiveActivity: Widget {
                         .stroke(Color.gray.opacity(0.3), lineWidth: 3)
                         .frame(width: 36, height: 36)
 
-                    Circle()
-                        .trim(from: 0, to: context.state.progress)
-                        .stroke(
-                            Color(red: 0.949, green: 0.800, blue: 0.051),
-                            style: StrokeStyle(lineWidth: 3, lineCap: .round)
-                        )
+                    ProgressView(timerInterval: context.state.timerRange, countsDown: true)
+                        .progressViewStyle(.circular)
+                        .tint(Self.accentColor)
                         .frame(width: 36, height: 36)
-                        .rotationEffect(.degrees(-90))
-
-                    Image(systemName: "timer")
-                        .font(.system(size: 14))
-                        .foregroundStyle(Color(red: 0.949, green: 0.800, blue: 0.051))
                 }
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -117,11 +100,11 @@ struct RestTimerLiveActivity: Widget {
 
             Spacer()
 
-            // Right: Time remaining
-            Text(context.state.formattedTime)
+            // Right: Time remaining (system-rendered countdown)
+            Text(timerInterval: context.state.timerRange, countsDown: true)
                 .font(.system(size: 28, weight: .bold, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(Color(red: 0.949, green: 0.800, blue: 0.051))
+                .foregroundStyle(Self.accentColor)
         }
         .padding(16)
     }

@@ -49,11 +49,6 @@ public final class UserPreferencesService {
         didSet { UserDefaults.standard.set(hasRequestedHealthKitAuth, forKey: "hasRequestedHealthKitAuth") }
     }
 
-    /// Preferred rest timer duration in seconds (for Watch and widgets)
-    public var preferredRestTimerDuration: Int {
-        didSet { UserDefaults.standard.set(preferredRestTimerDuration, forKey: "preferredRestTimerDuration") }
-    }
-
     /// Webhook URL for posting completed workouts to an external endpoint
     public var webhookURL: String {
         didSet { UserDefaults.standard.set(webhookURL, forKey: "webhookURL") }
@@ -101,9 +96,6 @@ public final class UserPreferencesService {
 
         self.hasRequestedHealthKitAuth = defaults.bool(forKey: "hasRequestedHealthKitAuth")
 
-        let restDuration = defaults.integer(forKey: "preferredRestTimerDuration")
-        self.preferredRestTimerDuration = restDuration != 0 ? restDuration : Self.defaultRestSecondsValue
-
         self.webhookURL = defaults.string(forKey: "webhookURL") ?? ""
         self.webhookBearerToken = defaults.string(forKey: "webhookBearerToken") ?? ""
 
@@ -117,7 +109,6 @@ public final class UserPreferencesService {
         distanceUnit = .km
         defaultRestSeconds = Self.defaultRestSecondsValue
         autoStartRestTimer = true
-        preferredRestTimerDuration = Self.defaultRestSecondsValue
         // Note: Don't reset onboarding, seeding, or HealthKit auth flags
     }
 }

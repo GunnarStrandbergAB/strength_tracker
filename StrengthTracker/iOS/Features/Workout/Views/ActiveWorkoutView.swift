@@ -3,6 +3,7 @@ import UIKit
 import StrengthTrackerShared
 
 struct ActiveWorkoutView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel: WorkoutViewModel
     @State private var exerciseListViewModel: ExerciseListViewModel
     @State private var restTimerService = RestTimerService()
@@ -184,6 +185,11 @@ struct ActiveWorkoutView: View {
         }
         .sheet(isPresented: $showingRestTimer) {
             RestTimerView(service: restTimerService)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                restTimerService.handleForegroundReturn()
+            }
         }
     }
 
@@ -473,8 +479,7 @@ struct ActiveWorkoutView: View {
 
             HStack(spacing: 8) {
                 Button {
-                    restTimerService.remainingSeconds += 15
-                    restTimerService.totalSeconds += 15
+                    restTimerService.addTime(seconds: 15)
                 } label: {
                     Text("+15s")
                         .font(.system(size: 12, weight: .bold))
@@ -492,7 +497,6 @@ struct ActiveWorkoutView: View {
 
                 Button {
                     restTimerService.stop()
-                    restTimerService.remainingSeconds = 0
                 } label: {
                     Text("Skip")
                         .font(.system(size: 12, weight: .bold))

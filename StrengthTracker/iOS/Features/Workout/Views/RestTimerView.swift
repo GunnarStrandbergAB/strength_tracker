@@ -67,7 +67,7 @@ struct RestTimerView: View {
                 HStack(spacing: 24) {
                     if service.isRunning {
                         Button {
-                            service.stop()
+                            service.pause()
                         } label: {
                             Label("Pause", systemImage: "pause.fill")
                                 .frame(width: 100)
@@ -76,7 +76,7 @@ struct RestTimerView: View {
                         .tint(.orange)
                     } else {
                         Button {
-                            service.start()
+                            service.resume()
                         } label: {
                             Label("Start", systemImage: "play.fill")
                                 .frame(width: 100)
@@ -124,18 +124,6 @@ struct RestTimerView: View {
             )
             .padding(24)
         }
-        .onChange(of: service.isCompleted) { _, isCompleted in
-            if isCompleted {
-                triggerCompletionHaptic()
-            }
-        }
-    }
-
-    private func triggerCompletionHaptic() {
-        #if canImport(UIKit)
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(.success)
-        #endif
     }
 }
 
@@ -145,8 +133,7 @@ private struct QuickTimeButton: View {
 
     var body: some View {
         Button {
-            service.remainingSeconds += seconds
-            service.totalSeconds += seconds
+            service.addTime(seconds: seconds)
         } label: {
             Text("+\(seconds)s")
                 .font(.caption)
