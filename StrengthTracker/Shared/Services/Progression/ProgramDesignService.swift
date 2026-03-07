@@ -198,60 +198,74 @@ public final class ProgramDesignService: Sendable {
             let overloadMultiplier = 1.0 + (Double(weekInBlock - 1) * Defaults.weeklyOverload)
 
             var sessions: [PlannedSession] = []
-            for (dayIndex, day) in days.enumerated() {
-                let dupType = sessionTypes[dayIndex % sessionTypes.count]
-                let baseIntensity = (dupType.intensityRange.lowerBound + dupType.intensityRange.upperBound) / 2.0
-                let intensity: Double
-                let sets: Int
-                let reps: Int
-
-                if isDeloadWeek {
-                    // M3: Deload maintains previous working intensity, only reduces volume
-                    intensity = min(
-                        baseIntensity * overloadMultiplier,
-                        dupType.intensityRange.upperBound
-                    )
-                    sets = max(2, dupType.sets - 1)
-                    reps = dupType.repRange.upperBound
-                } else {
-                    // Apply overload: scale intensity up from midpoint, clamped to range upper bound
-                    intensity = min(
-                        baseIntensity * overloadMultiplier,
-                        dupType.intensityRange.upperBound
-                    )
-                    sets = dupType.sets
-                    let midReps = (dupType.repRange.lowerBound + dupType.repRange.upperBound) / 2
-                    reps = midReps
-                }
-
-                let dayName = Self.dayNames[day] ?? "Day \(dayIndex + 1)"
-                let label = isDeloadWeek
-                    ? "Deload - \(dupType.rawValue.capitalized)"
-                    : "\(dayName) - \(dupType.rawValue.capitalized)"
-
+            var exerciseDayIndex = 0
+            for day in days {
                 let sessionExercises = exercisesForDay(day, in: plan) ?? plan.exercises
-                let exerciseSets = sessionExercises.map { exercise in
-                    PlannedExerciseSet(
-                        planExerciseId: exercise.id,
-                        exerciseId: exercise.exerciseId,
-                        exerciseName: exercise.exerciseName,
-                        sets: sets,
-                        targetReps: reps,
-                        targetWeight: exercise.targetWeight(atPercentage: intensity),
-                        percentageOf1RM: intensity,
-                        restSeconds: restSeconds
-                    )
-                }
+                let dayName = Self.dayNames[day] ?? "Day"
 
-                let session = PlannedSession(
-                    dayOfWeek: day,
-                    dupSessionType: dupType,
-                    sessionLabel: label,
-                    plannedExercises: exerciseSets,
-                    estimatedDurationMinutes: estimateDuration(exerciseCount: sessionExercises.count, sets: sets, restSeconds: restSeconds),
-                    templateId: templateIdForDay(day, in: plan)
-                )
-                sessions.append(session)
+                if sessionExercises.isEmpty {
+                    // No progression exercises — create session with template link only
+                    sessions.append(PlannedSession(
+                        dayOfWeek: day,
+                        dupSessionType: nil,
+                        sessionLabel: isDeloadWeek ? "Deload - \(dayName)" : dayName,
+                        plannedExercises: [],
+                        estimatedDurationMinutes: 60,
+                        templateId: templateIdForDay(day, in: plan)
+                    ))
+                } else {
+                    // DUP rotation counter only counts exercise-bearing days
+                    let dupType = sessionTypes[exerciseDayIndex % sessionTypes.count]
+                    exerciseDayIndex += 1
+
+                    let baseIntensity = (dupType.intensityRange.lowerBound + dupType.intensityRange.upperBound) / 2.0
+                    let intensity: Double
+                    let sets: Int
+                    let reps: Int
+
+                    if isDeloadWeek {
+                        intensity = min(
+                            baseIntensity * overloadMultiplier,
+                            dupType.intensityRange.upperBound
+                        )
+                        sets = max(2, dupType.sets - 1)
+                        reps = dupType.repRange.upperBound
+                    } else {
+                        intensity = min(
+                            baseIntensity * overloadMultiplier,
+                            dupType.intensityRange.upperBound
+                        )
+                        sets = dupType.sets
+                        let midReps = (dupType.repRange.lowerBound + dupType.repRange.upperBound) / 2
+                        reps = midReps
+                    }
+
+                    let label = isDeloadWeek
+                        ? "Deload - \(dupType.rawValue.capitalized)"
+                        : "\(dayName) - \(dupType.rawValue.capitalized)"
+
+                    let exerciseSets = sessionExercises.map { exercise in
+                        PlannedExerciseSet(
+                            planExerciseId: exercise.id,
+                            exerciseId: exercise.exerciseId,
+                            exerciseName: exercise.exerciseName,
+                            sets: sets,
+                            targetReps: reps,
+                            targetWeight: exercise.targetWeight(atPercentage: intensity),
+                            percentageOf1RM: intensity,
+                            restSeconds: restSeconds
+                        )
+                    }
+
+                    sessions.append(PlannedSession(
+                        dayOfWeek: day,
+                        dupSessionType: dupType,
+                        sessionLabel: label,
+                        plannedExercises: exerciseSets,
+                        estimatedDurationMinutes: estimateDuration(exerciseCount: sessionExercises.count, sets: sets, restSeconds: restSeconds),
+                        templateId: templateIdForDay(day, in: plan)
+                    ))
+                }
             }
 
             let week = TrainingWeek(
@@ -426,13 +440,17 @@ public final class ProgramDesignService: Sendable {
 
     // MARK: - Day Schedule Helpers
 
-    /// Returns the exercises assigned to a specific day via the plan's daySchedule,
-    /// or nil if no schedule exists for that day (fallback to all exercises).
+    /// Returns the exercises assigned to a specific day via the plan's daySchedule.
+    /// - Returns `nil` when no schedule is configured at all (legacy plans → caller uses all exercises).
+    /// - Returns `[]` when a schedule exists but this day has no exercises (intentionally empty day).
     private func exercisesForDay(_ day: Int, in plan: ProgressionPlan) -> [PlanExercise]? {
+        // No day schedule configured → nil (legacy: caller falls back to all exercises)
+        guard !plan.daySchedule.isEmpty else { return nil }
+        // Schedule configured but this day has no entry or empty exercises → empty list
         guard let entry = plan.daySchedule.first(where: { $0.dayOfWeek == day }),
-              !entry.exerciseIds.isEmpty else { return nil }
+              !entry.exerciseIds.isEmpty else { return [] }
         let filtered = plan.exercises.filter { entry.exerciseIds.contains($0.exerciseId) }
-        return filtered.isEmpty ? nil : filtered
+        return filtered.isEmpty ? [] : filtered
     }
 
     /// Returns the templateId assigned to a specific day via the plan's daySchedule.
@@ -465,6 +483,7 @@ public final class ProgramDesignService: Sendable {
 
     /// Build sessions for a given week, distributing exercises across day slots.
     /// Uses `plan.daySchedule` to filter exercises and assign templateId per day.
+    /// Days with no scheduled exercises produce sessions with empty plannedExercises.
     private func buildSessions(
         days: [Int],
         plan: ProgressionPlan,
@@ -475,11 +494,22 @@ public final class ProgramDesignService: Sendable {
         dupSessionType: DUPSessionType?,
         label: String
     ) -> [PlannedSession] {
-        days.enumerated().map { dayIndex, day in
-            let dayName = Self.dayNames[day] ?? "Day \(dayIndex + 1)"
-            let sessionLabel = days.count > 1 ? "\(label) - \(dayName)" : label
+        days.map { day in
+            let dayName = Self.dayNames[day] ?? "Day"
             let sessionExercises = exercisesForDay(day, in: plan) ?? plan.exercises
 
+            if sessionExercises.isEmpty {
+                return PlannedSession(
+                    dayOfWeek: day,
+                    dupSessionType: nil,
+                    sessionLabel: days.count > 1 ? "\(label) - \(dayName)" : label,
+                    plannedExercises: [],
+                    estimatedDurationMinutes: 60,
+                    templateId: templateIdForDay(day, in: plan)
+                )
+            }
+
+            let sessionLabel = days.count > 1 ? "\(label) - \(dayName)" : label
             let exerciseSets = sessionExercises.map { exercise in
                 PlannedExerciseSet(
                     planExerciseId: exercise.id,
