@@ -47,6 +47,7 @@ struct ActiveWorkoutView: View {
                 Button("Cancel Workout", role: .destructive) {
                     Task {
                         await viewModel.cancelWorkout()
+                        WidgetDataService().updateActiveWorkoutState(nil)
                     }
                 }
                 Button("Keep Going", role: .cancel) {}
@@ -132,6 +133,7 @@ struct ActiveWorkoutView: View {
             Button {
                 Task {
                     await viewModel.startWorkout(name: "Quick Workout", from: nil)
+                    updateWidgetWorkoutState()
                 }
             } label: {
                 Text("Start Workout")
@@ -319,6 +321,7 @@ struct ActiveWorkoutView: View {
                     setNumber: setIndex + 1
                 )
             }
+            updateWidgetWorkoutState()
         }
     }
 
@@ -327,6 +330,7 @@ struct ActiveWorkoutView: View {
             Task {
                 do {
                     try await viewModel.completeWorkout()
+                    WidgetDataService().updateActiveWorkoutState(nil)
                 } catch {
                     finishErrorMessage = error.localizedDescription
                     showingFinishError = true
@@ -517,6 +521,47 @@ struct ActiveWorkoutView: View {
     }
 
     // MARK: - Helpers
+
+    // MARK: - Widget Data Updates
+
+    private func updateWidgetWorkoutState() {
+        guard let workout = viewModel.currentWorkout, viewModel.isActive else {
+            WidgetDataService().updateActiveWorkoutState(nil)
+            return
+        }
+        let state = WidgetActiveWorkout(
+            workoutName: workout.name,
+            currentExerciseName: {
+                let current = workout.exercises.first { ex in ex.sets.contains { !$0.isCompleted } } ?? workout.exercises.last
+                return current?.exercise.name ?? "Exercise"
+            }(),
+            currentExerciseId: {
+                let current = workout.exercises.first { ex in ex.sets.contains { !$0.isCompleted } } ?? workout.exercises.last
+                return current?.id.uuidString ?? ""
+            }(),
+            completedSets: workout.exercises.reduce(0) { $0 + $1.sets.filter(\.isCompleted).count },
+            totalPlannedSets: workout.exercises.reduce(0) { $0 + $1.sets.count },
+            startedAt: workout.startedAt,
+            isResting: restTimerService.isRunning,
+            restEndDate: restTimerService.isRunning ? restTimerService.endDate : nil,
+            nextSetWeight: {
+                let current = workout.exercises.first { ex in ex.sets.contains { !$0.isCompleted } }
+                return current?.sets.first { !$0.isCompleted }?.weight
+            }(),
+            nextSetReps: {
+                let current = workout.exercises.first { ex in ex.sets.contains { !$0.isCompleted } }
+                return current?.sets.first { !$0.isCompleted }?.reps
+            }(),
+            nextExerciseName: {
+                let currentIdx = workout.exercises.firstIndex { ex in ex.sets.contains { !$0.isCompleted } }
+                if let idx = currentIdx, idx + 1 < workout.exercises.count {
+                    return workout.exercises[idx + 1].exercise.name
+                }
+                return nil
+            }()
+        )
+        WidgetDataService().updateActiveWorkoutState(state)
+    }
 
     private func previousDataForExercise(_ exerciseId: UUID) -> [Int: String] {
         var result: [Int: String] = [:]

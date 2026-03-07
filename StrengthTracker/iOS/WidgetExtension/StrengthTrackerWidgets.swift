@@ -7,6 +7,7 @@ struct StrengthTrackerWidgetBundle: WidgetBundle {
     var body: some Widget {
         WorkoutSummaryWidget()
         WeeklyProgressWidget()
+        TrainingHubWidget()
         #if os(iOS)
         if #available(iOS 16.1, *) {
             StreakAccessoryWidget()

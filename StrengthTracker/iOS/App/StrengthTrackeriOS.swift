@@ -119,10 +119,10 @@ struct ContentViewWrapper: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
-                // Refresh widgets when app becomes active
-                #if canImport(WidgetKit)
-                WidgetCenter.shared.reloadAllTimelines()
-                #endif
+                // Refresh widget data with analytics
+                Task { @MainActor in
+                    await refreshWidgetData()
+                }
 
                 // Sync templates, exercises, settings, and planned sessions to Watch when app becomes active
                 Task { @MainActor in
@@ -191,6 +191,69 @@ struct ContentViewWrapper: View {
     private func handleDeepLink(_ url: URL) {
         // Deep link handling will be implemented by other agents
         // Format: strengthtracker://workout/start?template=<uuid>
+    }
+
+    @MainActor
+    private func refreshWidgetData() async {
+        let widgetService = WidgetDataService()
+
+        // Process any pending set completions from widget intents
+        let pending = widgetService.readPendingCompletions()
+        if !pending.isEmpty {
+            let workoutVM = container.workoutViewModel
+            for completion in pending {
+                if let workout = workoutVM.currentWorkout,
+                   let exercise = workout.exercises.first(where: { $0.id.uuidString == completion.exerciseId }),
+                   completion.setIndex < exercise.sets.count {
+                    let set = exercise.sets[completion.setIndex]
+                    if !set.isCompleted {
+                        await workoutVM.toggleSetCompletion(exerciseId: exercise.id, setId: set.id)
+                    }
+                }
+            }
+            widgetService.clearPendingCompletions()
+        }
+
+        do {
+            let workouts = try await container.workoutRepository.fetchAll()
+
+            // Get analytics highlights
+            var highlights: [AnalyticsHighlight] = []
+            let analyticsVM = container.workoutAnalyticsViewModel
+            if !analyticsVM.insights.highlights.isEmpty {
+                highlights = analyticsVM.insights.highlights
+            } else {
+                // Try a lightweight generation
+                highlights = (try? await container.analyticsService.generateInsights().highlights) ?? []
+            }
+
+            // Build next planned session
+            var nextPlanned: WidgetPlannedSession? = nil
+            if let plan = try await container.progressionPlanRepository.fetchActive(),
+               let week = plan.currentWeek,
+               let nextSession = week.sessions.first(where: { !$0.isCompleted }) {
+                nextPlanned = WidgetPlannedSession(
+                    sessionName: nextSession.sessionLabel,
+                    exerciseNames: Array(nextSession.plannedExercises.prefix(4).map(\.exerciseName)),
+                    planName: plan.name
+                )
+            }
+
+            let workoutVM = container.workoutViewModel
+            let restTimer = container.restTimerService
+            let data = widgetService.buildWidgetData(
+                workouts: workouts,
+                highlights: highlights,
+                activeWorkout: workoutVM.isActive ? workoutVM.currentWorkout : nil,
+                isResting: restTimer.isRunning,
+                restEndDate: restTimer.endDate,
+                nextPlannedSession: nextPlanned,
+                weeklyGoal: 4
+            )
+            widgetService.updateWidgetData(data)
+        } catch {
+            print("[Widget] Failed to refresh widget data: \(error)")
+        }
     }
 }
 #endif
