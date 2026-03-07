@@ -205,6 +205,9 @@ public final class WorkoutViewModel {
     }
 
     public func completeWorkout() async throws {
+        // Allow pending UI debounces (400ms) to flush before finalizing
+        try? await Task.sleep(for: .milliseconds(500))
+
         guard var workout = currentWorkout else {
             throw WorkoutError.noActiveWorkout
         }
