@@ -109,6 +109,7 @@ struct PlanCreationStep2GoalView: View {
                     )
                     .datePickerStyle(.compact)
                     .tint(STColors.primary)
+                    .foregroundStyle(STColors.textPrimary)
                 }
                 .padding(.horizontal, 20)
 

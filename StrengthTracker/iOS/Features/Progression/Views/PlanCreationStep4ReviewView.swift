@@ -29,7 +29,9 @@ struct PlanCreationStep5ReviewView: View {
                         .textCase(.uppercase)
                         .foregroundStyle(STColors.textSecondary)
 
-                    TextField("Training Plan", text: $viewModel.draftPlanName)
+                    TextField("", text: $viewModel.draftPlanName, prompt:
+                        Text("Training Plan").foregroundStyle(STColors.textSecondary)
+                    )
                         .font(.system(size: 15))
                         .foregroundStyle(STColors.textPrimary)
                         .padding(12)

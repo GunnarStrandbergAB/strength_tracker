@@ -273,29 +273,19 @@ public final class ProgressionPlanViewModel {
 
     private func assignScheduledDates(to plan: inout ProgressionPlan) {
         let calendar = Calendar.current
-
-        // Find Monday of the week containing startDate
-        let startWeekday = calendar.component(.weekday, from: plan.startDate) // Sun=1..Sat=7
-        let daysToMonday = (startWeekday - 2 + 7) % 7  // offset back to Monday
-        let startWeekMonday = calendar.startOfDay(
-            for: calendar.date(byAdding: .day, value: -daysToMonday, to: plan.startDate)!
-        )
         let planStartDay = calendar.startOfDay(for: plan.startDate)
+        let startISO = calendar.component(.weekday, from: planStartDay) // Sun=1..Sat=7
 
         for blockIdx in plan.blocks.indices {
             for weekIdx in plan.blocks[blockIdx].weeks.indices {
                 let weekNum = plan.blocks[blockIdx].weeks[weekIdx].absoluteWeekNumber
-                let weekMonday = calendar.date(byAdding: .day, value: (weekNum - 1) * 7, to: startWeekMonday)!
+                let weekAnchor = calendar.date(byAdding: .day, value: (weekNum - 1) * 7, to: planStartDay)!
 
                 for sessionIdx in plan.blocks[blockIdx].weeks[weekIdx].sessions.indices {
                     guard let dow = plan.blocks[blockIdx].weeks[weekIdx].sessions[sessionIdx].dayOfWeek else { continue }
-                    // Map ISO day to offset from Monday: Mon(2)=0, Tue(3)=1, ..., Sun(1)=6
-                    let dayOffset = dow == 1 ? 6 : dow - 2
-                    let sessionDate = calendar.date(byAdding: .day, value: dayOffset, to: weekMonday)!
-
-                    if sessionDate >= planStartDay {
-                        plan.blocks[blockIdx].weeks[weekIdx].sessions[sessionIdx].scheduledDate = sessionDate
-                    }
+                    let dayOffset = (dow - startISO + 7) % 7
+                    let sessionDate = calendar.date(byAdding: .day, value: dayOffset, to: weekAnchor)!
+                    plan.blocks[blockIdx].weeks[weekIdx].sessions[sessionIdx].scheduledDate = sessionDate
                 }
             }
         }
