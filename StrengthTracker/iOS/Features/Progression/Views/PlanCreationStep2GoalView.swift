@@ -88,6 +88,30 @@ struct PlanCreationStep2GoalView: View {
                 }
                 .padding(.horizontal, 20)
 
+                // Start Date
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("START DATE")
+                        .font(.system(size: 10, weight: .bold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(STColors.textSecondary)
+
+                    DatePicker(
+                        "Start date",
+                        selection: Binding(
+                            get: { viewModel.draftStartDate },
+                            set: { newValue in
+                                viewModel.draftStartDate = newValue
+                                viewModel.draftStartDateManuallySet = true
+                            }
+                        ),
+                        in: Calendar.current.startOfDay(for: Date())...,
+                        displayedComponents: .date
+                    )
+                    .datePickerStyle(.compact)
+                    .tint(STColors.primary)
+                }
+                .padding(.horizontal, 20)
+
                 Spacer(minLength: 80)
             }
         }
@@ -97,6 +121,9 @@ struct PlanCreationStep2GoalView: View {
                 let defaults = ProgressionPlanViewModel.defaultDaySpread[viewModel.draftFrequency]
                     ?? ProgressionPlanViewModel.defaultDaySpread[3]!
                 viewModel.draftTrainingDays = Set(defaults)
+            }
+            if !viewModel.draftStartDateManuallySet {
+                viewModel.draftStartDate = viewModel.defaultStartDate()
             }
         }
         .safeAreaInset(edge: .bottom) {

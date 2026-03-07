@@ -74,7 +74,7 @@ struct PlanCreationStep4ScheduleView: View {
 
     private func templatePicker(forDay day: Int) -> some View {
         let entry = viewModel.draftDaySchedule[day]
-        let templates = templateViewModel.templates
+        let templates = templateViewModel.userTemplates
 
         return Menu {
             Button("None") {

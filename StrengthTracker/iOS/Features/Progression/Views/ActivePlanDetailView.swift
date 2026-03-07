@@ -11,6 +11,8 @@ struct ActivePlanDetailView: View {
     @State private var showPauseConfirmation = false
     @State private var showAbandonConfirmation = false
     @State private var templatePickerSession: PlannedSession?
+    @State private var rescheduleSession: PlannedSession?
+    @State private var rescheduleDate: Date = Date()
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -51,6 +53,44 @@ struct ActivePlanDetailView: View {
                 templateViewModel: templateViewModel,
                 progressionPlanViewModel: viewModel
             )
+        }
+        .sheet(item: $rescheduleSession) { session in
+            NavigationStack {
+                VStack(spacing: 20) {
+                    Text("Reschedule Session")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(STColors.textPrimary)
+
+                    DatePicker(
+                        "New date",
+                        selection: $rescheduleDate,
+                        displayedComponents: .date
+                    )
+                    .datePickerStyle(.graphical)
+                    .tint(STColors.primary)
+
+                    Spacer()
+                }
+                .padding(20)
+                .background(STColors.background)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { rescheduleSession = nil }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            let sessionId = session.id
+                            let newDate = rescheduleDate
+                            rescheduleSession = nil
+                            Task {
+                                await viewModel.rescheduleSession(sessionId: sessionId, to: newDate)
+                            }
+                        }
+                        .fontWeight(.semibold)
+                    }
+                }
+            }
+            .presentationDetents([.medium])
         }
         .confirmationDialog("Pause Plan?", isPresented: $showPauseConfirmation) {
             Button("Pause Plan") {
@@ -270,6 +310,21 @@ struct ActivePlanDetailView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(isCompleted ? STColors.textTertiary : STColors.textPrimary)
 
+                    if let date = session.scheduledDate {
+                        Button {
+                            if !isCompleted {
+                                rescheduleDate = date
+                                rescheduleSession = session
+                            }
+                        } label: {
+                            Text(date, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
+                                .font(.system(size: 12))
+                                .foregroundStyle(isCompleted ? .secondary : isOverdue(session) ? STColors.danger : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isCompleted)
+                    }
+
                     if let tid = session.templateId {
                         HStack(spacing: 4) {
                             Image(systemName: "link")
@@ -449,6 +504,12 @@ struct ActivePlanDetailView: View {
         case .completed: return STColors.primary
         case .abandoned: return STColors.danger
         }
+    }
+
+    private func isOverdue(_ session: PlannedSession) -> Bool {
+        guard !session.isCompleted,
+              let scheduled = session.scheduledDate else { return false }
+        return scheduled < Calendar.current.startOfDay(for: Date())
     }
 
     private func formattedWeight(_ weight: Double) -> String {

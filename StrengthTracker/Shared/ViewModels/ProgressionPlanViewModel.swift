@@ -41,6 +41,8 @@ public final class ProgressionPlanViewModel {
     public var draftTrainingDays: Set<Int> = []
     public var draftSelectedExercises: [DraftPlanExercise] = []
     public var draftPlanName: String = ""
+    public var draftStartDate: Date = Date()
+    public var draftStartDateManuallySet: Bool = false
     public var draftDaySchedule: [Int: DraftDayEntry] = [:]  // keyed by ISO day
     public var isSavingPlan = false
     public var errorMessage: String?
@@ -173,6 +175,31 @@ public final class ProgressionPlanViewModel {
             draftTrainingDays.insert(day)
         }
         draftFrequency = draftTrainingDays.count
+        if !draftStartDateManuallySet {
+            draftStartDate = defaultStartDate()
+        }
+    }
+
+    // MARK: - Start Date
+
+    /// ISO weekday number for a given date (Sun=1, Mon=2, ..., Sat=7)
+    private func isoDayOfWeek(_ date: Date) -> Int {
+        let weekday = Calendar.current.component(.weekday, from: date) // Sun=1..Sat=7
+        return weekday
+    }
+
+    /// Returns the next training day on or after today.
+    public func defaultStartDate() -> Date {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        guard !draftTrainingDays.isEmpty else { return today }
+        let todayISO = isoDayOfWeek(today)
+        if draftTrainingDays.contains(todayISO) { return today }
+        for offset in 1...7 {
+            let candidate = calendar.date(byAdding: .day, value: offset, to: today)!
+            if draftTrainingDays.contains(isoDayOfWeek(candidate)) { return candidate }
+        }
+        return today
     }
 
     // MARK: - Exercise Management
@@ -242,6 +269,57 @@ public final class ProgressionPlanViewModel {
         )
     }
 
+    // MARK: - Scheduled Dates
+
+    private func assignScheduledDates(to plan: inout ProgressionPlan) {
+        let calendar = Calendar.current
+
+        // Find Monday of the week containing startDate
+        let startWeekday = calendar.component(.weekday, from: plan.startDate) // Sun=1..Sat=7
+        let daysToMonday = (startWeekday - 2 + 7) % 7  // offset back to Monday
+        let startWeekMonday = calendar.startOfDay(
+            for: calendar.date(byAdding: .day, value: -daysToMonday, to: plan.startDate)!
+        )
+        let planStartDay = calendar.startOfDay(for: plan.startDate)
+
+        for blockIdx in plan.blocks.indices {
+            for weekIdx in plan.blocks[blockIdx].weeks.indices {
+                let weekNum = plan.blocks[blockIdx].weeks[weekIdx].absoluteWeekNumber
+                let weekMonday = calendar.date(byAdding: .day, value: (weekNum - 1) * 7, to: startWeekMonday)!
+
+                for sessionIdx in plan.blocks[blockIdx].weeks[weekIdx].sessions.indices {
+                    guard let dow = plan.blocks[blockIdx].weeks[weekIdx].sessions[sessionIdx].dayOfWeek else { continue }
+                    // Map ISO day to offset from Monday: Mon(2)=0, Tue(3)=1, ..., Sun(1)=6
+                    let dayOffset = dow == 1 ? 6 : dow - 2
+                    let sessionDate = calendar.date(byAdding: .day, value: dayOffset, to: weekMonday)!
+
+                    if sessionDate >= planStartDay {
+                        plan.blocks[blockIdx].weeks[weekIdx].sessions[sessionIdx].scheduledDate = sessionDate
+                    }
+                }
+            }
+        }
+    }
+
+    public func rescheduleSession(sessionId: UUID, to newDate: Date) async {
+        guard var plan = activePlan else { return }
+        for blockIdx in plan.blocks.indices {
+            for weekIdx in plan.blocks[blockIdx].weeks.indices {
+                if let sIdx = plan.blocks[blockIdx].weeks[weekIdx].sessions.firstIndex(where: { $0.id == sessionId }) {
+                    plan.blocks[blockIdx].weeks[weekIdx].sessions[sIdx].scheduledDate = newDate
+                    plan.updatedAt = Date()
+                    do {
+                        try await progressionPlanRepository.save(plan)
+                        activePlan = plan
+                    } catch {
+                        errorMessage = error.localizedDescription
+                    }
+                    return
+                }
+            }
+        }
+    }
+
     // MARK: - Plan Generation
 
     public func generateAndSavePlan() async {
@@ -288,6 +366,7 @@ public final class ProgressionPlanViewModel {
                 primaryGoal: draftGoal,
                 weeklyFrequency: draftFrequency,
                 trainingDays: sortedDays,
+                startDate: draftStartDate,
                 exercises: planExercises,
                 daySchedule: daySchedule,
                 creationSource: .structuredFlow
@@ -295,6 +374,9 @@ public final class ProgressionPlanViewModel {
 
             let blocks = programDesignService.generateProgram(for: plan)
             plan.blocks = blocks
+
+            // Assign concrete scheduled dates to all sessions
+            assignScheduledDates(to: &plan)
 
             // Calculate target end date
             let totalWeeks = plan.totalWeeks
@@ -321,6 +403,8 @@ public final class ProgressionPlanViewModel {
         draftSelectedExercises = []
         draftDaySchedule = [:]
         draftPlanName = ""
+        draftStartDate = Date()
+        draftStartDateManuallySet = false
         isSavingPlan = false
         errorMessage = nil
     }
