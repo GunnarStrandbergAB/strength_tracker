@@ -21,4 +21,24 @@ public protocol InsightTextGenerating: Sendable {
     /// Explain training drift in user-friendly terms.
     @MainActor
     func generateDriftExplanation(drift: TrainingDrift) async -> String
+
+    /// Generate highlights from Phase 2/3 analytics when < 19 workouts.
+    @MainActor
+    func generateEarlyHighlights(
+        plateaus: [PlateauAnalysis],
+        muscleBalance: MuscleBalance?,
+        recommendations: [ExerciseRecommendation],
+        workoutCount: Int
+    ) async -> [AnalyticsHighlight]
+}
+
+// Default empty implementation so existing conformers don't break.
+public extension InsightTextGenerating {
+    @MainActor
+    func generateEarlyHighlights(
+        plateaus: [PlateauAnalysis],
+        muscleBalance: MuscleBalance?,
+        recommendations: [ExerciseRecommendation],
+        workoutCount: Int
+    ) async -> [AnalyticsHighlight] { [] }
 }
