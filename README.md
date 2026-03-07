@@ -21,7 +21,7 @@ Built for lifters who want to log their workouts quickly and get back to the bar
 - **Progression Planning** — deterministic periodization engine that generates complete 12-week training programs. See [Progression Planning](#progression-planning) below.
 - **Webhook Integration** — POST workout JSON to any external endpoint after every completed workout (openClaw PT, AI trainers, n8n, Zapier, etc.)
 - **Settings** — weight unit (kg/lbs), rest timer duration, webhook configuration, and preferences
-- **Widgets** — home screen widgets and Live Activities via WidgetKit and ActivityKit
+- **Widgets** — home screen widgets (Training Hub with interactive workout controls, Workout Summary, Weekly Progress, Streak) and Live Activities via WidgetKit and ActivityKit
 
 ### Apple Watch
 
@@ -31,7 +31,7 @@ Built for lifters who want to log their workouts quickly and get back to the bar
 - **Set Logging** — weight and reps input with +/- buttons and Digital Crown rotation. Set type badges (warm-up, drop, etc.) shown per set.
 - **Unit-Aware Steps** — 2.5 kg or 5 lbs increments based on user preference
 - **Live Metrics** — real-time heart rate, active calories, and duration via HealthKit sensors
-- **Rest Timer** — automatic rest countdown between sets with dedicated timer view
+- **Rest Timer** — automatic rest countdown between sets with dedicated timer view. Per-exercise rest time overrides (set in templates, synced to Watch). Pause/resume support. Background notification when timer completes.
 - **Exercise Navigation** — swipe between exercises, view logged sets as chips
 - **Background Workouts** — workouts continue running when wrist drops (workout-processing mode)
 - **Session Recovery** — orphaned HealthKit sessions are recovered after app crash or termination
@@ -54,12 +54,13 @@ A deterministic periodization engine that generates complete 12-week mesocycles 
 
 ### How It Works
 
-A 4-step wizard guides plan creation:
+A 5-step wizard guides plan creation:
 
 1. **Goal** — select a primary training goal (strength, hypertrophy, power, or general fitness). Each goal defines an intensity range and rep scheme.
 2. **Program Type** — choose a periodization model: linear, daily undulating, weekly undulating, or block.
 3. **Exercises** — pick exercises from the library. For each exercise, the app estimates your current 1RM from workout history (or you enter it manually).
-4. **Schedule** — set training days per week (3–6). The engine assigns sessions to specific weekdays.
+4. **Schedule** — set training days per week (3–6) and assign each day to a specific weekday. Optionally link a **workout template** to each day and pick which exercises train on which days — when linked, the plan merges the template's structure (exercise order, notes) with the plan's progression-driven weights and reps.
+5. **Start Date** — pick a start date (defaults to the next training day on or after today). The engine computes concrete **scheduled dates** for every session based on the start date and training days. Sessions show their date in the plan detail view and can be individually rescheduled.
 
 The engine then generates all 12 weeks upfront — every session, every exercise, every set, every target weight and rep count — organized into training blocks with structured deload weeks.
 
@@ -142,6 +143,10 @@ Contradictory proposals (increase + decrease on the same exercise) are filtered.
 ### Template Linking
 
 Planned sessions can be linked to existing workout templates. When linked, the plan's target weights and reps are merged into the template's exercises — the template provides the exercise order, notes, and structure while the plan provides the progression-driven targets. Matching works by exercise ID with a case-insensitive name fallback for robustness.
+
+### Date Scheduling
+
+Plans compute concrete dates for every session. The engine anchors training days to the user's chosen start date (not Monday-aligned). Sessions can be rescheduled individually from the plan detail view. Overdue sessions (date in the past, not completed) are visually flagged.
 
 ### Apple Intelligence Integration
 
@@ -240,6 +245,11 @@ The only personal data used is **body weight** (from HealthKit or user preferenc
 
 ### Home Screen Widgets
 
+- **Training Hub** (small, medium, large) — adaptive widget that switches between analytics mode and active workout mode:
+  - **Analytics mode** (no active workout): small shows a rotating insight card from analytics highlights; medium shows a 7-day calendar strip, weekly progress, top 2 highlights, and next planned session; large adds a progress ring (workouts vs. weekly goal), top 3 highlights, and next planned session with exercise preview
+  - **Active workout mode** (during workout): small shows current exercise name, set count, and elapsed time; medium adds next set targets and a rest timer countdown or "Complete Set" button; large shows a full workout dashboard with rest timer controls and next exercise preview
+  - **Widget controls** — complete set, skip exercise, add rest time, skip rest — all work without opening the app
+  - Weekly goal reads from the active progression plan. Highlights unlock progressively: recommendations at 5+ workouts, plateau warnings at 10+, full advanced insights at 19+
 - **Workout Summary** (small) — last workout name, relative date, exercise count
 - **Weekly Progress** (medium) — progress ring showing workouts this week vs. goal, streak count, total workouts
 - **Streak** (accessory circular + rectangular) — current streak and weekly progress for Lock Screen and StandBy
