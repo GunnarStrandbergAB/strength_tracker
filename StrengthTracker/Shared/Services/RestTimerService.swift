@@ -5,12 +5,27 @@ import Observation
 import ActivityKit
 #endif
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
+#if os(iOS)
+import AudioToolbox
+#endif
+
+#if canImport(UserNotifications)
+import UserNotifications
+#endif
+
 @MainActor
 @Observable
 public final class RestTimerService {
     public var remainingSeconds: Int = 0
     public var isRunning: Bool = false
     public var totalSeconds: Int = UserPreferencesService.defaultRestSecondsValue
+
+    /// The date when the current timer will (or did) expire. Used for Live Activity timerInterval and notifications.
+    public var endDate: Date?
 
     public init() {}
 
@@ -25,7 +40,7 @@ public final class RestTimerService {
     private var currentExerciseName: String?
     private var currentSetNumber: Int?
 
-    /// Start the rest timer
+    /// Start the rest timer from full duration
     /// - Parameters:
     ///   - seconds: Optional duration in seconds. If nil, uses the current totalSeconds value
     ///   - exerciseName: Name of the exercise for Live Activity
@@ -37,42 +52,59 @@ public final class RestTimerService {
             totalSeconds = seconds
         }
 
+        // Store Live Activity context
+        if let exerciseName { currentExerciseName = exerciseName }
+        if let setNumber { currentSetNumber = setNumber }
+
         remainingSeconds = totalSeconds
         startDate = Date()
+        endDate = Date().addingTimeInterval(TimeInterval(totalSeconds))
         isRunning = true
 
-        // Store Live Activity context
-        currentExerciseName = exerciseName
-        currentSetNumber = setNumber
+        scheduleNotification(seconds: totalSeconds, exerciseName: currentExerciseName)
 
         // Start Live Activity if context is provided
-        if let exerciseName = exerciseName, let setNumber = setNumber {
-            startLiveActivity(exerciseName: exerciseName, setNumber: setNumber)
+        if let name = currentExerciseName, let setNum = currentSetNumber {
+            startLiveActivity(exerciseName: name, setNumber: setNum)
         }
 
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self, let startDate = self.startDate else { return }
-
-                let elapsed = Int(Date().timeIntervalSince(startDate))
-                let remaining = max(0, self.totalSeconds - elapsed)
-                self.remainingSeconds = remaining
-
-                if remaining > 0 {
-                    self.updateLiveActivity()
-                } else {
-                    self.timerCompleted()
-                }
-            }
-        }
+        startTicker()
     }
 
-    /// Stop the timer without resetting values
+    /// Resume the timer from the current remainingSeconds (for un-pause)
+    public func resume() {
+        guard !isRunning, remainingSeconds > 0 else { return }
+        startDate = Date()
+        endDate = Date().addingTimeInterval(TimeInterval(remainingSeconds))
+        isRunning = true
+
+        scheduleNotification(seconds: remainingSeconds, exerciseName: currentExerciseName)
+
+        // Update Live Activity with new date range
+        resumeOrStartLiveActivity()
+
+        startTicker()
+    }
+
+    /// Pause the timer without resetting values
+    public func pause() {
+        timer?.invalidate()
+        timer = nil
+        startDate = nil
+        endDate = nil
+        isRunning = false
+        cancelNotification()
+        updateLiveActivity()
+    }
+
+    /// Stop the timer completely and reset
     public func stop() {
         timer?.invalidate()
         timer = nil
         startDate = nil
+        endDate = nil
         isRunning = false
+        cancelNotification()
         endLiveActivity()
     }
 
@@ -80,6 +112,21 @@ public final class RestTimerService {
     public func reset() {
         stop()
         remainingSeconds = totalSeconds
+    }
+
+    /// Add extra time to a running or paused timer
+    public func addTime(seconds: Int) {
+        remainingSeconds += seconds
+        totalSeconds += seconds
+        if let end = endDate {
+            endDate = end.addingTimeInterval(TimeInterval(seconds))
+        }
+        if isRunning {
+            // Reschedule notification with new remaining time
+            cancelNotification()
+            scheduleNotification(seconds: remainingSeconds, exerciseName: currentExerciseName)
+            updateLiveActivity()
+        }
     }
 
     /// Progress from 0.0 (start) to 1.0 (complete)
@@ -100,32 +147,102 @@ public final class RestTimerService {
         remainingSeconds == 0 && !isRunning
     }
 
+    /// Called when the app returns to foreground — check if timer expired while backgrounded
+    public func handleForegroundReturn() {
+        guard isRunning, let endDate = endDate else { return }
+        if Date() >= endDate {
+            // Timer expired while we were in background
+            remainingSeconds = 0
+            timerCompleted()
+        } else {
+            // Timer still running — resync remainingSeconds
+            remainingSeconds = max(0, Int(endDate.timeIntervalSinceNow))
+        }
+    }
+
+    private func startTicker() {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self, let startDate = self.startDate else { return }
+
+                let elapsed = Int(Date().timeIntervalSince(startDate))
+                let remaining = max(0, self.totalSeconds - elapsed)
+                self.remainingSeconds = remaining
+
+                if remaining <= 0 {
+                    self.timerCompleted()
+                }
+                // Note: No per-second Live Activity update — the system renders the countdown via timerInterval
+            }
+        }
+    }
+
     private func timerCompleted() {
         endLiveActivity()
-        stop()
+        timer?.invalidate()
+        timer = nil
+        startDate = nil
+        endDate = nil
+        isRunning = false
+        remainingSeconds = 0
         triggerCompletionFeedback()
+        // Notification already scheduled and will fire on its own
     }
 
     private func triggerCompletionFeedback() {
-        // Haptic feedback handled by the view layer
+        #if os(iOS)
+        AudioServicesPlayAlertSound(1007) // tri-tone system sound
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        #endif
+    }
+
+    // MARK: - Notifications
+
+    private func scheduleNotification(seconds: Int, exerciseName: String?) {
+        #if canImport(UserNotifications)
+        let content = UNMutableNotificationContent()
+        content.title = "Rest Complete"
+        content.body = exerciseName.map { "Time for your next set of \($0)" } ?? "Time for your next set"
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, TimeInterval(seconds)), repeats: false)
+        let request = UNNotificationRequest(identifier: "rest-timer", content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request)
+        #endif
+    }
+
+    private func cancelNotification() {
+        #if canImport(UserNotifications)
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["rest-timer"])
+        #endif
     }
 
     // MARK: - Live Activity Management
 
+    /// Resume existing Live Activity or start a new one
+    private func resumeOrStartLiveActivity() {
+        #if canImport(ActivityKit)
+        if currentActivity != nil {
+            updateLiveActivity()
+        } else if let name = currentExerciseName, let setNum = currentSetNumber {
+            startLiveActivity(exerciseName: name, setNumber: setNum)
+        }
+        #endif
+    }
+
     /// Start a Live Activity for the rest timer
-    /// - Parameters:
-    ///   - exerciseName: Name of the exercise
-    ///   - setNumber: Set number
     private func startLiveActivity(exerciseName: String, setNumber: Int) {
         #if canImport(ActivityKit)
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled,
+              let endDate = endDate else { return }
 
         let attributes = RestTimerAttributes(
             exerciseName: exerciseName,
             setNumber: setNumber
         )
+        let now = Date()
         let state = RestTimerAttributes.ContentState(
-            remainingSeconds: remainingSeconds,
+            timerRange: now...endDate,
             totalSeconds: totalSeconds,
             isRunning: true
         )
@@ -133,7 +250,7 @@ public final class RestTimerService {
         do {
             currentActivity = try Activity.request(
                 attributes: attributes,
-                content: .init(state: state, staleDate: nil)
+                content: .init(state: state, staleDate: endDate)
             )
         } catch {
             print("RestTimerService: Failed to start Live Activity - \(error)")
@@ -141,19 +258,21 @@ public final class RestTimerService {
         #endif
     }
 
-    /// Update the Live Activity with current state
+    /// Update the Live Activity with current state (only on pause/resume/add-time, NOT per-second)
     private func updateLiveActivity() {
         #if canImport(ActivityKit)
         guard let activity = currentActivity else { return }
 
+        let now = Date()
+        let end = endDate ?? now
         let state = RestTimerAttributes.ContentState(
-            remainingSeconds: remainingSeconds,
+            timerRange: now...max(now, end),
             totalSeconds: totalSeconds,
             isRunning: isRunning
         )
 
         Task {
-            await activity.update(.init(state: state, staleDate: nil))
+            await activity.update(.init(state: state, staleDate: isRunning ? end : nil))
         }
         #endif
     }
@@ -163,8 +282,9 @@ public final class RestTimerService {
         #if canImport(ActivityKit)
         guard let activity = currentActivity else { return }
 
+        let now = Date()
         let finalState = RestTimerAttributes.ContentState(
-            remainingSeconds: 0,
+            timerRange: now...now,
             totalSeconds: totalSeconds,
             isRunning: false
         )

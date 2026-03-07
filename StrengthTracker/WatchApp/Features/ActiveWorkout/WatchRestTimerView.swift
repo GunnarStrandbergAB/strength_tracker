@@ -74,12 +74,6 @@ struct WatchRestTimerView: View {
             .buttonStyle(.plain)
         }
         .padding()
-        .onChange(of: viewModel.isResting) { _, isResting in
-            if !isResting {
-                #if os(watchOS)
-                WKInterfaceDevice.current().play(.success)
-                #endif
-            }
-        }
+        // Haptic feedback on timer completion is handled by WatchWorkoutViewModel.restTimerCompleted()
     }
 }

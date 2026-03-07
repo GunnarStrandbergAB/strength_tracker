@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+#if os(watchOS)
+import WatchKit
+#endif
 
 @MainActor
 @Observable
@@ -370,8 +373,9 @@ public final class WatchWorkoutViewModel {
         // Send live snapshot to iPhone
         connectivityManager.sendWorkoutSnapshot(workout)
 
-        // Auto-start rest timer after logging a set
-        startRestTimer()
+        // Auto-start rest timer after logging a set (uses per-exercise override if set)
+        let exercise = workout.exercises[currentExerciseIndex]
+        startRestTimer(seconds: exercise.restTimerSeconds)
     }
 
     public func removeSet(at exerciseIndex: Int, setIndex: Int) {
@@ -563,12 +567,17 @@ public final class WatchWorkoutViewModel {
 
     // MARK: - Rest Timer
 
-    public func startRestTimer() {
+    /// Start rest timer with optional per-exercise duration override
+    public func startRestTimer(seconds: Int? = nil) {
+        // Respect autoStartRestTimer preference
+        guard userPreferencesService?.autoStartRestTimer ?? true else { return }
+
         stopRestTimer()
-        // Re-read preference in case user changed it
-        if let prefs = userPreferencesService {
-            restDuration = TimeInterval(prefs.defaultRestSeconds)
-        }
+
+        let duration = seconds
+            ?? userPreferencesService?.defaultRestSeconds
+            ?? UserPreferencesService.defaultRestSecondsValue
+        restDuration = TimeInterval(duration)
         isResting = true
         restTimeRemaining = restDuration
         restStartDate = Date()
@@ -582,7 +591,7 @@ public final class WatchWorkoutViewModel {
                     self.restTimeRemaining = remaining
                 } else {
                     self.restTimeRemaining = 0
-                    self.stopRestTimer()
+                    self.restTimerCompleted()
                 }
             }
         }
@@ -594,6 +603,14 @@ public final class WatchWorkoutViewModel {
         restStartDate = nil
         isResting = false
         restTimeRemaining = 0
+    }
+
+    /// Called when timer naturally expires — plays haptic then stops
+    private func restTimerCompleted() {
+        #if os(watchOS)
+        WKInterfaceDevice.current().play(.success)
+        #endif
+        stopRestTimer()
     }
 
     public func skipRestTimer() {
