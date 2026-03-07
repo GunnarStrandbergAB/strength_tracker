@@ -332,10 +332,11 @@ public final class ProgressionPlanViewModel {
                 )
             }
 
-            let mondayFirstOrder = [2, 3, 4, 5, 6, 7, 1]
+            let startWeekday = Calendar.current.component(.weekday, from: draftStartDate)
+            let startFirstOrder = (0..<7).map { (startWeekday - 1 + $0) % 7 + 1 }
             let sortedDays = draftTrainingDays.isEmpty
                 ? nil
-                : mondayFirstOrder.filter { draftTrainingDays.contains($0) }
+                : startFirstOrder.filter { draftTrainingDays.contains($0) }
 
             // Convert draft day schedule to domain model
             let daySchedule: [DayScheduleEntry] = draftDaySchedule.compactMap { day, entry in
@@ -367,6 +368,15 @@ public final class ProgressionPlanViewModel {
 
             // Assign concrete scheduled dates to all sessions
             assignScheduledDates(to: &plan)
+
+            // Sort sessions chronologically within each week
+            for blockIdx in plan.blocks.indices {
+                for weekIdx in plan.blocks[blockIdx].weeks.indices {
+                    plan.blocks[blockIdx].weeks[weekIdx].sessions.sort {
+                        ($0.scheduledDate ?? .distantFuture) < ($1.scheduledDate ?? .distantFuture)
+                    }
+                }
+            }
 
             // Calculate target end date
             let totalWeeks = plan.totalWeeks
