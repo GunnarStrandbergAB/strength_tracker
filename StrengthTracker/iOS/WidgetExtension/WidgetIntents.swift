@@ -2,6 +2,11 @@
 import AppIntents
 import WidgetKit
 import StrengthTrackerShared
+import UserNotifications
+
+#if canImport(ActivityKit)
+import ActivityKit
+#endif
 
 // MARK: - Complete Set Intent
 
@@ -123,6 +128,26 @@ struct SkipRestTimerIntent: AppIntent {
             nextExerciseName: active.nextExerciseName
         )
         service.updateActiveWorkoutState(updated)
+
+        // End any active rest timer Live Activities
+        #if canImport(ActivityKit)
+        for activity in Activity<RestTimerAttributes>.activities {
+            let now = Date()
+            let finalState = RestTimerAttributes.ContentState(
+                timerRange: now...now,
+                totalSeconds: 0,
+                isRunning: false
+            )
+            await activity.end(
+                ActivityContent(state: finalState, staleDate: nil),
+                dismissalPolicy: .immediate
+            )
+        }
+        #endif
+
+        // Cancel the rest timer notification
+        UNUserNotificationCenter.current()
+            .removePendingNotificationRequests(withIdentifiers: ["rest-timer"])
 
         return .result()
     }

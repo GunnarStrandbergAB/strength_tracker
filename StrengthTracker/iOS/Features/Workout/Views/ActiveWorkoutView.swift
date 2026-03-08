@@ -501,6 +501,7 @@ struct ActiveWorkoutView: View {
 
                 Button {
                     restTimerService.stop()
+                    updateWidgetWorkoutState()
                 } label: {
                     Text("Skip")
                         .font(.system(size: 12, weight: .bold))
