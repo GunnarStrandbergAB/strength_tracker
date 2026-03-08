@@ -102,6 +102,7 @@ targets:
         CFBundleVersion: "1"
         WKApplication: true
         WKCompanionAppBundleIdentifier: se.gunnarstrandberg.hellbent.ios
+        NSSupportsLiveActivities: true
         WKBackgroundModes:
           - workout-processing
         NSHealthShareUsageDescription: "HellBentIron reads your workout and heart rate data to display real-time metrics during workouts."
