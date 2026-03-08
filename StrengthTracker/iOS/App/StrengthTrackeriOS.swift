@@ -134,6 +134,9 @@ struct ContentViewWrapper: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
+                // End stale mirrored Live Activity if watch timer expired while iPhone was backgrounded
+                container.restTimerService.handleForegroundReturn()
+
                 // Refresh widget data with analytics
                 Task { @MainActor in
                     await refreshWidgetData()

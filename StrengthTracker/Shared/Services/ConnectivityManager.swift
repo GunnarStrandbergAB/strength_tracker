@@ -177,14 +177,14 @@ public final class ConnectivityManager: NSObject, @unchecked Sendable {
     /// Notify iPhone that the Watch rest timer stopped
     public func sendRestTimerStopped() {
         #if canImport(WatchConnectivity)
-        guard WCSession.default.isReachable else { return }
-
-        let message: [String: Any] = [
-            "type": "restTimerStopped"
-        ]
-        WCSession.default.sendMessage(message, replyHandler: nil) { error in
-            print("ConnectivityManager: sendRestTimerStopped failed - \(error)")
+        // Fast path: immediate delivery (if reachable)
+        if WCSession.default.isReachable {
+            WCSession.default.sendMessage(["type": "restTimerStopped"], replyHandler: nil) { error in
+                print("ConnectivityManager: sendRestTimerStopped sendMessage failed - \(error)")
+            }
         }
+        // Guaranteed-delivery backup (queued even when unreachable)
+        WCSession.default.transferUserInfo(["type": "restTimerStopped"])
         #endif
     }
 
@@ -349,8 +349,14 @@ extension ConnectivityManager: WCSessionDelegate {
         }
     }
 
-    // Receive transferUserInfo (completed workouts)
+    // Receive transferUserInfo (completed workouts + rest timer stop)
     nonisolated public func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        // Handle plain-dictionary rest timer stop (sent via transferUserInfo backup)
+        if let type = userInfo["type"] as? String, type == "restTimerStopped" {
+            Task { @MainActor in self.onWatchRestTimerStopped?() }
+            return
+        }
+
         guard let message = SyncMessage.from(dictionary: userInfo) else { return }
         let decoder = JSONDecoder()
         let metadata = message.metadata
