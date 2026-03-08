@@ -5,7 +5,7 @@ struct WatchSetInputView: View {
     @State private var viewModel: WatchWorkoutViewModel
     @State private var weight: Double = 20.0
     @State private var reps: Double = 10.0
-    @State private var focusedField: Field? = .weight
+    @FocusState private var focusedField: Field?
 
     enum Field {
         case weight, reps
@@ -40,7 +40,7 @@ struct WatchSetInputView: View {
                     onDecrement: { weight = max(0, weight - weightStep) },
                     onIncrement: { weight += weightStep }
                 )
-                .focusable(focusedField == .weight)
+                .focused($focusedField, equals: .weight)
                 .digitalCrownRotation($weight, from: 0, through: 500, by: weightStep)
 
                 // Reps card
@@ -52,7 +52,7 @@ struct WatchSetInputView: View {
                     onDecrement: { reps = max(1, reps - 1) },
                     onIncrement: { reps += 1 }
                 )
-                .focusable(focusedField == .reps)
+                .focused($focusedField, equals: .reps)
                 .digitalCrownRotation($reps, from: 1, through: 100, by: 1)
             }
 
@@ -128,6 +128,9 @@ struct WatchSetInputView: View {
                 .buttonStyle(.plain)
                 .disabled(!viewModel.canNavigateToNextSet)
             }
+        }
+        .onAppear {
+            focusedField = .weight
         }
     }
 

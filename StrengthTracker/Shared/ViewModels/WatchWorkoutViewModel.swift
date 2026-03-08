@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UserNotifications
 #if os(watchOS)
 import WatchKit
 #endif
@@ -582,6 +583,27 @@ public final class WatchWorkoutViewModel {
         restTimeRemaining = restDuration
         restStartDate = Date()
 
+        // Notify iPhone to start Live Activity mirror
+        if let name = currentExercise?.exercise.name {
+            connectivityManager.sendRestTimerStarted(
+                exerciseName: name, setNumber: currentSetNumber, duration: duration
+            )
+        }
+
+        // Schedule local notification for when timer completes (visible even when backgrounded)
+        let notifContent = UNMutableNotificationContent()
+        notifContent.title = "Rest Complete"
+        notifContent.body = currentExercise.map { "Time for your next set of \($0.exercise.name)" }
+            ?? "Time for your next set"
+        notifContent.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(
+            timeInterval: max(1, restDuration), repeats: false
+        )
+        let request = UNNotificationRequest(
+            identifier: "watch-rest-timer", content: notifContent, trigger: trigger
+        )
+        UNUserNotificationCenter.current().add(request)
+
         restTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, let start = self.restStartDate else { return }
@@ -603,6 +625,12 @@ public final class WatchWorkoutViewModel {
         restStartDate = nil
         isResting = false
         restTimeRemaining = 0
+
+        // Cancel pending notification and tell iPhone to dismiss Live Activity
+        UNUserNotificationCenter.current().removePendingNotificationRequests(
+            withIdentifiers: ["watch-rest-timer"]
+        )
+        connectivityManager.sendRestTimerStopped()
     }
 
     /// Called when timer naturally expires — plays haptic then stops
