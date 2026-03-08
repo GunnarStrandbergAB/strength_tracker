@@ -588,6 +588,16 @@ public final class WatchWorkoutViewModel {
             connectivityManager.sendRestTimerStarted(
                 exerciseName: name, setNumber: currentSetNumber, duration: duration
             )
+
+            // Write timer state for native watchOS widget (works without iPhone)
+            let widgetState = WatchRestTimerState(
+                exerciseName: name,
+                setNumber: currentSetNumber,
+                startDate: Date(),
+                endDate: Date().addingTimeInterval(TimeInterval(duration)),
+                totalSeconds: duration
+            )
+            WidgetDataService().updateWatchRestTimerState(widgetState)
         }
 
         // Schedule local notification for when timer completes (visible even when backgrounded)
@@ -631,6 +641,9 @@ public final class WatchWorkoutViewModel {
             withIdentifiers: ["watch-rest-timer"]
         )
         connectivityManager.sendRestTimerStopped()
+
+        // Clear watchOS widget timer state
+        WidgetDataService().updateWatchRestTimerState(nil)
     }
 
     /// Called when timer naturally expires — plays haptic then stops

@@ -72,9 +72,12 @@ targets:
       - path: WatchApp
         excludes:
           - "**/.placeholder.swift"
+          - "WidgetExtension/**"
     dependencies:
       - package: StrengthTrackerPackage
         product: StrengthTrackerShared
+      - target: StrengthTrackerWatchWidgets
+        embed: true
     settings:
       base:
         INFOPLIST_FILE: WatchApp/Resources/Info.plist
@@ -132,6 +135,34 @@ targets:
         com.apple.security.application-groups:
           - group.se.gunnarstrandberg.hellbent.shared
 
+  StrengthTrackerWatchWidgets:
+    type: app-extension
+    platform: watchOS
+    sources:
+      - path: WatchApp/WidgetExtension
+    dependencies:
+      - package: StrengthTrackerPackage
+        product: StrengthTrackerShared
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        PRODUCT_BUNDLE_IDENTIFIER: se.gunnarstrandberg.hellbent.ios.watchkitapp.widgets
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+    info:
+      path: WatchApp/WidgetExtension/Info.plist
+      properties:
+        CFBundleDisplayName: HellBentIron Watch Widgets
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: WatchApp/WidgetExtension/StrengthTrackerWatchWidgets.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.se.gunnarstrandberg.hellbent.shared
+
   StrengthTrackerTests:
     type: bundle.unit-test
     platform: iOS
@@ -158,6 +189,7 @@ schemes:
         StrengthTracker: all
         StrengthTrackerWatch: all
         StrengthTrackerWidgets: all
+        StrengthTrackerWatchWidgets: all
         StrengthTrackerTests: [test]
     run:
       config: Debug
