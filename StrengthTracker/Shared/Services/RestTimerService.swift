@@ -297,6 +297,33 @@ public final class RestTimerService {
         #endif
     }
 
+    // MARK: - Live Activity Only (for mirroring Watch rest timer on iPhone)
+
+    /// Start ONLY a Live Activity — no internal Timer, no haptic, no notification.
+    /// Used when the Watch sends a rest timer start message to the iPhone.
+    public func startLiveActivityOnly(exerciseName: String, setNumber: Int, duration: Int) {
+        // End any existing activity first
+        endLiveActivity()
+
+        totalSeconds = duration
+        endDate = Date().addingTimeInterval(TimeInterval(duration))
+        currentExerciseName = exerciseName
+        currentSetNumber = setNumber
+        isRunning = true
+        remainingSeconds = duration
+
+        startLiveActivity(exerciseName: exerciseName, setNumber: setNumber)
+    }
+
+    /// End ONLY the Live Activity (no timer/notification cleanup needed).
+    /// Used when the Watch sends a rest timer stop message to the iPhone.
+    public func endLiveActivityOnly() {
+        endLiveActivity()
+        isRunning = false
+        remainingSeconds = 0
+        endDate = nil
+    }
+
     deinit {
         timer?.invalidate()
     }

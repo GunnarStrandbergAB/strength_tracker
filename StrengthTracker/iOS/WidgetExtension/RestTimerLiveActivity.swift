@@ -79,6 +79,7 @@ struct RestTimerLiveActivity: Widget {
                 .tint(Self.accentColor)
             }
         }
+        .supplementalActivityFamiliesIfAvailable()
     }
 
     private func lockScreenView(context: ActivityViewContext<RestTimerAttributes>) -> some View {
@@ -117,6 +118,19 @@ struct RestTimerLiveActivity: Widget {
                 .foregroundStyle(Self.accentColor)
         }
         .padding(16)
+    }
+}
+
+extension ActivityConfiguration {
+    /// Apply `.supplementalActivityFamilies([.small])` on iOS 18+ to mirror
+    /// the Live Activity to the watchOS Smart Stack, falling back to the
+    /// unmodified configuration on earlier versions.
+    func supplementalActivityFamiliesIfAvailable() -> some WidgetConfiguration {
+        if #available(iOSApplicationExtension 18.0, *) {
+            return self.supplementalActivityFamilies([.small])
+        } else {
+            return self
+        }
     }
 }
 #endif
