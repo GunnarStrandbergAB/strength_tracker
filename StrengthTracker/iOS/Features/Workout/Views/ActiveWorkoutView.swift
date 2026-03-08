@@ -45,6 +45,7 @@ struct ActiveWorkoutView: View {
                 titleVisibility: .visible
             ) {
                 Button("Cancel Workout", role: .destructive) {
+                    restTimerService.stop()
                     Task {
                         await viewModel.cancelWorkout()
                         WidgetDataService().updateActiveWorkoutState(nil)
@@ -327,6 +328,7 @@ struct ActiveWorkoutView: View {
 
     private var finishButton: some View {
         Button {
+            restTimerService.stop()
             Task {
                 do {
                     try await viewModel.completeWorkout()

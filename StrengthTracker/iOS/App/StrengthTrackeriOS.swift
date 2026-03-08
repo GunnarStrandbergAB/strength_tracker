@@ -94,6 +94,9 @@ struct StrengthTrackeriOSApp: App {
                     restTimerService.endLiveActivityOnly()
                 }
             }
+
+            // Clean up any orphaned Live Activities from previous launches
+            restTimerService.endAllStaleActivities()
         } catch {
             fatalError("Failed to initialize app: \(error)")
         }

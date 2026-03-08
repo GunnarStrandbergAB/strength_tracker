@@ -33,16 +33,25 @@ struct RestTimerLiveActivity: Widget {
                 }
 
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(timerInterval: context.state.timerRange, countsDown: true)
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(Self.accentColor)
+                    if context.isStale {
+                        Text("00:00")
+                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(Self.accentColor)
+                    } else {
+                        Text(timerInterval: context.state.timerRange, countsDown: true)
+                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(Self.accentColor)
+                    }
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(spacing: 6) {
-                        ProgressView(timerInterval: context.state.timerRange, countsDown: true)
-                            .tint(Self.accentColor)
+                        if !context.isStale {
+                            ProgressView(timerInterval: context.state.timerRange, countsDown: true)
+                                .tint(Self.accentColor)
+                        }
 
                         HStack {
                             Text(context.attributes.exerciseName)
@@ -122,14 +131,16 @@ private struct RestTimerSmartStackView: View {
                         .stroke(Color.gray.opacity(0.3), lineWidth: 2)
                         .frame(width: 24, height: 24)
 
-                    ProgressView(timerInterval: context.state.timerRange, countsDown: true)
-                        .progressViewStyle(.circular)
-                        .tint(Self.accentColor)
-                        .frame(width: 24, height: 24)
+                    if !context.isStale {
+                        ProgressView(timerInterval: context.state.timerRange, countsDown: true)
+                            .progressViewStyle(.circular)
+                            .tint(Self.accentColor)
+                            .frame(width: 24, height: 24)
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("RESTING")
+                    Text(context.isStale ? "DONE" : "RESTING")
                         .font(.system(size: 8, weight: .bold))
                         .tracking(0.8)
                         .foregroundStyle(.secondary)
@@ -142,12 +153,20 @@ private struct RestTimerSmartStackView: View {
 
             Spacer()
 
-            Text(timerInterval: context.state.timerRange, countsDown: true)
-                .font(.system(size: 20, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(Self.accentColor)
+            if context.isStale {
+                Text("00:00")
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Self.accentColor)
+            } else {
+                Text(timerInterval: context.state.timerRange, countsDown: true)
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Self.accentColor)
+            }
         }
         .padding(10)
+        .widgetURL(URL(string: "strengthtracker://workout"))
     }
 }
 
@@ -165,14 +184,16 @@ private struct RestTimerLockScreenView: View {
                         .stroke(Color.gray.opacity(0.3), lineWidth: 3)
                         .frame(width: 36, height: 36)
 
-                    ProgressView(timerInterval: context.state.timerRange, countsDown: true)
-                        .progressViewStyle(.circular)
-                        .tint(Self.accentColor)
-                        .frame(width: 36, height: 36)
+                    if !context.isStale {
+                        ProgressView(timerInterval: context.state.timerRange, countsDown: true)
+                            .progressViewStyle(.circular)
+                            .tint(Self.accentColor)
+                            .frame(width: 36, height: 36)
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("RESTING")
+                    Text(context.isStale ? "DONE" : "RESTING")
                         .font(.system(size: 9, weight: .bold))
                         .tracking(1.2)
                         .foregroundStyle(.secondary)
@@ -185,10 +206,17 @@ private struct RestTimerLockScreenView: View {
 
             Spacer()
 
-            Text(timerInterval: context.state.timerRange, countsDown: true)
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(Self.accentColor)
+            if context.isStale {
+                Text("00:00")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Self.accentColor)
+            } else {
+                Text(timerInterval: context.state.timerRange, countsDown: true)
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Self.accentColor)
+            }
         }
         .padding(16)
     }

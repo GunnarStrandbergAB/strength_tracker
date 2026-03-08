@@ -153,9 +153,14 @@ public final class RestTimerService {
     public func handleForegroundReturn() {
         guard isRunning, let endDate = endDate else { return }
         if Date() >= endDate {
-            // Timer expired while we were in background
             remainingSeconds = 0
-            timerCompleted()
+            if startDate == nil {
+                // Mirror mode (watch timer): just end activity, no feedback
+                endLiveActivityOnly()
+            } else {
+                // Local mode: normal completion with feedback
+                timerCompleted()
+            }
         } else {
             // Timer still running — resync remainingSeconds
             remainingSeconds = max(0, Int(endDate.timeIntervalSinceNow))
@@ -181,6 +186,8 @@ public final class RestTimerService {
     }
 
     private func timerCompleted() {
+        mirrorEndTimer?.invalidate()
+        mirrorEndTimer = nil
         endLiveActivity()
         timer?.invalidate()
         timer = nil
@@ -323,6 +330,24 @@ public final class RestTimerService {
         mirrorEndTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(duration) + 2, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in self?.endLiveActivityOnly() }
         }
+    }
+
+    /// End any Live Activities left over from a previous launch (currentActivity is nil but system activity persists)
+    public func endAllStaleActivities() {
+        #if canImport(ActivityKit)
+        for activity in Activity<RestTimerAttributes>.activities {
+            let now = Date()
+            let finalState = RestTimerAttributes.ContentState(
+                timerRange: now...now,
+                totalSeconds: 0,
+                isRunning: false
+            )
+            Task {
+                await activity.end(.init(state: finalState, staleDate: nil), dismissalPolicy: .immediate)
+            }
+        }
+        currentActivity = nil
+        #endif
     }
 
     /// End ONLY the Live Activity (no timer/notification cleanup needed).
