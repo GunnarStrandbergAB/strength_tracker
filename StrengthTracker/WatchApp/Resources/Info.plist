@@ -24,6 +24,8 @@
 	<string>HellBentIron reads your workout and heart rate data to display real-time metrics during workouts.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>HellBentIron saves your strength training workouts to Apple Health.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>WKApplication</key>
 	<true/>
 	<key>WKBackgroundModes</key>

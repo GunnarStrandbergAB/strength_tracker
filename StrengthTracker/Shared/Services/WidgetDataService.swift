@@ -252,6 +252,30 @@ public final class WidgetDataService: Sendable {
         )
     }
 
+    // MARK: - Watch Rest Timer State
+
+    /// Write watch rest timer state to App Group for the watchOS widget
+    public func updateWatchRestTimerState(_ state: WatchRestTimerState?) {
+        guard let defaults = UserDefaults(suiteName: WidgetData.appGroupId) else { return }
+        if let state, let encoded = try? encoder.encode(state) {
+            defaults.set(encoded, forKey: WatchRestTimerState.userDefaultsKey)
+        } else {
+            defaults.removeObject(forKey: WatchRestTimerState.userDefaultsKey)
+        }
+        #if canImport(WidgetKit)
+        WidgetCenter.shared.reloadAllTimelines()
+        #endif
+    }
+
+    /// Read watch rest timer state from App Group
+    public func readWatchRestTimerState() -> WatchRestTimerState? {
+        guard let defaults = UserDefaults(suiteName: WidgetData.appGroupId),
+              let data = defaults.data(forKey: WatchRestTimerState.userDefaultsKey),
+              let state = try? decoder.decode(WatchRestTimerState.self, from: data) else { return nil }
+        guard state.endDate > Date() else { return nil }
+        return state
+    }
+
     // MARK: - Pending Completions (Widget → App sync)
 
     /// Read pending set completions written by widget intents
