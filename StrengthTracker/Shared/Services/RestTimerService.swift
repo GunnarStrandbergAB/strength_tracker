@@ -104,6 +104,7 @@ public final class RestTimerService {
         startDate = nil
         endDate = nil
         isRunning = false
+        remainingSeconds = 0
         cancelNotification()
         endLiveActivity()
     }
