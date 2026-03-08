@@ -9,9 +9,14 @@ struct RestTimerLiveActivity: Widget {
 
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: RestTimerAttributes.self) { context in
-            // Lock Screen / Banner presentation
-            lockScreenView(context: context)
-                .activityBackgroundTint(Color(red: 0.071, green: 0.071, blue: 0.071))
+            // Lock Screen / Banner / watchOS Smart Stack presentation
+            if #available(iOSApplicationExtension 18.0, *) {
+                RestTimerAdaptiveContentView(context: context)
+                    .activityBackgroundTint(Color(red: 0.071, green: 0.071, blue: 0.071))
+            } else {
+                RestTimerLockScreenView(context: context)
+                    .activityBackgroundTint(Color(red: 0.071, green: 0.071, blue: 0.071))
+            }
         } dynamicIsland: { context in
             DynamicIsland {
                 // Expanded Dynamic Island
@@ -82,9 +87,78 @@ struct RestTimerLiveActivity: Widget {
         .supplementalActivityFamiliesIfAvailable()
     }
 
-    private func lockScreenView(context: ActivityViewContext<RestTimerAttributes>) -> some View {
+}
+
+// MARK: - Adaptive Content View (iOS 18+ with activityFamily support)
+
+@available(iOSApplicationExtension 18.0, *)
+private struct RestTimerAdaptiveContentView: View {
+    @Environment(\.activityFamily) var activityFamily
+    let context: ActivityViewContext<RestTimerAttributes>
+
+    var body: some View {
+        switch activityFamily {
+        case .small:
+            RestTimerSmartStackView(context: context)
+        case .medium:
+            RestTimerLockScreenView(context: context)
+        @unknown default:
+            RestTimerLockScreenView(context: context)
+        }
+    }
+}
+
+// MARK: - watchOS Smart Stack layout (.small)
+
+private struct RestTimerSmartStackView: View {
+    let context: ActivityViewContext<RestTimerAttributes>
+    private static let accentColor = Color(red: 0.949, green: 0.800, blue: 0.051)
+
+    var body: some View {
         HStack {
-            // Left: Timer icon and label
+            HStack(spacing: 6) {
+                ZStack {
+                    Circle()
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 2)
+                        .frame(width: 24, height: 24)
+
+                    ProgressView(timerInterval: context.state.timerRange, countsDown: true)
+                        .progressViewStyle(.circular)
+                        .tint(Self.accentColor)
+                        .frame(width: 24, height: 24)
+                }
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("RESTING")
+                        .font(.system(size: 8, weight: .bold))
+                        .tracking(0.8)
+                        .foregroundStyle(.secondary)
+                    Text(context.attributes.exerciseName)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+
+            Text(timerInterval: context.state.timerRange, countsDown: true)
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Self.accentColor)
+        }
+        .padding(10)
+    }
+}
+
+// MARK: - iPhone Lock Screen layout (.medium)
+
+private struct RestTimerLockScreenView: View {
+    let context: ActivityViewContext<RestTimerAttributes>
+    private static let accentColor = Color(red: 0.949, green: 0.800, blue: 0.051)
+
+    var body: some View {
+        HStack {
             HStack(spacing: 8) {
                 ZStack {
                     Circle()
@@ -111,7 +185,6 @@ struct RestTimerLiveActivity: Widget {
 
             Spacer()
 
-            // Right: Time remaining (system-rendered countdown)
             Text(timerInterval: context.state.timerRange, countsDown: true)
                 .font(.system(size: 28, weight: .bold, design: .rounded))
                 .monospacedDigit()
