@@ -53,20 +53,30 @@ struct RestTimerLiveActivity: Widget {
                 }
             } compactLeading: {
                 // Compact leading
-                Image(systemName: "timer")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Self.accentColor)
+                Label {
+                    Text(context.attributes.exerciseName)
+                        .lineLimit(1)
+                } icon: {
+                    Image(systemName: "timer")
+                }
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Self.accentColor)
             } compactTrailing: {
                 // Compact trailing
                 Text(timerInterval: context.state.timerRange, countsDown: true)
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(Self.accentColor)
+                    .frame(minWidth: 36)
             } minimal: {
                 // Minimal
-                Image(systemName: "timer")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Self.accentColor)
+                ProgressView(timerInterval: context.state.timerRange, countsDown: true) {
+                    Image(systemName: "timer")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Self.accentColor)
+                }
+                .progressViewStyle(.circular)
+                .tint(Self.accentColor)
             }
         }
     }
