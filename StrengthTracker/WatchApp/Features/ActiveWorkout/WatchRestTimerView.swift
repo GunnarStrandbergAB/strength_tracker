@@ -75,7 +75,6 @@ struct WatchRestTimerView: View {
         }
         .padding()
         // Haptic feedback on timer completion is handled by WatchWorkoutViewModel.restTimerCompleted()
-        #if DEBUG
         .overlay(alignment: .topLeading) {
             Text("rest=\(viewModel.isResting ? "Y" : "N") rem=\(String(format: "%.1f", viewModel.restTimeRemaining)) dur=\(String(format: "%.1f", viewModel.restDuration))\nprog=\(String(format: "%.2f", viewModel.restProgress)) text=\(viewModel.restTimerText)")
                 .font(.system(size: 8, design: .monospaced))
@@ -84,6 +83,5 @@ struct WatchRestTimerView: View {
                 .background(.black.opacity(0.3))
                 .cornerRadius(4)
         }
-        #endif
     }
 }

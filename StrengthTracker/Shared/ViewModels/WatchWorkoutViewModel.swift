@@ -590,13 +590,8 @@ public final class WatchWorkoutViewModel {
         restStartDate = Date()
         print("[WatchVM] rest started dur=\(restDuration) rem=\(restTimeRemaining)")
 
-        // Notify iPhone to start Live Activity mirror
+        // Write timer state for native watchOS widget (works without iPhone)
         if let name = currentExercise?.exercise.name {
-            connectivityManager.sendRestTimerStarted(
-                exerciseName: name, setNumber: currentSetNumber, duration: duration
-            )
-
-            // Write timer state for native watchOS widget (works without iPhone)
             let widgetState = WatchRestTimerState(
                 exerciseName: name,
                 setNumber: currentSetNumber,
@@ -645,11 +640,10 @@ public final class WatchWorkoutViewModel {
         isResting = false
         restTimeRemaining = 0
 
-        // Cancel pending notification and tell iPhone to dismiss Live Activity
+        // Cancel pending notification
         UNUserNotificationCenter.current().removePendingNotificationRequests(
             withIdentifiers: ["watch-rest-timer"]
         )
-        connectivityManager.sendRestTimerStopped()
 
         // Clear watchOS widget timer state
         WidgetDataService().updateWatchRestTimerState(nil)
