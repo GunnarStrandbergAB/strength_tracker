@@ -4,9 +4,6 @@ import UserNotifications
 #if os(watchOS)
 import WatchKit
 #endif
-#if canImport(ActivityKit)
-import ActivityKit
-#endif
 
 @MainActor
 @Observable
@@ -40,6 +37,7 @@ public final class WatchWorkoutViewModel {
     // Notes
     public var workoutNotes: String = ""
 
+
     // HealthKit metrics (forwarded from WatchWorkoutSessionManager)
     public var heartRate: Double { watchSessionManager?.heartRate ?? 0 }
     public var activeCalories: Double { watchSessionManager?.activeCalories ?? 0 }
@@ -54,9 +52,9 @@ public final class WatchWorkoutViewModel {
     private var restTimer: Timer?
     private var restStartDate: Date?
 
-    #if canImport(ActivityKit)
-    private var currentWatchActivity: Activity<RestTimerAttributes>?
-    #endif
+    // Live Activity lifecycle callbacks (set from WatchApp layer where ActivityKit is importable)
+    public var onStartLiveActivity: ((_ exerciseName: String, _ setNumber: Int, _ duration: Int) -> Void)?
+    public var onEndLiveActivity: (() -> Void)?
 
     // Watch workout session manager (nil on iOS)
     private var watchSessionManager: (any WatchWorkoutSessionManager)?
@@ -606,12 +604,8 @@ public final class WatchWorkoutViewModel {
             )
             WidgetDataService().updateWatchRestTimerState(widgetState)
 
-            // Create local Live Activity (watchOS 11+ — auto-surfaces in Smart Stack)
-            #if canImport(ActivityKit)
-            if #available(watchOS 11.0, iOS 16.1, *) {
-                startWatchLiveActivity(exerciseName: name, setNumber: currentSetNumber, duration: duration)
-            }
-            #endif
+            // Create local Live Activity via callback (ActivityKit imported in WatchApp layer)
+            onStartLiveActivity?(name, currentSetNumber, duration)
         }
 
         // Schedule local notification for when timer completes (visible even when backgrounded)
@@ -660,11 +654,7 @@ public final class WatchWorkoutViewModel {
         WidgetDataService().updateWatchRestTimerState(nil)
 
         // End local Live Activity
-        #if canImport(ActivityKit)
-        if #available(watchOS 11.0, iOS 16.1, *) {
-            endWatchLiveActivity()
-        }
-        #endif
+        onEndLiveActivity?()
     }
 
     /// Called when timer naturally expires — plays haptic then stops
@@ -678,47 +668,4 @@ public final class WatchWorkoutViewModel {
     public func skipRestTimer() {
         stopRestTimer()
     }
-
-    // MARK: - Watch Live Activity (watchOS 11+)
-
-    #if canImport(ActivityKit)
-    @available(watchOS 11.0, iOS 16.1, *)
-    private func startWatchLiveActivity(exerciseName: String, setNumber: Int, duration: Int) {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-
-        // End any previous activity first
-        endWatchLiveActivity()
-
-        let now = Date()
-        let end = now.addingTimeInterval(TimeInterval(duration))
-        let attributes = RestTimerAttributes(exerciseName: exerciseName, setNumber: setNumber)
-        let state = RestTimerAttributes.ContentState(
-            timerRange: now...end,
-            totalSeconds: duration,
-            isRunning: true
-        )
-
-        currentWatchActivity = try? Activity.request(
-            attributes: attributes,
-            content: .init(state: state, staleDate: end)
-        )
-    }
-
-    @available(watchOS 11.0, iOS 16.1, *)
-    private func endWatchLiveActivity() {
-        guard let activity = currentWatchActivity else { return }
-
-        let now = Date()
-        let finalState = RestTimerAttributes.ContentState(
-            timerRange: now...now,
-            totalSeconds: 0,
-            isRunning: false
-        )
-
-        Task {
-            await activity.end(.init(state: finalState, staleDate: nil), dismissalPolicy: .immediate)
-        }
-        currentWatchActivity = nil
-    }
-    #endif
 }

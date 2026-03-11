@@ -35,6 +35,21 @@ struct WatchActiveWorkoutView: View {
             }
             .tabViewStyle(.verticalPage)
             .navigationBarBackButtonHidden()
+            .onAppear {
+                WatchLiveActivityManager.attach(to: viewModel)
+            }
+            #if DEBUG
+            .overlay(alignment: .bottom) {
+                let hasStart = viewModel.onStartLiveActivity != nil
+                let hasEnd = viewModel.onEndLiveActivity != nil
+                Text("LA: \(hasStart ? "✓" : "✗")start \(hasEnd ? "✓" : "✗")end rest:\(viewModel.isResting ? "Y" : "N")")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(2)
+                    .background(.black.opacity(0.3))
+                    .cornerRadius(4)
+            }
+            #endif
             .onChange(of: viewModel.isResting) { _, isResting in
                 if isResting {
                     // Auto-navigate to rest timer when it starts

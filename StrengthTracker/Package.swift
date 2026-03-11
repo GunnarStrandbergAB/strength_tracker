@@ -51,7 +51,7 @@ let package = Package(
     name: "StrengthTracker",
     platforms: [
         .iOS(.v17),
-        .watchOS(.v10),
+        .watchOS(.v11),
         .macOS(.v14)
     ],
     products: products,
