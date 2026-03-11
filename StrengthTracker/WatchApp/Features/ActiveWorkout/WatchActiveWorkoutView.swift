@@ -35,15 +35,11 @@ struct WatchActiveWorkoutView: View {
             }
             .tabViewStyle(.verticalPage)
             .navigationBarBackButtonHidden()
-            .onAppear {
-                WatchLiveActivityManager.attach(to: viewModel)
-            }
             #if DEBUG
-            .overlay(alignment: .bottom) {
-                let hasStart = viewModel.onStartLiveActivity != nil
-                let hasEnd = viewModel.onEndLiveActivity != nil
-                Text("LA: \(hasStart ? "✓" : "✗")start \(hasEnd ? "✓" : "✗")end rest:\(viewModel.isResting ? "Y" : "N")")
-                    .font(.system(size: 9))
+            .overlay(alignment: .topLeading) {
+                let ex = viewModel.currentExercise?.exercise.name ?? "–"
+                Text("rest:\(viewModel.isResting ? "Y" : "N") rem:\(Int(viewModel.restTimeRemaining)) dur:\(Int(viewModel.restDuration))\nex:\(ex)")
+                    .font(.system(size: 8, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.5))
                     .padding(2)
                     .background(.black.opacity(0.3))

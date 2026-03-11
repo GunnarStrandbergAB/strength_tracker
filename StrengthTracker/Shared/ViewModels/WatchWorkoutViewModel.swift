@@ -52,10 +52,6 @@ public final class WatchWorkoutViewModel {
     private var restTimer: Timer?
     private var restStartDate: Date?
 
-    // Live Activity lifecycle callbacks (set from WatchApp layer where ActivityKit is importable)
-    public var onStartLiveActivity: ((_ exerciseName: String, _ setNumber: Int, _ duration: Int) -> Void)?
-    public var onEndLiveActivity: (() -> Void)?
-
     // Watch workout session manager (nil on iOS)
     private var watchSessionManager: (any WatchWorkoutSessionManager)?
 
@@ -381,6 +377,7 @@ public final class WatchWorkoutViewModel {
 
         // Auto-start rest timer after logging a set (uses per-exercise override if set)
         let exercise = workout.exercises[currentExerciseIndex]
+        print("[WatchVM] logSet → startRestTimer (exercise=\(exercise.exercise.name), restOverride=\(String(describing: exercise.restTimerSeconds)))")
         startRestTimer(seconds: exercise.restTimerSeconds)
     }
 
@@ -575,8 +572,12 @@ public final class WatchWorkoutViewModel {
 
     /// Start rest timer with optional per-exercise duration override
     public func startRestTimer(seconds: Int? = nil) {
+        print("[WatchVM] startRestTimer(seconds: \(String(describing: seconds)))")
         // Respect autoStartRestTimer preference
-        guard userPreferencesService?.autoStartRestTimer ?? true else { return }
+        guard userPreferencesService?.autoStartRestTimer ?? true else {
+            print("[WatchVM] startRestTimer SKIPPED — autoStartRestTimer is false")
+            return
+        }
 
         stopRestTimer()
 
@@ -587,6 +588,7 @@ public final class WatchWorkoutViewModel {
         isResting = true
         restTimeRemaining = restDuration
         restStartDate = Date()
+        print("[WatchVM] rest started dur=\(restDuration) rem=\(restTimeRemaining)")
 
         // Notify iPhone to start Live Activity mirror
         if let name = currentExercise?.exercise.name {
@@ -604,8 +606,6 @@ public final class WatchWorkoutViewModel {
             )
             WidgetDataService().updateWatchRestTimerState(widgetState)
 
-            // Create local Live Activity via callback (ActivityKit imported in WatchApp layer)
-            onStartLiveActivity?(name, currentSetNumber, duration)
         }
 
         // Schedule local notification for when timer completes (visible even when backgrounded)
@@ -638,6 +638,7 @@ public final class WatchWorkoutViewModel {
     }
 
     public func stopRestTimer() {
+        print("[WatchVM] stopRestTimer")
         restTimer?.invalidate()
         restTimer = nil
         restStartDate = nil
@@ -652,9 +653,6 @@ public final class WatchWorkoutViewModel {
 
         // Clear watchOS widget timer state
         WidgetDataService().updateWatchRestTimerState(nil)
-
-        // End local Live Activity
-        onEndLiveActivity?()
     }
 
     /// Called when timer naturally expires — plays haptic then stops
