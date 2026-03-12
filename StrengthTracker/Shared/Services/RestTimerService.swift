@@ -205,6 +205,8 @@ public final class RestTimerService {
         content.title = "Rest Complete"
         content.body = exerciseName.map { "Time for your next set of \($0)" } ?? "Time for your next set"
         content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        content.relevanceScore = 1.0
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, TimeInterval(seconds)), repeats: false)
         let request = UNNotificationRequest(identifier: "rest-timer", content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(request)

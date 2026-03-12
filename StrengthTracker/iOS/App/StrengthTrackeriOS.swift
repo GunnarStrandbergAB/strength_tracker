@@ -13,9 +13,35 @@ import WidgetKit
 
 import UserNotifications
 
+// MARK: - Notification Delegate (foreground delivery + tap handling)
+
+class AppNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    var onRestTimerNotificationTapped: (() -> Void)?
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler handler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        handler([.banner, .sound])
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler handler: @escaping () -> Void
+    ) {
+        if response.notification.request.identifier == "rest-timer" {
+            onRestTimerNotificationTapped?()
+        }
+        handler()
+    }
+}
+
 @main
 struct StrengthTrackeriOSApp: App {
     let container: AppContainer
+    private let notificationDelegate = AppNotificationDelegate()
 
     init() {
         do {
@@ -35,6 +61,15 @@ struct StrengthTrackeriOSApp: App {
 
             // Request notification permission for rest timer background alerts
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+
+            // Set up notification delegate for foreground delivery and tap handling
+            let restTimerService = container.restTimerService
+            notificationDelegate.onRestTimerNotificationTapped = {
+                Task { @MainActor in
+                    restTimerService.handleForegroundReturn()
+                }
+            }
+            UNUserNotificationCenter.current().delegate = notificationDelegate
 
             // Wire up Watch → iPhone workout sync (SwiftData + webhook only)
             // Watch already saves HKWorkout with sensor-based calories — iPhone must NOT touch HealthKit
@@ -195,8 +230,14 @@ struct ContentViewWrapper: View {
     }
 
     private func handleDeepLink(_ url: URL) {
-        // Deep link handling will be implemented by other agents
-        // Format: strengthtracker://workout/start?template=<uuid>
+        guard let host = url.host else { return }
+        switch host {
+        case "rest-timer":
+            container.restTimerService.handleForegroundReturn()
+            container.restTimerService.endAllStaleActivities()
+        default:
+            break
+        }
     }
 
     @MainActor

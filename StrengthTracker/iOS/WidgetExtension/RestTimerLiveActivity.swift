@@ -12,6 +12,7 @@ struct RestTimerLiveActivity: Widget {
             // Lock Screen / Banner presentation (iPhone only — watch has native WidgetKit widget)
             RestTimerLockScreenView(context: context)
                 .activityBackgroundTint(Color(red: 0.071, green: 0.071, blue: 0.071))
+                .widgetURL(URL(string: "strengthtracker://rest-timer")!)
         } dynamicIsland: { context in
             DynamicIsland {
                 // Expanded Dynamic Island
