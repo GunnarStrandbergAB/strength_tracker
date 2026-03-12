@@ -609,6 +609,8 @@ public final class WatchWorkoutViewModel {
         notifContent.body = currentExercise.map { "Time for your next set of \($0.exercise.name)" }
             ?? "Time for your next set"
         notifContent.sound = .default
+        notifContent.interruptionLevel = .timeSensitive
+        notifContent.relevanceScore = 1.0
         let trigger = UNTimeIntervalNotificationTrigger(
             timeInterval: max(1, restDuration), repeats: false
         )
@@ -649,10 +651,14 @@ public final class WatchWorkoutViewModel {
         WidgetDataService().updateWatchRestTimerState(nil)
     }
 
-    /// Called when timer naturally expires — plays haptic then stops
+    /// Called when timer naturally expires — plays strong haptic twice then stops
     private func restTimerCompleted() {
         #if os(watchOS)
-        WKInterfaceDevice.current().play(.success)
+        let device = WKInterfaceDevice.current()
+        device.play(.notification)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            device.play(.notification)
+        }
         #endif
         stopRestTimer()
     }
