@@ -30,7 +30,6 @@ public final class RestTimerService {
     public init() {}
 
     nonisolated(unsafe) private var timer: Timer?
-    nonisolated(unsafe) private var mirrorEndTimer: Timer?
     private var startDate: Date?
 
     #if canImport(ActivityKit)
@@ -154,13 +153,7 @@ public final class RestTimerService {
         guard isRunning, let endDate = endDate else { return }
         if Date() >= endDate {
             remainingSeconds = 0
-            if startDate == nil {
-                // Mirror mode (watch timer): just end activity, no feedback
-                endLiveActivityOnly()
-            } else {
-                // Local mode: normal completion with feedback
-                timerCompleted()
-            }
+            timerCompleted()
         } else {
             // Timer still running — resync remainingSeconds
             remainingSeconds = max(0, Int(endDate.timeIntervalSinceNow))
@@ -186,8 +179,6 @@ public final class RestTimerService {
     }
 
     private func timerCompleted() {
-        mirrorEndTimer?.invalidate()
-        mirrorEndTimer = nil
         endLiveActivity()
         timer?.invalidate()
         timer = nil
@@ -305,33 +296,6 @@ public final class RestTimerService {
         #endif
     }
 
-    // MARK: - Live Activity Only (for mirroring Watch rest timer on iPhone)
-
-    /// Start ONLY a Live Activity — no internal Timer, no haptic, no notification.
-    /// Used when the Watch sends a rest timer start message to the iPhone.
-    public func startLiveActivityOnly(exerciseName: String, setNumber: Int, duration: Int) {
-        endLiveActivity()
-        mirrorEndTimer?.invalidate()
-
-        totalSeconds = duration
-        endDate = Date().addingTimeInterval(TimeInterval(duration))
-        currentExerciseName = exerciseName
-        currentSetNumber = setNumber
-        isRunning = true
-        remainingSeconds = duration
-
-        startLiveActivity(exerciseName: exerciseName, setNumber: setNumber)
-
-        // Layer 3: iPhone notification (fires via OS even when suspended)
-        scheduleNotification(seconds: duration, exerciseName: exerciseName)
-
-        // Layer 2: Safety-net timer ends activity if watch stop message never arrives
-        // +2s buffer so the real message has priority; fires immediately on app wake if overdue
-        mirrorEndTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(duration) + 2, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.endLiveActivityOnly() }
-        }
-    }
-
     /// End any Live Activities left over from a previous launch (currentActivity is nil but system activity persists)
     public func endAllStaleActivities() {
         #if canImport(ActivityKit)
@@ -350,20 +314,7 @@ public final class RestTimerService {
         #endif
     }
 
-    /// End ONLY the Live Activity (no timer/notification cleanup needed).
-    /// Used when the Watch sends a rest timer stop message to the iPhone.
-    public func endLiveActivityOnly() {
-        mirrorEndTimer?.invalidate()
-        mirrorEndTimer = nil
-        cancelNotification()
-        endLiveActivity()
-        isRunning = false
-        remainingSeconds = 0
-        endDate = nil
-    }
-
     deinit {
         timer?.invalidate()
-        mirrorEndTimer?.invalidate()
     }
 }
