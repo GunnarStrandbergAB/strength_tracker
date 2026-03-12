@@ -35,15 +35,6 @@ struct WatchActiveWorkoutView: View {
             }
             .tabViewStyle(.verticalPage)
             .navigationBarBackButtonHidden()
-            .overlay(alignment: .topLeading) {
-                let ex = viewModel.currentExercise?.exercise.name ?? "–"
-                Text("rest:\(viewModel.isResting ? "Y" : "N") rem:\(Int(viewModel.restTimeRemaining)) dur:\(Int(viewModel.restDuration))\nex:\(ex)")
-                    .font(.system(size: 8, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .padding(2)
-                    .background(.black.opacity(0.3))
-                    .cornerRadius(4)
-            }
             .onChange(of: viewModel.isResting) { _, isResting in
                 if isResting {
                     // Auto-navigate to rest timer when it starts
