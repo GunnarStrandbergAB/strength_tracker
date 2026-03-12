@@ -80,23 +80,8 @@ struct StrengthTrackeriOSApp: App {
                 }
             }
 
-            // Wire up Watch rest timer → iPhone Live Activity mirror
-            let restTimerService = container.restTimerService
-            container.connectivityManager.onWatchRestTimerStarted = { name, setNum, duration in
-                Task { @MainActor in
-                    restTimerService.startLiveActivityOnly(
-                        exerciseName: name, setNumber: setNum, duration: duration
-                    )
-                }
-            }
-            container.connectivityManager.onWatchRestTimerStopped = {
-                Task { @MainActor in
-                    restTimerService.endLiveActivityOnly()
-                }
-            }
-
             // Clean up any orphaned Live Activities from previous launches
-            restTimerService.endAllStaleActivities()
+            container.restTimerService.endAllStaleActivities()
         } catch {
             fatalError("Failed to initialize app: \(error)")
         }

@@ -30,6 +30,8 @@ struct StrengthTrackerWatchApp: App {
                 let session = WCSession.default
                 session.delegate = container.connectivityManager
                 session.activate()
+                // Drain any queued rest timer transfers from previous builds
+                container.connectivityManager.cancelPendingRestTimerTransfers()
             }
             #endif
 
