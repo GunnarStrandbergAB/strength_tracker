@@ -98,6 +98,16 @@ struct TemplateEditorView: View {
                     EditButton()
                         .disabled(exercises.isEmpty)
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder),
+                            to: nil, from: nil, for: nil
+                        )
+                    }
+                    .fontWeight(.semibold)
+                }
             }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {

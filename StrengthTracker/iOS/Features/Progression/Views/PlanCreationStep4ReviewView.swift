@@ -116,6 +116,18 @@ struct PlanCreationStep5ReviewView: View {
             }
         }
         .background(STColors.background)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    UIApplication.shared.sendAction(
+                        #selector(UIResponder.resignFirstResponder),
+                        to: nil, from: nil, for: nil
+                    )
+                }
+                .fontWeight(.semibold)
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             navigationButtons
         }

@@ -232,6 +232,18 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .stNavigationBarStyle()
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder),
+                            to: nil, from: nil, for: nil
+                        )
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
             .sheet(isPresented: $showUpgradeSheet) {
                 if let storeService {
                     ProUpgradeView(storeService: storeService)
