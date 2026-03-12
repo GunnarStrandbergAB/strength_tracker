@@ -61,24 +61,24 @@ struct WatchRestTimerProvider: TimelineProvider {
             let activeEntry = WatchRestTimerEntry(
                 date: now,
                 state: timerState,
-                relevance: TimelineEntryRelevance(score: 100)
+                relevance: TimelineEntryRelevance(score: 100, duration: TimeInterval(timerState.totalSeconds))
             )
 
-            // At expiry, show "done" state
+            // At expiry, show "done" state — stay surfaced 30s so user can tap back in
             let doneEntry = WatchRestTimerEntry(
                 date: timerState.endDate,
                 state: timerState,
-                relevance: TimelineEntryRelevance(score: 50)
+                relevance: TimelineEntryRelevance(score: 50, duration: 30)
             )
 
-            // 3 seconds after expiry, clear
+            // 30 seconds after expiry, clear
             let clearEntry = WatchRestTimerEntry(
-                date: timerState.endDate.addingTimeInterval(3),
+                date: timerState.endDate.addingTimeInterval(30),
                 state: nil,
                 relevance: TimelineEntryRelevance(score: 0)
             )
 
-            completion(Timeline(entries: [activeEntry, doneEntry, clearEntry], policy: .after(timerState.endDate.addingTimeInterval(5))))
+            completion(Timeline(entries: [activeEntry, doneEntry, clearEntry], policy: .after(timerState.endDate.addingTimeInterval(35))))
         } else {
             // Timer already expired — clear
             let entry = WatchRestTimerEntry(date: now, state: nil, relevance: TimelineEntryRelevance(score: 0))

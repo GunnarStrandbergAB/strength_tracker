@@ -20,8 +20,6 @@ public final class ConnectivityManager: NSObject, @unchecked Sendable {
     public var onWatchWorkoutSnapshot: ((Workout) -> Void)?
     public var onWatchWorkoutStarted: ((Workout) -> Void)?
     public var onWatchWorkoutEnded: (() -> Void)?
-    public var onWatchRestTimerStarted: ((String, Int, Int) -> Void)?  // (exerciseName, setNumber, durationSeconds)
-    public var onWatchRestTimerStopped: (() -> Void)?
 
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -157,38 +155,17 @@ public final class ConnectivityManager: NSObject, @unchecked Sendable {
         #endif
     }
 
-    /// Notify iPhone that the Watch rest timer started
-    public func sendRestTimerStarted(exerciseName: String, setNumber: Int, duration: Int) {
+    /// Cancel any queued rest timer transfers from previous builds.
+    /// Call on Watch launch to drain stale `transferUserInfo` messages.
+    public func cancelPendingRestTimerTransfers() {
         #if canImport(WatchConnectivity)
-        let message: [String: Any] = [
-            "type": "restTimerStarted",
-            "exerciseName": exerciseName,
-            "setNumber": setNumber,
-            "duration": duration
-        ]
-        if WCSession.default.isReachable {
-            WCSession.default.sendMessage(message, replyHandler: nil) { error in
-                print("ConnectivityManager: sendRestTimerStarted failed - \(error)")
+        for transfer in WCSession.default.outstandingUserInfoTransfers {
+            if let type = transfer.userInfo["type"] as? String,
+               type == "restTimerStarted" || type == "restTimerStopped" {
+                transfer.cancel()
+                print("ConnectivityManager: cancelled stale rest timer transfer (\(type))")
             }
         }
-        // Guaranteed-delivery backup with timestamp for freshness check
-        var backup = message
-        backup["sentAt"] = Date().timeIntervalSince1970
-        WCSession.default.transferUserInfo(backup)
-        #endif
-    }
-
-    /// Notify iPhone that the Watch rest timer stopped
-    public func sendRestTimerStopped() {
-        #if canImport(WatchConnectivity)
-        // Fast path: immediate delivery (if reachable)
-        if WCSession.default.isReachable {
-            WCSession.default.sendMessage(["type": "restTimerStopped"], replyHandler: nil) { error in
-                print("ConnectivityManager: sendRestTimerStopped sendMessage failed - \(error)")
-            }
-        }
-        // Guaranteed-delivery backup (queued even when unreachable)
-        WCSession.default.transferUserInfo(["type": "restTimerStopped"])
         #endif
     }
 
@@ -353,25 +330,11 @@ extension ConnectivityManager: WCSessionDelegate {
         }
     }
 
-    // Receive transferUserInfo (completed workouts + rest timer stop)
+    // Receive transferUserInfo (completed workouts)
     nonisolated public func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
-        // Handle plain-dictionary rest timer stop (sent via transferUserInfo backup)
-        if let type = userInfo["type"] as? String, type == "restTimerStopped" {
-            Task { @MainActor in self.onWatchRestTimerStopped?() }
-            return
-        }
-
-        // Handle rest timer start from transferUserInfo backup (with freshness check)
-        if let type = userInfo["type"] as? String, type == "restTimerStarted",
-           let name = userInfo["exerciseName"] as? String,
-           let setNum = userInfo["setNumber"] as? Int,
-           let dur = userInfo["duration"] as? Int {
-            let sentAt = userInfo["sentAt"] as? TimeInterval ?? 0
-            let elapsed = Date().timeIntervalSince1970 - sentAt
-            if elapsed < Double(dur) {
-                let remainingDuration = dur - Int(elapsed)
-                Task { @MainActor in self.onWatchRestTimerStarted?(name, setNum, remainingDuration) }
-            }
+        // Ignore stale rest timer messages from previous builds
+        if let type = userInfo["type"] as? String,
+           type == "restTimerStarted" || type == "restTimerStopped" {
             return
         }
 
@@ -400,11 +363,6 @@ extension ConnectivityManager: WCSessionDelegate {
             workout = try? decoder.decode(Workout.self, from: data)
         }
 
-        // Rest timer fields (for restTimerStarted messages)
-        let exerciseName = message["exerciseName"] as? String
-        let setNumber = message["setNumber"] as? Int
-        let duration = message["duration"] as? Int
-
         Task { @MainActor in
             self.lastSyncDate = Date()
 
@@ -415,12 +373,6 @@ extension ConnectivityManager: WCSessionDelegate {
                 if let workout { self.onWatchWorkoutStarted?(workout) }
             case "workoutEnded":
                 self.onWatchWorkoutEnded?()
-            case "restTimerStarted":
-                if let name = exerciseName, let setNum = setNumber, let dur = duration {
-                    self.onWatchRestTimerStarted?(name, setNum, dur)
-                }
-            case "restTimerStopped":
-                self.onWatchRestTimerStopped?()
             default:
                 break
             }

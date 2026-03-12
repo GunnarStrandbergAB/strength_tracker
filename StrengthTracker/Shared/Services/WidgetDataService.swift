@@ -262,8 +262,13 @@ public final class WidgetDataService: Sendable {
         } else {
             defaults.removeObject(forKey: WatchRestTimerState.userDefaultsKey)
         }
+        defaults.synchronize()   // force cross-process sync before reload
         #if canImport(WidgetKit)
-        WidgetCenter.shared.reloadAllTimelines()
+        WidgetCenter.shared.reloadTimelines(ofKind: "WatchRestTimerWidget")
+        // Safety-net reload in case first fires before UserDefaults syncs
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            WidgetCenter.shared.reloadTimelines(ofKind: "WatchRestTimerWidget")
+        }
         #endif
     }
 

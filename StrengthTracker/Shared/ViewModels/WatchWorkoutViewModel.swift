@@ -4,9 +4,6 @@ import UserNotifications
 #if os(watchOS)
 import WatchKit
 #endif
-#if canImport(ActivityKit)
-import ActivityKit
-#endif
 
 @MainActor
 @Observable
@@ -40,6 +37,7 @@ public final class WatchWorkoutViewModel {
     // Notes
     public var workoutNotes: String = ""
 
+
     // HealthKit metrics (forwarded from WatchWorkoutSessionManager)
     public var heartRate: Double { watchSessionManager?.heartRate ?? 0 }
     public var activeCalories: Double { watchSessionManager?.activeCalories ?? 0 }
@@ -53,10 +51,6 @@ public final class WatchWorkoutViewModel {
     private let analyticsService: WorkoutAnalyticsService?
     private var restTimer: Timer?
     private var restStartDate: Date?
-
-    #if canImport(ActivityKit)
-    private var currentWatchActivity: Activity<RestTimerAttributes>?
-    #endif
 
     // Watch workout session manager (nil on iOS)
     private var watchSessionManager: (any WatchWorkoutSessionManager)?
@@ -383,6 +377,7 @@ public final class WatchWorkoutViewModel {
 
         // Auto-start rest timer after logging a set (uses per-exercise override if set)
         let exercise = workout.exercises[currentExerciseIndex]
+        print("[WatchVM] logSet → startRestTimer (exercise=\(exercise.exercise.name), restOverride=\(String(describing: exercise.restTimerSeconds)))")
         startRestTimer(seconds: exercise.restTimerSeconds)
     }
 
@@ -577,8 +572,12 @@ public final class WatchWorkoutViewModel {
 
     /// Start rest timer with optional per-exercise duration override
     public func startRestTimer(seconds: Int? = nil) {
+        print("[WatchVM] startRestTimer(seconds: \(String(describing: seconds)))")
         // Respect autoStartRestTimer preference
-        guard userPreferencesService?.autoStartRestTimer ?? true else { return }
+        guard userPreferencesService?.autoStartRestTimer ?? true else {
+            print("[WatchVM] startRestTimer SKIPPED — autoStartRestTimer is false")
+            return
+        }
 
         stopRestTimer()
 
@@ -589,14 +588,10 @@ public final class WatchWorkoutViewModel {
         isResting = true
         restTimeRemaining = restDuration
         restStartDate = Date()
+        print("[WatchVM] rest started dur=\(restDuration) rem=\(restTimeRemaining)")
 
-        // Notify iPhone to start Live Activity mirror
+        // Write timer state for native watchOS widget (works without iPhone)
         if let name = currentExercise?.exercise.name {
-            connectivityManager.sendRestTimerStarted(
-                exerciseName: name, setNumber: currentSetNumber, duration: duration
-            )
-
-            // Write timer state for native watchOS widget (works without iPhone)
             let widgetState = WatchRestTimerState(
                 exerciseName: name,
                 setNumber: currentSetNumber,
@@ -606,12 +601,6 @@ public final class WatchWorkoutViewModel {
             )
             WidgetDataService().updateWatchRestTimerState(widgetState)
 
-            // Create local Live Activity (watchOS 11+ — auto-surfaces in Smart Stack)
-            #if canImport(ActivityKit)
-            if #available(watchOS 11.0, iOS 16.1, *) {
-                startWatchLiveActivity(exerciseName: name, setNumber: currentSetNumber, duration: duration)
-            }
-            #endif
         }
 
         // Schedule local notification for when timer completes (visible even when backgrounded)
@@ -620,6 +609,8 @@ public final class WatchWorkoutViewModel {
         notifContent.body = currentExercise.map { "Time for your next set of \($0.exercise.name)" }
             ?? "Time for your next set"
         notifContent.sound = .default
+        notifContent.interruptionLevel = .timeSensitive
+        notifContent.relevanceScore = 1.0
         let trigger = UNTimeIntervalNotificationTrigger(
             timeInterval: max(1, restDuration), repeats: false
         )
@@ -644,33 +635,30 @@ public final class WatchWorkoutViewModel {
     }
 
     public func stopRestTimer() {
+        print("[WatchVM] stopRestTimer")
         restTimer?.invalidate()
         restTimer = nil
         restStartDate = nil
         isResting = false
         restTimeRemaining = 0
 
-        // Cancel pending notification and tell iPhone to dismiss Live Activity
+        // Cancel pending notification
         UNUserNotificationCenter.current().removePendingNotificationRequests(
             withIdentifiers: ["watch-rest-timer"]
         )
-        connectivityManager.sendRestTimerStopped()
 
         // Clear watchOS widget timer state
         WidgetDataService().updateWatchRestTimerState(nil)
-
-        // End local Live Activity
-        #if canImport(ActivityKit)
-        if #available(watchOS 11.0, iOS 16.1, *) {
-            endWatchLiveActivity()
-        }
-        #endif
     }
 
-    /// Called when timer naturally expires — plays haptic then stops
+    /// Called when timer naturally expires — plays strong haptic twice then stops
     private func restTimerCompleted() {
         #if os(watchOS)
-        WKInterfaceDevice.current().play(.success)
+        let device = WKInterfaceDevice.current()
+        device.play(.notification)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            device.play(.notification)
+        }
         #endif
         stopRestTimer()
     }
@@ -678,47 +666,4 @@ public final class WatchWorkoutViewModel {
     public func skipRestTimer() {
         stopRestTimer()
     }
-
-    // MARK: - Watch Live Activity (watchOS 11+)
-
-    #if canImport(ActivityKit)
-    @available(watchOS 11.0, iOS 16.1, *)
-    private func startWatchLiveActivity(exerciseName: String, setNumber: Int, duration: Int) {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-
-        // End any previous activity first
-        endWatchLiveActivity()
-
-        let now = Date()
-        let end = now.addingTimeInterval(TimeInterval(duration))
-        let attributes = RestTimerAttributes(exerciseName: exerciseName, setNumber: setNumber)
-        let state = RestTimerAttributes.ContentState(
-            timerRange: now...end,
-            totalSeconds: duration,
-            isRunning: true
-        )
-
-        currentWatchActivity = try? Activity.request(
-            attributes: attributes,
-            content: .init(state: state, staleDate: end)
-        )
-    }
-
-    @available(watchOS 11.0, iOS 16.1, *)
-    private func endWatchLiveActivity() {
-        guard let activity = currentWatchActivity else { return }
-
-        let now = Date()
-        let finalState = RestTimerAttributes.ContentState(
-            timerRange: now...now,
-            totalSeconds: 0,
-            isRunning: false
-        )
-
-        Task {
-            await activity.end(.init(state: finalState, staleDate: nil), dismissalPolicy: .immediate)
-        }
-        currentWatchActivity = nil
-    }
-    #endif
 }
