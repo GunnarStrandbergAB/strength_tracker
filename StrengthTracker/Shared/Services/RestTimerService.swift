@@ -207,7 +207,9 @@ public final class RestTimerService {
         content.sound = .default
         content.interruptionLevel = .timeSensitive
         content.relevanceScore = 1.0
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, TimeInterval(seconds)), repeats: false)
+        content.categoryIdentifier = "REST_TIMER_COMPLETE"
+        // Fire notification 1s before Live Activity staleDate to avoid iOS suppression when both arrive simultaneously
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, TimeInterval(seconds) - 1.0), repeats: false)
         let request = UNNotificationRequest(identifier: "rest-timer", content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(request)
         #endif
@@ -250,9 +252,11 @@ public final class RestTimerService {
         )
 
         do {
+            // Push staleDate 2s past endDate so notification fires before LA goes stale,
+            // reducing iOS's tendency to suppress the notification sound
             currentActivity = try Activity.request(
                 attributes: attributes,
-                content: .init(state: state, staleDate: endDate)
+                content: .init(state: state, staleDate: endDate.addingTimeInterval(2))
             )
         } catch {
             print("RestTimerService: Failed to start Live Activity - \(error)")

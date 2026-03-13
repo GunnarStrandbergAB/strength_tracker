@@ -6,7 +6,7 @@ struct ActiveWorkoutView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel: WorkoutViewModel
     @State private var exerciseListViewModel: ExerciseListViewModel
-    @State private var restTimerService = RestTimerService()
+    let restTimerService: RestTimerService
     @State private var showingExercisePicker = false
     @State private var showingCancelConfirmation = false
     @State private var showingFinishError = false
@@ -15,9 +15,10 @@ struct ActiveWorkoutView: View {
     @State private var showingRestTimer = false
     @State private var notesText = ""
 
-    init(viewModel: WorkoutViewModel, exerciseListViewModel: ExerciseListViewModel) {
+    init(viewModel: WorkoutViewModel, exerciseListViewModel: ExerciseListViewModel, restTimerService: RestTimerService) {
         self._viewModel = State(initialValue: viewModel)
         self._exerciseListViewModel = State(initialValue: exerciseListViewModel)
+        self.restTimerService = restTimerService
     }
 
     var body: some View {

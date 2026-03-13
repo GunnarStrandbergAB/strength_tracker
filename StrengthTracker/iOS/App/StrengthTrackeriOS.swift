@@ -62,6 +62,15 @@ struct StrengthTrackeriOSApp: App {
             // Request notification permission for rest timer background alerts
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .timeSensitive]) { _, _ in }
 
+            // Register notification category for rest timer completions
+            let restCategory = UNNotificationCategory(
+                identifier: "REST_TIMER_COMPLETE",
+                actions: [],
+                intentIdentifiers: [],
+                options: []
+            )
+            UNUserNotificationCenter.current().setNotificationCategories([restCategory])
+
             // Set up notification delegate for foreground delivery and tap handling
             let restTimerService = container.restTimerService
             notificationDelegate.onRestTimerNotificationTapped = {
@@ -148,6 +157,7 @@ struct ContentViewWrapper: View {
             progressionPlanViewModel: container.makeProgressionPlanViewModel(),
             userPreferencesService: container.userPreferencesService,
             connectivityManager: container.connectivityManager,
+            restTimerService: container.restTimerService,
             personalRecordService: container.personalRecordService,
             proFeatureGate: container.proFeatureGate,
             storeService: container.storeService
