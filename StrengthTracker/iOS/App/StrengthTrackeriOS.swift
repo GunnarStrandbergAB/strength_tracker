@@ -60,13 +60,14 @@ struct StrengthTrackeriOSApp: App {
             container.templateSeedService.startSeeding()
 
             // Request notification permission for rest timer background alerts
-            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .timeSensitive]) { _, _ in }
 
             // Set up notification delegate for foreground delivery and tap handling
             let restTimerService = container.restTimerService
             notificationDelegate.onRestTimerNotificationTapped = {
                 Task { @MainActor in
                     restTimerService.handleForegroundReturn()
+                    restTimerService.endAllStaleActivities()
                 }
             }
             UNUserNotificationCenter.current().delegate = notificationDelegate
@@ -159,6 +160,7 @@ struct ContentViewWrapper: View {
             if newPhase == .active {
                 // End stale mirrored Live Activity if watch timer expired while iPhone was backgrounded
                 container.restTimerService.handleForegroundReturn()
+                container.restTimerService.endAllStaleActivities()
 
                 // Refresh widget data with analytics
                 Task { @MainActor in

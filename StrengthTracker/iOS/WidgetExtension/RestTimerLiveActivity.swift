@@ -88,6 +88,7 @@ struct RestTimerLiveActivity: Widget {
                 .progressViewStyle(.circular)
                 .tint(Self.accentColor)
             }
+            .widgetURL(URL(string: "strengthtracker://rest-timer")!)
         }
     }
 

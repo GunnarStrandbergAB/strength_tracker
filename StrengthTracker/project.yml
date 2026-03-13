@@ -42,6 +42,7 @@ targets:
       path: iOS/Resources/StrengthTracker.entitlements
       properties:
         com.apple.developer.healthkit: true
+        com.apple.developer.usernotifications.time-sensitive: true
         com.apple.security.application-groups:
           - group.se.gunnarstrandberg.hellbent.shared
     info:
@@ -64,6 +65,10 @@ targets:
         NSHealthShareUsageDescription: "HellBentIron reads your workout data to display history and progress."
         NSHealthUpdateUsageDescription: "HellBentIron saves your strength training workouts to Apple Health."
         NSSupportsLiveActivities: true
+        CFBundleURLTypes:
+          - CFBundleURLName: se.gunnarstrandberg.hellbent.ios
+            CFBundleURLSchemes:
+              - strengthtracker
 
   StrengthTrackerWatch:
     type: application

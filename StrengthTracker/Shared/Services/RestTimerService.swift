@@ -302,6 +302,8 @@ public final class RestTimerService {
     public func endAllStaleActivities() {
         #if canImport(ActivityKit)
         for activity in Activity<RestTimerAttributes>.activities {
+            // Skip the activity belonging to the currently running timer
+            if activity.id == currentActivity?.id { continue }
             let now = Date()
             let finalState = RestTimerAttributes.ContentState(
                 timerRange: now...now,
@@ -312,7 +314,6 @@ public final class RestTimerService {
                 await activity.end(.init(state: finalState, staleDate: nil), dismissalPolicy: .immediate)
             }
         }
-        currentActivity = nil
         #endif
     }
 
