@@ -187,10 +187,11 @@ public final class WorkoutViewModel {
         for i in workout.exercises.indices {
             workout.exercises[i].order = i + 1
         }
+        currentWorkout = workout  // Immediate UI update (optimistic)
         do {
             currentWorkout = try await workoutRepository.save(workout)
         } catch {
-            currentWorkout = workout
+            // Already set above; save failed but local state is correct
         }
     }
 

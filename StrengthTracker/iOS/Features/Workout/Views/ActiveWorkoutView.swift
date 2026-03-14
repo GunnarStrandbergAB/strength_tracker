@@ -212,7 +212,8 @@ struct ActiveWorkoutView: View {
             .padding(.horizontal, 16)
             .padding(.top, 16)
         }
-        .onChange(of: workout.exercises.count) { _, _ in
+        .onChange(of: workout.exercises.count) { oldCount, newCount in
+            guard newCount > oldCount else { return }  // Only scroll on addition
             if let lastExercise = workout.exercises.last {
                 withAnimation(.easeInOut(duration: 0.3)) {
                     proxy.scrollTo(lastExercise.id, anchor: .top)
