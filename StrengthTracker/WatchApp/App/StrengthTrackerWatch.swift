@@ -108,6 +108,9 @@ struct StrengthTrackerWatchApp: App {
                     if let restSeconds = settings["defaultRestSeconds"] as? Int {
                         prefs.defaultRestSeconds = restSeconds
                     }
+                    if let reps = settings["defaultReps"] as? Int {
+                        prefs.defaultReps = reps
+                    }
                     if let weightRaw = settings["weightUnit"] as? String,
                        let unit = WeightUnit(rawValue: weightRaw) {
                         prefs.weightUnit = unit
