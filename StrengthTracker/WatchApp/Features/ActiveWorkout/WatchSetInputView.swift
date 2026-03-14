@@ -16,10 +16,11 @@ struct WatchSetInputView: View {
     private var weightLabel: String { weightUnit == .kg ? "KG" : "LBS" }
 
     init(viewModel: WatchWorkoutViewModel, targetWeight: Double? = nil, targetReps: Int? = nil) {
+        let prefs = UserPreferencesService()
         self._viewModel = State(initialValue: viewModel)
         self._weight = State(initialValue: targetWeight ?? 20.0)
-        self._reps = State(initialValue: Double(targetReps ?? 10))
-        self.weightUnit = UserPreferencesService().weightUnit
+        self._reps = State(initialValue: Double(targetReps ?? prefs.defaultReps))
+        self.weightUnit = prefs.weightUnit
     }
 
     private let primaryYellow = Color(red: 0.949, green: 0.800, blue: 0.051)

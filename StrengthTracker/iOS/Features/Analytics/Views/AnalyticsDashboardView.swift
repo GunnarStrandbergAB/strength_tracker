@@ -332,7 +332,7 @@ struct AnalyticsDashboardView: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(STColors.textPrimary)
 
-                        Text(rec.reason.displayText)
+                        Text(rec.reason.displayText(targetMuscleGroup: rec.targetMuscleGroup))
                             .font(.system(size: 11))
                             .foregroundStyle(STColors.textSecondary)
                     }

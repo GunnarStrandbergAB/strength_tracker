@@ -143,6 +143,19 @@ struct SettingsView: View {
                     }
 
                     Toggle("Auto-start Rest Timer", isOn: $preferencesService.autoStartRestTimer)
+
+                    Stepper(
+                        value: $preferencesService.defaultReps,
+                        in: 1...30,
+                        step: 1
+                    ) {
+                        HStack {
+                            Text("Default Reps")
+                            Spacer()
+                            Text("\(preferencesService.defaultReps)")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
                 // Data Management Section
@@ -232,6 +245,18 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .stNavigationBarStyle()
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder),
+                            to: nil, from: nil, for: nil
+                        )
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
             .sheet(isPresented: $showUpgradeSheet) {
                 if let storeService {
                     ProUpgradeView(storeService: storeService)
@@ -244,6 +269,7 @@ struct SettingsView: View {
                 updateBodyWeightText()
             }
             .onChange(of: preferencesService.autoStartRestTimer) { _, _ in syncSettingsToWatch() }
+            .onChange(of: preferencesService.defaultReps) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.distanceUnit) { _, _ in syncSettingsToWatch() }
     }
 
@@ -259,6 +285,7 @@ struct SettingsView: View {
     private func syncSettingsToWatch() {
         connectivityManager?.syncSettings([
             "defaultRestSeconds": preferencesService.defaultRestSeconds,
+            "defaultReps": preferencesService.defaultReps,
             "weightUnit": preferencesService.weightUnit.rawValue,
             "autoStartRestTimer": preferencesService.autoStartRestTimer,
             "distanceUnit": preferencesService.distanceUnit.rawValue

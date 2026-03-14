@@ -98,6 +98,16 @@ struct TemplateEditorView: View {
                     EditButton()
                         .disabled(exercises.isEmpty)
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder),
+                            to: nil, from: nil, for: nil
+                        )
+                    }
+                    .fontWeight(.semibold)
+                }
             }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
@@ -133,7 +143,7 @@ struct TemplateEditorView: View {
             notes: nil,
             restTimerSeconds: nil,
             targetSets: 3,
-            targetReps: exercise.exerciseType == .weightedReps || exercise.exerciseType == .bodyweightReps ? 10 : nil,
+            targetReps: exercise.exerciseType == .weightedReps || exercise.exerciseType == .bodyweightReps ? UserPreferencesService().defaultReps : nil,
             targetWeight: exercise.exerciseType == .weightedReps || exercise.exerciseType == .bodyweightReps ? 0 : nil,
             targetDurationSeconds: exercise.exerciseType == .duration ? 60 : nil,
             targetDistanceMeters: exercise.exerciseType == .cardio || exercise.exerciseType == .weightedCardio ? 1000 : nil

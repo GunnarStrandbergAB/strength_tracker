@@ -94,7 +94,9 @@ struct SetRowGridView: View {
                 weightDebounceTask = Task {
                     try? await Task.sleep(for: .milliseconds(400))
                     guard !Task.isCancelled else { return }
-                    onWeightChange(Double(newValue))
+                    if let value = Double(newValue) {
+                        onWeightChange(value)
+                    }
                 }
             }
             .frame(width: 72)
@@ -111,7 +113,9 @@ struct SetRowGridView: View {
                 repsDebounceTask = Task {
                     try? await Task.sleep(for: .milliseconds(400))
                     guard !Task.isCancelled else { return }
-                    onRepsChange(Int(newValue))
+                    if let value = Int(newValue) {
+                        onRepsChange(value)
+                    }
                 }
             }
             .frame(width: 60)
@@ -145,8 +149,8 @@ struct SetRowGridView: View {
                 weightDebounceTask?.cancel()
                 repsDebounceTask?.cancel()
                 rpeDebounceTask?.cancel()
-                onWeightChange(Double(weightText))
-                onRepsChange(Int(repsText))
+                if let w = Double(weightText) { onWeightChange(w) }
+                if let r = Int(repsText) { onRepsChange(r) }
                 if let rpeVal = Double(rpeText) {
                     onRPEChange?(min(max(rpeVal, 1), 10))
                 }

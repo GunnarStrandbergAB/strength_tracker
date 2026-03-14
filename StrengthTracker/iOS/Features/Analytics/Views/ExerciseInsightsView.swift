@@ -67,7 +67,7 @@ struct ExerciseInsightsView: View {
                         Image(systemName: "lightbulb.fill")
                             .font(.system(size: 12))
                             .foregroundStyle(STColors.primary)
-                        Text(rec.reason.displayText)
+                        Text(rec.reason.displayText(targetMuscleGroup: rec.targetMuscleGroup))
                             .font(.system(size: 12))
                             .foregroundStyle(STColors.textSecondary)
                     }

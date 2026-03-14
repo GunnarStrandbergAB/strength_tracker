@@ -14,6 +14,7 @@ struct ContentView: View {
     let progressionPlanViewModel: ProgressionPlanViewModel
     let userPreferencesService: UserPreferencesService
     let connectivityManager: ConnectivityManager?
+    let restTimerService: RestTimerService
     var personalRecordService: PersonalRecordService? = nil
     var proFeatureGate: ProFeatureGate? = nil
     var storeService: StoreService? = nil
@@ -53,7 +54,8 @@ struct ContentView: View {
 
             ActiveWorkoutView(
                 viewModel: workoutViewModel,
-                exerciseListViewModel: exerciseListViewModel
+                exerciseListViewModel: exerciseListViewModel,
+                restTimerService: restTimerService
             )
             .tint(STColors.textSecondary)
             .tabItem {

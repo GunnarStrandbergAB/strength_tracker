@@ -119,6 +119,16 @@ struct WorkoutDetailView: View {
         }
         .navigationTitle(displayedWorkout.name)
         .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    UIApplication.shared.sendAction(
+                        #selector(UIResponder.resignFirstResponder),
+                        to: nil, from: nil, for: nil
+                    )
+                }
+                .fontWeight(.semibold)
+            }
             if let hvm = historyViewModel {
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 12) {

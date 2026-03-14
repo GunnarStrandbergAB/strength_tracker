@@ -11,6 +11,9 @@ public final class UserPreferencesService {
     /// Default rest timer duration in seconds
     public static let defaultRestSecondsValue: Int = 90
 
+    /// Default reps when adding an exercise to a template
+    public static let defaultRepsValue: Int = 10
+
     /// The user's preferred weight unit (kg or lbs)
     public var weightUnit: WeightUnit {
         didSet { UserDefaults.standard.set(weightUnit.rawValue, forKey: "weightUnit") }
@@ -19,6 +22,11 @@ public final class UserPreferencesService {
     /// Default rest timer duration in seconds
     public var defaultRestSeconds: Int {
         didSet { UserDefaults.standard.set(defaultRestSeconds, forKey: "defaultRestSeconds") }
+    }
+
+    /// Default reps when adding an exercise to a template
+    public var defaultReps: Int {
+        didSet { UserDefaults.standard.set(defaultReps, forKey: "defaultReps") }
     }
 
     /// Whether the user has completed the onboarding flow
@@ -82,6 +90,9 @@ public final class UserPreferencesService {
         let restSeconds = defaults.integer(forKey: "defaultRestSeconds")
         self.defaultRestSeconds = restSeconds != 0 ? restSeconds : Self.defaultRestSecondsValue
 
+        let reps = defaults.integer(forKey: "defaultReps")
+        self.defaultReps = reps != 0 ? reps : Self.defaultRepsValue
+
         self.hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
         self.hasSeededExercises = defaults.bool(forKey: "hasSeededExercises")
 
@@ -108,6 +119,7 @@ public final class UserPreferencesService {
         weightUnit = .kg
         distanceUnit = .km
         defaultRestSeconds = Self.defaultRestSecondsValue
+        defaultReps = Self.defaultRepsValue
         autoStartRestTimer = true
         // Note: Don't reset onboarding, seeding, or HealthKit auth flags
     }

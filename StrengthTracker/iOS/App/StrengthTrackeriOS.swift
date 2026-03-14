@@ -13,9 +13,35 @@ import WidgetKit
 
 import UserNotifications
 
+// MARK: - Notification Delegate (foreground delivery + tap handling)
+
+class AppNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    var onRestTimerNotificationTapped: (() -> Void)?
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler handler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        handler([.banner, .sound])
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler handler: @escaping () -> Void
+    ) {
+        if response.notification.request.identifier == "rest-timer" {
+            onRestTimerNotificationTapped?()
+        }
+        handler()
+    }
+}
+
 @main
 struct StrengthTrackeriOSApp: App {
     let container: AppContainer
+    private let notificationDelegate = AppNotificationDelegate()
 
     init() {
         do {
@@ -34,7 +60,26 @@ struct StrengthTrackeriOSApp: App {
             container.templateSeedService.startSeeding()
 
             // Request notification permission for rest timer background alerts
-            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .timeSensitive]) { _, _ in }
+
+            // Register notification category for rest timer completions
+            let restCategory = UNNotificationCategory(
+                identifier: "REST_TIMER_COMPLETE",
+                actions: [],
+                intentIdentifiers: [],
+                options: []
+            )
+            UNUserNotificationCenter.current().setNotificationCategories([restCategory])
+
+            // Set up notification delegate for foreground delivery and tap handling
+            let restTimerService = container.restTimerService
+            notificationDelegate.onRestTimerNotificationTapped = {
+                Task { @MainActor in
+                    restTimerService.handleForegroundReturn()
+                    restTimerService.endAllStaleActivities()
+                }
+            }
+            UNUserNotificationCenter.current().delegate = notificationDelegate
 
             // Wire up Watch → iPhone workout sync (SwiftData + webhook only)
             // Watch already saves HKWorkout with sensor-based calories — iPhone must NOT touch HealthKit
@@ -112,6 +157,7 @@ struct ContentViewWrapper: View {
             progressionPlanViewModel: container.makeProgressionPlanViewModel(),
             userPreferencesService: container.userPreferencesService,
             connectivityManager: container.connectivityManager,
+            restTimerService: container.restTimerService,
             personalRecordService: container.personalRecordService,
             proFeatureGate: container.proFeatureGate,
             storeService: container.storeService
@@ -124,6 +170,7 @@ struct ContentViewWrapper: View {
             if newPhase == .active {
                 // End stale mirrored Live Activity if watch timer expired while iPhone was backgrounded
                 container.restTimerService.handleForegroundReturn()
+                container.restTimerService.endAllStaleActivities()
 
                 // Refresh widget data with analytics
                 Task { @MainActor in
@@ -195,8 +242,14 @@ struct ContentViewWrapper: View {
     }
 
     private func handleDeepLink(_ url: URL) {
-        // Deep link handling will be implemented by other agents
-        // Format: strengthtracker://workout/start?template=<uuid>
+        guard let host = url.host else { return }
+        switch host {
+        case "rest-timer":
+            container.restTimerService.handleForegroundReturn()
+            container.restTimerService.endAllStaleActivities()
+        default:
+            break
+        }
     }
 
     @MainActor
