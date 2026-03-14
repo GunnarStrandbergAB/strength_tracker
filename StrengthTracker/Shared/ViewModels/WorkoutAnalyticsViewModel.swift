@@ -117,19 +117,14 @@ public final class WorkoutAnalyticsViewModel {
             insights = rawInsights
             errorMessage = nil
 
-            // Auto-load quality score for latest workout if unlocked but not yet loaded
-            if unlockedFeatures.contains(.qualityScore) && qualityScore == nil,
-               let repo = workoutRepository {
-                do {
-                    let allWorkouts = try await repo.fetchAll()
-                    if let latest = allWorkouts
-                        .filter({ $0.completedAt != nil })
-                        .sorted(by: { $0.startedAt > $1.startedAt })
-                        .first {
-                        qualityScore = try await qualityScoreService.computeScore(for: latest)
-                    }
-                } catch {
-                    // Non-critical — quality score will load on demand
+            // Auto-load quality score using the same workouts generateInsights() used
+            if unlockedFeatures.contains(.qualityScore) && qualityScore == nil {
+                if let repo = workoutRepository,
+                   let latest = try? await repo.fetchAll()
+                    .filter({ $0.completedAt != nil })
+                    .sorted(by: { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) })
+                    .first {
+                    qualityScore = try? await qualityScoreService.computeScore(for: latest)
                 }
             }
         } catch {

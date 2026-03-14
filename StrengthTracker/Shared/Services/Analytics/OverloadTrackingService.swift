@@ -10,7 +10,7 @@ public enum OverloadTrackingService {
         guard !completed.isEmpty else { return [] }
 
         // Group best e1RM per exercise per calendar week
-        let calendar = Calendar.current
+        let calendar = Calendar.mondayStart
         var exerciseWeeklyE1RMs: [UUID: [(weekStart: Date, e1rm: Double)]] = [:]
         var exerciseNames: [UUID: String] = [:]
 

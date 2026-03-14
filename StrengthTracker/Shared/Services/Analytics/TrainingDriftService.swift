@@ -14,16 +14,17 @@ public final class TrainingDriftService: Sendable {
     /// Returns nil if insufficient data in either window.
     public func computeDrift(vectors: [WorkoutVector]) -> TrainingDrift? {
         let now = Date()
-        let fourteenDaysAgo = Calendar.current.date(byAdding: .day, value: -14, to: now)!
-        let fortyFiveDaysAgo = Calendar.current.date(byAdding: .day, value: -45, to: now)!
+        let calendar = Calendar.mondayStart
+        let fourteenDaysAgo = calendar.date(byAdding: .day, value: -14, to: now)!
+        let fortyFiveDaysAgo = calendar.date(byAdding: .day, value: -45, to: now)!
 
         let recent = vectors.filter { $0.createdAt >= fourteenDaysAgo }
         let baseline = vectors.filter { $0.createdAt >= fortyFiveDaysAgo && $0.createdAt < fourteenDaysAgo }
 
         guard recent.count >= 2, baseline.count >= 3 else { return nil }
 
-        let recentCentroid = computeCentroid(vectors: recent)
-        let baselineCentroid = computeCentroid(vectors: baseline)
+        let recentCentroid = searchService.computeCentroid(vectors: recent)
+        let baselineCentroid = searchService.computeCentroid(vectors: baseline)
 
         let similarity = searchService.cosineSimilarity(recentCentroid, baselineCentroid)
         let overallDrift = 1.0 - similarity
@@ -47,18 +48,4 @@ public final class TrainingDriftService: Sendable {
         )
     }
 
-    // MARK: - Private
-
-    private func computeCentroid(vectors: [WorkoutVector]) -> [Double] {
-        guard let first = vectors.first else { return [] }
-        let dim = first.dimensions.count
-        var sum = [Double](repeating: 0, count: dim)
-        for v in vectors {
-            for i in 0..<dim {
-                sum[i] += v.dimensions[i]
-            }
-        }
-        let n = Double(vectors.count)
-        return sum.map { $0 / n }
-    }
 }

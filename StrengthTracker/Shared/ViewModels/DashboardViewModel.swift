@@ -101,9 +101,7 @@ public final class DashboardViewModel {
     // MARK: - Helpers
 
     private func workoutsInWeek(from workouts: [Workout], containing date: Date, calendar: Calendar) -> [Workout] {
-        // Use ISO 8601 week (Monday = first day)
-        var cal = calendar
-        cal.firstWeekday = 2 // Monday
+        let cal = Calendar.mondayStart
         guard let weekInterval = cal.dateInterval(of: .weekOfYear, for: date) else {
             return []
         }
@@ -111,8 +109,7 @@ public final class DashboardViewModel {
     }
 
     private func calculateDailyCounts(for workouts: [Workout], in referenceDate: Date, calendar: Calendar) -> [Int] {
-        var cal = calendar
-        cal.firstWeekday = 2 // Monday
+        let cal = Calendar.mondayStart
         var counts = Array(repeating: 0, count: 7)
 
         for workout in workouts {
@@ -127,8 +124,7 @@ public final class DashboardViewModel {
     }
 
     private func calculateDailyQualityScores(for workouts: [Workout], calendar: Calendar) async -> [Double?] {
-        var cal = calendar
-        cal.firstWeekday = 2 // Monday
+        let cal = Calendar.mondayStart
         // Group workouts by weekday index (Mon=0 .. Sun=6)
         var grouped: [Int: [Workout]] = [:]
         for workout in workouts {

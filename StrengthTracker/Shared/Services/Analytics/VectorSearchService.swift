@@ -90,4 +90,18 @@ public final class VectorSearchService: Sendable {
         }
         return Array(similarities.sorted { $0.1 > $1.1 }.prefix(topK))
     }
+
+    // MARK: - Centroid Computation
+
+    /// Compute the arithmetic mean (centroid) of a set of vectors.
+    public func computeCentroid(vectors: [WorkoutVector]) -> [Double] {
+        guard let first = vectors.first else { return [] }
+        let dim = first.dimensions.count
+        var sum = [Double](repeating: 0, count: dim)
+        for v in vectors {
+            for i in 0..<dim { sum[i] += v.dimensions[i] }
+        }
+        let n = Double(vectors.count)
+        return sum.map { $0 / n }
+    }
 }

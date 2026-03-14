@@ -301,37 +301,35 @@ struct ContentViewWrapper: View {
                 )
             }
 
-            // Supplement with volume trend if room remains
+            // Supplement with volume trend if room remains (rolling 7-day window)
             if highlights.count < 3 {
-                let calendar = Calendar.current
                 let now = Date()
+                let calendar = Calendar.current
+                let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: now)!
+                let fourteenDaysAgo = calendar.date(byAdding: .day, value: -14, to: now)!
                 let completedWorkouts = workouts.filter { $0.completedAt != nil }
-                if let thisWeekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start {
-                    let lastWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeekStart)!
-                    let thisWeekVol = completedWorkouts
-                        .filter { ($0.completedAt ?? .distantPast) >= thisWeekStart }
-                        .reduce(0.0) { $0 + $1.totalVolume }
-                    let lastWeekVol = completedWorkouts
-                        .filter {
-                            let d = $0.completedAt ?? .distantPast
-                            return d >= lastWeekStart && d < thisWeekStart
-                        }
-                        .reduce(0.0) { $0 + $1.totalVolume }
-                    if thisWeekVol > 0 && lastWeekVol > 0 {
-                        let pct = ((thisWeekVol - lastWeekVol) / lastWeekVol) * 100
-                        if pct > 0 {
-                            highlights.append(AnalyticsHighlight(
-                                type: .improvement,
-                                title: "Volume Up",
-                                detail: "+\(Int(pct))% vs last week"
-                            ))
-                        } else if pct < -5 {
-                            highlights.append(AnalyticsHighlight(
-                                type: .warning,
-                                title: "Volume Down",
-                                detail: "\(Int(pct))% vs last week"
-                            ))
-                        }
+
+                let thisWeekVol = completedWorkouts
+                    .filter { let d = $0.completedAt ?? .distantPast; return d >= sevenDaysAgo && d <= now }
+                    .reduce(0.0) { $0 + $1.totalVolume }
+                let lastWeekVol = completedWorkouts
+                    .filter { let d = $0.completedAt ?? .distantPast; return d >= fourteenDaysAgo && d < sevenDaysAgo }
+                    .reduce(0.0) { $0 + $1.totalVolume }
+
+                if thisWeekVol > 0 && lastWeekVol > 0 {
+                    let pct = ((thisWeekVol - lastWeekVol) / lastWeekVol) * 100
+                    if pct > 0 {
+                        highlights.append(AnalyticsHighlight(
+                            type: .improvement,
+                            title: "Volume Up",
+                            detail: "+\(Int(pct))% vs last 7 days"
+                        ))
+                    } else if pct < -5 {
+                        highlights.append(AnalyticsHighlight(
+                            type: .warning,
+                            title: "Volume Down",
+                            detail: "\(Int(pct))% vs last 7 days"
+                        ))
                     }
                 }
             }

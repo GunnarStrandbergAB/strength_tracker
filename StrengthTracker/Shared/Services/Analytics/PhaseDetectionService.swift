@@ -15,7 +15,7 @@ public final class PhaseDetectionService: Sendable {
     public func detectPhases(vectors: [WorkoutVector]) -> TrainingPhaseDetection? {
         guard vectors.count >= 4 else { return nil }
 
-        let calendar = Calendar.current
+        let calendar = Calendar.mondayStart
         let sorted = vectors.sorted { $0.createdAt < $1.createdAt }
 
         // Group by week
@@ -42,7 +42,7 @@ public final class PhaseDetectionService: Sendable {
         guard weeklyVectors.count >= 4 else { return nil }
 
         // Compute weekly centroids
-        let weeklyCentroids = weeklyVectors.map { (weekStart: $0.weekStart, centroid: computeCentroid(vectors: $0.vectors)) }
+        let weeklyCentroids = weeklyVectors.map { (weekStart: $0.weekStart, centroid: searchService.computeCentroid(vectors: $0.vectors)) }
 
         // Classify each week
         let phaseHistory = weeklyCentroids.map { entry in
@@ -60,19 +60,6 @@ public final class PhaseDetectionService: Sendable {
     }
 
     // MARK: - Private
-
-    private func computeCentroid(vectors: [WorkoutVector]) -> [Double] {
-        guard let first = vectors.first else { return [] }
-        let dim = first.dimensions.count
-        var sum = [Double](repeating: 0, count: dim)
-        for v in vectors {
-            for i in 0..<dim {
-                sum[i] += v.dimensions[i]
-            }
-        }
-        let n = Double(vectors.count)
-        return sum.map { $0 / n }
-    }
 
     /// Classify a centroid into a training phase using key dimensions:
     /// 0=volume, 1=weight, 2=reps, 3=sets, 12=compound_ratio

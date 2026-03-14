@@ -131,14 +131,13 @@ public final class WorkoutVectorizer: Sendable {
                 return sum + weight * Double(set.reps ?? 0)
             }
 
-            // Primary muscle gets 70% of volume
-            volumes[exercise.exercise.primaryMuscleGroup, default: 0] += exerciseVolume * 0.7
-
-            // Secondary muscles split remaining 30%
-            let secondaryCount = exercise.exercise.secondaryMuscleGroups.count
-            let secondaryShare = exerciseVolume * 0.3 / Double(max(secondaryCount, 1))
-            for secondary in exercise.exercise.secondaryMuscleGroups {
-                volumes[secondary, default: 0] += secondaryShare
+            let attributed = AnalyticsCalculations.attributeVolume(
+                volume: exerciseVolume,
+                primaryMuscle: exercise.exercise.primaryMuscleGroup,
+                secondaryMuscles: exercise.exercise.secondaryMuscleGroups
+            )
+            for (muscle, vol) in attributed {
+                volumes[muscle, default: 0] += vol
             }
         }
 
