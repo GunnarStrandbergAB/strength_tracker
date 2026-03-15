@@ -199,7 +199,7 @@ struct AnalyticsDashboardView: View {
                     scoreDimensionRow("Volume", score: score.volumeScore)
                     scoreDimensionRow("Intensity", score: score.intensityScore)
                     scoreDimensionRow("Balance", score: score.balanceScore)
-                    scoreDimensionRow("Pacing", score: score.consistencyScore)
+                    scoreDimensionRow("Rest Rhythm", score: score.consistencyScore)
                 }
             }
         }

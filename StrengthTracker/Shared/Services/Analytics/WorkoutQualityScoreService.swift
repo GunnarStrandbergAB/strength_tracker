@@ -202,19 +202,16 @@ public final class WorkoutQualityScoreService: Sendable {
     }
 
     private func computeConsistencyScore(_ workout: Workout) -> Double {
-        // Gather all completed non-warmup sets with timestamps, sorted by completion time
         let completedSets = workout.exercises
             .flatMap { $0.sets }
             .filter { $0.isCompleted && $0.setType != .warmup && $0.completedAt != nil }
             .sorted { $0.completedAt! < $1.completedAt! }
 
-        // Need at least 2 sets to compute intervals
         guard completedSets.count >= 2 else { return 72.0 }
 
         var intervals: [TimeInterval] = []
         for i in 1..<completedSets.count {
             let interval = completedSets[i].completedAt!.timeIntervalSince(completedSets[i - 1].completedAt!)
-            // Cap at 10 minutes — anything longer is likely a break, not a rest period
             if interval <= 600 {
                 intervals.append(interval)
             }
@@ -222,41 +219,19 @@ public final class WorkoutQualityScoreService: Sendable {
 
         guard !intervals.isEmpty else { return 72.0 }
 
-        let sorted = intervals.sorted()
-        let median = sorted[sorted.count / 2]
-
         let mean = intervals.reduce(0, +) / Double(intervals.count)
         let variance = intervals.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(intervals.count)
-        let stdDev = sqrt(variance)
-        let cv = mean > 0 ? stdDev / mean : 0  // coefficient of variation
+        let cv = mean > 0 ? sqrt(variance) / mean : 0
 
-        // Pacing score: is median rest in a reasonable range? (60-180s ideal)
-        let pacingScore: Double
-        if median >= 60 && median <= 180 {
-            pacingScore = 100.0
-        } else if median >= 30 && median <= 300 {
-            if median < 60 {
-                pacingScore = 60.0 + 40.0 * ((median - 30.0) / 30.0)
-            } else {
-                pacingScore = 60.0 + 40.0 * ((300.0 - median) / 120.0)
-            }
-        } else {
-            pacingScore = 30.0
-        }
-
-        // Consistency score: low CV = consistent rest periods
+        // Low CV = consistent rest periods = high score
         // CV < 0.25 = very consistent, CV > 0.8 = very erratic
-        let consistencyScore: Double
         if cv <= 0.25 {
-            consistencyScore = 100.0
+            return 100.0
         } else if cv <= 0.8 {
-            consistencyScore = 100.0 - (cv - 0.25) * (70.0 / 0.55)
+            return 100.0 - (cv - 0.25) * (70.0 / 0.55)
         } else {
-            consistencyScore = 30.0
+            return 30.0
         }
-
-        // Weighted blend: 40% pacing, 60% consistency
-        return pacingScore * 0.4 + consistencyScore * 0.6
     }
 
     /// IWV-based balance score over 12-week window with 6 antagonist pairs.
