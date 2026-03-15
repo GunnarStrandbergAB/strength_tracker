@@ -110,12 +110,50 @@ final class PlanAnalyticsServiceTests: XCTestCase {
             weeks: [week1, week2]
         )
 
-        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block])
+        // startDate 3 weeks ago so both weeks are in the elapsed window
+        let threeWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -3, to: Date())!
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block], startDate: threeWeeksAgo)
         let sut = makeSUT()
 
         let progress = try await sut.generateProgress(for: plan)
 
         XCTAssertEqual(progress.overallAdherence, 0.5, accuracy: 0.001)
+    }
+
+    func testGenerateProgress_adherenceScopedToElapsedWeeks() async throws {
+        // Bug scenario: 3/3 sessions completed in week 1, 9 weeks of future sessions incomplete.
+        // Adherence should be 100% (3/3 elapsed), not 3/30 = 10%.
+        let completedSessions = (0..<3).map { i in
+            ProgressionTestHelpers.makeCompletedSession(label: "W1S\(i + 1)")
+        }
+        let week1 = ProgressionTestHelpers.makeTestTrainingWeek(
+            weekNumber: 1, absoluteWeekNumber: 1, sessions: completedSessions
+        )
+
+        var futureWeeks: [TrainingWeek] = []
+        for w in 2...10 {
+            let sessions = (0..<3).map { i in
+                ProgressionTestHelpers.makeIncompleteSession(label: "W\(w)S\(i + 1)")
+            }
+            futureWeeks.append(ProgressionTestHelpers.makeTestTrainingWeek(
+                weekNumber: w, absoluteWeekNumber: w, sessions: sessions
+            ))
+        }
+
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(
+            weeks: [week1] + futureWeeks
+        )
+
+        // startDate = 5 days ago → elapsedCalendarWeeks = 0 → currentWeekNumber = 1
+        let fiveDaysAgo = Calendar.current.date(byAdding: .day, value: -5, to: Date())!
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block], startDate: fiveDaysAgo)
+        let sut = makeSUT()
+
+        let progress = try await sut.generateProgress(for: plan)
+
+        // 3 completed / 3 elapsed = 1.0
+        XCTAssertEqual(progress.overallAdherence, 1.0, accuracy: 0.001)
+        XCTAssertTrue(progress.isOnTrack)
     }
 
     // MARK: - Exercise Progress Tests

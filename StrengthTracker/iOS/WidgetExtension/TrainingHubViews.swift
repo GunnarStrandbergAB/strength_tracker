@@ -126,6 +126,9 @@ struct AnalyticsMediumView: View {
                     if entry.data.currentStreak > 0 {
                         statRow(icon: "flame.fill", text: "\(entry.data.currentStreak)-day streak", color: .orange)
                     }
+                    if let quality = entry.data.weeklyQualityScore {
+                        statRow(icon: "star.fill", text: "\(Int(quality))/100 quality", color: WidgetColors.accent)
+                    }
                     if let volume = entry.data.weeklyVolume {
                         let formatted = volume >= 1000 ? String(format: "%.1fT", volume / 1000) : String(format: "%.0f kg", volume)
                         statRow(icon: "scalemass.fill", text: formatted, color: WidgetColors.accent)

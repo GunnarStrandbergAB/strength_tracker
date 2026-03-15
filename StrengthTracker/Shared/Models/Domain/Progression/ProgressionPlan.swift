@@ -107,10 +107,13 @@ public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
 
     public var overallProgress: Double {
         guard !blocks.isEmpty else { return 0 }
-        let totalSessions = blocks.flatMap(\.weeks).flatMap(\.sessions).count
+        let currentWeekNumber = elapsedCalendarWeeks + 1
+        let elapsedSessions = blocks.flatMap(\.weeks)
+            .filter { $0.absoluteWeekNumber <= currentWeekNumber }
+            .flatMap(\.sessions)
         let completedSessions = blocks.flatMap(\.weeks).flatMap(\.sessions).filter(\.isCompleted).count
-        guard totalSessions > 0 else { return 0 }
-        return Double(completedSessions) / Double(totalSessions)
+        guard !elapsedSessions.isEmpty else { return 0 }
+        return min(1.0, Double(completedSessions) / Double(elapsedSessions.count))
     }
 
     public var isActive: Bool { status == .active }

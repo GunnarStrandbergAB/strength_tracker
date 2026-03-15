@@ -94,6 +94,10 @@ public struct WidgetData: Codable, Sendable {
     public let weeklyVolume: Double?
     public let previousWeekVolume: Double?
 
+    // Quality score (EWMA aggregate)
+    public let weeklyQualityScore: Double?
+    public let qualityTrend: Double?
+
     public static let empty = WidgetData(
         lastWorkoutDate: nil,
         lastWorkoutName: nil,
@@ -109,7 +113,9 @@ public struct WidgetData: Codable, Sendable {
         activeWorkout: nil,
         nextPlannedSession: nil,
         weeklyVolume: nil,
-        previousWeekVolume: nil
+        previousWeekVolume: nil,
+        weeklyQualityScore: nil,
+        qualityTrend: nil
     )
 
     /// Key used for App Group UserDefaults
@@ -130,7 +136,9 @@ public struct WidgetData: Codable, Sendable {
         activeWorkout: WidgetActiveWorkout? = nil,
         nextPlannedSession: WidgetPlannedSession? = nil,
         weeklyVolume: Double? = nil,
-        previousWeekVolume: Double? = nil
+        previousWeekVolume: Double? = nil,
+        weeklyQualityScore: Double? = nil,
+        qualityTrend: Double? = nil
     ) {
         self.lastWorkoutDate = lastWorkoutDate
         self.lastWorkoutName = lastWorkoutName
@@ -147,6 +155,8 @@ public struct WidgetData: Codable, Sendable {
         self.nextPlannedSession = nextPlannedSession
         self.weeklyVolume = weeklyVolume
         self.previousWeekVolume = previousWeekVolume
+        self.weeklyQualityScore = weeklyQualityScore
+        self.qualityTrend = qualityTrend
     }
 
     // Backward-compatible decoding for old data without new fields
@@ -167,5 +177,7 @@ public struct WidgetData: Codable, Sendable {
         nextPlannedSession = try? container.decodeIfPresent(WidgetPlannedSession.self, forKey: .nextPlannedSession)
         weeklyVolume = try? container.decodeIfPresent(Double.self, forKey: .weeklyVolume)
         previousWeekVolume = try? container.decodeIfPresent(Double.self, forKey: .previousWeekVolume)
+        weeklyQualityScore = try? container.decodeIfPresent(Double.self, forKey: .weeklyQualityScore)
+        qualityTrend = try? container.decodeIfPresent(Double.self, forKey: .qualityTrend)
     }
 }

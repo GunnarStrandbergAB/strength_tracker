@@ -16,6 +16,7 @@ public final class WorkoutAnalyticsViewModel {
     public var isSimilarWorkoutsLoading = false
 
     public var qualityScore: WorkoutQualityScore?
+    public var aggregateQuality: AggregateQualityScore?
     public var isQualityScoreLoading = false
 
     /// Feature gating
@@ -117,15 +118,22 @@ public final class WorkoutAnalyticsViewModel {
             insights = rawInsights
             errorMessage = nil
 
-            // Auto-load quality score using the same workouts generateInsights() used
-            if unlockedFeatures.contains(.qualityScore) && qualityScore == nil {
-                if let repo = workoutRepository,
-                   let latest = try? await repo.fetchAll()
-                    .filter({ $0.completedAt != nil })
+            // Auto-load quality score and aggregate using the same workouts
+            if unlockedFeatures.contains(.qualityScore),
+               let repo = workoutRepository {
+                let allCompleted = try await repo.fetchAll()
+                let completedWorkouts = allCompleted.filter { $0.completedAt != nil }
+
+                // Per-workout score for the latest workout (used in detail views)
+                if qualityScore == nil,
+                   let latest = completedWorkouts
                     .sorted(by: { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) })
                     .first {
-                    qualityScore = try? await qualityScoreService.computeScore(for: latest)
+                    qualityScore = qualityScoreService.computeScore(for: latest, history: allCompleted)
                 }
+
+                // Aggregate EWMA quality across all workouts
+                aggregateQuality = qualityScoreService.computeAggregateScore(workouts: allCompleted)
             }
         } catch {
             isMigrating = false

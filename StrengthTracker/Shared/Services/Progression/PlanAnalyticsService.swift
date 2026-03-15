@@ -23,12 +23,18 @@ public final class PlanAnalyticsService: Sendable {
         let completedWorkouts = allWorkouts.filter { $0.completedAt != nil }
 
         let allSessions = plan.blocks.flatMap(\.weeks).flatMap(\.sessions)
-        let totalSessions = allSessions.count
         let completedSessions = allSessions.filter(\.isCompleted).count
 
+        // Adherence: only count sessions in elapsed weeks (current week included)
+        let currentWeekNumber = plan.elapsedCalendarWeeks + 1
+        let elapsedSessions = plan.blocks.flatMap(\.weeks)
+            .filter { $0.absoluteWeekNumber <= currentWeekNumber }
+            .flatMap(\.sessions)
+        let totalElapsed = elapsedSessions.count
+
         let overallAdherence: Double
-        if totalSessions > 0 {
-            overallAdherence = Double(completedSessions) / Double(totalSessions)
+        if totalElapsed > 0 {
+            overallAdherence = min(1.0, Double(completedSessions) / Double(totalElapsed))
         } else {
             overallAdherence = 0
         }

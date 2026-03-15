@@ -31,3 +31,25 @@ public struct WorkoutQualityScore: Identifiable, Hashable, Sendable, Codable {
         self.scoredAt = scoredAt
     }
 }
+
+/// Aggregate quality score across multiple workouts, smoothed via EWMA.
+public struct AggregateQualityScore: Sendable {
+    /// 0-100 EWMA-smoothed overall quality
+    public let ewmaOverall: Double
+    /// 0-100 EWMA-smoothed volume pillar
+    public let ewmaVolume: Double
+    /// 0-100 EWMA-smoothed intensity pillar
+    public let ewmaIntensity: Double
+    /// 0-100 EWMA-smoothed balance pillar
+    public let ewmaBalance: Double
+    /// 0-100 EWMA-smoothed consistency pillar
+    public let ewmaConsistency: Double
+    /// Percentage change vs EWMA ~4 weeks ago
+    public let trendVsPrior: Double
+    /// 0-1 where current EWMA sits in user's EWMA history
+    public let percentileRank: Double
+    /// Number of workouts included in the calculation
+    public let workoutsIncluded: Int
+    /// When this aggregate was computed
+    public let computedAt: Date
+}
