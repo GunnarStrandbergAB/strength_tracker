@@ -137,7 +137,8 @@ public final class ProgramDesignService: Sendable {
                 intensity: weekIntensity,
                 restSeconds: restSeconds,
                 dupSessionType: nil,
-                label: isDeloadWeek ? "Deload" : "Week \(absoluteWeek)"
+                label: isDeloadWeek ? "Deload" : "Week \(absoluteWeek)",
+                isDeload: isDeloadWeek
             )
 
             let week = TrainingWeek(
@@ -211,7 +212,8 @@ public final class ProgramDesignService: Sendable {
                         sessionLabel: isDeloadWeek ? "Deload - \(dayName)" : dayName,
                         plannedExercises: [],
                         estimatedDurationMinutes: 60,
-                        templateId: templateIdForDay(day, in: plan)
+                        templateId: templateIdForDay(day, in: plan),
+                        isDeload: isDeloadWeek
                     ))
                 } else {
                     // DUP rotation counter only counts exercise-bearing days
@@ -260,7 +262,8 @@ public final class ProgramDesignService: Sendable {
                         sessionLabel: label,
                         plannedExercises: exerciseSets,
                         estimatedDurationMinutes: estimateDuration(exerciseCount: sessionExercises.count, sets: sets, restSeconds: restSeconds),
-                        templateId: templateIdForDay(day, in: plan)
+                        templateId: templateIdForDay(day, in: plan),
+                        isDeload: isDeloadWeek
                     ))
                 }
             }
@@ -344,7 +347,8 @@ public final class ProgramDesignService: Sendable {
                 dupSessionType: nil,
                 label: isDeloadWeek
                     ? "Deload"
-                    : "Week \(absoluteWeek) - \(scheme.rawValue.capitalized)"
+                    : "Week \(absoluteWeek) - \(scheme.rawValue.capitalized)",
+                isDeload: isDeloadWeek
             )
 
             let week = TrainingWeek(
@@ -401,7 +405,8 @@ public final class ProgramDesignService: Sendable {
                     intensity: phaseParams.intensity,
                     restSeconds: restSeconds,
                     dupSessionType: nil,
-                    label: "\(phase.rawValue.capitalized) W\(weekInPhase + 1)"
+                    label: "\(phase.rawValue.capitalized) W\(weekInPhase + 1)",
+                    isDeload: phase == .deload
                 )
 
                 let week = TrainingWeek(
@@ -485,7 +490,8 @@ public final class ProgramDesignService: Sendable {
         intensity: Double,
         restSeconds: Int,
         dupSessionType: DUPSessionType?,
-        label: String
+        label: String,
+        isDeload: Bool = false
     ) -> [PlannedSession] {
         days.map { day in
             let dayName = Self.dayNames[day] ?? "Day"
@@ -498,7 +504,8 @@ public final class ProgramDesignService: Sendable {
                     sessionLabel: days.count > 1 ? "\(label) - \(dayName)" : label,
                     plannedExercises: [],
                     estimatedDurationMinutes: 60,
-                    templateId: templateIdForDay(day, in: plan)
+                    templateId: templateIdForDay(day, in: plan),
+                    isDeload: isDeload
                 )
             }
 
@@ -526,7 +533,8 @@ public final class ProgramDesignService: Sendable {
                     sets: sets,
                     restSeconds: restSeconds
                 ),
-                templateId: templateIdForDay(day, in: plan)
+                templateId: templateIdForDay(day, in: plan),
+                isDeload: isDeload
             )
         }
     }

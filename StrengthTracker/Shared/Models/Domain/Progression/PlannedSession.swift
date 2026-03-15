@@ -14,6 +14,7 @@ public struct PlannedSession: Identifiable, Codable, Equatable, Sendable {
     public var completedAt: Date?
     public var notes: String?
     public var userWorkoutNotes: String?               // Free-text notes from completed workout
+    public var isDeload: Bool
 
     public init(
         id: UUID = UUID(),
@@ -27,7 +28,8 @@ public struct PlannedSession: Identifiable, Codable, Equatable, Sendable {
         completedWorkoutId: UUID? = nil,
         completedAt: Date? = nil,
         notes: String? = nil,
-        userWorkoutNotes: String? = nil
+        userWorkoutNotes: String? = nil,
+        isDeload: Bool = false
     ) {
         self.id = id
         self.dayOfWeek = dayOfWeek
@@ -41,6 +43,31 @@ public struct PlannedSession: Identifiable, Codable, Equatable, Sendable {
         self.completedAt = completedAt
         self.notes = notes
         self.userWorkoutNotes = userWorkoutNotes
+        self.isDeload = isDeload
+    }
+
+    // Custom decoding for backward compatibility — existing JSON without isDeload decodes as false
+    private enum CodingKeys: String, CodingKey {
+        case id, dayOfWeek, scheduledDate, dupSessionType, sessionLabel
+        case plannedExercises, estimatedDurationMinutes, templateId
+        case completedWorkoutId, completedAt, notes, userWorkoutNotes, isDeload
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        dayOfWeek = try container.decodeIfPresent(Int.self, forKey: .dayOfWeek)
+        scheduledDate = try container.decodeIfPresent(Date.self, forKey: .scheduledDate)
+        dupSessionType = try container.decodeIfPresent(DUPSessionType.self, forKey: .dupSessionType)
+        sessionLabel = try container.decode(String.self, forKey: .sessionLabel)
+        plannedExercises = try container.decode([PlannedExerciseSet].self, forKey: .plannedExercises)
+        estimatedDurationMinutes = try container.decode(Int.self, forKey: .estimatedDurationMinutes)
+        templateId = try container.decodeIfPresent(UUID.self, forKey: .templateId)
+        completedWorkoutId = try container.decodeIfPresent(UUID.self, forKey: .completedWorkoutId)
+        completedAt = try container.decodeIfPresent(Date.self, forKey: .completedAt)
+        notes = try container.decodeIfPresent(String.self, forKey: .notes)
+        userWorkoutNotes = try container.decodeIfPresent(String.self, forKey: .userWorkoutNotes)
+        isDeload = try container.decodeIfPresent(Bool.self, forKey: .isDeload) ?? false
     }
 
     public var isCompleted: Bool { completedWorkoutId != nil }

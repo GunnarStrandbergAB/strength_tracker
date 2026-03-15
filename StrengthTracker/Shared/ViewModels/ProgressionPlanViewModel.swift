@@ -519,7 +519,12 @@ public final class ProgressionPlanViewModel {
         var mergedExercises = template.exercises.map { te -> TemplateExercise in
             let planned = plannedLookup[te.exercise.id]
                 ?? plannedByName[te.exercise.name.lowercased()]
-            guard let planned else { return te }
+            guard let planned else {
+                if session.isDeload {
+                    return te.deloaded()
+                }
+                return te
+            }
             return TemplateExercise(
                 id: te.id,
                 exercise: te.exercise,

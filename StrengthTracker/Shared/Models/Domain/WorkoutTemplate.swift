@@ -84,6 +84,25 @@ public struct TemplateExercise: Identifiable, Hashable, Sendable, Codable {
         self.setTargets = setTargets
         self.isWarmUp = isWarmUp
     }
+
+    /// Returns a deloaded copy: halved sets (min 2), halved weight, cleared per-set targets.
+    public func deloaded() -> TemplateExercise {
+        TemplateExercise(
+            id: id,
+            exercise: exercise,
+            order: order,
+            supersetGroup: supersetGroup,
+            notes: notes,
+            restTimerSeconds: restTimerSeconds,
+            targetSets: max(2, targetSets / 2),
+            targetReps: targetReps,
+            targetWeight: targetWeight.map { ($0 * 0.5).rounded(toNearest: 2.5) },
+            targetDurationSeconds: targetDurationSeconds,
+            targetDistanceMeters: targetDistanceMeters,
+            setTargets: [],
+            isWarmUp: isWarmUp
+        )
+    }
 }
 
 public struct TemplateFolder: Identifiable, Hashable, Sendable, Codable {

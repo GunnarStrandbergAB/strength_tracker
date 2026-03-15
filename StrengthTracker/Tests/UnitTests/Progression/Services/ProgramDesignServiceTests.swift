@@ -191,6 +191,26 @@ struct ProgramDesignServiceTests {
         }
     }
 
+    @Test("DUP deload sessions have isDeload = true, non-deload sessions have isDeload = false")
+    func testDUPProgram_isDeloadFlagCorrect() {
+        let plan = ProgressionTestHelpers.intermediateDUPPlan()
+        let blocks = service.generateProgram(for: plan)
+
+        for block in blocks {
+            for week in block.weeks {
+                for session in week.sessions {
+                    if week.isDeload {
+                        #expect(session.isDeload,
+                            "Session in deload week \(week.absoluteWeekNumber) should have isDeload = true")
+                    } else {
+                        #expect(!session.isDeload,
+                            "Session in non-deload week \(week.absoluteWeekNumber) should have isDeload = false")
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - WUP (Weekly Undulating Periodization)
 
     @Test("WUP program alternates rep schemes week-to-week")
@@ -351,6 +371,28 @@ struct ProgramDesignServiceTests {
                     for session in week.sessions {
                         #expect(!session.sessionLabel.isEmpty,
                             "\(plan.programType): Session label should not be empty in week \(week.absoluteWeekNumber)")
+                    }
+                }
+            }
+        }
+    }
+
+    @Test("All programs set isDeload correctly on sessions matching week.isDeload")
+    func testAllPrograms_isDeloadMatchesWeek() {
+        let plans: [ProgressionPlan] = [
+            ProgressionTestHelpers.beginnerLinearPlan(),
+            ProgressionTestHelpers.intermediateDUPPlan(),
+            ProgressionTestHelpers.intermediateWUPPlan(),
+            ProgressionTestHelpers.advancedBlockPlan(),
+        ]
+
+        for plan in plans {
+            let blocks = service.generateProgram(for: plan)
+            for block in blocks {
+                for week in block.weeks {
+                    for session in week.sessions {
+                        #expect(session.isDeload == week.isDeload,
+                            "\(plan.programType): session.isDeload (\(session.isDeload)) != week.isDeload (\(week.isDeload)) in week \(week.absoluteWeekNumber)")
                     }
                 }
             }
