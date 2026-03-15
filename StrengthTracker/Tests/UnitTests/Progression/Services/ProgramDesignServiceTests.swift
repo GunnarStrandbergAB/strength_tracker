@@ -150,7 +150,7 @@ struct ProgramDesignServiceTests {
             "Weight should increase from week 1 (\(weight1)) to week 2 (\(weight2))")
     }
 
-    @Test("DUP program deload reduces volume")
+    @Test("DUP program deload uses flat recovery prescription (50% 1RM, 2×8, no session type)")
     func testDUPProgram_deloadReducesVolume() {
         let plan = ProgressionTestHelpers.intermediateDUPPlan()
         let blocks = service.generateProgram(for: plan)
@@ -162,12 +162,33 @@ struct ProgramDesignServiceTests {
             return
         }
 
-        // Compare total sets (volume proxy) between normal and deload
+        // Volume should be reduced
         let normalVolume = totalSets(of: normalWeek)
         let deloadVolume = totalSets(of: deloadWeek)
-
         #expect(deloadVolume < normalVolume,
             "Deload volume (\(deloadVolume)) should be less than normal (\(normalVolume))")
+
+        // Every deload session with exercises must use flat recovery prescription
+        let exerciseSessions = deloadWeek.sessions.filter { !$0.plannedExercises.isEmpty }
+        for session in exerciseSessions {
+            // No session-type badge during deload
+            #expect(session.dupSessionType == nil,
+                "Deload session should have nil dupSessionType, got \(String(describing: session.dupSessionType))")
+
+            // Label should not contain Power/Strength/Hypertrophy
+            let label = session.sessionLabel.lowercased()
+            #expect(!label.contains("power") && !label.contains("strength") && !label.contains("hypertrophy"),
+                "Deload label should not contain session-type name, got '\(session.sessionLabel)'")
+
+            for exerciseSet in session.plannedExercises {
+                #expect(exerciseSet.percentageOf1RM == 0.50,
+                    "Deload intensity should be 50%, got \(exerciseSet.percentageOf1RM)")
+                #expect(exerciseSet.sets == 2,
+                    "Deload sets should be 2, got \(exerciseSet.sets)")
+                #expect(exerciseSet.targetReps == 8,
+                    "Deload reps should be 8, got \(exerciseSet.targetReps)")
+            }
+        }
     }
 
     // MARK: - WUP (Weekly Undulating Periodization)

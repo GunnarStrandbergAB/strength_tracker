@@ -224,12 +224,9 @@ public final class ProgramDesignService: Sendable {
                     let reps: Int
 
                     if isDeloadWeek {
-                        intensity = min(
-                            baseIntensity * overloadMultiplier,
-                            dupType.intensityRange.upperBound
-                        )
-                        sets = max(2, dupType.sets - 1)
-                        reps = dupType.repRange.upperBound
+                        intensity = 0.50
+                        sets = 2
+                        reps = 8
                     } else {
                         intensity = min(
                             baseIntensity * overloadMultiplier,
@@ -241,7 +238,7 @@ public final class ProgramDesignService: Sendable {
                     }
 
                     let label = isDeloadWeek
-                        ? "Deload - \(dupType.rawValue.capitalized)"
+                        ? "Deload - \(dayName)"
                         : "\(dayName) - \(dupType.rawValue.capitalized)"
 
                     let exerciseSets = sessionExercises.map { exercise in
@@ -259,7 +256,7 @@ public final class ProgramDesignService: Sendable {
 
                     sessions.append(PlannedSession(
                         dayOfWeek: day,
-                        dupSessionType: dupType,
+                        dupSessionType: isDeloadWeek ? nil : dupType,
                         sessionLabel: label,
                         plannedExercises: exerciseSets,
                         estimatedDurationMinutes: estimateDuration(exerciseCount: sessionExercises.count, sets: sets, restSeconds: restSeconds),
@@ -325,13 +322,9 @@ public final class ProgramDesignService: Sendable {
             let reps: Int
 
             if isDeloadWeek {
-                // M3: Deload maintains previous working intensity, only reduces volume
-                intensity = min(
-                    baseIntensity * overloadMultiplier,
-                    scheme.intensityRange.upperBound
-                )
-                sets = max(2, scheme.sets - 1)
-                reps = scheme.repRange.upperBound
+                intensity = 0.50
+                sets = 2
+                reps = 8
             } else {
                 intensity = min(
                     baseIntensity * overloadMultiplier,
@@ -350,7 +343,7 @@ public final class ProgramDesignService: Sendable {
                 restSeconds: restSeconds,
                 dupSessionType: nil,
                 label: isDeloadWeek
-                    ? "Deload - \(scheme.rawValue.capitalized)"
+                    ? "Deload"
                     : "Week \(absoluteWeek) - \(scheme.rawValue.capitalized)"
             )
 
