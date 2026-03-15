@@ -17,7 +17,7 @@ public enum AnalyticsCalculations {
         from workouts: [Workout],
         windowMonths: Int = 6
     ) -> [UUID: Double] {
-        let cutoff = Calendar.current.date(byAdding: .month, value: -windowMonths, to: Date())!
+        let cutoff = Calendar.mondayStart.date(byAdding: .month, value: -windowMonths, to: Date())!
         var bestE1RM: [UUID: Double] = [:]
         for past in workouts {
             guard past.id != excludingWorkoutId,
@@ -63,6 +63,24 @@ public enum AnalyticsCalculations {
         } else {
             return weight * 36.0 / (37.0 - Double(reps))
         }
+    }
+
+    // MARK: - Volume Attribution
+
+    /// Attribute volume across primary (70%) and secondary (30% split) muscle groups.
+    public static func attributeVolume(
+        volume: Double,
+        primaryMuscle: MuscleGroup,
+        secondaryMuscles: [MuscleGroup]
+    ) -> [MuscleGroup: Double] {
+        var result: [MuscleGroup: Double] = [:]
+        result[primaryMuscle] = volume * 0.7
+        let secondaryCount = secondaryMuscles.count
+        let secondaryShare = volume * 0.3 / Double(max(secondaryCount, 1))
+        for muscle in secondaryMuscles {
+            result[muscle, default: 0] += secondaryShare
+        }
+        return result
     }
 
     // MARK: - Linear Regression

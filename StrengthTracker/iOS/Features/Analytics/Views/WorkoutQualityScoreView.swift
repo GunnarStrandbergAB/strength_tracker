@@ -41,7 +41,7 @@ struct WorkoutQualityScoreView: View {
                     VStack(spacing: 6) {
                         miniScoreBar("Volume", score: score.volumeScore)
                         miniScoreBar("Intensity", score: score.intensityScore)
-                        miniScoreBar("Pacing", score: score.consistencyScore)
+                        miniScoreBar("Rest Rhythm", score: score.consistencyScore)
                     }
                 }
             }

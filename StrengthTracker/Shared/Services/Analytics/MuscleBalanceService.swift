@@ -27,9 +27,10 @@ public final class MuscleBalanceService: Sendable {
     /// - Returns: MuscleBalance analysis with volumes, percentages, imbalances, and overall score
     public func analyzeBalance(
         workouts: [Workout],
-        windowWeeks: Int = 4
+        windowWeeks: Int = 4,
+        bodyWeightKg: Double = UserPreferencesService.defaultBodyWeightKg
     ) -> MuscleBalance {
-        let calendar = Calendar.current
+        let calendar = Calendar.mondayStart
         let windowStart = calendar.date(byAdding: .weekOfYear, value: -windowWeeks, to: Date())!
 
         let recentWorkouts = workouts.filter {
@@ -37,23 +38,39 @@ public final class MuscleBalanceService: Sendable {
             return completedAt >= windowStart
         }
 
-        // Calculate total volume per muscle group
+        // Calculate total volume per muscle group (bodyweight-aware)
         var muscleVolumes: [MuscleGroup: Double] = [:]
 
         for workout in recentWorkouts {
             for exercise in workout.exercises {
-                let volume = exercise.exerciseVolume
+                let volume = exercise.sets
+                    .filter(\.isCompleted)
+                    .filter { $0.setType != .warmup }
+                    .reduce(0.0) { sum, set in
+                        let w = set.weight ?? (exercise.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : 0)
+                        return sum + w * Double(set.reps ?? 0)
+                    }
 
-                // Primary muscle gets 70%
-                muscleVolumes[exercise.exercise.primaryMuscleGroup, default: 0] += volume * 0.7
-
-                // Secondary muscles split 30%
-                let secondaryCount = exercise.exercise.secondaryMuscleGroups.count
-                let secondaryShare = volume * 0.3 / Double(max(secondaryCount, 1))
-                for secondary in exercise.exercise.secondaryMuscleGroups {
-                    muscleVolumes[secondary, default: 0] += secondaryShare
+                let attributed = AnalyticsCalculations.attributeVolume(
+                    volume: volume,
+                    primaryMuscle: exercise.exercise.primaryMuscleGroup,
+                    secondaryMuscles: exercise.exercise.secondaryMuscleGroups
+                )
+                for (muscle, vol) in attributed {
+                    muscleVolumes[muscle, default: 0] += vol
                 }
             }
+        }
+
+        // If total volume is zero, return a zero score rather than misleading perfect score
+        let totalVol = muscleVolumes.values.reduce(0, +)
+        guard totalVol > 0 else {
+            return MuscleBalance(
+                analyzedAt: Date(),
+                muscleGroupVolumes: [],
+                imbalances: [],
+                overallBalanceScore: 0
+            )
         }
 
         // Count sets per muscle group
@@ -90,9 +107,9 @@ public final class MuscleBalanceService: Sendable {
     }
 
     /// Overload matching architecture doc's `analyze(workouts:timeWindow:)` signature
-    public func analyze(workouts: [Workout], timeWindow: TimeInterval) -> MuscleBalance {
+    public func analyze(workouts: [Workout], timeWindow: TimeInterval, bodyWeightKg: Double = UserPreferencesService.defaultBodyWeightKg) -> MuscleBalance {
         let windowWeeks = max(1, Int(timeWindow / (7 * 24 * 3600)))
-        return analyzeBalance(workouts: workouts, windowWeeks: windowWeeks)
+        return analyzeBalance(workouts: workouts, windowWeeks: windowWeeks, bodyWeightKg: bodyWeightKg)
     }
 
     // MARK: - Private

@@ -23,7 +23,7 @@ public final class PlateauDetectionService: Sendable {
         windowWeeks: Int = 4,
         stallThreshold: Double = 0.05
     ) -> [PlateauAnalysis] {
-        let calendar = Calendar.current
+        let calendar = Calendar.mondayStart
         let windowStart = calendar.date(byAdding: .weekOfYear, value: -max(windowWeeks, minWeeksForAnalysis), to: Date())!
 
         let recentWorkouts = workouts.filter {
@@ -118,11 +118,12 @@ public final class PlateauDetectionService: Sendable {
         _ items: [(Workout, WorkoutExercise)],
         byWeeks weeks: Int
     ) -> [[(Workout, WorkoutExercise)]] {
-        let calendar = Calendar.current
+        let calendar = Calendar.mondayStart
         var groups: [Date: [(Workout, WorkoutExercise)]] = [:]
 
         for item in items {
-            guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: item.0.startedAt) else { continue }
+            let date = item.0.completedAt ?? item.0.startedAt
+            guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: date) else { continue }
             groups[weekInterval.start, default: []].append(item)
         }
 

@@ -70,7 +70,7 @@ public final class WidgetDataService: Sendable {
         weeklyGoal: Int
     ) -> WidgetData {
         let now = Date()
-        let calendar = Calendar.current
+        let calendar = Calendar.mondayStart
 
         // Last workout (most recent completed)
         let completedWorkouts = workouts
@@ -159,10 +159,8 @@ public final class WidgetDataService: Sendable {
     }
 
     private func buildWeekCalendar(from workouts: [Workout], calendar: Calendar, now: Date) -> [Bool] {
-        // Find Monday of the current week
-        var cal = calendar
-        cal.firstWeekday = 2 // Monday
-        guard let weekInterval = cal.dateInterval(of: .weekOfYear, for: now) else {
+        // Find Monday of the current week (calendar is already Monday-start)
+        guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: now) else {
             return Array(repeating: false, count: 7)
         }
         let monday = weekInterval.start
@@ -170,7 +168,7 @@ public final class WidgetDataService: Sendable {
         var trained = Array(repeating: false, count: 7)
         for workout in workouts {
             guard let date = workout.completedAt, date >= monday else { continue }
-            let dayOfWeek = cal.component(.weekday, from: date)
+            let dayOfWeek = calendar.component(.weekday, from: date)
             // Convert: Sunday=1, Monday=2, ..., Saturday=7 -> Mon=0, ..., Sun=6
             let index = (dayOfWeek + 5) % 7
             if index < 7 { trained[index] = true }
@@ -181,25 +179,27 @@ public final class WidgetDataService: Sendable {
     private func calculateVolumeTrend(
         from workouts: [Workout], calendar: Calendar, now: Date
     ) -> (current: Double?, previous: Double?) {
-        guard let thisWeekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start else {
-            return (nil, nil)
-        }
-        let lastWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeekStart) ?? thisWeekStart
+        // Rolling 7-day window avoids Monday volume cliff
+        let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: now)!
+        let fourteenDaysAgo = calendar.date(byAdding: .day, value: -14, to: now)!
 
-        let thisWeekVolume = workouts
-            .filter { ($0.completedAt ?? .distantPast) >= thisWeekStart }
+        let thisWindowVolume = workouts
+            .filter {
+                let d = $0.completedAt ?? .distantPast
+                return d >= sevenDaysAgo && d <= now
+            }
             .reduce(0.0) { $0 + $1.totalVolume }
 
-        let lastWeekVolume = workouts
+        let lastWindowVolume = workouts
             .filter {
-                let date = $0.completedAt ?? .distantPast
-                return date >= lastWeekStart && date < thisWeekStart
+                let d = $0.completedAt ?? .distantPast
+                return d >= fourteenDaysAgo && d < sevenDaysAgo
             }
             .reduce(0.0) { $0 + $1.totalVolume }
 
         return (
-            thisWeekVolume > 0 ? thisWeekVolume : nil,
-            lastWeekVolume > 0 ? lastWeekVolume : nil
+            thisWindowVolume > 0 ? thisWindowVolume : nil,
+            lastWindowVolume > 0 ? lastWindowVolume : nil
         )
     }
 

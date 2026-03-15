@@ -73,7 +73,10 @@ public struct CalorieEstimationService: Sendable {
             perExercise[exercise.order] = exerciseCal
 
             // Accumulate volume (kg)
-            let exerciseVolumeKg = completedSets.reduce(0.0) { $0 + ($1.weight ?? 0) * Double($1.reps ?? 0) }
+            let exerciseVolumeKg = completedSets.reduce(0.0) { sum, set in
+                let w = set.weight ?? (exercise.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : 0)
+                return sum + w * Double(set.reps ?? 0)
+            }
             totalVolumeKg += exerciseVolumeKg
 
             // Track compound vs isolation ratio

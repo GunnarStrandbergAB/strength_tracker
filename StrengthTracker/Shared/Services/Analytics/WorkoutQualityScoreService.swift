@@ -81,13 +81,13 @@ public final class WorkoutQualityScoreService: Sendable {
                     }
                     let setIWV = AnalyticsCalculations.setIWV(reps: reps, pct1RM: pct1RM, rpe: set.rpe)
 
-                    iwv[we.exercise.primaryMuscleGroup, default: 0] += 0.7 * setIWV
-                    let secondaries = we.exercise.secondaryMuscleGroups
-                    if !secondaries.isEmpty {
-                        let share = 0.3 * setIWV / Double(secondaries.count)
-                        for muscle in secondaries {
-                            iwv[muscle, default: 0] += share
-                        }
+                    let attributed = AnalyticsCalculations.attributeVolume(
+                        volume: setIWV,
+                        primaryMuscle: we.exercise.primaryMuscleGroup,
+                        secondaryMuscles: we.exercise.secondaryMuscleGroups
+                    )
+                    for (muscle, vol) in attributed {
+                        iwv[muscle, default: 0] += vol
                     }
                 }
             }
@@ -202,17 +202,35 @@ public final class WorkoutQualityScoreService: Sendable {
     }
 
     private func computeConsistencyScore(_ workout: Workout) -> Double {
-        let duration = workout.duration ?? 0
-        let setCount = workout.exercises.flatMap { $0.sets.filter(\.isCompleted) }.count
+        let completedSets = workout.exercises
+            .flatMap { $0.sets }
+            .filter { $0.isCompleted && $0.setType != .warmup && $0.completedAt != nil }
+            .sorted { $0.completedAt! < $1.completedAt! }
 
-        guard setCount > 0, duration > 0 else { return 72.0 }
+        guard completedSets.count >= 2 else { return 72.0 }
 
-        let avgTimePerSet = duration / Double(setCount)
-        switch avgTimePerSet {
-        case 60...180: return 100.0
-        case 45...240: return 80.0
-        case 30...300: return 50.0
-        default:       return 20.0
+        var intervals: [TimeInterval] = []
+        for i in 1..<completedSets.count {
+            let interval = completedSets[i].completedAt!.timeIntervalSince(completedSets[i - 1].completedAt!)
+            if interval <= 600 {
+                intervals.append(interval)
+            }
+        }
+
+        guard !intervals.isEmpty else { return 72.0 }
+
+        let mean = intervals.reduce(0, +) / Double(intervals.count)
+        let variance = intervals.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(intervals.count)
+        let cv = mean > 0 ? sqrt(variance) / mean : 0
+
+        // Low CV = consistent rest periods = high score
+        // CV < 0.25 = very consistent, CV > 0.8 = very erratic
+        if cv <= 0.25 {
+            return 100.0
+        } else if cv <= 0.8 {
+            return 100.0 - (cv - 0.25) * (70.0 / 0.55)
+        } else {
+            return 30.0
         }
     }
 
