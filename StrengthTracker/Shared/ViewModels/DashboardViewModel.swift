@@ -21,17 +21,23 @@ public final class DashboardViewModel {
     private let workoutRepository: any WorkoutRepository
     private let personalRecordRepository: any PersonalRecordRepository
     private let qualityScoreService: WorkoutQualityScoreService
+    private let healthKitService: any HealthKitServiceProtocol
+    private let userPreferencesService: UserPreferencesService
 
     // MARK: - Init
 
     public init(
         workoutRepository: any WorkoutRepository,
         personalRecordRepository: any PersonalRecordRepository,
-        qualityScoreService: WorkoutQualityScoreService
+        qualityScoreService: WorkoutQualityScoreService,
+        healthKitService: any HealthKitServiceProtocol,
+        userPreferencesService: UserPreferencesService
     ) {
         self.workoutRepository = workoutRepository
         self.personalRecordRepository = personalRecordRepository
         self.qualityScoreService = qualityScoreService
+        self.healthKitService = healthKitService
+        self.userPreferencesService = userPreferencesService
     }
 
     // MARK: - Data Loading
@@ -44,13 +50,16 @@ public final class DashboardViewModel {
             let allWorkouts = try await workoutRepository.fetchAll()
             let completed = allWorkouts.filter { $0.completedAt != nil }
 
+            // Resolve bodyweight once for volume calculations
+            let bw = await healthKitService.fetchBodyWeightKg()
+                ?? userPreferencesService.bodyWeightKg
+                ?? UserPreferencesService.defaultBodyWeightKg
+
             let calendar = Calendar.current
             let now = Date()
 
             // Determine start of current week (Monday-based)
             let currentWeekWorkouts = workoutsInWeek(from: completed, containing: now, calendar: calendar)
-            let previousWeekDate = calendar.date(byAdding: .weekOfYear, value: -1, to: now) ?? now
-            let previousWeekWorkouts = workoutsInWeek(from: completed, containing: previousWeekDate, calendar: calendar)
 
             // Calculate weekly counts Mon-Sun
             weeklyWorkoutCounts = calculateDailyCounts(for: currentWeekWorkouts, in: now, calendar: calendar)
@@ -58,11 +67,11 @@ public final class DashboardViewModel {
             // Weekly total
             weeklyWorkoutTotal = currentWeekWorkouts.count
 
-            // Quality scores per day (Mon-Sun)
-            weeklyQualityScores = await calculateDailyQualityScores(for: currentWeekWorkouts, calendar: calendar)
+            // Quality scores per day (Mon-Sun) — pass history to avoid N+1 fetches
+            weeklyQualityScores = calculateDailyQualityScores(for: currentWeekWorkouts, allWorkouts: allWorkouts, calendar: calendar)
 
-            // Total volume this week
-            totalVolume = currentWeekWorkouts.reduce(0) { $0 + $1.totalVolume }
+            // Total volume this week (bodyweight-aware)
+            totalVolume = currentWeekWorkouts.reduce(0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
 
             // Total duration this week (in hours)
             let totalSeconds = currentWeekWorkouts.compactMap(\.duration).reduce(0, +)
@@ -75,15 +84,23 @@ public final class DashboardViewModel {
             let sorted = completed.sorted { $0.startedAt > $1.startedAt }
             recentWorkouts = Array(sorted.prefix(3))
 
-            // Weekly trend: percentage change in avg quality score vs previous week
-            let currentAvg = await averageQualityScore(for: currentWeekWorkouts)
-            let previousAvg = await averageQualityScore(for: previousWeekWorkouts)
-            if let curr = currentAvg, let prev = previousAvg, prev > 0 {
-                weeklyTrend = ((curr - prev) / prev) * 100.0
-            } else if currentAvg != nil && previousAvg == nil {
-                weeklyTrend = 100.0
+            // Weekly trend: EWMA-based via aggregate quality
+            let aggregate = qualityScoreService.computeAggregateScore(workouts: allWorkouts)
+            if aggregate.workoutsIncluded >= 3 {
+                weeklyTrend = aggregate.trendVsPrior
             } else {
-                weeklyTrend = 0
+                // Fall back to simple week-over-week for very new users
+                let previousWeekDate = calendar.date(byAdding: .weekOfYear, value: -1, to: now) ?? now
+                let previousWeekWorkouts = workoutsInWeek(from: completed, containing: previousWeekDate, calendar: calendar)
+                let currentAvg = averageQualityScore(for: currentWeekWorkouts, allWorkouts: allWorkouts)
+                let previousAvg = averageQualityScore(for: previousWeekWorkouts, allWorkouts: allWorkouts)
+                if let curr = currentAvg, let prev = previousAvg, prev > 0 {
+                    weeklyTrend = ((curr - prev) / prev) * 100.0
+                } else if currentAvg != nil && previousAvg == nil {
+                    weeklyTrend = 100.0
+                } else {
+                    weeklyTrend = 0
+                }
             }
         } catch {
             // Reset state on error
@@ -123,7 +140,7 @@ public final class DashboardViewModel {
         return counts
     }
 
-    private func calculateDailyQualityScores(for workouts: [Workout], calendar: Calendar) async -> [Double?] {
+    private func calculateDailyQualityScores(for workouts: [Workout], allWorkouts: [Workout], calendar: Calendar) -> [Double?] {
         let cal = Calendar.mondayStart
         // Group workouts by weekday index (Mon=0 .. Sun=6)
         var grouped: [Int: [Workout]] = [:]
@@ -137,9 +154,8 @@ public final class DashboardViewModel {
         for (index, dayWorkouts) in grouped {
             var dayScores: [Double] = []
             for workout in dayWorkouts {
-                if let score = try? await qualityScoreService.computeScore(for: workout) {
-                    dayScores.append(score.overallScore)
-                }
+                let score = qualityScoreService.computeScore(for: workout, history: allWorkouts)
+                dayScores.append(score.overallScore)
             }
             if !dayScores.isEmpty {
                 scores[index] = dayScores.reduce(0, +) / Double(dayScores.count)
@@ -148,14 +164,9 @@ public final class DashboardViewModel {
         return scores
     }
 
-    private func averageQualityScore(for workouts: [Workout]) async -> Double? {
+    private func averageQualityScore(for workouts: [Workout], allWorkouts: [Workout]) -> Double? {
         guard !workouts.isEmpty else { return nil }
-        var scores: [Double] = []
-        for workout in workouts {
-            if let score = try? await qualityScoreService.computeScore(for: workout) {
-                scores.append(score.overallScore)
-            }
-        }
+        let scores = workouts.map { qualityScoreService.computeScore(for: $0, history: allWorkouts).overallScore }
         guard !scores.isEmpty else { return nil }
         return scores.reduce(0, +) / Double(scores.count)
     }

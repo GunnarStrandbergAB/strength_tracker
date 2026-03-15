@@ -51,7 +51,9 @@ public final class WidgetDataService: Sendable {
             activeWorkout: activeWorkout,
             nextPlannedSession: current.nextPlannedSession,
             weeklyVolume: current.weeklyVolume,
-            previousWeekVolume: current.previousWeekVolume
+            previousWeekVolume: current.previousWeekVolume,
+            weeklyQualityScore: current.weeklyQualityScore,
+            qualityTrend: current.qualityTrend
         )
         updateWidgetData(updated)
     }
@@ -67,7 +69,10 @@ public final class WidgetDataService: Sendable {
         isResting: Bool,
         restEndDate: Date?,
         nextPlannedSession: WidgetPlannedSession?,
-        weeklyGoal: Int
+        weeklyGoal: Int,
+        bodyWeightKg: Double = 70.0,
+        weeklyQualityScore: Double? = nil,
+        qualityTrend: Double? = nil
     ) -> WidgetData {
         let now = Date()
         let calendar = Calendar.mondayStart
@@ -88,9 +93,9 @@ public final class WidgetDataService: Sendable {
         // 7-day calendar (Mon=0 .. Sun=6)
         let weekDaysTrained = buildWeekCalendar(from: completedWorkouts, calendar: calendar, now: now)
 
-        // Volume trend
+        // Volume trend (calendar-week, bodyweight-aware)
         let (weeklyVolume, previousWeekVolume) = calculateVolumeTrend(
-            from: completedWorkouts, calendar: calendar, now: now
+            from: completedWorkouts, calendar: calendar, now: now, bodyWeightKg: bodyWeightKg
         )
 
         // Map analytics highlights to widget highlights
@@ -121,7 +126,9 @@ public final class WidgetDataService: Sendable {
             activeWorkout: widgetActiveWorkout,
             nextPlannedSession: nextPlannedSession,
             weeklyVolume: weeklyVolume,
-            previousWeekVolume: previousWeekVolume
+            previousWeekVolume: previousWeekVolume,
+            weeklyQualityScore: weeklyQualityScore,
+            qualityTrend: qualityTrend
         )
     }
 
@@ -177,29 +184,35 @@ public final class WidgetDataService: Sendable {
     }
 
     private func calculateVolumeTrend(
-        from workouts: [Workout], calendar: Calendar, now: Date
+        from workouts: [Workout], calendar: Calendar, now: Date,
+        bodyWeightKg: Double = 70.0
     ) -> (current: Double?, previous: Double?) {
-        // Rolling 7-day window avoids Monday volume cliff
-        let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: now)!
-        let fourteenDaysAgo = calendar.date(byAdding: .day, value: -14, to: now)!
+        // Calendar-week windows (Monday-start) to match dashboard
+        guard let currentWeekInterval = calendar.dateInterval(of: .weekOfYear, for: now) else {
+            return (nil, nil)
+        }
+        let previousWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: currentWeekInterval.start)!
+        guard let previousWeekInterval = calendar.dateInterval(of: .weekOfYear, for: previousWeekStart) else {
+            return (nil, nil)
+        }
 
-        let thisWindowVolume = workouts
+        let thisWeekVolume = workouts
             .filter {
                 let d = $0.completedAt ?? .distantPast
-                return d >= sevenDaysAgo && d <= now
+                return currentWeekInterval.contains(d)
             }
-            .reduce(0.0) { $0 + $1.totalVolume }
+            .reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) }
 
-        let lastWindowVolume = workouts
+        let lastWeekVolume = workouts
             .filter {
                 let d = $0.completedAt ?? .distantPast
-                return d >= fourteenDaysAgo && d < sevenDaysAgo
+                return previousWeekInterval.contains(d)
             }
-            .reduce(0.0) { $0 + $1.totalVolume }
+            .reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) }
 
         return (
-            thisWindowVolume > 0 ? thisWindowVolume : nil,
-            lastWindowVolume > 0 ? lastWindowVolume : nil
+            thisWeekVolume > 0 ? thisWeekVolume : nil,
+            lastWeekVolume > 0 ? lastWeekVolume : nil
         )
     }
 

@@ -231,7 +231,9 @@ public final class AppContainer: Sendable {
         DashboardViewModel(
             workoutRepository: workoutRepository,
             personalRecordRepository: personalRecordRepository,
-            qualityScoreService: qualityScoreService
+            qualityScoreService: qualityScoreService,
+            healthKitService: healthKitService,
+            userPreferencesService: userPreferencesService
         )
     }
 

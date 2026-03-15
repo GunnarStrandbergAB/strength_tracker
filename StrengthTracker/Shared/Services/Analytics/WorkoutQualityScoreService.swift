@@ -10,6 +10,9 @@ public final class WorkoutQualityScoreService: Sendable {
     private let healthKitService: any HealthKitServiceProtocol
     private let userPreferencesService: UserPreferencesService
 
+    /// Cache keyed by workout ID to avoid recomputing scores
+    private var cache: [UUID: WorkoutQualityScore] = [:]
+
     public init(
         workoutRepository: any WorkoutRepository,
         muscleBalanceService: MuscleBalanceService,
@@ -22,21 +25,31 @@ public final class WorkoutQualityScoreService: Sendable {
         self.userPreferencesService = userPreferencesService
     }
 
-    /// Compute quality score for a completed workout
+    /// Compute quality score for a completed workout (fetches history internally)
     public func computeScore(for workout: Workout) async throws -> WorkoutQualityScore {
-        let recentWorkouts = try await workoutRepository.fetchAll()
+        if let cached = cache[workout.id] { return cached }
 
-        let bodyWeightKg = await healthKitService.fetchBodyWeightKg()
-            ?? userPreferencesService.bodyWeightKg
+        let recentWorkouts = try await workoutRepository.fetchAll()
+        return computeScoreInternal(for: workout, history: recentWorkouts)
+    }
+
+    /// Compute quality score with pre-fetched history (avoids N+1 fetchAll calls)
+    public func computeScore(for workout: Workout, history: [Workout]) -> WorkoutQualityScore {
+        if let cached = cache[workout.id] { return cached }
+        return computeScoreInternal(for: workout, history: history)
+    }
+
+    private func computeScoreInternal(for workout: Workout, history: [Workout]) -> WorkoutQualityScore {
+        let bodyWeightKg = userPreferencesService.bodyWeightKg
             ?? UserPreferencesService.defaultBodyWeightKg
-        let volumeScore = computeVolumeScore(workout, history: recentWorkouts, bodyWeightKg: bodyWeightKg)
-        let intensityScore = computeIntensityScore(workout, history: recentWorkouts)
+        let volumeScore = computeVolumeScore(workout, history: history, bodyWeightKg: bodyWeightKg)
+        let intensityScore = computeIntensityScore(workout, history: history)
         let consistencyScore = computeConsistencyScore(workout)
-        let balanceScore = computeBalanceScore(workout, history: recentWorkouts)
+        let balanceScore = computeBalanceScore(workout, history: history)
 
         let overall = (volumeScore + intensityScore + consistencyScore + balanceScore) / 4.0
 
-        return WorkoutQualityScore(
+        let score = WorkoutQualityScore(
             id: UUID(),
             workoutId: workout.id,
             overallScore: overall,
@@ -45,11 +58,104 @@ public final class WorkoutQualityScoreService: Sendable {
             balanceScore: balanceScore,
             consistencyScore: consistencyScore
         )
+        cache[workout.id] = score
+        return score
     }
 
     /// Alias matching architecture doc naming
     public func scoreWorkout(_ workout: Workout) async throws -> WorkoutQualityScore {
         try await computeScore(for: workout)
+    }
+
+    // MARK: - Aggregate Quality
+
+    /// Compute EWMA-smoothed aggregate quality across all completed workouts.
+    public func computeAggregateScore(workouts: [Workout]) -> AggregateQualityScore {
+        let completed = workouts
+            .filter { $0.completedAt != nil }
+            .sorted { ($0.completedAt ?? .distantPast) < ($1.completedAt ?? .distantPast) }
+
+        let now = Date()
+
+        guard !completed.isEmpty else {
+            return AggregateQualityScore(
+                ewmaOverall: 0, ewmaVolume: 0, ewmaIntensity: 0,
+                ewmaBalance: 0, ewmaConsistency: 0,
+                trendVsPrior: 0, percentileRank: 0,
+                workoutsIncluded: 0, computedAt: now
+            )
+        }
+
+        // Compute per-workout scores (using pre-fetched history via cache-aware overload)
+        let scores = completed.map { computeScore(for: $0, history: workouts) }
+
+        let overallValues = scores.map(\.overallScore)
+        let volumeValues = scores.map(\.volumeScore)
+        let intensityValues = scores.map(\.intensityScore)
+        let balanceValues = scores.map(\.balanceScore)
+        let consistencyValues = scores.map(\.consistencyScore)
+
+        // Cold start: < 3 workouts → simple average (EWMA with 1-2 points is meaningless)
+        let useColdStart = completed.count < 3
+
+        let lambda = 0.3
+        let ewmaOverall: [Double]
+        let ewmaVolume: [Double]
+        let ewmaIntensity: [Double]
+        let ewmaBalance: [Double]
+        let ewmaConsistency: [Double]
+
+        if useColdStart {
+            let avgOverall = overallValues.reduce(0, +) / Double(overallValues.count)
+            let avgVolume = volumeValues.reduce(0, +) / Double(volumeValues.count)
+            let avgIntensity = intensityValues.reduce(0, +) / Double(intensityValues.count)
+            let avgBalance = balanceValues.reduce(0, +) / Double(balanceValues.count)
+            let avgConsistency = consistencyValues.reduce(0, +) / Double(consistencyValues.count)
+
+            return AggregateQualityScore(
+                ewmaOverall: avgOverall, ewmaVolume: avgVolume,
+                ewmaIntensity: avgIntensity, ewmaBalance: avgBalance,
+                ewmaConsistency: avgConsistency,
+                trendVsPrior: 0, percentileRank: 0.5,
+                workoutsIncluded: completed.count, computedAt: now
+            )
+        } else {
+            ewmaOverall = AnalyticsCalculations.ewma(values: overallValues, lambda: lambda)
+            ewmaVolume = AnalyticsCalculations.ewma(values: volumeValues, lambda: lambda)
+            ewmaIntensity = AnalyticsCalculations.ewma(values: intensityValues, lambda: lambda)
+            ewmaBalance = AnalyticsCalculations.ewma(values: balanceValues, lambda: lambda)
+            ewmaConsistency = AnalyticsCalculations.ewma(values: consistencyValues, lambda: lambda)
+        }
+
+        let currentOverall = ewmaOverall.last!
+
+        // Trend: compare current EWMA vs EWMA ~4 weeks ago
+        let fourWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -4, to: now)!
+        let priorIndex = completed.firstIndex { ($0.completedAt ?? .distantPast) >= fourWeeksAgo } ?? 0
+        let priorOverall = ewmaOverall[priorIndex]
+        let trend: Double
+        if priorOverall > 0 && priorIndex < ewmaOverall.count - 1 {
+            trend = ((currentOverall - priorOverall) / priorOverall) * 100
+        } else {
+            trend = 0
+        }
+
+        // Percentile: where current sits in EWMA history
+        let sorted = ewmaOverall.sorted()
+        let rank = sorted.firstIndex { $0 >= currentOverall } ?? sorted.count
+        let percentile = Double(rank) / Double(max(sorted.count, 1))
+
+        return AggregateQualityScore(
+            ewmaOverall: currentOverall,
+            ewmaVolume: ewmaVolume.last!,
+            ewmaIntensity: ewmaIntensity.last!,
+            ewmaBalance: ewmaBalance.last!,
+            ewmaConsistency: ewmaConsistency.last!,
+            trendVsPrior: trend,
+            percentileRank: percentile,
+            workoutsIncluded: completed.count,
+            computedAt: now
+        )
     }
 
     // MARK: - Shared Helpers

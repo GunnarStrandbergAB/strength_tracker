@@ -31,10 +31,10 @@ struct AnalyticsDashboardView: View {
                     // Feature roadmap (shows locked features)
                     featureRoadmap
 
-                    // Quality Score overview
+                    // Quality Score overview (aggregate EWMA)
                     if viewModel.isFeatureUnlocked(.qualityScore),
-                       let score = viewModel.qualityScore {
-                        qualityOverviewSection(score)
+                       let agg = viewModel.aggregateQuality, agg.workoutsIncluded > 0 {
+                        aggregateQualitySection(agg)
                     }
 
                     // Muscle Balance
@@ -177,38 +177,56 @@ struct AnalyticsDashboardView: View {
         .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
     }
 
-    private func qualityOverviewSection(_ score: WorkoutQualityScore) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Overall Quality")
+    private func aggregateQualitySection(_ agg: AggregateQualityScore) -> some View {
+        let color = aggregateScoreColor(percentile: agg.percentileRank)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Training Quality")
 
             HStack(spacing: 20) {
-                // Large score number
+                // Large EWMA score
                 VStack(spacing: 4) {
-                    Text(String(format: "%.0f", score.overallScore))
+                    Text(String(format: "%.0f", agg.ewmaOverall))
                         .font(.system(size: 42, weight: .bold, design: .rounded))
-                        .foregroundStyle(scoreColor(score.overallScore))
+                        .foregroundStyle(color)
 
                     Text("/ 100")
                         .font(.system(size: 12))
                         .foregroundStyle(STColors.textTertiary)
+
+                    // Trend badge
+                    if abs(agg.trendVsPrior) >= 1 {
+                        HStack(spacing: 2) {
+                            Image(systemName: agg.trendVsPrior >= 0 ? "arrow.up.right" : "arrow.down.right")
+                                .font(.system(size: 9))
+                            Text(String(format: "%.0f%%", abs(agg.trendVsPrior)))
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                        .foregroundStyle(agg.trendVsPrior >= 0 ? STColors.success : .orange)
+                    }
                 }
                 .frame(width: 80)
 
                 // Dimension breakdown
                 VStack(spacing: 8) {
-                    scoreDimensionRow("Volume", score: score.volumeScore)
-                    scoreDimensionRow("Intensity", score: score.intensityScore)
-                    scoreDimensionRow("Balance", score: score.balanceScore)
-                    scoreDimensionRow("Rest Rhythm", score: score.consistencyScore)
+                    aggregateDimensionRow("Volume", score: agg.ewmaVolume, percentile: agg.percentileRank)
+                    aggregateDimensionRow("Intensity", score: agg.ewmaIntensity, percentile: agg.percentileRank)
+                    aggregateDimensionRow("Balance", score: agg.ewmaBalance, percentile: agg.percentileRank)
+                    aggregateDimensionRow("Rest Rhythm", score: agg.ewmaConsistency, percentile: agg.percentileRank)
                 }
             }
+
+            // Footer
+            Text("Based on \(agg.workoutsIncluded) recent workouts")
+                .font(.system(size: 11))
+                .foregroundStyle(STColors.textTertiary)
         }
         .padding(STSpacing.cardPadding)
         .background(STColors.surface)
         .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
     }
 
-    private func scoreDimensionRow(_ label: String, score: Double) -> some View {
+    private func aggregateDimensionRow(_ label: String, score: Double, percentile: Double) -> some View {
         HStack(spacing: 8) {
             Text(label)
                 .font(.system(size: 12))
@@ -222,7 +240,7 @@ struct AnalyticsDashboardView: View {
                         .frame(height: 6)
 
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(scoreColor(score))
+                        .fill(aggregateScoreColor(percentile: percentile))
                         .frame(width: geo.size.width * CGFloat(score / 100.0), height: 6)
                 }
             }
@@ -232,6 +250,15 @@ struct AnalyticsDashboardView: View {
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(STColors.textSecondary)
                 .frame(width: 28, alignment: .trailing)
+        }
+    }
+
+    private func aggregateScoreColor(percentile: Double) -> Color {
+        switch percentile {
+        case 0.75...: return STColors.success      // green — top quartile
+        case 0.50..<0.75: return STColors.primary  // gold
+        case 0.25..<0.50: return .orange
+        default: return STColors.danger            // red — bottom quartile
         }
     }
 

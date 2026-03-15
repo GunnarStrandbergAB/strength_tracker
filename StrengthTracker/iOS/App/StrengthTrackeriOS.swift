@@ -276,6 +276,11 @@ struct ContentViewWrapper: View {
         do {
             let workouts = try await container.workoutRepository.fetchAll()
 
+            // Resolve bodyweight for volume calculations
+            let bw = await container.healthKitService.fetchBodyWeightKg()
+                ?? container.userPreferencesService.bodyWeightKg
+                ?? UserPreferencesService.defaultBodyWeightKg
+
             // Get analytics highlights
             var highlights: [AnalyticsHighlight] = []
             let analyticsVM = container.workoutAnalyticsViewModel
@@ -301,46 +306,60 @@ struct ContentViewWrapper: View {
                 )
             }
 
-            // Supplement with volume trend if room remains (rolling 7-day window)
+            // Supplement with volume trend if room remains (calendar-week, bodyweight-aware)
             if highlights.count < 3 {
                 let now = Date()
-                let calendar = Calendar.current
-                let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: now)!
-                let fourteenDaysAgo = calendar.date(byAdding: .day, value: -14, to: now)!
+                let calendar = Calendar.mondayStart
                 let completedWorkouts = workouts.filter { $0.completedAt != nil }
 
-                let thisWeekVol = completedWorkouts
-                    .filter { let d = $0.completedAt ?? .distantPast; return d >= sevenDaysAgo && d <= now }
-                    .reduce(0.0) { $0 + $1.totalVolume }
-                let lastWeekVol = completedWorkouts
-                    .filter { let d = $0.completedAt ?? .distantPast; return d >= fourteenDaysAgo && d < sevenDaysAgo }
-                    .reduce(0.0) { $0 + $1.totalVolume }
+                if let currentWeekInterval = calendar.dateInterval(of: .weekOfYear, for: now) {
+                    let previousWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: currentWeekInterval.start)!
+                    let previousWeekInterval = calendar.dateInterval(of: .weekOfYear, for: previousWeekStart)
 
-                if thisWeekVol > 0 && lastWeekVol > 0 {
-                    let pct = ((thisWeekVol - lastWeekVol) / lastWeekVol) * 100
-                    if pct > 0 {
-                        highlights.append(AnalyticsHighlight(
-                            type: .improvement,
-                            title: "Volume Up",
-                            detail: "+\(Int(pct))% vs last 7 days"
-                        ))
-                    } else if pct < -5 {
-                        highlights.append(AnalyticsHighlight(
-                            type: .warning,
-                            title: "Volume Down",
-                            detail: "\(Int(pct))% vs last 7 days"
-                        ))
+                    let thisWeekVol = completedWorkouts
+                        .filter { currentWeekInterval.contains($0.completedAt ?? .distantPast) }
+                        .reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
+                    let lastWeekVol = completedWorkouts
+                        .filter { previousWeekInterval?.contains($0.completedAt ?? .distantPast) ?? false }
+                        .reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
+
+                    if thisWeekVol > 0 && lastWeekVol > 0 {
+                        let pct = ((thisWeekVol - lastWeekVol) / lastWeekVol) * 100
+                        if pct > 0 {
+                            highlights.append(AnalyticsHighlight(
+                                type: .improvement,
+                                title: "Volume Up",
+                                detail: "+\(Int(pct))% vs last week"
+                            ))
+                        } else if pct < -5 {
+                            highlights.append(AnalyticsHighlight(
+                                type: .warning,
+                                title: "Volume Down",
+                                detail: "\(Int(pct))% vs last week"
+                            ))
+                        }
                     }
                 }
             }
 
-            // Supplement with quality score if available and room remains
-            if highlights.count < 3,
-               let score = analyticsVM.qualityScore {
+            // Compute aggregate quality for widget
+            let qualityScore: Double?
+            let qualityTrend: Double?
+            if let agg = analyticsVM.aggregateQuality, agg.workoutsIncluded > 0 {
+                qualityScore = agg.ewmaOverall
+                qualityTrend = agg.trendVsPrior
+            } else {
+                let agg = container.qualityScoreService.computeAggregateScore(workouts: workouts)
+                qualityScore = agg.workoutsIncluded > 0 ? agg.ewmaOverall : nil
+                qualityTrend = agg.workoutsIncluded > 0 ? agg.trendVsPrior : nil
+            }
+
+            // Supplement with quality score highlight if room remains
+            if highlights.count < 3, let qs = qualityScore {
                 highlights.append(AnalyticsHighlight(
                     type: .improvement,
                     title: "Quality",
-                    detail: "\(Int(score.overallScore))/100"
+                    detail: "\(Int(qs))/100"
                 ))
             }
 
@@ -356,7 +375,10 @@ struct ContentViewWrapper: View {
                 isResting: restTimer.isRunning,
                 restEndDate: restTimer.endDate,
                 nextPlannedSession: nextPlanned,
-                weeklyGoal: weeklyGoal
+                weeklyGoal: weeklyGoal,
+                bodyWeightKg: bw,
+                weeklyQualityScore: qualityScore,
+                qualityTrend: qualityTrend
             )
             widgetService.updateWidgetData(data)
         } catch {
