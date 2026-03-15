@@ -150,7 +150,7 @@ struct ProgramDesignServiceTests {
             "Weight should increase from week 1 (\(weight1)) to week 2 (\(weight2))")
     }
 
-    @Test("DUP program deload reduces volume")
+    @Test("DUP program deload uses flat recovery prescription (50% 1RM, 2×8, no session type)")
     func testDUPProgram_deloadReducesVolume() {
         let plan = ProgressionTestHelpers.intermediateDUPPlan()
         let blocks = service.generateProgram(for: plan)
@@ -162,12 +162,53 @@ struct ProgramDesignServiceTests {
             return
         }
 
-        // Compare total sets (volume proxy) between normal and deload
+        // Volume should be reduced
         let normalVolume = totalSets(of: normalWeek)
         let deloadVolume = totalSets(of: deloadWeek)
-
         #expect(deloadVolume < normalVolume,
             "Deload volume (\(deloadVolume)) should be less than normal (\(normalVolume))")
+
+        // Every deload session with exercises must use flat recovery prescription
+        let exerciseSessions = deloadWeek.sessions.filter { !$0.plannedExercises.isEmpty }
+        for session in exerciseSessions {
+            // No session-type badge during deload
+            #expect(session.dupSessionType == nil,
+                "Deload session should have nil dupSessionType, got \(String(describing: session.dupSessionType))")
+
+            // Label should not contain Power/Strength/Hypertrophy
+            let label = session.sessionLabel.lowercased()
+            #expect(!label.contains("power") && !label.contains("strength") && !label.contains("hypertrophy"),
+                "Deload label should not contain session-type name, got '\(session.sessionLabel)'")
+
+            for exerciseSet in session.plannedExercises {
+                #expect(exerciseSet.percentageOf1RM == 0.50,
+                    "Deload intensity should be 50%, got \(exerciseSet.percentageOf1RM)")
+                #expect(exerciseSet.sets == 2,
+                    "Deload sets should be 2, got \(exerciseSet.sets)")
+                #expect(exerciseSet.targetReps == 8,
+                    "Deload reps should be 8, got \(exerciseSet.targetReps)")
+            }
+        }
+    }
+
+    @Test("DUP deload sessions have isDeload = true, non-deload sessions have isDeload = false")
+    func testDUPProgram_isDeloadFlagCorrect() {
+        let plan = ProgressionTestHelpers.intermediateDUPPlan()
+        let blocks = service.generateProgram(for: plan)
+
+        for block in blocks {
+            for week in block.weeks {
+                for session in week.sessions {
+                    if week.isDeload {
+                        #expect(session.isDeload,
+                            "Session in deload week \(week.absoluteWeekNumber) should have isDeload = true")
+                    } else {
+                        #expect(!session.isDeload,
+                            "Session in non-deload week \(week.absoluteWeekNumber) should have isDeload = false")
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - WUP (Weekly Undulating Periodization)
@@ -330,6 +371,28 @@ struct ProgramDesignServiceTests {
                     for session in week.sessions {
                         #expect(!session.sessionLabel.isEmpty,
                             "\(plan.programType): Session label should not be empty in week \(week.absoluteWeekNumber)")
+                    }
+                }
+            }
+        }
+    }
+
+    @Test("All programs set isDeload correctly on sessions matching week.isDeload")
+    func testAllPrograms_isDeloadMatchesWeek() {
+        let plans: [ProgressionPlan] = [
+            ProgressionTestHelpers.beginnerLinearPlan(),
+            ProgressionTestHelpers.intermediateDUPPlan(),
+            ProgressionTestHelpers.intermediateWUPPlan(),
+            ProgressionTestHelpers.advancedBlockPlan(),
+        ]
+
+        for plan in plans {
+            let blocks = service.generateProgram(for: plan)
+            for block in blocks {
+                for week in block.weeks {
+                    for session in week.sessions {
+                        #expect(session.isDeload == week.isDeload,
+                            "\(plan.programType): session.isDeload (\(session.isDeload)) != week.isDeload (\(week.isDeload)) in week \(week.absoluteWeekNumber)")
                     }
                 }
             }
