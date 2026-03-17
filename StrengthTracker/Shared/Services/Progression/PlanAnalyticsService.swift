@@ -25,11 +25,19 @@ public final class PlanAnalyticsService: Sendable {
         let allSessions = plan.blocks.flatMap(\.weeks).flatMap(\.sessions)
         let completedSessions = allSessions.filter(\.isCompleted).count
 
-        // Adherence: only count sessions in elapsed weeks (current week included)
+        // Adherence: only count sessions in elapsed weeks (current week included),
+        // and within the current week only sessions scheduled on or before today.
         let currentWeekNumber = plan.elapsedCalendarWeeks + 1
+        let today = Calendar.current.startOfDay(for: Date())
+        let endOfToday = Calendar.current.date(byAdding: .day, value: 1, to: today)!
+
         let elapsedSessions = plan.blocks.flatMap(\.weeks)
             .filter { $0.absoluteWeekNumber <= currentWeekNumber }
             .flatMap(\.sessions)
+            .filter { session in
+                guard let scheduledDate = session.scheduledDate else { return true }
+                return scheduledDate < endOfToday
+            }
         let totalElapsed = elapsedSessions.count
 
         let overallAdherence: Double

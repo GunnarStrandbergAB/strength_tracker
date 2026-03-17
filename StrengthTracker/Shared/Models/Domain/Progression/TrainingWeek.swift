@@ -40,7 +40,13 @@ public struct TrainingWeek: Identifiable, Codable, Equatable, Sendable {
     }
 
     public var adherenceRate: Double {
-        guard !sessions.isEmpty else { return 0 }
-        return Double(completedSessions) / Double(sessions.count)
+        let today = Calendar.current.startOfDay(for: Date())
+        let endOfToday = Calendar.current.date(byAdding: .day, value: 1, to: today)!
+        let elapsed = sessions.filter { session in
+            guard let scheduledDate = session.scheduledDate else { return true }
+            return scheduledDate < endOfToday
+        }
+        guard !elapsed.isEmpty else { return 0 }
+        return Double(completedSessions) / Double(elapsed.count)
     }
 }
