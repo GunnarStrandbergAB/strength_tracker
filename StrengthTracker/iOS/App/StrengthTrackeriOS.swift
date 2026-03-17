@@ -168,6 +168,7 @@ struct ContentViewWrapper: View {
         }
         .task {
             await container.workoutViewModel.restoreActiveWorkout()
+            await refreshWidgetData()
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
