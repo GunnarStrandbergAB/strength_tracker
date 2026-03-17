@@ -78,7 +78,7 @@ struct TemplateListView: View {
             .sheet(isPresented: $showingEditor, onDismiss: {
                 Task { await viewModel.loadTemplates() }
             }) {
-                TemplateEditorView(viewModel: viewModel, exerciseListViewModel: exerciseListViewModel, template: nil)
+                TemplateEditorView(viewModel: viewModel, exerciseListViewModel: exerciseListViewModel, template: nil, workoutViewModel: workoutViewModel)
             }
             .sheet(isPresented: $showingLibrary, onDismiss: {
                 Task { await viewModel.loadTemplates() }
