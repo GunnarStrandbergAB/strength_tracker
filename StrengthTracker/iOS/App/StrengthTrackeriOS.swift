@@ -316,26 +316,33 @@ struct ContentViewWrapper: View {
                     let previousWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: currentWeekInterval.start)!
                     let previousWeekInterval = calendar.dateInterval(of: .weekOfYear, for: previousWeekStart)
 
-                    let thisWeekVol = completedWorkouts
+                    let thisWeekWorkouts = completedWorkouts
                         .filter { currentWeekInterval.contains($0.completedAt ?? .distantPast) }
-                        .reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
-                    let lastWeekVol = completedWorkouts
+                    let lastWeekWorkouts = completedWorkouts
                         .filter { previousWeekInterval?.contains($0.completedAt ?? .distantPast) ?? false }
-                        .reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
 
-                    if thisWeekVol > 0 && lastWeekVol > 0 {
-                        let pct = ((thisWeekVol - lastWeekVol) / lastWeekVol) * 100
+                    let thisWeekVol = thisWeekWorkouts.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
+                    let lastWeekVol = lastWeekWorkouts.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
+
+                    let thisCount = thisWeekWorkouts.count
+                    let lastCount = lastWeekWorkouts.count
+
+                    // Compare per-session averages to avoid misleading partial-week comparisons
+                    if thisCount > 0 && lastCount > 0 {
+                        let thisAvg = thisWeekVol / Double(thisCount)
+                        let lastAvg = lastWeekVol / Double(lastCount)
+                        let pct = ((thisAvg - lastAvg) / lastAvg) * 100
                         if pct > 0 {
                             highlights.append(AnalyticsHighlight(
                                 type: .improvement,
                                 title: "Volume Up",
-                                detail: "+\(Int(pct))% vs last week"
+                                detail: "+\(Int(pct))% avg/session vs last week"
                             ))
                         } else if pct < -5 {
                             highlights.append(AnalyticsHighlight(
                                 type: .warning,
                                 title: "Volume Down",
-                                detail: "\(Int(pct))% vs last week"
+                                detail: "\(Int(pct))% avg/session vs last week"
                             ))
                         }
                     }
