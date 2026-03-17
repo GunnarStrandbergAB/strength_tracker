@@ -156,6 +156,45 @@ final class PlanAnalyticsServiceTests: XCTestCase {
         XCTAssertTrue(progress.isOnTrack)
     }
 
+    func testGenerateProgress_currentWeekFutureSessionsExcluded() async throws {
+        // 5x/week plan starting Monday of this week. Only Monday's session completed.
+        // Adherence should be 1.0 (1/1 elapsed), not 0.2 (1/5).
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+
+        // Monday session (today or earlier) — completed
+        let mondaySession = ProgressionTestHelpers.makeCompletedSession(
+            label: "Monday",
+            completedAt: today
+        )
+        var mondayWithDate = mondaySession
+        mondayWithDate.scheduledDate = today
+
+        // Future sessions (tomorrow through +4 days) — not completed
+        let futureSessions: [PlannedSession] = (1...4).map { offset in
+            let futureDate = calendar.date(byAdding: .day, value: offset, to: today)!
+            var session = ProgressionTestHelpers.makeIncompleteSession(label: "Day+\(offset)")
+            session.scheduledDate = futureDate
+            return session
+        }
+
+        let week1 = ProgressionTestHelpers.makeTestTrainingWeek(
+            weekNumber: 1,
+            absoluteWeekNumber: 1,
+            sessions: [mondayWithDate] + futureSessions
+        )
+
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week1])
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block], startDate: today)
+        let sut = makeSUT()
+
+        let progress = try await sut.generateProgress(for: plan)
+
+        // Only Monday's session is elapsed; it's completed → 1/1 = 1.0
+        XCTAssertEqual(progress.overallAdherence, 1.0, accuracy: 0.001)
+        XCTAssertTrue(progress.isOnTrack)
+    }
+
     // MARK: - Exercise Progress Tests
 
     func testGenerateProgress_exerciseProgress1RM() async throws {

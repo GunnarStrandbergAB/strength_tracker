@@ -108,9 +108,16 @@ public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
     public var overallProgress: Double {
         guard !blocks.isEmpty else { return 0 }
         let currentWeekNumber = elapsedCalendarWeeks + 1
+        let today = Calendar.current.startOfDay(for: Date())
+        let endOfToday = Calendar.current.date(byAdding: .day, value: 1, to: today)!
+
         let elapsedSessions = blocks.flatMap(\.weeks)
             .filter { $0.absoluteWeekNumber <= currentWeekNumber }
             .flatMap(\.sessions)
+            .filter { session in
+                guard let scheduledDate = session.scheduledDate else { return true }
+                return scheduledDate < endOfToday
+            }
         let completedSessions = blocks.flatMap(\.weeks).flatMap(\.sessions).filter(\.isCompleted).count
         guard !elapsedSessions.isEmpty else { return 0 }
         return min(1.0, Double(completedSessions) / Double(elapsedSessions.count))
