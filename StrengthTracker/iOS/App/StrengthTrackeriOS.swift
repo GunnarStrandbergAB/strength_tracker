@@ -166,6 +166,9 @@ struct ContentViewWrapper: View {
             // Handle deep links from widgets
             handleDeepLink(url)
         }
+        .task {
+            await container.workoutViewModel.restoreActiveWorkout()
+        }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 // End stale mirrored Live Activity if watch timer expired while iPhone was backgrounded

@@ -19,6 +19,7 @@ private enum EditorSheet: Identifiable {
 struct TemplateEditorView: View {
     @State private var viewModel: TemplateViewModel
     let exerciseListViewModel: ExerciseListViewModel
+    let workoutViewModel: WorkoutViewModel?
     @Environment(\.dismiss) private var dismiss
 
     let template: WorkoutTemplate?
@@ -27,10 +28,13 @@ struct TemplateEditorView: View {
     @State private var notes: String
     @State private var exercises: [TemplateExercise]
     @State private var activeSheet: EditorSheet? = nil
+    @State private var showingUpdateActiveWorkout = false
+    @State private var savedTemplate: WorkoutTemplate? = nil
 
-    init(viewModel: TemplateViewModel, exerciseListViewModel: ExerciseListViewModel, template: WorkoutTemplate?) {
+    init(viewModel: TemplateViewModel, exerciseListViewModel: ExerciseListViewModel, template: WorkoutTemplate?, workoutViewModel: WorkoutViewModel? = nil) {
         self._viewModel = State(initialValue: viewModel)
         self.exerciseListViewModel = exerciseListViewModel
+        self.workoutViewModel = workoutViewModel
         self.template = template
         self._name = State(initialValue: template?.name ?? "")
         self._notes = State(initialValue: template?.notes ?? "")
@@ -88,8 +92,14 @@ struct TemplateEditorView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         Task {
-                            await saveTemplate()
-                            dismiss()
+                            let built = buildTemplate()
+                            await viewModel.saveTemplate(built)
+                            if let tid = template?.id, workoutViewModel?.activeWorkoutUsesTemplate(tid) == true {
+                                savedTemplate = built
+                                showingUpdateActiveWorkout = true
+                            } else {
+                                dismiss()
+                            }
                         }
                     }
                     .disabled(name.isEmpty || exercises.isEmpty)
@@ -108,6 +118,17 @@ struct TemplateEditorView: View {
                     }
                     .fontWeight(.semibold)
                 }
+            }
+            .alert("Update Active Workout?", isPresented: $showingUpdateActiveWorkout) {
+                Button("Update Remaining Sets") {
+                    Task {
+                        if let t = savedTemplate { await workoutViewModel?.updateUncompletedSetsFromTemplate(t) }
+                        dismiss()
+                    }
+                }
+                Button("Keep Current Values", role: .cancel) { dismiss() }
+            } message: {
+                Text("Update uncompleted sets to match the new template values?")
             }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
@@ -157,8 +178,8 @@ struct TemplateEditorView: View {
         }
     }
 
-    private func saveTemplate() async {
-        let updatedTemplate = WorkoutTemplate(
+    private func buildTemplate() -> WorkoutTemplate {
+        WorkoutTemplate(
             id: template?.id ?? UUID(),
             name: name,
             notes: notes.isEmpty ? nil : notes,
@@ -167,7 +188,6 @@ struct TemplateEditorView: View {
             timesUsed: template?.timesUsed ?? 0,
             exercises: exercises
         )
-        await viewModel.saveTemplate(updatedTemplate)
     }
 }
 
@@ -398,6 +418,25 @@ private struct SetTargetRow: View {
     let showsDuration: Bool
     let showsDistance: Bool
 
+    @State private var repsText: String
+    @State private var weightText: String
+    @State private var durationText: String
+    @State private var distanceText: String
+
+    init(index: Int, target: Binding<TemplateSetTarget>, showsReps: Bool, showsWeight: Bool, showsDuration: Bool, showsDistance: Bool) {
+        self.index = index
+        self._target = target
+        self.showsReps = showsReps
+        self.showsWeight = showsWeight
+        self.showsDuration = showsDuration
+        self.showsDistance = showsDistance
+        let t = target.wrappedValue
+        _repsText = State(initialValue: t.targetReps.map { String($0) } ?? "")
+        _weightText = State(initialValue: t.targetWeight.map { String(format: "%g", $0) } ?? "")
+        _durationText = State(initialValue: t.targetDurationSeconds.map { String($0) } ?? "")
+        _distanceText = State(initialValue: t.targetDistanceMeters.map { String(format: "%g", $0) } ?? "")
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             Text("Set \(index + 1)")
@@ -406,40 +445,52 @@ private struct SetTargetRow: View {
                 .frame(width: 44, alignment: .leading)
 
             if showsReps {
-                TextField("Reps", value: $target.targetReps, format: .number)
+                TextField("Reps", text: $repsText)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 64)
+                    .onChange(of: repsText) { _, newValue in
+                        target.targetReps = Int(newValue)
+                    }
                 Text("reps")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             if showsWeight {
-                TextField("kg", value: $target.targetWeight, format: .number)
+                TextField("kg", text: $weightText)
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 64)
+                    .onChange(of: weightText) { _, newValue in
+                        target.targetWeight = Double(newValue)
+                    }
                 Text("kg")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             if showsDuration {
-                TextField("Sec", value: $target.targetDurationSeconds, format: .number)
+                TextField("Sec", text: $durationText)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 64)
+                    .onChange(of: durationText) { _, newValue in
+                        target.targetDurationSeconds = Int(newValue)
+                    }
                 Text("sec")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             if showsDistance {
-                TextField("m", value: $target.targetDistanceMeters, format: .number)
+                TextField("m", text: $distanceText)
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 64)
+                    .onChange(of: distanceText) { _, newValue in
+                        target.targetDistanceMeters = Double(newValue)
+                    }
                 Text("m")
                     .font(.caption)
                     .foregroundStyle(.secondary)

@@ -464,6 +464,46 @@ public final class WorkoutViewModel {
         }
     }
 
+    // MARK: - Restore & Template Sync
+
+    /// Restore an active (incomplete) workout from the database on app launch.
+    public func restoreActiveWorkout() async {
+        guard currentWorkout == nil, !isActive else { return }
+        do {
+            if let active = try await workoutRepository.fetchActive() {
+                currentWorkout = active
+                isActive = true
+                await loadPreviousData()
+            }
+        } catch {
+            print("[WorkoutVM] Failed to restore active workout: \(error)")
+        }
+    }
+
+    /// Whether the active workout was started from the given template.
+    public func activeWorkoutUsesTemplate(_ templateId: UUID) -> Bool {
+        isActive && currentWorkout?.templateId == templateId
+    }
+
+    /// Update uncompleted sets in the active workout to match new template values.
+    public func updateUncompletedSetsFromTemplate(_ template: WorkoutTemplate) async {
+        guard var workout = currentWorkout, workout.templateId == template.id else { return }
+        let templateExercises = template.exercises.sorted { $0.order < $1.order }
+        for (ei, we) in workout.exercises.enumerated() {
+            guard let te = templateExercises.first(where: { $0.exercise.id == we.exercise.id }) else { continue }
+            for (si, set) in we.sets.enumerated() where !set.isCompleted {
+                let target = te.setTargets.indices.contains(si) ? te.setTargets[si] : nil
+                workout.exercises[ei].sets[si].weight = target?.targetWeight ?? te.targetWeight
+                workout.exercises[ei].sets[si].reps = target?.targetReps ?? te.targetReps
+            }
+        }
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     /// Cancel the current workout without saving completion.
     public func cancelWorkout() async {
         if let workout = currentWorkout {
