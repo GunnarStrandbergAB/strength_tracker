@@ -8,7 +8,7 @@ Built for lifters who want to log their workouts quickly and get back to the bar
 
 ### iPhone
 
-- **Dashboard** — overview of recent workouts, quick-start buttons, and active Watch workout banner
+- **Dashboard** — overview of recent workouts, weekly volume (bodyweight-aware), EWMA-smoothed quality trend, quick-start buttons, and active Watch workout banner
 - **Workout Templates** — create templates for your favorite routines. Start a workout from a template and adjust on the fly — add exercises, skip exercises, change the weight. Templates save time without locking you in.
 - **Template Library** — 9 pre-built templates (Push/Pull/Leg Day, Upper/Lower Body, Full Body A & B, Chest & Triceps, Back & Biceps). Browse, preview exercises, and add to your collection as fully editable copies.
 - **Quick Start** — no template? Start an empty workout and add exercises as you go. The full exercise library is always one tap away.
@@ -17,11 +17,11 @@ Built for lifters who want to log their workouts quickly and get back to the bar
 - **Exercise Library** — 326 built-in exercises covering barbell, dumbbell, kettlebell, cable, machine, bodyweight, calisthenics, and more. Custom exercise support included.
 - **Workout History** — review past workouts with full exercise and set detail
 - **Progress Tracking** — automatic personal record detection. Hit a new PR and you'll know it.
-- **Workout Analytics** — on-device vector analytics with plateau detection, muscle balance tracking, exercise recommendations, and workout quality scoring. No cloud, no AI API calls — pure math on your device.
+- **Workout Analytics** — on-device vector analytics with EWMA-smoothed quality scoring, plateau detection, muscle balance tracking, and exercise recommendations. No cloud, no AI API calls — pure math on your device.
 - **Progression Planning** — deterministic periodization engine that generates complete 12-week training programs. See [Progression Planning](#progression-planning) below.
 - **Webhook Integration** — POST workout JSON to any external endpoint after every completed workout (openClaw PT, AI trainers, n8n, Zapier, etc.)
 - **Settings** — weight unit (kg/lbs), rest timer duration, webhook configuration, and preferences
-- **Widgets** — home screen widgets (Training Hub with interactive workout controls, Workout Summary, Weekly Progress, Streak) and Live Activities via WidgetKit and ActivityKit
+- **Widgets** — home screen widgets (Training Hub with interactive workout controls, quality score, Workout Summary, Weekly Progress, Streak) and Live Activities via WidgetKit and ActivityKit
 
 ### Apple Watch
 
@@ -169,7 +169,7 @@ Analytics features are hidden until there's enough training data for them to be 
 
 | Workouts | What Unlocks | What It Does |
 |---|---|---|
-| 5 | **Quality Score** | Rates each workout 0-100 across volume, intensity, balance, and consistency |
+| 5 | **Quality Score** | EWMA-smoothed training quality (0-100) across volume, intensity, balance, and consistency. Per-workout scores on completion; aggregate trend on the analytics dashboard. |
 | 5 | **Similar Workouts** | Finds past sessions that match your current training pattern |
 | 10 | **Plateau Detection** | Spots exercises where progress has stalled for 2+ weeks |
 | 20 | **Muscle Balance** | Checks if opposing muscle groups (chest/back, quads/hamstrings, biceps/triceps, shoulders/lats, core/lower back, glutes/hip flexors) are trained evenly |
@@ -184,12 +184,20 @@ Analytics features are hidden until there's enough training data for them to be 
 
 **Muscle Balance** — tracks 6 antagonist muscle pair ratios (chest/back, quads/hamstrings, biceps/triceps, shoulders/lats, core/lower back, glutes/hip flexors) and flags imbalances at three severity levels (mild/moderate/severe) with corrective exercise suggestions.
 
-**Quality Score** — post-workout score (0-100) across four equally-weighted dimensions:
+**Quality Score** — two-level scoring system across four equally-weighted dimensions (25 points each):
 
-- **Volume** — compares each muscle group's session volume against its own 12-week per-session average (70/30 primary/secondary split). A ±20% deadband scores 100; deviations taper linearly to 0 at ±100%.
+*Per-workout scores* are computed on workout completion and shown on the completion sheet and workout detail view. Fixed color thresholds: green (80+), gold (60-79), orange (40-59), red (<40).
+
+*Aggregate quality* is an EWMA-smoothed (λ=0.3) trend across all completed workouts, shown on the analytics dashboard as "Training Quality". Color coding is percentile-based (relative to the user's own EWMA history): green = top quartile, gold = 50-75th, orange = 25-50th, red = bottom quartile. A trend badge shows percentage change vs. the EWMA value ~4 weeks ago. For users with fewer than 3 workouts, a simple average is shown with no trend. The aggregate score is also surfaced in the home screen widget.
+
+The four scoring dimensions:
+
+- **Volume** — compares each muscle group's session volume against its own 12-week per-session average (70/30 primary/secondary split). Bodyweight exercises use the user's body weight (from HealthKit or preferences). A ±20% deadband scores 100; deviations taper linearly to 0 at ±100%.
 - **Intensity** — compares each set's estimated 1RM to the historical best for that exercise over the last 6 months. The current workout is excluded from the lookup so you're scored against past performance, not yourself.
-- **Consistency** — average time per completed set (workout duration / set count). 60-180s scores 100.
+- **Consistency** — coefficient of variation of rest intervals between consecutive sets (capped at 10 minutes). Low CV (≤0.25) scores 100; high CV (≥0.8) scores 30.
 - **Balance** — uses Intensity-Weighted Volume (IWV = reps × %1RM) aggregated over a 12-week window across all workouts, scored against 6 antagonist pairs. A 1:1 ratio scores 100; a 3:1 ratio scores 0. Pairs where only one side was trained score 0; untrained pairs are excluded.
+
+Per-workout scores are cached by workout ID, and the history-accepting overload avoids redundant data fetches when computing aggregate or daily quality bars.
 
 ### Advanced Insights (19+ workouts)
 
@@ -246,10 +254,11 @@ The only personal data used is **body weight** (from HealthKit or user preferenc
 ### Home Screen Widgets
 
 - **Training Hub** (small, medium, large) — adaptive widget that switches between analytics mode and active workout mode:
-  - **Analytics mode** (no active workout): small shows a rotating insight card from analytics highlights; medium shows a 7-day calendar strip, weekly progress, top 2 highlights, and next planned session; large adds a progress ring (workouts vs. weekly goal), top 3 highlights, and next planned session with exercise preview
+  - **Analytics mode** (no active workout): small shows a rotating insight card from analytics highlights; medium shows a 7-day calendar strip, weekly progress, quality score, top 2 highlights, and next planned session; large adds a progress ring (workouts vs. weekly goal), top 3 highlights, and next planned session with exercise preview
   - **Active workout mode** (during workout): small shows current exercise name, set count, and elapsed time; medium adds next set targets and a rest timer countdown or "Complete Set" button; large shows a full workout dashboard with rest timer controls and next exercise preview
   - **Widget controls** — complete set, skip exercise, add rest time, skip rest — all work without opening the app
   - Weekly goal reads from the active progression plan. Highlights unlock progressively: recommendations at 5+ workouts, plateau warnings at 10+, full advanced insights at 19+
+  - Volume and quality data in the widget use the same calendar-week (Monday-start) boundaries and bodyweight-aware calculations as the dashboard, so numbers always match
 - **Workout Summary** (small) — last workout name, relative date, exercise count
 - **Weekly Progress** (medium) — progress ring showing workouts this week vs. goal, streak count, total workouts
 - **Streak** (accessory circular + rectangular) — current streak and weekly progress for Lock Screen and StandBy
