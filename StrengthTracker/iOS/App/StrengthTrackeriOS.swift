@@ -168,9 +168,8 @@ struct ContentViewWrapper: View {
         }
         .task {
             await container.workoutViewModel.restoreActiveWorkout()
-            await refreshWidgetData()
         }
-        .onChange(of: scenePhase) { _, newPhase in
+        .onChange(of: scenePhase, initial: true) { _, newPhase in
             if newPhase == .active {
                 // End stale mirrored Live Activity if watch timer expired while iPhone was backgrounded
                 container.restTimerService.handleForegroundReturn()
