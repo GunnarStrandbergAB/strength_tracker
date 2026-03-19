@@ -31,4 +31,8 @@ final class InMemoryWorkoutRepository: WorkoutRepository {
     func delete(_ workout: Workout) async throws {
         storage.removeValue(forKey: workout.id)
     }
+
+    func deleteAllIncomplete() async throws {
+        storage = storage.filter { $0.value.completedAt != nil }
+    }
 }

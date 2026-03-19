@@ -84,5 +84,20 @@ public final class SwiftDataWorkoutRepository: WorkoutRepository, Sendable {
             try modelContext.save()
         }
     }
+
+    public func deleteAllIncomplete() async throws {
+        let descriptor = FetchDescriptor<WorkoutEntity>(
+            predicate: #Predicate { entity in
+                entity.completedAt == nil
+            }
+        )
+        let entities = try modelContext.fetch(descriptor)
+        for entity in entities {
+            modelContext.delete(entity)
+        }
+        if !entities.isEmpty {
+            try modelContext.save()
+        }
+    }
 }
 #endif

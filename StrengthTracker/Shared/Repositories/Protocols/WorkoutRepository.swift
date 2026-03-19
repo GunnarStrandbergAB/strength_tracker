@@ -8,4 +8,5 @@ public protocol WorkoutRepository: Sendable {
     func save(_ workout: Workout) async throws -> Workout
     func complete(_ workoutId: UUID) async throws
     func delete(_ workout: Workout) async throws
+    func deleteAllIncomplete() async throws
 }

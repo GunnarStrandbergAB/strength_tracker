@@ -47,4 +47,8 @@ final class MockWorkoutRepositoryProgression: WorkoutRepository {
     func delete(_ workout: Workout) async throws {
         workouts.removeAll { $0.id == workout.id }
     }
+
+    func deleteAllIncomplete() async throws {
+        workouts.removeAll { $0.completedAt == nil }
+    }
 }

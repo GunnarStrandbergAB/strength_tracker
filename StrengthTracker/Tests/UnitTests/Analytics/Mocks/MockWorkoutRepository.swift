@@ -72,6 +72,13 @@ final class MockWorkoutRepository: WorkoutRepository {
         workouts.removeValue(forKey: workout.id)
     }
 
+    var deleteAllIncompleteCallCount = 0
+
+    func deleteAllIncomplete() async throws {
+        deleteAllIncompleteCallCount += 1
+        workouts = workouts.filter { $0.value.completedAt != nil }
+    }
+
     // MARK: - Test Helpers
 
     /// Seed multiple workouts into storage.
@@ -89,6 +96,7 @@ final class MockWorkoutRepository: WorkoutRepository {
         saveCallCount = 0
         completeCallCount = 0
         deleteCallCount = 0
+        deleteAllIncompleteCallCount = 0
         fetchByDateRangeArguments.removeAll()
         saveArguments.removeAll()
         completeArguments.removeAll()

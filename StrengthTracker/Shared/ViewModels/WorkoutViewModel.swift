@@ -48,6 +48,8 @@ public final class WorkoutViewModel {
     }
 
     public func startWorkout(name: String, from template: WorkoutTemplate? = nil) async {
+        try? await workoutRepository.deleteAllIncomplete()
+
         var exercises: [WorkoutExercise] = []
 
         if let template = template {
@@ -471,6 +473,10 @@ public final class WorkoutViewModel {
         guard currentWorkout == nil, !isActive else { return }
         do {
             if let active = try await workoutRepository.fetchActive() {
+                if Date().timeIntervalSince(active.startedAt) > 12 * 60 * 60 {
+                    try? await workoutRepository.deleteAllIncomplete()
+                    return
+                }
                 currentWorkout = active
                 isActive = true
                 await loadPreviousData()
@@ -506,9 +512,7 @@ public final class WorkoutViewModel {
 
     /// Cancel the current workout without saving completion.
     public func cancelWorkout() async {
-        if let workout = currentWorkout {
-            try? await workoutRepository.delete(workout)
-        }
+        try? await workoutRepository.deleteAllIncomplete()
         currentWorkout = nil
         isActive = false
     }
