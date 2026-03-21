@@ -37,6 +37,8 @@ public final class WorkoutAnalyticsViewModel {
     private let workoutRepository: (any WorkoutRepository)?
     private let proFeatureGate: ProFeatureGate?
 
+    private var lastInsightsLoadTime: Date?
+
     private static let migrationKey = "analytics_migration_complete"
 
     // MARK: - Init
@@ -58,7 +60,15 @@ public final class WorkoutAnalyticsViewModel {
     // MARK: - Dashboard (loads WorkoutInsights aggregate)
 
     /// Load all analytics for dashboard as a consistent snapshot
-    public func loadDashboardInsights() async {
+    public func loadDashboardInsights(force: Bool = false) async {
+        // Skip reload if fresh (within 60s) unless forced
+        if !force,
+           let lastLoad = lastInsightsLoadTime,
+           Date().timeIntervalSince(lastLoad) < 60,
+           insights.workoutCount > 0 {
+            return
+        }
+
         isInsightsLoading = true
         defer { isInsightsLoading = false }
 
@@ -117,6 +127,7 @@ public final class WorkoutAnalyticsViewModel {
 
             insights = rawInsights
             errorMessage = nil
+            lastInsightsLoadTime = Date()
 
             // Auto-load quality score and aggregate using the same workouts
             if unlockedFeatures.contains(.qualityScore),
@@ -175,7 +186,7 @@ public final class WorkoutAnalyticsViewModel {
     // MARK: - Advanced Insights Accessors
 
     public var advancedInsightsLoaded: Bool {
-        isFeatureUnlocked(.advancedInsights) && insights.trainingLoad != nil
+        isFeatureUnlocked(.advancedInsights) && insights.workoutCount >= 19
     }
 
     public var loadZoneColor: String {
@@ -222,10 +233,7 @@ public final class WorkoutAnalyticsViewModel {
     // MARK: - Feature Gate Helpers
 
     public func isFeatureUnlocked(_ feature: AnalyticsFeatureGate.Feature) -> Bool {
-        if let proFeatureGate, !proFeatureGate.hasProAccess {
-            return false
-        }
-        return unlockedFeatures.contains(feature)
+        unlockedFeatures.contains(feature)
     }
 
     /// Whether Pro subscription is active (or beta bypass). Nil gate means no restriction.

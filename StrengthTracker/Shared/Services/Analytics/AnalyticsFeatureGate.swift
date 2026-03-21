@@ -29,7 +29,7 @@ public final class AnalyticsFeatureGate: Sendable {
         .strengthTrends: 5,
         .exerciseRecommendations: 5,
         .plateauDetection: 10,
-        .muscleBalance: 20,
+        .muscleBalance: 19,
         .recoveryTimeline: 20,
         .advancedInsights: 19,
     ]
