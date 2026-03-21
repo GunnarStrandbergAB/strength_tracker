@@ -174,7 +174,8 @@ public final class AppContainer: Sendable {
             calorieEstimationService: calorieEstimationService,
             userPreferencesService: userPreferencesService,
             analyticsService: analyticsService,
-            webhookService: webhookService
+            webhookService: webhookService,
+            progressionPlanRepository: progressionPlanRepository
         )
         templateViewModel = TemplateViewModel(
             templateRepository: templateRepository,

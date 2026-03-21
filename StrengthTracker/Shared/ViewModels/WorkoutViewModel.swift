@@ -26,6 +26,7 @@ public final class WorkoutViewModel {
     public let userPreferencesService: UserPreferencesService?
     private let analyticsService: WorkoutAnalyticsService?
     private let webhookService: WebhookService?
+    private let progressionPlanRepository: (any ProgressionPlanRepository)?
 
     public init(
         workoutRepository: any WorkoutRepository,
@@ -35,7 +36,8 @@ public final class WorkoutViewModel {
         calorieEstimationService: CalorieEstimationService = CalorieEstimationService(),
         userPreferencesService: UserPreferencesService? = nil,
         analyticsService: WorkoutAnalyticsService? = nil,
-        webhookService: WebhookService? = nil
+        webhookService: WebhookService? = nil,
+        progressionPlanRepository: (any ProgressionPlanRepository)? = nil
     ) {
         self.workoutRepository = workoutRepository
         self.templateRepository = templateRepository
@@ -45,6 +47,7 @@ public final class WorkoutViewModel {
         self.userPreferencesService = userPreferencesService
         self.analyticsService = analyticsService
         self.webhookService = webhookService
+        self.progressionPlanRepository = progressionPlanRepository
     }
 
     public func startWorkout(name: String, from template: WorkoutTemplate? = nil) async {
@@ -219,6 +222,17 @@ public final class WorkoutViewModel {
         let saved = try await workoutRepository.save(workout)
         currentWorkout = saved
         isActive = false
+
+        // Mark progression plan session completed
+        if let sessionId = plannedSessionId,
+           let planId = plannedPlanId {
+            let workoutId = saved.id
+            try? await progressionPlanRepository?.markSessionCompleted(
+                sessionId, workoutId: workoutId, inPlan: planId
+            )
+            plannedSessionId = nil
+            plannedPlanId = nil
+        }
 
         // Save to HealthKit with calorie estimation (iPhone-only path)
         #if canImport(HealthKit)
@@ -515,5 +529,7 @@ public final class WorkoutViewModel {
         try? await workoutRepository.deleteAllIncomplete()
         currentWorkout = nil
         isActive = false
+        plannedSessionId = nil
+        plannedPlanId = nil
     }
 }

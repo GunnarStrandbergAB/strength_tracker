@@ -92,17 +92,6 @@ struct ContentView: View {
             if isActive {
                 selectedTab = 1
             } else if oldValue {
-                if let sessionId = workoutViewModel.plannedSessionId,
-                   let planId = workoutViewModel.plannedPlanId,
-                   let workoutId = workoutViewModel.currentWorkout?.id {
-                    Task {
-                        await progressionPlanViewModel.handleSessionCompleted(
-                            sessionId: sessionId, planId: planId, workoutId: workoutId
-                        )
-                    }
-                }
-                workoutViewModel.plannedSessionId = nil
-                workoutViewModel.plannedPlanId = nil
                 selectedTab = 0
             }
         }
