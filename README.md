@@ -123,9 +123,10 @@ Weight rounding follows exercise type: upper-body compounds → nearest 2.5 kg, 
 
 ### Running 1RM Updates
 
-The plan's stored 1RM values are updated after each session using EWMA (Exponential Weighted Moving Average):
+The plan's stored 1RM values are updated after each session using an **asymmetric EWMA**:
 
-- Smoothing: `new_1RM = 0.3 × estimated + 0.7 × current`
+- **Upward (PR):** `new_1RM = estimated` — accepted immediately so PRs reflect instantly
+- **Downward:** `new_1RM = 0.3 × estimated + 0.7 × current` — smoothed to filter out bad days
 - Outlier rejection: skip updates where deviation > 15% from stored value
 - Regression guard: downward updates only applied if new estimate < 95% of current (must be a real drop, not noise)
 
@@ -178,9 +179,9 @@ Analytics features are hidden until there's enough training data for them to be 
 
 ### Under the Hood
 
-**Vectorization** — each workout is encoded as an 18-dimensional vector capturing total volume, exercise count, intensity distribution, muscle group coverage, rest patterns, and more. Vectors are stored locally and searched using cosine similarity via Apple Accelerate/vDSP.
+**Vectorization** — each workout is encoded as an 18-dimensional vector capturing total volume, exercise count, intensity distribution, muscle group coverage, rest patterns, and more. Normalization constants are tuned to the 90th–95th percentile of real training data (e.g., volume ÷ 20,000 kg, weight ÷ 150 kg, duration ÷ 5,400s). Time of day uses a linear mapping (minuteOfDay / 1440) to avoid cyclical encoding collisions. Vectors are L2-normalized and searched using cosine similarity via Apple Accelerate/vDSP. Centroids are re-normalized after averaging to maintain accurate similarity scores.
 
-**Plateau Detection** — sliding-window coefficient of variation analysis on per-exercise volume. When volume flatlines, the app identifies the stall and suggests variations.
+**Plateau Detection** — tracks max estimated 1RM (e1RM) per exercise per week using Epley/Brzycki formulas. Improvement thresholds scale dynamically by training status: 5% for beginners, 2% for intermediate, 0% for advanced (maintaining strength counts as progress). When e1RM flatlines for 2+ weeks, the app identifies the stall and suggests variations.
 
 **Muscle Balance** — tracks 6 antagonist muscle pair ratios (chest/back, quads/hamstrings, biceps/triceps, shoulders/lats, core/lower back, glutes/hip flexors) and flags imbalances at three severity levels (mild/moderate/severe) with corrective exercise suggestions.
 
@@ -194,7 +195,7 @@ The four scoring dimensions:
 
 - **Volume** — compares each muscle group's session volume against its own 12-week per-session average (70/30 primary/secondary split). Bodyweight exercises use the user's body weight (from HealthKit or preferences). A ±20% deadband scores 100; deviations taper linearly to 0 at ±100%.
 - **Intensity** — compares each set's estimated 1RM to the historical best for that exercise over the last 6 months. The current workout is excluded from the lookup so you're scored against past performance, not yourself.
-- **Consistency** — coefficient of variation of rest intervals between consecutive sets (capped at 10 minutes). Low CV (≤0.25) scores 100; high CV (≥0.8) scores 30.
+- **Consistency** — coefficient of variation of rest intervals between consecutive sets (capped at 10 minutes, intervals ≤15s filtered to exclude superset/drop-set transitions). Low CV (≤0.25) scores 100; high CV (≥0.8) scores 30. Minimum 2 valid intervals required; defaults to 80 if fewer.
 - **Balance** — uses Intensity-Weighted Volume (IWV = reps × %1RM) aggregated over a 12-week window across all workouts, scored against 6 antagonist pairs. A 1:1 ratio scores 100; a 3:1 ratio scores 0. Pairs where only one side was trained score 0; untrained pairs are excluded.
 
 Per-workout scores are cached by workout ID, and the history-accepting overload avoids redundant data fetches when computing aggregate or daily quality bars.
@@ -203,13 +204,13 @@ Per-workout scores are cached by workout ID, and the history-accepting overload 
 
 Once unlocked, a compact **Advanced Insights** card appears on the analytics dashboard showing a training load gauge, current training phase, top insight, and muscle recovery summary. Tapping it opens a full detail view with all sections below. All calculations use the **e1RM effort ratio** (set e1RM / historical best) and **IWV** (reps × %1RM) — never RPE.
 
-**Training Load (ACWR)** — session load is the sum of IWV across all working sets. Acute and chronic loads are computed via EWMA (λ=0.25 acute, λ=0.069 chronic). The Acute:Chronic Workload Ratio determines your load zone: under-training (<0.6), optimal (0.8–1.3), caution (1.3–1.5), or danger (>1.5). Per-muscle-group ACWR is also tracked.
+**Training Load (ACWR)** — session load is the sum of IWV across all working sets. Systemic ACWR uses daily calendar EWMA (λ=0.25 acute, λ=0.069 chronic) so rest days properly decay fatigue. Requires 8 workouts spanning 14+ days before activating (cold-start guard). The Acute:Chronic Workload Ratio determines your load zone: under-training (<0.6), optimal (0.8–1.3), caution (1.3–1.5), or danger (>1.5). Per-muscle-group ACWR uses a rolling sum method (7-day acute / 28-day chronic ÷ 4) to avoid saw-tooth artifacts for muscles trained 1–2×/week.
 
 **Progressive Overload** — per-exercise best e1RM per calendar week, with linear regression to determine trend. Exercises are classified as progressing (>0.5 kg/wk), plateau (±0.5 kg/wk), or regressing (<−0.5 kg/wk). Requires at least 4 weeks of data.
 
 **Deload Detection** — monitors four fatigue signals: intensity creep (effort ratio increasing over 3 sessions), performance decline (e1RM dropping in 40%+ exercises over 2 sessions), overdue (>6 weeks since volume dropped below 60% of 4-week average), and sustained high ACWR (>1.4 for 2+ weeks). Triggers are combined into an urgency score (0–1) with a suggested action.
 
-**Volume Landmarks** — weekly hard sets per muscle group compared against population-based MEV (Minimum Effective Volume) and MRV (Maximum Recoverable Volume) ranges, adjusted by training status. Primary muscles get full credit; secondary muscles get 0.5× credit.
+**Volume Landmarks** — weekly hard sets per muscle group compared against population-based MEV (Minimum Effective Volume) and MRV (Maximum Recoverable Volume) ranges, adjusted by training status. Primary muscles get full credit; secondary muscles get 0.5× credit divided by the number of secondaries (e.g., bench press: 1.0 chest + 0.25 triceps + 0.25 shoulders = 1.5 total, not 2.0).
 
 **Recovery Estimation** — per-muscle-group recovery status based on time since last trained, volume (set count modifier), and intensity (effort ratio modifier) applied to base recovery hours. Status is green (ready, ≥100%), yellow (recovering, ≥70%), or red (fatigued, <70%).
 
@@ -219,7 +220,7 @@ Once unlocked, a compact **Advanced Insights** card appears on the analytics das
 
 **Block Comparison** — auto-compares the current 4-week block against the previous 4-week block via centroid cosine similarity and per-dimension deltas (>10% reported). Generates a text summary of key differences.
 
-**Anomaly Detection** — maintains an EWMA centroid over all workout vectors and flags workouts where the anomaly score (1 − cosine similarity to centroid) exceeds mean + 2×stddev. The top 3 deviating dimensions are reported per anomaly.
+**Anomaly Detection** — maintains an EWMA centroid (L2 re-normalized) over all workout vectors and flags workouts where the anomaly score (1 − cosine similarity to centroid) exceeds mean + 2×stddev. The top 3 deviating dimensions are reported per anomaly.
 
 **Smart Highlights** — a prioritized feed of natural-language insights generated from all the above data. Warnings (deload needed, danger ACWR, over-volume) rank highest, followed by improvements (progressing exercises, optimal load), then milestones (phase transitions, training drift). On iOS 26+ with Apple Intelligence, highlights are generated by the on-device Foundation Models framework for varied, coach-like text; older devices use structured templates.
 
@@ -239,11 +240,11 @@ Live metrics (heart rate, active calories, elapsed time) are displayed during th
 
 When a workout is logged on iPhone without Watch involvement, calories are estimated using a research-based model with three components:
 
-1. **MET-based session calories** — `MET × bodyWeight(kg) × hours`. MET values are sourced from the [2024 Compendium of Physical Activities (Herrmann et al.)](https://pacompendium.com/) and assigned per exercise category (barbell, kettlebell, machine, bodyweight, etc.) with separate values for compound and isolation movements. Active lifting is estimated at ~30 seconds per set; the remainder is standing rest at ~1.5 MET.
+1. **MET-based session calories** — `MET × bodyWeight(kg) × hours`. MET values are sourced from the [2024 Compendium of Physical Activities (Herrmann et al.)](https://pacompendium.com/) and assigned per exercise category (barbell, kettlebell, machine, bodyweight, etc.) with separate values for compound and isolation movements. Active lifting time is estimated per set: **40 seconds for compound, 25 seconds for isolation** exercises. The equipment MET applies only to active time; rest time uses a standing MET of 1.5. This prevents overestimation for lifters who take long rest periods.
 
-2. **Volume bonus** — based on [Lytle et al. (2019)](https://doi.org/10.1249/MSS.0000000000002111), a regression model (R²=0.75) for resistance exercise energy expenditure. Applies a coefficient of ~2.5 kcal per 1000 kg total volume moved.
+2. **Volume bonus** — based on [Lytle et al. (2019)](https://doi.org/10.1249/MSS.0000000000002111), a regression model (R²=0.75) for resistance exercise energy expenditure. Uses a **dynamic Lytle coefficient** that scales with compound ratio: ~1.0 kcal/1000 kg for all-isolation workouts up to ~3.5 kcal/1000 kg for all-compound workouts, reflecting the greater energy cost of multi-joint movements.
 
-3. **EPOC (Excess Post-Exercise Oxygen Consumption)** — 6-15% of session calories, scaled by average RPE when available, or compound exercise ratio as fallback.
+3. **EPOC (Excess Post-Exercise Oxygen Consumption)** — 6–10% of session calories (capped at 10%), scaled by average RPE when available, or compound exercise ratio as fallback.
 
 The only personal data used is **body weight** (from HealthKit or user preferences). No age, height, or sex data is collected. Warmup sets are excluded. Results are cross-validated against [Joao et al. (2021)](https://doi.org/10.3390/app11125592) (~6 kcal/min average).
 
