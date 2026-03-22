@@ -15,6 +15,12 @@ public final class WorkoutAnalyticsService: Sendable {
     private let muscleBalanceService: MuscleBalanceService
     private let recommendationService: ExerciseRecommendationService
 
+    private let trainingStatusDetector: TrainingStatusDetector?
+    private let userPreferencesService: UserPreferencesService?
+
+    /// Current vector schema version — bump when normalization constants change
+    private static let currentVectorVersion = 1
+
     // Advanced Insights services
     private let volumeLandmarkService: VolumeLandmarkService?
     private let recoveryEstimationService: RecoveryEstimationService?
@@ -38,6 +44,8 @@ public final class WorkoutAnalyticsService: Sendable {
         plateauService: PlateauDetectionService,
         muscleBalanceService: MuscleBalanceService,
         recommendationService: ExerciseRecommendationService,
+        trainingStatusDetector: TrainingStatusDetector? = nil,
+        userPreferencesService: UserPreferencesService? = nil,
         volumeLandmarkService: VolumeLandmarkService? = nil,
         recoveryEstimationService: RecoveryEstimationService? = nil,
         driftService: TrainingDriftService? = nil,
@@ -54,6 +62,8 @@ public final class WorkoutAnalyticsService: Sendable {
         self.plateauService = plateauService
         self.muscleBalanceService = muscleBalanceService
         self.recommendationService = recommendationService
+        self.trainingStatusDetector = trainingStatusDetector
+        self.userPreferencesService = userPreferencesService
         self.volumeLandmarkService = volumeLandmarkService
         self.recoveryEstimationService = recoveryEstimationService
         self.driftService = driftService
@@ -125,10 +135,15 @@ public final class WorkoutAnalyticsService: Sendable {
 
     /// Generate a consistent WorkoutInsights snapshot for the dashboard
     public func generateInsights(timeWindow: TimeInterval = 2_592_000) async throws -> WorkoutInsights {
+        // Migrate vectors if normalization constants changed
+        let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+        try await migrateVectorsIfNeeded(bodyWeightKg: bodyWeightKg)
+
         let workouts = try await workoutRepository.fetchAll()
         let completedWorkouts = workouts.filter { $0.completedAt != nil }
 
-        let plateausResult = plateauService.analyzePlateaus(workouts: completedWorkouts)
+        let trainingStatus = try await trainingStatusDetector?.detect() ?? .intermediate
+        let plateausResult = plateauService.analyzePlateaus(workouts: completedWorkouts, trainingStatus: trainingStatus)
         let muscleBalanceResult = muscleBalanceService.analyze(workouts: completedWorkouts, timeWindow: timeWindow)
 
         // Generate recommendations using plateau and balance data
@@ -270,6 +285,17 @@ public final class WorkoutAnalyticsService: Sendable {
 
         cachedVectors.removeAll()
         cacheTimestamp = nil
+    }
+
+    // MARK: - Vector Migration
+
+    /// Re-vectorize all workouts if normalization constants have changed.
+    private func migrateVectorsIfNeeded(bodyWeightKg: Double) async throws {
+        guard let prefs = userPreferencesService,
+              prefs.vectorVersion < Self.currentVectorVersion else { return }
+        try await analyticsRepository.deleteAllVectors()
+        try await vectorizeAllWorkouts(bodyWeightKg: bodyWeightKg)
+        prefs.vectorVersion = Self.currentVectorVersion
     }
 
     // MARK: - Helpers

@@ -64,8 +64,10 @@ public final class VolumeLandmarkService: Sendable {
                 let primary = we.exercise.primaryMuscleGroup.rawValue
                 totalCredits[primary, default: 0] += Double(hardSets)
 
+                let secondaryCount = max(we.exercise.secondaryMuscleGroups.count, 1)
+                let secondaryCreditPerMuscle = Double(hardSets) * 0.5 / Double(secondaryCount)
                 for secondary in we.exercise.secondaryMuscleGroups {
-                    totalCredits[secondary.rawValue, default: 0] += Double(hardSets) * 0.5
+                    totalCredits[secondary.rawValue, default: 0] += secondaryCreditPerMuscle
                 }
             }
         }

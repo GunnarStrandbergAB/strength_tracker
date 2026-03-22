@@ -62,7 +62,8 @@ public struct CalorieEstimationService: Sendable {
             let met = metForExercise(exercise.exercise, sets: completedSets, hasSupersetGroup: exercise.supersetGroup != nil)
             let duration = exerciseDurations[exercise.order] ?? 0
 
-            let (activeTime, restTime) = estimateActiveRestSplit(sets: completedSets, totalDuration: duration)
+            let exerciseIsCompound = isCompoundExercise(exercise.exercise)
+            let (activeTime, restTime) = estimateActiveRestSplit(sets: completedSets, totalDuration: duration, isCompound: exerciseIsCompound)
 
             // MET formula: kcal = MET × bodyWeight(kg) × time(hours)
             let activeCal = met * bodyWeightKg * (activeTime / 3600.0)
@@ -94,8 +95,10 @@ public struct CalorieEstimationService: Sendable {
             }
         }
 
-        // Volume bonus from Lytle et al. (2019): coefficient ~2.461 kcal per 1000 kg total volume
-        let volumeBonus = totalVolumeKg * 0.00246
+        // Volume bonus: dynamic Lytle coefficient scaled by compound ratio
+        let compoundRatio = totalCompletedSets > 0 ? Double(compoundSetCount) / Double(totalCompletedSets) : 0.5
+        let dynamicCoefficient = (1.0 + compoundRatio * 2.5) / 1000.0
+        let volumeBonus = totalVolumeKg * dynamicCoefficient
 
         // EPOC factor: 6–15% of session calories
         let epocFactor = calculateEpocFactor(
@@ -185,11 +188,11 @@ public struct CalorieEstimationService: Sendable {
     ///
     /// If set completedAt timestamps are available, use them to compute time under load.
     /// Otherwise, use a heuristic: ~30s active per set, remainder is rest.
-    func estimateActiveRestSplit(sets: [ExerciseSet], totalDuration: TimeInterval) -> (active: TimeInterval, rest: TimeInterval) {
+    func estimateActiveRestSplit(sets: [ExerciseSet], totalDuration: TimeInterval, isCompound: Bool = true) -> (active: TimeInterval, rest: TimeInterval) {
         guard totalDuration > 0 else { return (0, 0) }
 
-        // Heuristic: estimate ~30 seconds of active lifting per set
-        let estimatedActivePerSet: TimeInterval = 30.0
+        // Compound exercises (squat, bench, etc.) take longer per set than isolation
+        let estimatedActivePerSet: TimeInterval = isCompound ? 40.0 : 25.0
         let activeTime = min(Double(sets.count) * estimatedActivePerSet, totalDuration * 0.5)
         let restTime = totalDuration - activeTime
 
@@ -205,14 +208,16 @@ public struct CalorieEstimationService: Sendable {
         let minEpoc = 0.06
         let maxEpoc = 0.15
 
+        let maxEpocCapped = 0.10 // Cap EPOC at 10% (literature upper bound for resistance training)
+
         // If RPE is available, use it as primary signal (scale 1-10 → 0-1)
         if let rpe = averageRPE {
             let normalizedRPE = max(0, min(1, (rpe - 4.0) / 6.0)) // RPE 4→0, RPE 10→1
-            return minEpoc + normalizedRPE * (maxEpoc - minEpoc)
+            return minEpoc + normalizedRPE * (maxEpocCapped - minEpoc)
         }
 
         // Fallback: use compound ratio as proxy for intensity
-        return minEpoc + compoundRatio * (maxEpoc - minEpoc)
+        return minEpoc + compoundRatio * (maxEpocCapped - minEpoc)
     }
 
     // MARK: - Exercise Duration Estimation

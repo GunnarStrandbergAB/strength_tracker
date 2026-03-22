@@ -1,25 +1,37 @@
 import Foundation
 
-/// Detects progress plateaus using statistical analysis.
-/// - Sliding window volume analysis
-/// - Coefficient of variation (CV) for stagnation detection
+/// Detects progress plateaus using e1RM progression analysis.
+/// - Max e1RM per exercise per week as progression signal (not raw volume)
+/// - Dynamic thresholds based on training status
+/// - CV for stagnation detection
 @MainActor
 public final class PlateauDetectionService: Sendable {
 
     private let minWeeksForAnalysis = 4
     private let plateauThresholdCV = 0.10
-    private let minImprovementThreshold = 1.05
 
     public init() {}
+
+    /// Dynamic improvement threshold based on training status.
+    /// Beginners can improve faster; advanced lifters maintain.
+    private func thresholdForStatus(_ status: TrainingStatus) -> Double {
+        switch status {
+        case .beginner:     return 1.05  // 5% week-over-week
+        case .intermediate: return 1.02  // 2%
+        case .advanced:     return 1.00  // Just maintain
+        }
+    }
 
     /// Analyze plateaus across all exercises
     /// - Parameters:
     ///   - workouts: All user workouts
+    ///   - trainingStatus: Current training status for dynamic thresholds
     ///   - windowWeeks: Number of weeks to analyze (default 4)
     ///   - stallThreshold: CV threshold below which a plateau is detected (default 0.05)
     /// - Returns: Array of plateau analyses sorted by weeks stalled descending
     public func analyzePlateaus(
         workouts: [Workout],
+        trainingStatus: TrainingStatus = .intermediate,
         windowWeeks: Int = 4,
         stallThreshold: Double = 0.05
     ) -> [PlateauAnalysis] {
@@ -35,6 +47,7 @@ public final class PlateauDetectionService: Sendable {
             return []
         }
 
+        let improvementThreshold = thresholdForStatus(trainingStatus)
         var analyses: [PlateauAnalysis] = []
 
         // Group by exercise across all workouts
@@ -49,7 +62,8 @@ public final class PlateauDetectionService: Sendable {
                 exerciseId: exerciseId,
                 exerciseName: workoutExercises[0].1.exercise.name,
                 workoutExercises: workoutExercises,
-                stallThreshold: stallThreshold
+                stallThreshold: stallThreshold,
+                improvementThreshold: improvementThreshold
             )
             if analysis.consecutiveWeeksStalled >= 2 {
                 analyses.append(analysis)
@@ -65,16 +79,26 @@ public final class PlateauDetectionService: Sendable {
         exerciseId: UUID,
         exerciseName: String,
         workoutExercises: [(Workout, WorkoutExercise)],
-        stallThreshold: Double
+        stallThreshold: Double,
+        improvementThreshold: Double
     ) -> PlateauAnalysis {
         let sorted = workoutExercises.sorted { $0.0.startedAt < $1.0.startedAt }
 
-        // Calculate weekly volumes
-        let weeklyVolumes = grouped(sorted, byWeeks: 1).map { group in
-            group.reduce(0.0) { $0 + $1.1.exerciseVolume }
+        // Use max e1RM per week as progression signal (not raw volume)
+        let weeklyBestE1RM = grouped(sorted, byWeeks: 1).map { group -> Double in
+            group.compactMap { (_, workoutExercise) -> Double? in
+                workoutExercise.sets
+                    .filter { $0.isCompleted && $0.setType != .warmup }
+                    .compactMap { set -> Double? in
+                        guard let weight = set.weight, weight > 0,
+                              let reps = set.reps, reps > 0, reps <= 15 else { return nil }
+                        return AnalyticsCalculations.calculateOneRM(weight: weight, reps: reps)
+                    }
+                    .max()
+            }.compactMap { $0 }.max() ?? 0.0
         }
 
-        guard !weeklyVolumes.isEmpty else {
+        guard !weeklyBestE1RM.isEmpty, weeklyBestE1RM.contains(where: { $0 > 0 }) else {
             return PlateauAnalysis(
                 id: UUID(),
                 exerciseId: exerciseId,
@@ -86,17 +110,19 @@ public final class PlateauDetectionService: Sendable {
             )
         }
 
-        let avgVolume = weeklyVolumes.reduce(0, +) / Double(weeklyVolumes.count)
-        let stdDev = calculateStdDev(weeklyVolumes, mean: avgVolume)
-        let cv = avgVolume > 0 ? stdDev / avgVolume : 0
+        let nonZero = weeklyBestE1RM.filter { $0 > 0 }
+        let avgE1RM = nonZero.reduce(0, +) / Double(nonZero.count)
+        let stdDev = calculateStdDev(nonZero, mean: avgE1RM)
+        let cv = avgE1RM > 0 ? stdDev / avgE1RM : 0
 
         // Detect consecutive weeks without improvement
         var weeksStalled = 0
         var lastImprovement: Date?
 
-        for i in 1..<weeklyVolumes.count {
-            if weeklyVolumes[i] >= weeklyVolumes[i - 1] * minImprovementThreshold {
-                lastImprovement = sorted[min(i * (sorted.count / weeklyVolumes.count), sorted.count - 1)].0.startedAt
+        for i in 1..<weeklyBestE1RM.count {
+            guard weeklyBestE1RM[i] > 0, weeklyBestE1RM[i - 1] > 0 else { continue }
+            if weeklyBestE1RM[i] >= weeklyBestE1RM[i - 1] * improvementThreshold {
+                lastImprovement = sorted[min(i * (sorted.count / weeklyBestE1RM.count), sorted.count - 1)].0.startedAt
                 weeksStalled = 0
             } else {
                 weeksStalled += 1
@@ -109,7 +135,7 @@ public final class PlateauDetectionService: Sendable {
             exerciseName: exerciseName,
             detectedAt: Date(),
             consecutiveWeeksStalled: weeksStalled,
-            volumeCoefficient: avgVolume > 0 ? cv : 0,
+            volumeCoefficient: avgE1RM > 0 ? cv : 0,
             lastProgressDate: lastImprovement
         )
     }

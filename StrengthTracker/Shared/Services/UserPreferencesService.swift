@@ -70,6 +70,11 @@ public final class UserPreferencesService {
     /// Whether the webhook is configured (non-empty URL)
     public var isWebhookEnabled: Bool { !webhookURL.isEmpty }
 
+    /// Vector schema version — bump when normalization constants change to trigger recomputation
+    public var vectorVersion: Int {
+        didSet { UserDefaults.standard.set(vectorVersion, forKey: "vectorVersion") }
+    }
+
     /// User's body weight in kg (last-resort fallback for calorie estimation)
     public var bodyWeightKg: Double? {
         didSet {
@@ -112,6 +117,8 @@ public final class UserPreferencesService {
 
         let weight = defaults.double(forKey: "bodyWeightKg")
         self.bodyWeightKg = weight > 0 ? weight : nil
+
+        self.vectorVersion = defaults.integer(forKey: "vectorVersion")
     }
 
     /// Reset all preferences to defaults

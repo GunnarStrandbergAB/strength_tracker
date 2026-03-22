@@ -74,6 +74,11 @@ final class MockAnalyticsRepository: AnalyticsRepository {
         storedVectors.removeValue(forKey: workoutId)
     }
 
+    func deleteAllVectors() async throws {
+        if shouldThrowOnDelete { throw errorToThrow }
+        storedVectors.removeAll()
+    }
+
     /// Convenience for tests that don't care about metadata
     func storeVector(_ vector: WorkoutVector) async throws {
         try await storeVector(vector, totalVolume: 0, workoutDate: vector.createdAt, primaryMuscleGroups: [])

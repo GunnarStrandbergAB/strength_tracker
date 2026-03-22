@@ -25,8 +25,11 @@ public final class AnomalyDetectionService: Sendable {
             }
         }
 
+        // Re-normalize EWMA centroid to unit length for accurate cosine similarity
+        let normalizedCentroid = AnalyticsCalculations.l2Normalize(centroid)
+
         // Compute anomaly scores (1 - cosine similarity with centroid)
-        let scores = sorted.map { 1.0 - searchService.cosineSimilarity($0.dimensions, centroid) }
+        let scores = sorted.map { 1.0 - searchService.cosineSimilarity($0.dimensions, normalizedCentroid) }
 
         guard !scores.isEmpty else { return [] }
 
@@ -44,7 +47,7 @@ public final class AnomalyDetectionService: Sendable {
             var deviating: [DimensionDrift] = []
 
             for d in 0..<dim {
-                let delta = vector.dimensions[d] - centroid[d]
+                let delta = vector.dimensions[d] - normalizedCentroid[d]
                 if abs(delta) > 0.10 {
                     let name = d < WorkoutVector.featureNames.count ? WorkoutVector.featureNames[d] : "dim_\(d)"
                     deviating.append(DimensionDrift(featureName: name, delta: delta))

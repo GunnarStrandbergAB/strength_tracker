@@ -150,6 +150,8 @@ public final class AppContainer: Sendable {
             plateauService: plateauService,
             muscleBalanceService: muscleBalanceService,
             recommendationService: recommendationService,
+            trainingStatusDetector: trainingStatusDetector,
+            userPreferencesService: userPreferencesService,
             volumeLandmarkService: volumeLandmark,
             recoveryEstimationService: recoveryEstimation,
             driftService: driftSvc,

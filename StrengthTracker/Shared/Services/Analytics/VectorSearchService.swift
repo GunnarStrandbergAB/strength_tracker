@@ -102,6 +102,7 @@ public final class VectorSearchService: Sendable {
             for i in 0..<dim { sum[i] += v.dimensions[i] }
         }
         let n = Double(vectors.count)
-        return sum.map { $0 / n }
+        let mean = sum.map { $0 / n }
+        return AnalyticsCalculations.l2Normalize(mean)
     }
 }
