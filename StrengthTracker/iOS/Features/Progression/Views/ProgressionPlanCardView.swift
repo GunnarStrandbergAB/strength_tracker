@@ -17,6 +17,8 @@ struct ProgressionPlanCardView: View {
         Group {
             if let plan = viewModel.activePlan, plan.isActive {
                 activePlanCard(plan)
+            } else if !viewModel.hasLoadedOnce {
+                EmptyView()
             } else {
                 noPlanCard
             }

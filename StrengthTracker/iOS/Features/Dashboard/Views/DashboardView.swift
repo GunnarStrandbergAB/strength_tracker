@@ -150,14 +150,16 @@ struct DashboardView: View {
                 }
             }
             .task {
-                await viewModel.loadDashboard()
-                await analyticsViewModel.loadDashboardInsights()
-                await progressionPlanViewModel.loadActivePlan()
+                async let d: () = viewModel.loadDashboard()
+                async let a: () = analyticsViewModel.loadDashboardInsights()
+                async let p: () = progressionPlanViewModel.loadActivePlan()
+                _ = await (d, a, p)
             }
             .refreshable {
-                await viewModel.loadDashboard()
-                await analyticsViewModel.loadDashboardInsights()
-                await progressionPlanViewModel.loadActivePlan()
+                async let d: () = viewModel.loadDashboard()
+                async let a: () = analyticsViewModel.loadDashboardInsights(force: true)
+                async let p: () = progressionPlanViewModel.loadActivePlan()
+                _ = await (d, a, p)
             }
         }
     }

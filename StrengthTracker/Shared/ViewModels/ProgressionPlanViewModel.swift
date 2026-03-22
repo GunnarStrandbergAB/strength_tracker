@@ -29,6 +29,7 @@ public final class ProgressionPlanViewModel {
     public var activePlan: ProgressionPlan?
     public var planProgress: PlanProgress?
     public var isLoading = false
+    public var hasLoadedOnce = false
 
     // MARK: - Creation Wizard Draft State
 
@@ -111,6 +112,7 @@ public final class ProgressionPlanViewModel {
         } catch {
             errorMessage = "Failed to load plan: \(error.localizedDescription)"
         }
+        hasLoadedOnce = true
     }
 
     private func refreshLinkedTemplateNames(for plan: ProgressionPlan) async {
