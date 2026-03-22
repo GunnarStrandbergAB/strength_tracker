@@ -134,8 +134,13 @@ public struct SessionExecutionService: Sendable {
 
                     // Outlier rejection: skip if deviation > 15%
                     if deviation <= outlierThreshold {
-                        // EWMA smoothing
-                        let smoothed1RM = alpha * estimated1RM + (1.0 - alpha) * current
+                        // Asymmetric EWMA: accept PRs immediately, smooth downward only
+                        let smoothed1RM: Double
+                        if estimated1RM >= current {
+                            smoothed1RM = estimated1RM
+                        } else {
+                            smoothed1RM = alpha * estimated1RM + (1.0 - alpha) * current
+                        }
                         let rounded1RM = smoothed1RM.rounded(toNearest: 2.5)
 
                         // Regression guard: only apply downward if estimated < 95% of current

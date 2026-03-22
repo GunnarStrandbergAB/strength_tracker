@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Accelerate)
+import Accelerate
+#endif
 
 /// Shared static utility functions used across analytics services.
 /// Extracted from WorkoutQualityScoreService for reuse in advanced insights.
@@ -112,6 +115,26 @@ public enum AnalyticsCalculations {
         let rSquared = ssTotal > 1e-12 ? 1.0 - ssResidual / ssTotal : 0.0
 
         return (slope, intercept, rSquared)
+    }
+
+    // MARK: - L2 Normalization
+
+    /// L2 normalize a vector (unit length). Used by vectorizer and centroid computation.
+    public static func l2Normalize(_ vector: [Double]) -> [Double] {
+        #if canImport(Accelerate)
+        var result = vector
+        var magnitude: Double = 0.0
+        vDSP_dotprD(vector, 1, vector, 1, &magnitude, vDSP_Length(vector.count))
+        magnitude = sqrt(magnitude)
+        if magnitude > 0 {
+            var divisor = magnitude
+            vDSP_vsdivD(vector, 1, &divisor, &result, 1, vDSP_Length(vector.count))
+        }
+        return result
+        #else
+        let magnitude = sqrt(vector.reduce(0) { $0 + $1 * $1 })
+        return magnitude > 0 ? vector.map { $0 / magnitude } : vector
+        #endif
     }
 
     // MARK: - Exponentially Weighted Moving Average

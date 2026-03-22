@@ -302,5 +302,6 @@ private final class StubWorkoutRepository: WorkoutRepository, @unchecked Sendabl
     func save(_ workout: Workout) async throws -> Workout { workout }
     func complete(_ workoutId: UUID) async throws {}
     func delete(_ workout: Workout) async throws {}
+    func deleteAllIncomplete() async throws {}
 }
 #endif

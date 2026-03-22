@@ -9,4 +9,5 @@ public protocol AnalyticsRepository: Sendable {
     func fetchAllVectors() async throws -> [WorkoutVector]
     func fetchVectorsByDateRange(_ start: Date, _ end: Date) async throws -> [WorkoutVector]
     func deleteVector(for workoutId: UUID) async throws
+    func deleteAllVectors() async throws
 }

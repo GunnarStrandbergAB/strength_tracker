@@ -173,12 +173,12 @@ Converts a workout into an 18-dimensional L2-normalized feature vector for cosin
 
 | Dim | Feature Name | Formula | Normalization |
 |-----|-------------|---------|---------------|
-| 0 | `total_volume_norm` | `Σ(weight × reps)` for all completed non-warmup sets | `÷ 50,000 kg` |
-| 1 | `avg_weight_norm` | Mean weight across all sets | `÷ 300 kg` |
+| 0 | `total_volume_norm` | `Σ(weight × reps)` for all completed non-warmup sets | `÷ 20,000 kg` |
+| 1 | `avg_weight_norm` | Mean weight across all sets | `÷ 150 kg` |
 | 2 | `avg_reps_norm` | Mean reps across all sets | `÷ 30` |
 | 3 | `set_count_norm` | Total completed non-warmup sets | `÷ 100` |
 | 4 | `exercise_diversity` | Count of unique exercises | `÷ 15` |
-| 5 | `duration_norm` | Workout duration in seconds | `÷ 7,200 (2h)` |
+| 5 | `duration_norm` | Workout duration in seconds | `÷ 5,400 (90min)` |
 | 6 | `chest_ratio` | Chest volume ÷ total volume | 0–1 |
 | 7 | `back_ratio` | Back volume ÷ total volume | 0–1 |
 | 8 | `legs_ratio` | (Quad+Ham+Glute+Calf) ÷ total | 0–1 |
@@ -190,7 +190,7 @@ Converts a workout into an 18-dimensional L2-normalized feature vector for cosin
 | 14 | `volume_vs_prev_7d` | `clamp((vol − avg7d) / avg7d, −1, 1)` | −1 to 1 |
 | 15 | `volume_vs_prev_30d` | `clamp((vol − avg30d) / avg30d, −1, 1)` | −1 to 1 |
 | 16 | `pr_count_norm` | Personal records in this workout | `÷ 10` |
-| 17 | `time_of_day_sin` | `sin(hour × 2π / 24) × 0.5 + 0.5` | 0–1 |
+| 17 | `time_of_day` | `minuteOfDay / 1440.0` (linear mapping, monotonic) | 0–1 |
 
 All values clamped to `min(value / normConstant, 1.0)` before L2 normalization.
 
@@ -213,7 +213,11 @@ magnitude = √(Σ feature[i]²)
 normalized[i] = feature[i] / magnitude    (if magnitude > 0)
 ```
 
-Uses Apple Accelerate (`vDSP_dotprD`, `vDSP_vsdivD`) on iOS for performance.
+Uses the shared `AnalyticsCalculations.l2Normalize(_:)` utility which leverages Apple Accelerate (`vDSP_dotprD`, `vDSP_vsdivD`) on iOS for performance.
+
+#### Vector Migration
+
+A `vectorVersion` counter is stored in `UserPreferencesService`. When normalization constants change, the version is bumped and all stored vectors are automatically recomputed on next analytics access.
 
 #### Storage
 
@@ -240,10 +244,11 @@ Range: 0 (orthogonal) to 1 (identical). Uses `vDSP_dotprD` on iOS.
 #### Centroid Computation
 
 ```
-centroid[i] = Σ vectors[j][i] / count
+centroid_raw[i] = Σ vectors[j][i] / count
+centroid = AnalyticsCalculations.l2Normalize(centroid_raw)
 ```
 
-Arithmetic mean across all dimensions.
+Arithmetic mean across all dimensions, then L2 re-normalized. This is critical because the average of unit vectors is not itself a unit vector — without re-normalization, dot-product-based similarity scores against the centroid would be artificially low.
 
 #### findSimilar(query, vectors, topK)
 
@@ -263,27 +268,41 @@ Arithmetic mean across all dimensions.
 
 ```
 minWeeksForAnalysis = 4
-minImprovementThreshold = 1.05    (5% improvement required to reset stall counter)
+Improvement threshold: dynamic by training status (see below)
 ```
 
 #### Algorithm
 
+Progression is measured using **max estimated 1RM (e1RM) per exercise per week** — not raw volume. This avoids false plateau alerts when lifters periodize (e.g., switching from accumulation to peaking reduces volume but increases intensity).
+
+The e1RM is computed via `AnalyticsCalculations.calculateOneRM()` (Epley/Brzycki hybrid).
+
+The improvement threshold scales dynamically by training status (provided by `TrainingStatusDetector.detect()`):
+
+| Training Status | Threshold | Rationale |
+|----------------|:---------:|-----------|
+| Beginner | 1.05 (5%) | Rapid expected gains |
+| Intermediate | 1.02 (2%) | Moderate expected gains |
+| Advanced | 1.00 (0%) | Maintaining strength is sufficient |
+
 For each exercise with 4+ weekly occurrences:
 
 1. Group sets by calendar week (Monday start)
-2. Compute weekly volume: `Σ(weight × reps)` for each week
+2. Compute **max e1RM** for each week (best single-set estimate)
 3. Track consecutive stalled weeks:
 
 ```
 for week i in 1..<weeks:
-    if weeklyVolume[i] >= weeklyVolume[i-1] × 1.05:
-        weeksStalled = 0    // 5% improvement resets counter
+    if maxE1RM[i] >= maxE1RM[i-1] × threshold(trainingStatus):
+        weeksStalled = 0
     else:
         weeksStalled += 1
 ```
 
 4. Only report if `consecutiveWeeksStalled >= 2`
 5. Sort results by weeks stalled descending
+
+`analyzePlateaus()` now accepts a `trainingStatus` parameter, wired through `WorkoutAnalyticsService` via `TrainingStatusDetector.detect()`.
 
 #### Coefficient of Variation (diagnostic metric)
 
@@ -373,6 +392,14 @@ else:
     IWV = base
 ```
 
+#### L2 Normalization Utility
+
+```
+public static func l2Normalize(_ vector: [Double]) -> [Double]
+```
+
+Shared utility used by `WorkoutVectorizer`, `VectorSearchService.computeCentroid`, and `AnomalyDetectionService`. Uses Apple Accelerate (`vDSP_dotprD`, `vDSP_vsdivD`) when available for performance.
+
 #### EWMA (Exponentially Weighted Moving Average)
 
 ```
@@ -400,17 +427,25 @@ Require 19+ completed workouts to activate.
 
 **File:** `Shared/Services/Analytics/TrainingLoadService.swift`
 
-#### Acute-Chronic Workload Ratio
+#### Acute-Chronic Workload Ratio (Systemic)
+
+EWMA is computed on a **daily calendar basis**, not per-session. A `buildDailyLoads()` helper maps workout dates to day indices from the first workout to today. Rest days appear as load = 0, allowing proper fatigue decay.
 
 ```
 Session load = Σ IWV for all working sets
     where IWV = reps × pct1RM × (RPE / 10 if available)
 
-Acute EWMA  (λ = 0.25)  — weights recent sessions heavily
-Chronic EWMA (λ = 0.069) — smooth long-term baseline
+L_d = total session load for day d (0 on rest days)
 
-ACWR = acuteEWMA.last / chronicEWMA.last
+Acute_d  = 0.25 × L_d + 0.75 × Acute_{d-1}
+Chronic_d = 0.069 × L_d + 0.931 × Chronic_{d-1}
+
+ACWR = Acute_today / Chronic_today
 ```
+
+#### Cold-Start Guard
+
+Minimum **8 completed workouts** spanning **14+ calendar days** required before ACWR is computed. Returns `nil` until threshold met. This prevents the chronic EWMA from being unstable with too few data points, which would inflate ACWR for new users.
 
 #### Load Zone Classification
 
@@ -421,9 +456,18 @@ ACWR = acuteEWMA.last / chronicEWMA.last
 | Caution | 1.3–1.5 | High fatigue accumulation |
 | Danger | > 1.5 | Critical overtraining risk |
 
-Also computed **per muscle group** using primary muscle attribution. Only muscles with 4+ sessions of data included.
+#### Per-Muscle-Group ACWR (Rolling Sum)
 
-Minimum 4 completed workouts required.
+Per-muscle ACWR uses a **rolling sum** method instead of EWMA, which is better suited for muscles trained infrequently (1–2×/week). EWMA produces a saw-tooth pattern for sparse data; rolling sums are stable.
+
+```
+Acute  = sum of muscle IWV over last 7 days
+Chronic = sum of muscle IWV over last 28 days / 4
+
+ACWR_muscle = Acute / Chronic
+```
+
+Only muscles with 4+ sessions of data included.
 
 ---
 
@@ -532,9 +576,18 @@ Advanced:      MEV = base + 2,           MRV = base + 4
 
 ```
 Primary muscle:   1.0 credit per completed non-warmup set
-Secondary muscle: 0.5 credit per set
+Secondary muscle: 0.5 / secondaryCount credit per set
+
+Example: Bench Press (1 primary, 2 secondary)
+  Chest (primary):   1.0 credit
+  Triceps (secondary): 0.5 / 2 = 0.25 credit
+  Shoulders (secondary): 0.5 / 2 = 0.25 credit
+  Total set credits: 1.0 + 0.25 + 0.25 = 1.5 (not 2.0)
+
 Current weekly sets = sum over last 4 weeks ÷ 4, rounded to nearest int
 ```
+
+The secondary credit is divided by the number of secondary muscles to prevent credit inflation. Without this, exercises targeting many secondaries would generate artificially high set counts, causing premature MRV warnings.
 
 #### Volume Status
 
@@ -682,12 +735,16 @@ Requires 5+ vectors.
 centroid = first vector
 for each subsequent vector (chronologically):
     centroid[d] = 0.1 × vector[d] + 0.9 × centroid[d]    (λ = 0.1)
+
+centroid = AnalyticsCalculations.l2Normalize(centroid)
 ```
+
+The centroid is L2 re-normalized after the EWMA loop. Without this, the EWMA centroid's magnitude shrinks below 1.0, causing dot-product-based anomaly scores to be artificially inflated. Dimension drift comparisons also use the normalized centroid.
 
 #### Anomaly Detection
 
 ```
-anomalyScore[i] = 1.0 − cosineSimilarity(vector[i], centroid)
+anomalyScore[i] = 1.0 − cosineSimilarity(vector[i], normalizedCentroid)
 
 threshold = mean(scores) + 2.0 × stddev(scores)    // z-score = 2.0 (~95%)
 
@@ -728,12 +785,18 @@ intensityScore = min(max(mean(ratios) × 100, 0), 100)
 **Consistency Score (Rest Rhythm):**
 ```
 intervals = [time between consecutive sets, max 600s, exclude >10min]
-CV = stddev(intervals) / mean(intervals)
+validIntervals = intervals.filter { $0 > 15 }    // exclude superset/drop-set transitions
+
+if validIntervals.count < 2: score = 80.0    // not enough data, default to reasonable score
+
+CV = stddev(validIntervals) / mean(validIntervals)
 
 if CV ≤ 0.25: score = 100
 if CV ≤ 0.80: score = 100 − (CV − 0.25) × (70 / 0.55)
 else:         score = 30
 ```
+
+Intervals ≤ 15 seconds are filtered out before CV computation to exclude superset and drop-set transitions. Without this filter, advanced lifters performing supersets would be penalized for intentionally short rest intervals.
 
 **Balance Score** (12-week IWV, 6 antagonist pairs):
 ```
@@ -802,15 +865,17 @@ Four periodization models:
 
 **File:** `Shared/Services/Progression/SessionExecutionService.swift`
 
-#### 1RM EWMA Smoothing
+#### 1RM EWMA Smoothing (Asymmetric)
 
 ```
-α = 0.3
 Outlier threshold: 15% deviation rejection
 Regression guard: only apply downward if estimated < 95% of current
 
-smoothed1RM = 0.3 × estimated + 0.7 × current
+Upward (PR):   smoothed1RM = estimated          // accept immediately
+Downward:      smoothed1RM = 0.3 × estimated + 0.7 × current    // smooth as before
 ```
+
+The EWMA is **asymmetric**: new personal records are accepted immediately (α = 1.0 upward), while downward fluctuations are smoothed (α = 0.3). This prevents the smoothing function from "crushing" legitimate PRs — e.g., a 100→110 kg jump would only register as 103 kg with symmetric smoothing.
 
 On first use (current1RM = 0): direct assign without EWMA.
 
@@ -866,11 +931,44 @@ PR types detected (priority order): e1RM > maxWeight > maxReps > maxVolume
 
 **File:** `Shared/Services/CalorieEstimationService.swift`
 
+#### Active/Rest Time Split
+
+Active lifting time is estimated per set based on exercise type:
+- Compound exercises: **40 seconds** per set
+- Isolation exercises: **25 seconds** per set
+
 ```
-sessionCalories = MET × bodyweight(kg) × time(hours)
-volumeBonus = ~2.46 kcal per 1,000 kg total volume (Lytle coefficient)
-epocCalories = 6–15% of session (varies by RPE and compound ratio)
-totalCalories = session + volumeBonus + EPOC
+activeTime = Σ (setsPerExercise × activeSecondsPerSet)
+restTime = totalDuration − activeTime
+```
+
+The equipment MET is applied only to active time. A recovery MET of 1.5 is applied to rest time. This prevents overestimation for lifters who take long rest periods.
+
+#### Volume Bonus (Dynamic Lytle Coefficient)
+
+The Lytle coefficient scales dynamically based on the workout's compound ratio:
+
+```
+compoundRatio = compoundVolume / totalVolume    (0.0–1.0)
+dynamicCoefficient = (1.0 + compoundRatio × 2.5) / 1000.0
+
+volumeBonus = totalVolume × dynamicCoefficient
+```
+
+This ranges from ~1.0 kcal/1000 kg (all isolation) to ~3.5 kcal/1000 kg (all compound), reflecting the greater energy cost of multi-joint movements.
+
+#### EPOC
+
+```
+epocCalories = 6–10% of session calories (varies by RPE and compound ratio)
+```
+
+EPOC is capped at **10%** (reduced from 15%), matching research showing standard resistance training EPOC caps at ~5–7% of session expenditure.
+
+#### Total
+
+```
+totalCalories = activeCalories + restCalories + volumeBonus + EPOC
 ```
 
 **MET values by equipment:**
@@ -1351,7 +1449,7 @@ for a [level]-level trainee who just did: [exercises]. Be encouraging and specif
 | Parameter | Value | Service |
 |-----------|:-----:|---------|
 | Min workouts for advanced | 19 | WorkoutAnalyticsService |
-| Min workouts for ACWR | 4 | TrainingLoadService |
+| Min workouts for ACWR | 8 (+ 14 calendar days) | TrainingLoadService |
 | Min workouts for deload | 6 | DeloadDetectionService |
 | Min workouts for anomalies | 5 | AnomalyDetectionService |
 | Min weeks for plateau | 4 | PlateauDetectionService |
@@ -1375,7 +1473,7 @@ for a [level]-level trainee who just did: [exercises]. Be encouraging and specif
 | pct1RM cap | 1.50 | AnalyticsCalculations |
 | Volume primary weight | 70% | AnalyticsCalculations |
 | Volume secondary weight | 30% split | AnalyticsCalculations |
-| Improvement threshold | 5% (1.05×) | PlateauDetectionService |
+| Improvement threshold | Dynamic: 5% beginner, 2% intermediate, 0% advanced | PlateauDetectionService |
 | Dimension drift threshold | 10% (0.10) | DriftService/BlockService/AnomalyService |
 | Anomaly z-score | 2.0 | AnomalyDetectionService |
 | Trend progressing | > 0.5 kg/wk | OverloadTrackingService |
@@ -1405,13 +1503,29 @@ for a [level]-level trainee who just did: [exercises]. Be encouraging and specif
 
 | Dimension | Max Value |
 |-----------|:-:|
-| Total volume | 50,000 kg |
-| Average weight | 300 kg |
+| Total volume | 20,000 kg |
+| Average weight | 150 kg |
 | Average reps | 30 |
 | Set count | 100 |
 | Exercise diversity | 15 |
-| Duration | 7,200 sec |
+| Duration | 5,400 sec (90 min) |
 | PR count | 10 |
+| Time of day | 1,440 (minutes in day, linear) |
+
+Constants are tuned to the 90th–95th percentile of real training data. `vectorVersion` (in `UserPreferencesService`) tracks the current constant set; vectors auto-recompute on version change.
+
+### Additional Constants
+
+| Constant | Value | Used In |
+|----------|:-----:|---------|
+| Superset filter threshold | 15s | WorkoutQualityScoreService |
+| Min valid intervals for consistency | 2 | WorkoutQualityScoreService |
+| Default consistency score (insufficient data) | 80.0 | WorkoutQualityScoreService |
+| EPOC cap | 10% | CalorieEstimationService |
+| Compound active time per set | 40s | CalorieEstimationService |
+| Isolation active time per set | 25s | CalorieEstimationService |
+| Per-muscle ACWR method | Rolling sum (7d/28d) | TrainingLoadService |
+| Vector version | 1 | UserPreferencesService |
 
 ---
 

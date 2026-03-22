@@ -318,12 +318,12 @@ public final class WorkoutQualityScoreService: Sendable {
         var intervals: [TimeInterval] = []
         for i in 1..<completedSets.count {
             let interval = completedSets[i].completedAt!.timeIntervalSince(completedSets[i - 1].completedAt!)
-            if interval <= 600 {
+            if interval <= 600 && interval > 15 { // Filter out superset/drop-set transitions
                 intervals.append(interval)
             }
         }
 
-        guard !intervals.isEmpty else { return 72.0 }
+        guard intervals.count >= 2 else { return 80.0 }
 
         let mean = intervals.reduce(0, +) / Double(intervals.count)
         let variance = intervals.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(intervals.count)

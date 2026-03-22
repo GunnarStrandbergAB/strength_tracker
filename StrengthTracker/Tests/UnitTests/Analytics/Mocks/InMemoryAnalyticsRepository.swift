@@ -25,6 +25,10 @@ final class InMemoryAnalyticsRepository: AnalyticsRepository {
         storage.removeValue(forKey: workoutId)
     }
 
+    func deleteAllVectors() async throws {
+        storage.removeAll()
+    }
+
     /// Convenience for tests that don't care about metadata
     func storeVector(_ vector: WorkoutVector) async throws {
         try await storeVector(vector, totalVolume: 0, workoutDate: vector.createdAt, primaryMuscleGroups: [])

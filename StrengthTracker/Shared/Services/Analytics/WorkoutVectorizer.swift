@@ -9,13 +9,13 @@ import Accelerate
 @MainActor
 public final class WorkoutVectorizer: Sendable {
 
-    // MARK: - Normalization Constants (99th percentile)
-    private let maxVolume: Double = 50000.0
-    private let maxWeight: Double = 300.0
+    // MARK: - Normalization Constants (90th-95th percentile of real training)
+    private let maxVolume: Double = 20000.0
+    private let maxWeight: Double = 150.0
     private let maxReps: Int = 30
     private let maxSets: Int = 100
     private let maxExercises: Int = 15
-    private let maxDuration: TimeInterval = 7200
+    private let maxDuration: TimeInterval = 5400
     private let maxPRs: Int = 10
 
     public init() {}
@@ -95,12 +95,13 @@ public final class WorkoutVectorizer: Sendable {
         let prCount = allSets.filter(\.isPersonalRecord).count
         features[16] = min(Double(prCount) / Double(maxPRs), 1.0)
 
-        // 17: Time of day (sin encoding for cyclical feature)
+        // 17: Time of day (linear mapping — monotonic, no midnight/noon collision)
         let hour = Calendar.current.component(.hour, from: workout.startedAt)
-        features[17] = sin(Double(hour) * 2.0 * .pi / 24.0) * 0.5 + 0.5
+        let minuteOfDay = hour * 60 + Calendar.current.component(.minute, from: workout.startedAt)
+        features[17] = min(Double(minuteOfDay) / 1440.0, 1.0)
 
         // L2 normalization for cosine similarity
-        let normalized = l2Normalize(features)
+        let normalized = AnalyticsCalculations.l2Normalize(features)
 
         return WorkoutVector(
             id: UUID(),

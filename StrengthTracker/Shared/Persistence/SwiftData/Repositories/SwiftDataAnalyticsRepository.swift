@@ -76,5 +76,14 @@ public final class SwiftDataAnalyticsRepository: AnalyticsRepository, Sendable {
             try modelContext.save()
         }
     }
+
+    public func deleteAllVectors() async throws {
+        let descriptor = FetchDescriptor<WorkoutVectorEntity>()
+        let entities = try modelContext.fetch(descriptor)
+        for entity in entities {
+            modelContext.delete(entity)
+        }
+        try modelContext.save()
+    }
 }
 #endif
