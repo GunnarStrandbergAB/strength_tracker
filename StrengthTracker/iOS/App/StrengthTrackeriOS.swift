@@ -219,6 +219,7 @@ struct ContentViewWrapper: View {
                                         sessionLabel: session.sessionLabel,
                                         weekLabel: "Week \(week.absoluteWeekNumber)",
                                         blockName: plan.currentBlock?.name,
+                                        isDeload: session.isDeload,
                                         template: template
                                     )
                                 }

@@ -13,6 +13,7 @@ public enum WorkoutMapper {
             notes: entity.notes,
             templateId: entity.templateId,
             healthKitWorkoutId: entity.healthKitWorkoutId,
+            isDeload: entity.isDeload,
             exercises: entity.exercises.sorted(by: { $0.order < $1.order }).map { WorkoutExerciseMapper.toDomain($0) }
         )
     }
@@ -26,7 +27,8 @@ public enum WorkoutMapper {
             completedAt: domain.completedAt,
             notes: domain.notes,
             templateId: domain.templateId,
-            healthKitWorkoutId: domain.healthKitWorkoutId
+            healthKitWorkoutId: domain.healthKitWorkoutId,
+            isDeload: domain.isDeload
         )
         entity.exercises = domain.exercises.map { WorkoutExerciseMapper.toEntity($0) }
         return entity
@@ -41,6 +43,7 @@ public enum WorkoutMapper {
         entity.notes = domain.notes
         entity.templateId = domain.templateId
         entity.healthKitWorkoutId = domain.healthKitWorkoutId
+        entity.isDeload = domain.isDeload
 
         // Update exercises in-place to preserve SwiftData relationships
         let existingById = Dictionary(uniqueKeysWithValues: entity.exercises.map { ($0.id, $0) })

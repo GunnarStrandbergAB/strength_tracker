@@ -251,7 +251,7 @@ public final class WatchWorkoutViewModel {
         connectivityManager.sendWorkoutStarted(activeWorkout ?? workout)
     }
 
-    public func startWorkout(name: String, from template: WorkoutTemplate) async {
+    public func startWorkout(name: String, from template: WorkoutTemplate, isDeload: Bool = false) async {
         isQuickStart = false
 
         let workoutExercises = template.exercises.sorted { $0.order < $1.order }.enumerated().map { index, te in
@@ -300,6 +300,7 @@ public final class WatchWorkoutViewModel {
             completedAt: nil,
             notes: nil,
             templateId: template.id,
+            isDeload: isDeload,
             exercises: workoutExercises
         )
 
@@ -330,7 +331,7 @@ public final class WatchWorkoutViewModel {
     public func startPlannedSession(_ session: PlannedSessionSync) async {
         plannedSessionId = session.id
         plannedPlanId = session.planId
-        await startWorkout(name: session.sessionLabel, from: session.template)
+        await startWorkout(name: session.sessionLabel, from: session.template, isDeload: session.isDeload)
     }
 
     public func logSet(weight: Double?, reps: Int?, rpe: Double? = nil) async throws {

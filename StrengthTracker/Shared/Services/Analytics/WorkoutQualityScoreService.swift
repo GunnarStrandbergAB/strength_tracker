@@ -42,10 +42,20 @@ public final class WorkoutQualityScoreService: Sendable {
     private func computeScoreInternal(for workout: Workout, history: [Workout]) -> WorkoutQualityScore {
         let bodyWeightKg = userPreferencesService.bodyWeightKg
             ?? UserPreferencesService.defaultBodyWeightKg
-        let volumeScore = computeVolumeScore(workout, history: history, bodyWeightKg: bodyWeightKg)
-        let intensityScore = computeIntensityScore(workout, history: history)
+
+        let volumeScore: Double
+        let intensityScore: Double
         let consistencyScore = computeConsistencyScore(workout)
         let balanceScore = computeBalanceScore(workout, history: history)
+
+        if workout.isDeload {
+            // Deload scoring: reward ~50% volume and ~70% intensity
+            volumeScore = computeDeloadVolumeScore(workout, history: history, bodyWeightKg: bodyWeightKg)
+            intensityScore = computeDeloadIntensityScore(workout, history: history)
+        } else {
+            volumeScore = computeVolumeScore(workout, history: history, bodyWeightKg: bodyWeightKg)
+            intensityScore = computeIntensityScore(workout, history: history)
+        }
 
         let overall = (volumeScore + intensityScore + consistencyScore + balanceScore) / 4.0
 
@@ -383,5 +393,62 @@ public final class WorkoutQualityScoreService: Sendable {
 
         guard pairScores.count >= 2 else { return 80.0 }
         return pairScores.reduce(0, +) / Double(pairScores.count)
+    }
+
+    // MARK: - Deload Scoring
+
+    /// Deload volume: rewards ~50% of historical average. Too high (>70%) or too low (<30%) scores drop.
+    private func computeDeloadVolumeScore(_ workout: Workout, history: [Workout], bodyWeightKg: Double) -> Double {
+        let twelveWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -12, to: Date())!
+        let historyWorkouts = history.filter {
+            $0.id != workout.id && !$0.isDeload && $0.completedAt != nil
+            && ($0.completedAt ?? $0.startedAt) >= twelveWeeksAgo
+        }
+
+        let currentVolume = workout.totalVolume(bodyWeightKg: bodyWeightKg)
+        guard !historyWorkouts.isEmpty else { return 80.0 }
+
+        let avgVolume = historyWorkouts.map { $0.totalVolume(bodyWeightKg: bodyWeightKg) }
+            .reduce(0, +) / Double(historyWorkouts.count)
+        guard avgVolume > 0 else { return 80.0 }
+
+        let ratio = currentVolume / avgVolume
+        // Sweet spot: 40-60% → 100. Taper to 0 outside 20-80%.
+        if ratio >= 0.4 && ratio <= 0.6 {
+            return 100.0
+        } else if ratio < 0.4 {
+            return max(0, 100.0 * (ratio - 0.2) / 0.2)
+        } else {
+            return max(0, 100.0 * (0.8 - ratio) / 0.2)
+        }
+    }
+
+    /// Deload intensity: rewards ~60-80% of historical best e1RM. ~70% = 100.
+    private func computeDeloadIntensityScore(_ workout: Workout, history: [Workout]) -> Double {
+        let nonDeloadHistory = history.filter { !$0.isDeload }
+        let bestE1RM = buildBestE1RMMap(excluding: workout.id, from: nonDeloadHistory)
+
+        var ratios: [Double] = []
+        for we in workout.exercises {
+            for set in we.sets {
+                guard set.isCompleted, set.setType != .warmup,
+                      let weight = set.weight, weight > 0,
+                      let reps = set.reps, reps > 0 else { continue }
+                guard let historicalBest = bestE1RM[we.exercise.id], historicalBest > 0 else { continue }
+                let setE1RM = TrainingStatusDetector.calculateOneRM(weight: weight, reps: min(reps, 15))
+                ratios.append(setE1RM / historicalBest)
+            }
+        }
+
+        guard !ratios.isEmpty else { return 75.0 }
+        let mean = ratios.reduce(0, +) / Double(ratios.count)
+        // Sweet spot: 0.6-0.8 → 100. Taper outside.
+        if mean >= 0.6 && mean <= 0.8 {
+            return 100.0
+        } else if mean < 0.6 {
+            return max(0, 100.0 * (mean - 0.3) / 0.3)
+        } else {
+            return max(0, 100.0 * (1.0 - mean) / 0.2)
+        }
     }
 }

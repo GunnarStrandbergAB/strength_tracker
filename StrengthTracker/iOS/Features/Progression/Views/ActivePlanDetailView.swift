@@ -5,7 +5,7 @@ import StrengthTrackerShared
 struct ActivePlanDetailView: View {
     let viewModel: ProgressionPlanViewModel
     let templateViewModel: TemplateViewModel
-    let onStartSession: (WorkoutTemplate, UUID, UUID) async -> Void
+    let onStartSession: (WorkoutTemplate, UUID, UUID, Bool) async -> Void
     @State private var expandedWeekId: UUID?
     @State private var preparingSessionId: UUID?
     @State private var showPauseConfirmation = false
@@ -375,7 +375,7 @@ struct ActivePlanDetailView: View {
                     Task {
                         preparingSessionId = session.id
                         if let template = await viewModel.prepareSessionTemplate(for: session) {
-                            await onStartSession(template, session.id, plan.id)
+                            await onStartSession(template, session.id, plan.id, session.isDeload)
                         }
                         preparingSessionId = nil
                     }

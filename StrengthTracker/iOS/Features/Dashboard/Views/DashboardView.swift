@@ -13,7 +13,7 @@ struct DashboardView: View {
     var proFeatureGate: ProFeatureGate? = nil
     var storeService: StoreService? = nil
     let onStartWorkout: () -> Void
-    let onStartSession: (WorkoutTemplate, UUID, UUID) async -> Void
+    let onStartSession: (WorkoutTemplate, UUID, UUID, Bool) async -> Void
     let onHistoryTapped: () -> Void
 
     init(
@@ -27,7 +27,7 @@ struct DashboardView: View {
         proFeatureGate: ProFeatureGate? = nil,
         storeService: StoreService? = nil,
         onStartWorkout: @escaping () -> Void,
-        onStartSession: @escaping (WorkoutTemplate, UUID, UUID) async -> Void,
+        onStartSession: @escaping (WorkoutTemplate, UUID, UUID, Bool) async -> Void,
         onHistoryTapped: @escaping () -> Void
     ) {
         self._viewModel = State(initialValue: viewModel)
