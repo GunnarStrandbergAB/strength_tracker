@@ -141,26 +141,30 @@ public final class WorkoutAnalyticsService: Sendable {
 
         let workouts = try await workoutRepository.fetchAll()
         let completedWorkouts = workouts.filter { $0.completedAt != nil }
+        let nonDeloadWorkouts = completedWorkouts.filter { !$0.isDeload }
+        let latestIsDeload = completedWorkouts
+            .sorted { ($0.completedAt ?? .distantPast) < ($1.completedAt ?? .distantPast) }
+            .last?.isDeload ?? false
 
         let trainingStatus = try await trainingStatusDetector?.detect() ?? .intermediate
-        let plateausResult = plateauService.analyzePlateaus(workouts: completedWorkouts, trainingStatus: trainingStatus)
-        let muscleBalanceResult = muscleBalanceService.analyze(workouts: completedWorkouts, timeWindow: timeWindow)
+        let plateausResult = plateauService.analyzePlateaus(workouts: nonDeloadWorkouts, trainingStatus: trainingStatus)
+        let muscleBalanceResult = muscleBalanceService.analyze(workouts: nonDeloadWorkouts, timeWindow: timeWindow)
 
         // Generate recommendations using plateau and balance data
         let availableExercises = try await exerciseRepository.fetchAll()
         let recommendationsResult = recommendationService.generateRecommendations(
-            workouts: completedWorkouts,
+            workouts: nonDeloadWorkouts,
             availableExercises: availableExercises,
             muscleBalance: muscleBalanceResult,
             plateaus: plateausResult,
             limit: 5
         )
 
-        // Recovery patterns (Phase 3)
-        let recoveryPatterns = try await recoveryEstimationService?.computeRecoveryPatterns() ?? []
+        // Recovery patterns (Phase 3) — include deloads (affects recovery timelines)
+        let recoveryPatterns = try await recoveryEstimationService?.computeRecoveryPatterns(workouts: completedWorkouts) ?? []
 
-        // Volume landmarks (Phase 4)
-        let optimalVolumes = try await volumeLandmarkService?.computeVolumeLandmarks() ?? []
+        // Volume landmarks (Phase 4) — exclude deloads (don't lower averages)
+        let optimalVolumes = try await volumeLandmarkService?.computeVolumeLandmarks(workouts: nonDeloadWorkouts) ?? []
 
         // Advanced Insights (50+ workouts)
         var trainingLoad: TrainingLoad?
@@ -173,13 +177,13 @@ public final class WorkoutAnalyticsService: Sendable {
         var highlights: [AnalyticsHighlight] = []
 
         if completedWorkouts.count >= 19 {
-            let bestE1RM = AnalyticsCalculations.buildBestE1RMMap(from: completedWorkouts)
+            let bestE1RM = AnalyticsCalculations.buildBestE1RMMap(from: nonDeloadWorkouts)
 
-            // Core services (stateless)
+            // Core services: ACWR needs all workouts (must see load drop), others exclude deloads
             trainingLoad = TrainingLoadService.computeTrainingLoad(
                 workouts: completedWorkouts, bestE1RM: bestE1RM
             )
-            overloadTrends = OverloadTrackingService.computeOverloadTrends(workouts: completedWorkouts)
+            overloadTrends = OverloadTrackingService.computeOverloadTrends(workouts: nonDeloadWorkouts)
             deloadRecommendation = DeloadDetectionService.detectDeload(
                 workouts: completedWorkouts,
                 overloadTrends: overloadTrends,
@@ -187,12 +191,15 @@ public final class WorkoutAnalyticsService: Sendable {
                 bestE1RM: bestE1RM
             )
 
-            // Vector-powered services
+            // Vector-powered services — filter deload vectors for drift/anomaly/block
             let allVectors = try await analyticsRepository.fetchAllVectors()
-            trainingDrift = driftService?.computeDrift(vectors: allVectors)
+            let deloadWorkoutIds = Set(completedWorkouts.filter(\.isDeload).map(\.id))
+            let nonDeloadVectors = allVectors.filter { !deloadWorkoutIds.contains($0.workoutId) }
+
+            trainingDrift = driftService?.computeDrift(vectors: nonDeloadVectors)
             trainingPhase = phaseDetectionService?.detectPhases(vectors: allVectors)
-            blockComparison = blockComparisonService?.compareBlocks(vectors: allVectors)
-            anomalies = anomalyDetectionService?.detectAnomalies(vectors: allVectors) ?? []
+            blockComparison = blockComparisonService?.compareBlocks(vectors: nonDeloadVectors)
+            anomalies = anomalyDetectionService?.detectAnomalies(vectors: nonDeloadVectors) ?? []
 
             // Smart highlights
             if let generator = insightGenerator {
@@ -200,11 +207,22 @@ public final class WorkoutAnalyticsService: Sendable {
                     trainingLoad: trainingLoad,
                     overloadTrends: overloadTrends,
                     deloadRecommendation: deloadRecommendation,
-                    trainingDrift: trainingDrift,
+                    trainingDrift: latestIsDeload ? nil : trainingDrift,
                     trainingPhase: trainingPhase,
                     recoveryPatterns: recoveryPatterns,
                     optimalVolumes: optimalVolumes
                 )
+
+                // During active deload, suppress false warnings and add positive highlight
+                if latestIsDeload {
+                    highlights = highlights.filter { $0.type != .warning || $0.title == "Deload Recommended" }
+                    let deloadHighlight = AnalyticsHighlight(
+                        type: .improvement,
+                        title: "Deload In Progress",
+                        detail: "Intentional recovery phase — reduced volume and intensity as planned"
+                    )
+                    highlights.insert(deloadHighlight, at: 0)
+                }
             }
         } else if completedWorkouts.count >= 5, let generator = insightGenerator {
             // Early highlights from Phase 2/3 data (plateaus, balance, recommendations)

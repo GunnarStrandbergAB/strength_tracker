@@ -8,6 +8,7 @@ public struct Workout: Identifiable, Hashable, Sendable, Codable {
     public var notes: String?
     public var templateId: UUID?
     public var healthKitWorkoutId: UUID?
+    public var isDeload: Bool
     public var exercises: [WorkoutExercise]
 
     public var isInProgress: Bool { completedAt == nil }
@@ -34,7 +35,7 @@ public struct Workout: Identifiable, Hashable, Sendable, Codable {
         }
     }
 
-    public init(id: UUID, name: String, startedAt: Date, completedAt: Date?, notes: String?, templateId: UUID?, healthKitWorkoutId: UUID? = nil, exercises: [WorkoutExercise]) {
+    public init(id: UUID, name: String, startedAt: Date, completedAt: Date?, notes: String?, templateId: UUID?, healthKitWorkoutId: UUID? = nil, isDeload: Bool = false, exercises: [WorkoutExercise]) {
         self.id = id
         self.name = name
         self.startedAt = startedAt
@@ -42,6 +43,25 @@ public struct Workout: Identifiable, Hashable, Sendable, Codable {
         self.notes = notes
         self.templateId = templateId
         self.healthKitWorkoutId = healthKitWorkoutId
+        self.isDeload = isDeload
         self.exercises = exercises
+    }
+
+    // Custom decoding for backward compatibility — existing JSON without isDeload decodes as false
+    private enum CodingKeys: String, CodingKey {
+        case id, name, startedAt, completedAt, notes, templateId, healthKitWorkoutId, isDeload, exercises
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        startedAt = try container.decode(Date.self, forKey: .startedAt)
+        completedAt = try container.decodeIfPresent(Date.self, forKey: .completedAt)
+        notes = try container.decodeIfPresent(String.self, forKey: .notes)
+        templateId = try container.decodeIfPresent(UUID.self, forKey: .templateId)
+        healthKitWorkoutId = try container.decodeIfPresent(UUID.self, forKey: .healthKitWorkoutId)
+        isDeload = try container.decodeIfPresent(Bool.self, forKey: .isDeload) ?? false
+        exercises = try container.decode([WorkoutExercise].self, forKey: .exercises)
     }
 }

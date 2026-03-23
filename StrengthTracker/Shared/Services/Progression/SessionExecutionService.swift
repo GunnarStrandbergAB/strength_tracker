@@ -110,6 +110,10 @@ public struct SessionExecutionService: Sendable {
             guard let planIndex = planExerciseLookup[exerciseId] else { continue }
             let planExercise = updatedExercises[planIndex]
 
+            // Skip 1RM updates for deload sessions — intentionally lighter weights
+            // should not drag down stored estimates
+            guard !session.isDeload && !workout.isDeload else { continue }
+
             // Estimate 1RM from completed sets
             if let estimated1RM = estimateCurrent1RM(from: workoutExercise.sets) {
                 let current = planExercise.current1RM

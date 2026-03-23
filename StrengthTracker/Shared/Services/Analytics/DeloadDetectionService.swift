@@ -95,10 +95,12 @@ public enum DeloadDetectionService {
         return recentMeanEfforts[1] > recentMeanEfforts[0] && recentMeanEfforts[2] > recentMeanEfforts[1]
     }
 
-    /// Count weeks since the last deload-like volume drop (<60% of 4-week average).
+    /// Count weeks since the last deload-like volume drop (<60% of 4-week average)
+    /// or any week containing an `isDeload`-tagged workout.
     private static func detectWeeksSinceDeload(workouts: [Workout], bestE1RM: [UUID: Double]) -> Int {
         let calendar = Calendar.current
         var weeklyLoads: [(weekStart: Date, load: Double)] = []
+        var weeksWithTaggedDeload: Set<Int> = []
 
         for workout in workouts {
             let date = workout.completedAt ?? workout.startedAt
@@ -122,8 +124,10 @@ public enum DeloadDetectionService {
 
             if let idx = weeklyLoads.firstIndex(where: { calendar.isDate($0.weekStart, equalTo: weekStart, toGranularity: .weekOfYear) }) {
                 weeklyLoads[idx].load += sessionLoad
+                if workout.isDeload { weeksWithTaggedDeload.insert(idx) }
             } else {
                 weeklyLoads.append((weekStart, sessionLoad))
+                if workout.isDeload { weeksWithTaggedDeload.insert(weeklyLoads.count - 1) }
             }
         }
 
@@ -131,8 +135,13 @@ public enum DeloadDetectionService {
         guard weeklyLoads.count >= 5 else { return weeklyLoads.count }
 
         // Find last week where load was <60% of rolling 4-week average
+        // OR the week contains a user-tagged deload workout
         var lastDeloadWeekIndex = 0
         for i in 4..<weeklyLoads.count {
+            if weeksWithTaggedDeload.contains(i) {
+                lastDeloadWeekIndex = i
+                continue
+            }
             let avg = weeklyLoads[(i-4)..<i].map(\.load).reduce(0, +) / 4.0
             if weeklyLoads[i].load < avg * 0.6 {
                 lastDeloadWeekIndex = i

@@ -8,7 +8,7 @@ struct ProgressionPlanCardView: View {
     let templateViewModel: TemplateViewModel
     let proFeatureGate: ProFeatureGate?
     let storeService: StoreService?
-    let onStartSession: (WorkoutTemplate, UUID, UUID) async -> Void
+    let onStartSession: (WorkoutTemplate, UUID, UUID, Bool) async -> Void
     @State private var showCreationSheet = false
     @State private var showActivePlanDetail = false
     @State private var showUpgradeSheet = false

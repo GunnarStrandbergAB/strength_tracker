@@ -37,10 +37,10 @@ struct ContentView: View {
                         await workoutViewModel.startWorkout(name: "Quick Workout", from: nil)
                     }
                 },
-                onStartSession: { template, sessionId, planId in
+                onStartSession: { template, sessionId, planId, isDeload in
                     workoutViewModel.plannedSessionId = sessionId
                     workoutViewModel.plannedPlanId = planId
-                    await workoutViewModel.startWorkout(name: template.name, from: template)
+                    await workoutViewModel.startWorkout(name: template.name, from: template, isDeload: isDeload)
                 },
                 onHistoryTapped: {
                     selectedTab = 4

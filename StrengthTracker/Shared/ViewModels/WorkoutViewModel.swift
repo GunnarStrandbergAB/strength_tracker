@@ -50,7 +50,17 @@ public final class WorkoutViewModel {
         self.progressionPlanRepository = progressionPlanRepository
     }
 
-    public func startWorkout(name: String, from template: WorkoutTemplate? = nil) async {
+    public func toggleDeload() async {
+        guard var workout = currentWorkout else { return }
+        workout.isDeload.toggle()
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            currentWorkout = workout
+        }
+    }
+
+    public func startWorkout(name: String, from template: WorkoutTemplate? = nil, isDeload: Bool = false) async {
         try? await workoutRepository.deleteAllIncomplete()
 
         var exercises: [WorkoutExercise] = []
@@ -96,6 +106,7 @@ public final class WorkoutViewModel {
             completedAt: nil,
             notes: nil,
             templateId: template?.id,
+            isDeload: isDeload,
             exercises: exercises
         )
 
@@ -161,8 +172,8 @@ public final class WorkoutViewModel {
         workout = try await workoutRepository.save(workout)
         currentWorkout = workout
 
-        // Check for personal records
-        if let prService = personalRecordService {
+        // Check for personal records (skip during deload — intentionally lighter)
+        if let prService = personalRecordService, !(currentWorkout?.isDeload ?? false) {
             let exercise = workout.exercises[exerciseIndex].exercise
             if let pr = try? await prService.checkForPR(exercise: exercise, set: newSet) {
                 lastPR = pr

@@ -12,8 +12,14 @@ public final class RecoveryEstimationService: Sendable {
     }
 
     /// Compute recovery patterns for all recently trained muscle groups.
-    public func computeRecoveryPatterns() async throws -> [RecoveryPattern] {
-        let allWorkouts = try await workoutRepository.fetchAll()
+    /// Pass pre-fetched `workouts` to include deload data; omit to self-fetch.
+    public func computeRecoveryPatterns(workouts: [Workout]? = nil) async throws -> [RecoveryPattern] {
+        let allWorkouts: [Workout]
+        if let workouts {
+            allWorkouts = workouts
+        } else {
+            allWorkouts = try await workoutRepository.fetchAll()
+        }
         let completedWorkouts = allWorkouts.filter { $0.completedAt != nil }
 
         guard !completedWorkouts.isEmpty else { return [] }

@@ -17,8 +17,14 @@ public final class VolumeLandmarkService: Sendable {
     }
 
     /// Compute volume landmarks for all trained muscle groups in the last 4 weeks.
-    public func computeVolumeLandmarks() async throws -> [OptimalVolumeRange] {
-        let allWorkouts = try await workoutRepository.fetchAll()
+    /// Pass pre-filtered `workouts` to exclude deloads; omit to self-fetch.
+    public func computeVolumeLandmarks(workouts: [Workout]? = nil) async throws -> [OptimalVolumeRange] {
+        let allWorkouts: [Workout]
+        if let workouts {
+            allWorkouts = workouts
+        } else {
+            allWorkouts = try await workoutRepository.fetchAll()
+        }
         let fourWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -4, to: Date())!
         let recentWorkouts = allWorkouts.filter {
             $0.completedAt != nil && ($0.completedAt ?? $0.startedAt) >= fourWeeksAgo
