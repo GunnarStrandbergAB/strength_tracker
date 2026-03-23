@@ -205,6 +205,7 @@ struct ActiveWorkoutView: View {
                         .id(workoutExercise.id)
                 }
                 notesCard
+                deloadToggle
                 addExerciseButton
                 cancelWorkoutButton
                 Color.clear.frame(height: 20)
@@ -326,6 +327,44 @@ struct ActiveWorkoutView: View {
             }
             updateWidgetWorkoutState()
         }
+    }
+
+    private var isDeload: Bool {
+        viewModel.currentWorkout?.isDeload ?? false
+    }
+
+    private var deloadToggle: some View {
+        Button {
+            Task { await viewModel.toggleDeload() }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: isDeload ? "checkmark.circle.fill" : "arrow.down.circle")
+                    .font(.system(size: 18))
+                    .foregroundStyle(isDeload ? STColors.primary : STColors.textTertiary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isDeload ? "Deload Workout" : "Mark as Deload")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(isDeload ? STColors.primary : STColors.textSecondary)
+                    Text("Excludes from progression & PR tracking")
+                        .font(.system(size: 11))
+                        .foregroundStyle(STColors.textTertiary)
+                }
+                Spacer()
+                if isDeload {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(STColors.textTertiary)
+                }
+            }
+            .padding(STSpacing.cardPadding)
+            .background(isDeload ? STColors.primary.opacity(0.1) : STColors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+            .overlay(
+                RoundedRectangle(cornerRadius: STRadius.card)
+                    .stroke(isDeload ? STColors.primary.opacity(0.3) : STColors.border, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private var finishButton: some View {
