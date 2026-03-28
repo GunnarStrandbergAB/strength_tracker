@@ -28,8 +28,13 @@ struct AnalyticsDashboardView: View {
                     // Workout count summary
                     workoutCountHeader
 
-                    // Feature roadmap (shows locked features)
-                    featureRoadmap
+                    // Feature roadmap (shows locked features, hidden when all unlocked)
+                    let roadmapFeatures: [AnalyticsFeatureGate.Feature] = [
+                        .qualityScore, .plateauDetection, .muscleBalance, .advancedInsights
+                    ]
+                    if roadmapFeatures.contains(where: { !viewModel.isFeatureUnlocked($0) }) {
+                        featureRoadmap
+                    }
 
                     // Quality Score overview (aggregate EWMA)
                     if viewModel.isFeatureUnlocked(.qualityScore),
