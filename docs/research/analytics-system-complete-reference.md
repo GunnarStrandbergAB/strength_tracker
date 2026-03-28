@@ -769,8 +769,13 @@ overallScore = (volume + intensity + consistency + balance) / 4
 For each muscle trained:
     perSessionAvg = historyVolume[muscle] / sessionCount
     ratio = currentVolume / perSessionAvg
-    deviation = |ratio − 1.0|
-    groupScore = max(0, 100 × (1 − max(0, deviation − 0.2) / 0.8))
+
+    if 0.8 ≤ ratio ≤ 1.4:
+        groupScore = 100            // sweet spot (progressive overload rewarded)
+    else if ratio < 0.8:
+        groupScore = max(0, ratio / 0.8 × 100)   // linear penalty below average
+    else:  // ratio > 1.4
+        groupScore = max(60, 100 − (ratio − 1.4) / 0.6 × 40)  // gentle taper, floor 60
 
 volumeScore = average(groupScores)
 ```
@@ -1495,7 +1500,9 @@ for a [level]-level trainee who just did: [exercises]. Be encouraging and specif
 | Quality CV mid range | ≤ 0.80 | WorkoutQualityScoreService |
 | Quality balance pair ratio perfect | 1.0× | WorkoutQualityScoreService |
 | Quality balance pair ratio zero | 3.0× | WorkoutQualityScoreService |
-| Volume score deviation tolerance | ±20% | WorkoutQualityScoreService |
+| Volume score sweet spot (asymmetric) | 0.8×–1.4× → 100 | WorkoutQualityScoreService |
+| Volume score below average | < 0.8× → linear to 0 | WorkoutQualityScoreService |
+| Volume score above sweet spot | > 1.4× → taper to floor 60 | WorkoutQualityScoreService |
 | 1RM outlier threshold | 15% | SessionExecutionService |
 | 1RM regression guard | 5% drop min | SessionExecutionService |
 

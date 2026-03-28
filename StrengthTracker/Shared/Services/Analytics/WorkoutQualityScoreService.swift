@@ -285,8 +285,17 @@ public final class WorkoutQualityScoreService: Sendable {
 
             let perSessionAvg = histVol / Double(sessions)
             let ratio = currentVol / perSessionAvg
-            let deviation = abs(ratio - 1.0)
-            let groupScore = max(0, 100.0 * (1.0 - max(0, deviation - 0.2) / 0.8))
+            let groupScore: Double
+            if ratio >= 0.8 && ratio <= 1.4 {
+                // Sweet spot: matching or exceeding average (progressive overload)
+                groupScore = 100.0
+            } else if ratio < 0.8 {
+                // Below average: linear penalty down to 0
+                groupScore = max(0, ratio / 0.8 * 100.0)
+            } else {
+                // Well above average (>1.4x): gentle taper, floor at 60
+                groupScore = max(60.0, 100.0 - (ratio - 1.4) / 0.6 * 40.0)
+            }
             groupScores.append(groupScore)
         }
 
