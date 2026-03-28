@@ -51,6 +51,11 @@ public final class ProgramDesignService: Sendable {
         plan.trainingDays ?? Self.daySpread[plan.weeklyFrequency] ?? Self.daySpread[3]!
     }
 
+    /// Resolve deload days: prefer explicit `deloadDays`, fall back to regular training days.
+    private func resolveDeloadDays(for plan: ProgressionPlan) -> [Int] {
+        plan.deloadDays ?? resolveDays(for: plan)
+    }
+
     public func generateProgram(for plan: ProgressionPlan) -> [TrainingBlock] {
         switch plan.programType {
         case .linear:
@@ -74,6 +79,7 @@ public final class ProgramDesignService: Sendable {
         let maxIntensity = goalRange.upperBound
         let restSeconds = middleRest(for: plan.primaryGoal)
         let days = resolveDays(for: plan)
+        let deloadDays = resolveDeloadDays(for: plan)
 
         // Determine if deloads apply (beginner/intermediate get auto-deload every 4th week)
         let needsScheduledDeload = plan.trainingStatus != .advanced
@@ -129,8 +135,9 @@ public final class ProgramDesignService: Sendable {
             }
             let clampedReps = max(repRange.lowerBound, min(repRange.upperBound, targetReps))
 
+            let weekDays = isDeloadWeek ? deloadDays : days
             let sessions = buildSessions(
-                days: days,
+                days: weekDays,
                 plan: plan,
                 sets: sets,
                 targetReps: clampedReps,
@@ -183,6 +190,7 @@ public final class ProgramDesignService: Sendable {
         let totalWeeks = Defaults.linearWeeks
         let restSeconds = middleRest(for: plan.primaryGoal)
         let days = resolveDays(for: plan)
+        let deloadDays = resolveDeloadDays(for: plan)
         let sessionTypes: [DUPSessionType] = [.hypertrophy, .strength, .power]
         let needsScheduledDeload = plan.trainingStatus != .advanced // M1
 
@@ -198,9 +206,10 @@ public final class ProgramDesignService: Sendable {
             // M2: Reset overload per block, not across entire program
             let overloadMultiplier = 1.0 + (Double(weekInBlock - 1) * Defaults.weeklyOverload)
 
+            let weekDays = isDeloadWeek ? deloadDays : days
             var sessions: [PlannedSession] = []
             var exerciseDayIndex = 0
-            for day in days {
+            for day in weekDays {
                 let sessionExercises = exercisesForDay(day, in: plan) ?? plan.exercises
                 let dayName = Self.dayNames[day] ?? "Day"
 
@@ -303,6 +312,7 @@ public final class ProgramDesignService: Sendable {
         let totalWeeks = Defaults.linearWeeks
         let restSeconds = middleRest(for: plan.primaryGoal)
         let days = resolveDays(for: plan)
+        let deloadDays = resolveDeloadDays(for: plan)
         let schemeRotation: [DUPSessionType] = [.hypertrophy, .strength, .power]
         let needsScheduledDeload = plan.trainingStatus != .advanced // M1
 
@@ -337,8 +347,9 @@ public final class ProgramDesignService: Sendable {
                 reps = (scheme.repRange.lowerBound + scheme.repRange.upperBound) / 2
             }
 
+            let weekDays = isDeloadWeek ? deloadDays : days
             let sessions = buildSessions(
-                days: days,
+                days: weekDays,
                 plan: plan,
                 sets: sets,
                 targetReps: reps,
@@ -385,6 +396,7 @@ public final class ProgramDesignService: Sendable {
     private func generateBlockProgram(_ plan: ProgressionPlan) -> [TrainingBlock] {
         let restSeconds = middleRest(for: plan.primaryGoal)
         let days = resolveDays(for: plan)
+        let deloadDays = resolveDeloadDays(for: plan)
         let phases: [BlockPhase] = [.accumulation, .transmutation, .realization, .deload]
 
         var blocks: [TrainingBlock] = []
@@ -397,8 +409,9 @@ public final class ProgramDesignService: Sendable {
             for weekInPhase in 0..<duration {
                 let phaseParams = blockPhaseParams(phase, weekInPhase: weekInPhase, totalPhaseWeeks: duration)
 
+                let weekDays = phase == .deload ? deloadDays : days
                 let sessions = buildSessions(
-                    days: days,
+                    days: weekDays,
                     plan: plan,
                     sets: phaseParams.sets,
                     targetReps: phaseParams.reps,

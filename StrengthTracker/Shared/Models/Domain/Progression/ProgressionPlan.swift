@@ -28,6 +28,7 @@ public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
     public var secondaryGoal: TrainingGoal?
     public var weeklyFrequency: Int                    // Training days per week
     public var trainingDays: [Int]?                    // Specific ISO 8601 day numbers (Mon=2..Sun=1), nil = use defaults
+    public var deloadDays: [Int]?                      // ISO 8601 day numbers for deload weeks (nil = use trainingDays)
     public var startDate: Date
     public var targetEndDate: Date?
     public var actualEndDate: Date?
@@ -55,6 +56,7 @@ public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
         secondaryGoal: TrainingGoal? = nil,
         weeklyFrequency: Int,
         trainingDays: [Int]? = nil,
+        deloadDays: [Int]? = nil,
         startDate: Date = Date(),
         targetEndDate: Date? = nil,
         actualEndDate: Date? = nil,
@@ -76,6 +78,7 @@ public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
         self.secondaryGoal = secondaryGoal
         self.weeklyFrequency = weeklyFrequency
         self.trainingDays = trainingDays
+        self.deloadDays = deloadDays
         self.startDate = startDate
         self.targetEndDate = targetEndDate
         self.actualEndDate = actualEndDate
