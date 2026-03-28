@@ -94,7 +94,10 @@ struct SetRowGridView: View {
                 weightDebounceTask = Task {
                     try? await Task.sleep(for: .milliseconds(400))
                     guard !Task.isCancelled else { return }
-                    if let value = Double(newValue) {
+                    let trimmed = newValue.trimmingCharacters(in: .whitespaces)
+                    if trimmed.isEmpty {
+                        onWeightChange(nil)
+                    } else if let value = Self.parseDouble(trimmed) {
                         onWeightChange(value)
                     }
                 }
@@ -113,7 +116,10 @@ struct SetRowGridView: View {
                 repsDebounceTask = Task {
                     try? await Task.sleep(for: .milliseconds(400))
                     guard !Task.isCancelled else { return }
-                    if let value = Int(newValue) {
+                    let trimmed = newValue.trimmingCharacters(in: .whitespaces)
+                    if trimmed.isEmpty {
+                        onRepsChange(nil)
+                    } else if let value = Int(trimmed) {
                         onRepsChange(value)
                     }
                 }
@@ -125,7 +131,7 @@ struct SetRowGridView: View {
                 STNumberField(
                     placeholder: "RPE",
                     text: $rpeText,
-                    keyboardType: .numberPad
+                    keyboardType: .decimalPad
                 )
                 .focused($focusedField, equals: .rpe)
                 .onChange(of: rpeText) { _, newValue in
@@ -133,7 +139,7 @@ struct SetRowGridView: View {
                     rpeDebounceTask = Task {
                         try? await Task.sleep(for: .milliseconds(400))
                         guard !Task.isCancelled else { return }
-                        if let val = Double(newValue) {
+                        if let val = Self.parseDouble(newValue) {
                             onRPEChange?(min(max(val, 1), 10))
                         } else {
                             onRPEChange?(nil)
@@ -149,11 +155,19 @@ struct SetRowGridView: View {
                 weightDebounceTask?.cancel()
                 repsDebounceTask?.cancel()
                 rpeDebounceTask?.cancel()
-                if let w = Double(weightText) { onWeightChange(w) }
-                if let r = Int(repsText) { onRepsChange(r) }
-                if let rpeVal = Double(rpeText) {
-                    onRPEChange?(min(max(rpeVal, 1), 10))
-                }
+
+                let tw = weightText.trimmingCharacters(in: .whitespaces)
+                if tw.isEmpty { onWeightChange(nil) }
+                else if let w = Self.parseDouble(tw) { onWeightChange(w) }
+
+                let tr = repsText.trimmingCharacters(in: .whitespaces)
+                if tr.isEmpty { onRepsChange(nil) }
+                else if let r = Int(tr) { onRepsChange(r) }
+
+                let tp = rpeText.trimmingCharacters(in: .whitespaces)
+                if tp.isEmpty { onRPEChange?(nil) }
+                else if let rpeVal = Self.parseDouble(tp) { onRPEChange?(min(max(rpeVal, 1), 10)) }
+
                 onToggleComplete()
             }
             .frame(width: 48, alignment: .trailing)
@@ -161,6 +175,23 @@ struct SetRowGridView: View {
         .padding(.horizontal, STSpacing.setRowHorizontal)
         .padding(.vertical, STSpacing.setRowVertical)
         .background(setRowBackground)
+        .onDisappear {
+            weightDebounceTask?.cancel()
+            repsDebounceTask?.cancel()
+            rpeDebounceTask?.cancel()
+
+            let tw = weightText.trimmingCharacters(in: .whitespaces)
+            if tw.isEmpty { onWeightChange(nil) }
+            else if let w = Self.parseDouble(tw) { onWeightChange(w) }
+
+            let tr = repsText.trimmingCharacters(in: .whitespaces)
+            if tr.isEmpty { onRepsChange(nil) }
+            else if let r = Int(tr) { onRepsChange(r) }
+
+            let tp = rpeText.trimmingCharacters(in: .whitespaces)
+            if tp.isEmpty { onRPEChange?(nil) }
+            else if let rpeVal = Self.parseDouble(tp) { onRPEChange?(min(max(rpeVal, 1), 10)) }
+        }
     }
 
     // MARK: - Set Type Helpers
@@ -184,6 +215,11 @@ struct SetRowGridView: View {
         case .failure: return STColors.danger
         case .restPause: return .blue
         }
+    }
+
+    private static func parseDouble(_ text: String) -> Double? {
+        let normalized = text.replacingOccurrences(of: ",", with: ".")
+        return Double(normalized)
     }
 
     private var setRowBackground: Color {
