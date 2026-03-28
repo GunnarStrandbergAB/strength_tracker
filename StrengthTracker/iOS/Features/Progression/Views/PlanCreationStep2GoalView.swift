@@ -88,6 +88,61 @@ struct PlanCreationStep2GoalView: View {
                 }
                 .padding(.horizontal, 20)
 
+                // Deload Days
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("DELOAD DAYS")
+                        .font(.system(size: 10, weight: .bold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(STColors.textSecondary)
+
+                    Toggle(isOn: Binding(
+                        get: { viewModel.draftUseCustomDeloadDays },
+                        set: { newValue in
+                            viewModel.draftUseCustomDeloadDays = newValue
+                            if newValue && viewModel.draftDeloadDays.isEmpty {
+                                viewModel.applyDefaultDeloadDays()
+                            }
+                        }
+                    )) {
+                        Text("Customise deload sessions")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(STColors.textPrimary)
+                    }
+                    .tint(STColors.primary)
+
+                    if viewModel.draftUseCustomDeloadDays {
+                        Text("\(viewModel.draftDeloadDays.count) of \(viewModel.draftTrainingDays.count) training days during deload")
+                            .font(.system(size: 13))
+                            .foregroundStyle(STColors.textSecondary)
+
+                        HStack(spacing: 8) {
+                            ForEach(dayOptions, id: \.isoDay) { option in
+                                let isTrainingDay = viewModel.draftTrainingDays.contains(option.isoDay)
+                                let isDeloadDay = viewModel.draftDeloadDays.contains(option.isoDay)
+                                Button {
+                                    viewModel.toggleDeloadDay(option.isoDay)
+                                } label: {
+                                    Text(option.letter)
+                                        .font(.system(size: 14, weight: .bold))
+                                        .frame(width: 38, height: 38)
+                                        .foregroundStyle(
+                                            isDeloadDay ? STColors.background :
+                                            isTrainingDay ? STColors.textSecondary : STColors.textTertiary.opacity(0.4)
+                                        )
+                                        .background(isDeloadDay ? STColors.primary : STColors.surface)
+                                        .clipShape(Circle())
+                                        .opacity(isTrainingDay ? 1.0 : 0.4)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(!isTrainingDay)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                    }
+                }
+                .padding(.horizontal, 20)
+
                 // Start Date
                 VStack(alignment: .leading, spacing: 10) {
                     Text("START DATE")

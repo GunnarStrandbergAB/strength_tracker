@@ -45,6 +45,8 @@ public final class ProgressionPlanViewModel {
     public var draftStartDate: Date = Date()
     public var draftStartDateManuallySet: Bool = false
     public var draftDaySchedule: [Int: DraftDayEntry] = [:]  // keyed by ISO day
+    public var draftUseCustomDeloadDays: Bool = false
+    public var draftDeloadDays: Set<Int> = []
     public var isSavingPlan = false
     public var errorMessage: String?
 
@@ -172,6 +174,8 @@ public final class ProgressionPlanViewModel {
         if draftTrainingDays.contains(day) {
             guard draftTrainingDays.count > 2 else { return }
             draftTrainingDays.remove(day)
+            // Remove from deload days if it was selected there
+            draftDeloadDays.remove(day)
         } else {
             guard draftTrainingDays.count < 6 else { return }
             draftTrainingDays.insert(day)
@@ -181,6 +185,26 @@ public final class ProgressionPlanViewModel {
             draftStartDate = defaultStartDate()
         }
     }
+
+    public func toggleDeloadDay(_ day: Int) {
+        guard draftTrainingDays.contains(day) else { return }
+        if draftDeloadDays.contains(day) {
+            guard draftDeloadDays.count > 1 else { return }
+            draftDeloadDays.remove(day)
+        } else {
+            guard draftDeloadDays.count < draftTrainingDays.count else { return }
+            draftDeloadDays.insert(day)
+        }
+    }
+
+    /// Picks a sensible default subset of training days for deload (roughly 60%, min 2).
+    public func applyDefaultDeloadDays() {
+        let sorted = Self.dayDisplayOrder.filter { draftTrainingDays.contains($0) }
+        let count = max(2, sorted.count - 2) // e.g. 5→3, 4→2, 3→2, 2→2
+        draftDeloadDays = Set(sorted.prefix(count))
+    }
+
+    private static let dayDisplayOrder: [Int] = [2, 3, 4, 5, 6, 7, 1]
 
     // MARK: - Start Date
 
@@ -351,6 +375,10 @@ public final class ProgressionPlanViewModel {
                 )
             }
 
+            let sortedDeloadDays: [Int]? = draftUseCustomDeloadDays && !draftDeloadDays.isEmpty
+                ? Self.dayDisplayOrder.filter { draftDeloadDays.contains($0) }
+                : nil
+
             var plan = ProgressionPlan(
                 name: draftPlanName.isEmpty ? "Training Plan" : draftPlanName,
                 status: .active,
@@ -359,6 +387,7 @@ public final class ProgressionPlanViewModel {
                 primaryGoal: draftGoal,
                 weeklyFrequency: draftFrequency,
                 trainingDays: sortedDays,
+                deloadDays: sortedDeloadDays,
                 startDate: draftStartDate,
                 exercises: planExercises,
                 daySchedule: daySchedule,
@@ -402,6 +431,8 @@ public final class ProgressionPlanViewModel {
         draftProgramType = .linear
         draftFrequency = 3
         draftTrainingDays = []
+        draftUseCustomDeloadDays = false
+        draftDeloadDays = []
         draftSelectedExercises = []
         draftDaySchedule = [:]
         draftPlanName = ""

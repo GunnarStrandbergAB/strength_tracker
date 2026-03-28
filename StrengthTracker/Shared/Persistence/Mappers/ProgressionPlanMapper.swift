@@ -44,6 +44,9 @@ public enum ProgressionPlanMapper {
         let trainingDays: [Int]? = entity.trainingDaysJSON.flatMap {
             try? decoder.decode([Int].self, from: $0)
         }
+        let deloadDays: [Int]? = entity.deloadDaysJSON.flatMap {
+            try? decoder.decode([Int].self, from: $0)
+        }
         let daySchedule: [DayScheduleEntry] = entity.dayScheduleJSON.flatMap {
             try? decoder.decode([DayScheduleEntry].self, from: $0)
         } ?? []
@@ -62,6 +65,7 @@ public enum ProgressionPlanMapper {
             secondaryGoal: secondaryGoal,
             weeklyFrequency: entity.weeklyFrequency,
             trainingDays: trainingDays,
+            deloadDays: deloadDays,
             startDate: entity.startDate,
             targetEndDate: entity.targetEndDate,
             actualEndDate: entity.actualEndDate,
@@ -84,6 +88,7 @@ public enum ProgressionPlanMapper {
         let blocksData = encodeOrWarn(plan.blocks, label: "blocks")
         let adjustmentsData = encodeOrWarn(plan.adjustments, label: "adjustments")
         let trainingDaysData: Data? = plan.trainingDays.flatMap { try? encoder.encode($0) }
+        let deloadDaysData: Data? = plan.deloadDays.flatMap { try? encoder.encode($0) }
         let dayScheduleData: Data? = plan.daySchedule.isEmpty ? nil : (try? encoder.encode(plan.daySchedule))
 
         return ProgressionPlanEntity(
@@ -96,6 +101,7 @@ public enum ProgressionPlanMapper {
             secondaryGoal: plan.secondaryGoal?.rawValue,
             weeklyFrequency: plan.weeklyFrequency,
             trainingDaysJSON: trainingDaysData,
+            deloadDaysJSON: deloadDaysData,
             startDate: plan.startDate,
             targetEndDate: plan.targetEndDate,
             actualEndDate: plan.actualEndDate,
@@ -123,6 +129,7 @@ public enum ProgressionPlanMapper {
         entity.secondaryGoal = plan.secondaryGoal?.rawValue
         entity.weeklyFrequency = plan.weeklyFrequency
         entity.trainingDaysJSON = plan.trainingDays.flatMap { try? encoder.encode($0) }
+        entity.deloadDaysJSON = plan.deloadDays.flatMap { try? encoder.encode($0) }
         entity.startDate = plan.startDate
         entity.targetEndDate = plan.targetEndDate
         entity.actualEndDate = plan.actualEndDate

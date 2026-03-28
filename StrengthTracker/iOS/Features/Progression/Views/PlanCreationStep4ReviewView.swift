@@ -53,6 +53,10 @@ struct PlanCreationStep5ReviewView: View {
                         summaryRow(label: "Program", value: viewModel.draftProgramType.displayName)
                         Divider().overlay(STColors.border)
                         summaryRow(label: "Frequency", value: trainingDaysSummary)
+                        if viewModel.draftUseCustomDeloadDays && !viewModel.draftDeloadDays.isEmpty {
+                            Divider().overlay(STColors.border)
+                            summaryRow(label: "Deload", value: deloadDaysSummary)
+                        }
                         Divider().overlay(STColors.border)
                         summaryRow(label: "Level", value: viewModel.draftStatus.rawValue.capitalized)
                         Divider().overlay(STColors.border)
@@ -261,6 +265,13 @@ struct PlanCreationStep5ReviewView: View {
     private var trainingDaysSummary: String {
         let days = viewModel.draftTrainingDays
         guard !days.isEmpty else { return "\(viewModel.draftFrequency) days/week" }
+        let sorted = Self.dayDisplayOrder.filter { days.contains($0) }
+        let names = sorted.compactMap { Self.shortDayNames[$0] }
+        return names.joined(separator: ", ")
+    }
+
+    private var deloadDaysSummary: String {
+        let days = viewModel.draftDeloadDays
         let sorted = Self.dayDisplayOrder.filter { days.contains($0) }
         let names = sorted.compactMap { Self.shortDayNames[$0] }
         return names.joined(separator: ", ")
