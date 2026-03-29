@@ -30,6 +30,7 @@ public enum WorkoutVectorMapper {
             id: entity.id,
             workoutId: entity.workoutId,
             dimensions: dataToDoubles(entity.vectorData),
+            magnitude: entity.magnitude,
             createdAt: entity.createdAt
         )
     }
@@ -48,6 +49,7 @@ public enum WorkoutVectorMapper {
             workoutId: domain.workoutId,
             createdAt: domain.createdAt,
             vectorData: doublesToData(domain.dimensions),
+            magnitude: domain.magnitude,
             totalVolume: totalVolume,
             workoutDate: workoutDate,
             primaryMuscleGroups: primaryMuscleGroups
@@ -63,6 +65,7 @@ public enum WorkoutVectorMapper {
         primaryMuscleGroups: [String]
     ) {
         entity.vectorData = doublesToData(domain.dimensions)
+        entity.magnitude = domain.magnitude
         entity.createdAt = domain.createdAt
         entity.totalVolume = totalVolume
         entity.workoutDate = workoutDate

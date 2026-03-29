@@ -19,7 +19,7 @@ public final class WorkoutAnalyticsService: Sendable {
     private let userPreferencesService: UserPreferencesService?
 
     /// Current vector schema version — bump when normalization constants change
-    private static let currentVectorVersion = 1
+    private static let currentVectorVersion = 2
 
     // Advanced Insights services
     private let volumeLandmarkService: VolumeLandmarkService?
