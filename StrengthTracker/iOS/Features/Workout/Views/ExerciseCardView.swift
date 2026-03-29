@@ -16,6 +16,7 @@ struct ExerciseCardView: View {
     let onSetTypeChange: (UUID, SetType) -> Void
     let onNoteChange: ((String) -> Void)?
     let onMoveSet: ((Int, Int) -> Void)?
+    let coachingData: ExerciseCoachingData?
 
     @State private var isReorderingSets: Bool = false
     @State private var isEditingNote: Bool = false
@@ -36,7 +37,8 @@ struct ExerciseCardView: View {
         onRemoveExercise: (() -> Void)? = nil,
         onSetTypeChange: @escaping (UUID, SetType) -> Void = { _, _ in },
         onNoteChange: ((String) -> Void)? = nil,
-        onMoveSet: ((Int, Int) -> Void)? = nil
+        onMoveSet: ((Int, Int) -> Void)? = nil,
+        coachingData: ExerciseCoachingData? = nil
     ) {
         self.workoutExercise = workoutExercise
         self.isActiveExercise = isActiveExercise
@@ -51,6 +53,7 @@ struct ExerciseCardView: View {
         self.onSetTypeChange = onSetTypeChange
         self.onNoteChange = onNoteChange
         self.onMoveSet = onMoveSet
+        self.coachingData = coachingData
         self._noteText = State(initialValue: workoutExercise.notes ?? "")
         self._isEditingNote = State(initialValue: workoutExercise.notes != nil && !workoutExercise.notes!.isEmpty)
         // Show RPE column if any set already has RPE data
@@ -61,6 +64,11 @@ struct ExerciseCardView: View {
         VStack(spacing: 0) {
             // Header
             cardHeader
+
+            // Effort creep warning (M2)
+            if let warning = coachingData?.effortCreepWarning {
+                effortCreepBanner(warning)
+            }
 
             Divider()
                 .background(STColors.border)
@@ -106,6 +114,7 @@ struct ExerciseCardView: View {
                         setNumber: index + 1,
                         exerciseSet: exerciseSet,
                         previousText: previousSetData[index],
+                        weightSuggestion: coachingData?.suggestions[index],
                         showRPE: showRPE,
                         onWeightChange: { weight in
                             onWeightChange(exerciseSet.id, weight)
@@ -158,6 +167,16 @@ struct ExerciseCardView: View {
                 Text(muscleGroupText)
                     .font(.system(size: 12))
                     .foregroundStyle(STColors.textSecondary)
+
+                if let hint = coachingData?.hint {
+                    HStack(spacing: 4) {
+                        Image(systemName: hint.icon)
+                            .font(.system(size: 10))
+                        Text(hint.text)
+                            .font(.system(size: 11))
+                    }
+                    .foregroundStyle(STColors.textSecondary)
+                }
             }
 
             Spacer()
@@ -345,6 +364,24 @@ struct ExerciseCardView: View {
         let weight = set.weight.map { String(format: "%g", $0) + " kg" } ?? "–"
         let reps = set.reps.map { "\($0) reps" } ?? "–"
         return "\(weight) × \(reps)"
+    }
+
+    // MARK: - Effort Creep Banner
+
+    private func effortCreepBanner(_ warning: EffortCreepWarning) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(.orange)
+            Text(warning.message)
+                .font(.system(size: 11))
+                .foregroundStyle(STColors.textSecondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, STSpacing.cardPadding)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.08))
     }
 
     // MARK: - Helpers

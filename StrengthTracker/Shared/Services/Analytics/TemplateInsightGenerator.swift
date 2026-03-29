@@ -187,6 +187,11 @@ public final class TemplateInsightGenerator: InsightTextGenerating, @unchecked S
         return Array(highlights.prefix(3))
     }
 
+    @MainActor
+    public func enhancePostWorkoutBullets(_ bullets: [CoachingInsight]) async -> [CoachingInsight] {
+        bullets // pass-through: template generator returns bullets unchanged
+    }
+
     // MARK: - Helpers
 
     private func phaseDisplayName(_ phase: DetectedPhase) -> String {

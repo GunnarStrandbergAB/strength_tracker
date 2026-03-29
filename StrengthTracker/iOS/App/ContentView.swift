@@ -55,7 +55,8 @@ struct ContentView: View {
             ActiveWorkoutView(
                 viewModel: workoutViewModel,
                 exerciseListViewModel: exerciseListViewModel,
-                restTimerService: restTimerService
+                restTimerService: restTimerService,
+                analyticsViewModel: analyticsViewModel
             )
             .tint(STColors.textSecondary)
             .tabItem {
@@ -88,6 +89,18 @@ struct ContentView: View {
         .toolbarBackground(.visible, for: .tabBar)
         .toolbarColorScheme(.dark, for: .tabBar)
         .tint(STColors.primary)
+        .sheet(isPresented: .init(
+            get: { workoutViewModel.showPostWorkoutSummary },
+            set: { if !$0 { workoutViewModel.showPostWorkoutSummary = false; workoutViewModel.postWorkoutDebrief = nil } }
+        )) {
+            if let debrief = workoutViewModel.postWorkoutDebrief {
+                PostWorkoutSummaryView(debrief: debrief) {
+                    workoutViewModel.showPostWorkoutSummary = false
+                    workoutViewModel.postWorkoutDebrief = nil
+                }
+                .interactiveDismissDisabled(false)
+            }
+        }
         .onChange(of: workoutViewModel.isActive) { oldValue, isActive in
             if isActive {
                 selectedTab = 1

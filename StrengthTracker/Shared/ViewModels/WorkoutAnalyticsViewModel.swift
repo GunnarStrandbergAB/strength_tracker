@@ -26,6 +26,10 @@ public final class WorkoutAnalyticsViewModel {
     /// Batch migration
     public var isMigrating = false
 
+    /// Pre-workout context (M4)
+    public var adherenceAnalysis: AdherenceAnalysis?
+    public var weeklyDigest: WeeklyDigest?
+
     /// Error handling
     public var errorMessage: String?
 
@@ -36,6 +40,8 @@ public final class WorkoutAnalyticsViewModel {
     private let featureGate: AnalyticsFeatureGate
     private let workoutRepository: (any WorkoutRepository)?
     private let proFeatureGate: ProFeatureGate?
+    private let adherenceService: AdherenceAnalysisService?
+    private let coachingInsightService: CoachingInsightService?
 
     private var lastInsightsLoadTime: Date?
 
@@ -48,13 +54,17 @@ public final class WorkoutAnalyticsViewModel {
         qualityScoreService: WorkoutQualityScoreService,
         featureGate: AnalyticsFeatureGate,
         workoutRepository: (any WorkoutRepository)? = nil,
-        proFeatureGate: ProFeatureGate? = nil
+        proFeatureGate: ProFeatureGate? = nil,
+        adherenceService: AdherenceAnalysisService? = nil,
+        coachingInsightService: CoachingInsightService? = nil
     ) {
         self.analyticsService = analyticsService
         self.qualityScoreService = qualityScoreService
         self.featureGate = featureGate
         self.workoutRepository = workoutRepository
         self.proFeatureGate = proFeatureGate
+        self.adherenceService = adherenceService
+        self.coachingInsightService = coachingInsightService
     }
 
     // MARK: - Dashboard (loads WorkoutInsights aggregate)
@@ -145,6 +155,23 @@ public final class WorkoutAnalyticsViewModel {
 
                 // Aggregate EWMA quality across all workouts
                 aggregateQuality = qualityScoreService.computeAggregateScore(workouts: allCompleted)
+            }
+
+            // Adherence analysis (M3)
+            if let adherenceSvc = adherenceService, let repo = workoutRepository {
+                let allWorkouts = try await repo.fetchAll()
+                adherenceAnalysis = adherenceSvc.analyze(workouts: allWorkouts)
+
+                // Weekly digest (M5)
+                if unlockedFeatures.contains(.weeklyDigest),
+                   let coaching = coachingInsightService {
+                    let bw = 80.0 // Default; actual body weight resolved in view layer
+                    weeklyDigest = coaching.generateWeeklyDigest(
+                        workouts: allWorkouts,
+                        overloadTrends: rawInsights.overloadTrends,
+                        bodyWeightKg: bw
+                    )
+                }
             }
         } catch {
             isMigrating = false
@@ -268,27 +295,59 @@ public final class WorkoutAnalyticsViewModel {
 
     public func featureDisplayName(_ feature: AnalyticsFeatureGate.Feature) -> String {
         switch feature {
+        case .postWorkoutDebrief: return "Post-Workout Debrief"
+        case .weightSuggestion: return "Weight Suggestions"
+        case .weeklyDigest: return "Weekly Digest"
+        case .effortCreepWarning: return "Effort Creep Warnings"
+        case .exerciseHints: return "Exercise Hints"
         case .similarWorkouts: return "Similar Workouts"
         case .qualityScore: return "Quality Score"
         case .strengthTrends: return "Strength Trends"
         case .exerciseRecommendations: return "Recommendations"
+        case .preWorkoutContext: return "Pre-Workout Context"
         case .plateauDetection: return "Plateau Detection"
+        case .archetypeClustering: return "Workout Archetypes"
+        case .achievements: return "Achievements"
+        case .sequencePrediction: return "Sequence Prediction"
+        case .workoutSuggestion: return "Workout Suggestions"
         case .muscleBalance: return "Muscle Balance"
         case .recoveryTimeline: return "Recovery Timeline"
         case .advancedInsights: return "Advanced Insights"
+        case .trajectoryAnalysis: return "Training Trajectory"
+        case .trainingFingerprint: return "Training Fingerprint"
+        case .muscleNeglect: return "Muscle Neglect Detection"
+        case .timeOfDayAnalysis: return "Time-of-Day Analysis"
+        case .changePointDetection: return "Change Point Detection"
+        case .volumeResponseCurve: return "Volume-Response Curve"
         }
     }
 
     public func featureDescription(_ feature: AnalyticsFeatureGate.Feature) -> String {
         switch feature {
+        case .postWorkoutDebrief: return "Summary and coaching insights after each workout"
+        case .weightSuggestion: return "Suggested weights based on recent performance"
+        case .weeklyDigest: return "Weekly training summary with top insight"
+        case .effortCreepWarning: return "Alert when RPE climbs without strength gains"
+        case .exerciseHints: return "Inline hints per exercise during logging"
         case .similarWorkouts: return "Find past workouts that match your current session"
         case .qualityScore: return "Rate each workout on volume, intensity, and balance"
         case .strengthTrends: return "Track strength changes over time per exercise"
         case .exerciseRecommendations: return "Get exercise suggestions based on your training gaps"
+        case .preWorkoutContext: return "Recovery and load status before training"
         case .plateauDetection: return "Spot exercises where progress has stalled"
+        case .archetypeClustering: return "Identify your distinct workout types"
+        case .achievements: return "Earn badges for training milestones"
+        case .sequencePrediction: return "Predict your likely next workout type"
+        case .workoutSuggestion: return "Recovery-aware next workout suggestion"
         case .muscleBalance: return "Check if opposing muscle groups are trained evenly"
         case .recoveryTimeline: return "Optimal rest days between sessions"
         case .advancedInsights: return "Deep analysis across your full training history"
+        case .trajectoryAnalysis: return "Track how your training is changing over time"
+        case .trainingFingerprint: return "Your training variety and consistency profile"
+        case .muscleNeglect: return "Detect declining volume in muscle groups"
+        case .timeOfDayAnalysis: return "Find your optimal training window"
+        case .changePointDetection: return "Identify major shifts in your training"
+        case .volumeResponseCurve: return "Personal volume-response curve per muscle group"
         }
     }
 }

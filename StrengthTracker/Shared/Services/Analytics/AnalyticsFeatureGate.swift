@@ -13,25 +13,57 @@ import Foundation
 public final class AnalyticsFeatureGate: Sendable {
 
     public enum Feature: String, CaseIterable, Sendable {
+        case postWorkoutDebrief     // Phase 1: 1 workout (progressive content)
+        case weightSuggestion       // Phase 2: 5 workouts
+        case weeklyDigest           // Phase 2: 5 workouts
         case similarWorkouts        // Phase 2: 5 workouts
         case qualityScore           // Phase 2: 5 workouts
         case strengthTrends         // Phase 2: 5 workouts
         case exerciseRecommendations // Phase 2: 5 workouts
+        case preWorkoutContext      // Phase 2: 5 workouts
+        case effortCreepWarning     // Phase 3: 10 workouts
+        case exerciseHints          // Phase 3: 10 workouts
         case plateauDetection       // Phase 3: 10 workouts
-        case muscleBalance          // Phase 3: 20 workouts
+        case archetypeClustering    // Phase 3: 10 workouts
+        case achievements           // Phase 3: 10 workouts
+        case sequencePrediction     // Phase 3: 15 workouts
+        case workoutSuggestion      // Phase 3: 15 workouts
+        case muscleBalance          // Phase 3: 19 workouts
+        case advancedInsights       // Phase 3: 19 workouts
+        case trajectoryAnalysis     // Phase 3: 19 workouts
+        case trainingFingerprint    // Phase 3: 19 workouts
+        case muscleNeglect          // Phase 3: 19 workouts
         case recoveryTimeline       // Phase 3: 20 workouts
-        case advancedInsights       // Phase 4: 19 workouts
+        case timeOfDayAnalysis      // Phase 3: 20 workouts
+        case changePointDetection   // Phase 3: 20 workouts
+        case volumeResponseCurve    // Phase 4: 50 workouts
     }
 
     private static let thresholds: [Feature: Int] = [
+        .postWorkoutDebrief: 1,
+        .weightSuggestion: 5,
+        .weeklyDigest: 5,
         .similarWorkouts: 5,
         .qualityScore: 5,
         .strengthTrends: 5,
         .exerciseRecommendations: 5,
+        .preWorkoutContext: 5,
+        .effortCreepWarning: 10,
+        .exerciseHints: 10,
         .plateauDetection: 10,
+        .archetypeClustering: 10,
+        .achievements: 10,
+        .sequencePrediction: 15,
+        .workoutSuggestion: 15,
         .muscleBalance: 19,
-        .recoveryTimeline: 20,
         .advancedInsights: 19,
+        .trajectoryAnalysis: 19,
+        .trainingFingerprint: 19,
+        .muscleNeglect: 19,
+        .recoveryTimeline: 20,
+        .timeOfDayAnalysis: 20,
+        .changePointDetection: 20,
+        .volumeResponseCurve: 50,
     ]
 
     private let workoutRepository: any WorkoutRepository

@@ -22,6 +22,7 @@ public struct WorkoutInsights: Sendable {
     public let blockComparison: BlockComparison?
     public let anomalies: [WorkoutAnomaly]
     public let highlights: [AnalyticsHighlight]
+    public let trajectoryAnalysis: TrajectoryAnalysis?
 
     public init(
         generatedAt: Date,
@@ -38,7 +39,8 @@ public struct WorkoutInsights: Sendable {
         trainingPhase: TrainingPhaseDetection? = nil,
         blockComparison: BlockComparison? = nil,
         anomalies: [WorkoutAnomaly] = [],
-        highlights: [AnalyticsHighlight] = []
+        highlights: [AnalyticsHighlight] = [],
+        trajectoryAnalysis: TrajectoryAnalysis? = nil
     ) {
         self.generatedAt = generatedAt
         self.workoutCount = workoutCount
@@ -55,6 +57,7 @@ public struct WorkoutInsights: Sendable {
         self.blockComparison = blockComparison
         self.anomalies = anomalies
         self.highlights = highlights
+        self.trajectoryAnalysis = trajectoryAnalysis
     }
 
     /// Empty insights for initial state before data loads.

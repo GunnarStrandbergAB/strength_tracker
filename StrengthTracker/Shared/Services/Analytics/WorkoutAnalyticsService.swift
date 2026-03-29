@@ -253,6 +253,13 @@ public final class WorkoutAnalyticsService: Sendable {
         )
     }
 
+    // MARK: - Vector Access
+
+    /// Fetch all stored workout vectors.
+    public func fetchAllVectors() async throws -> [WorkoutVector] {
+        try await analyticsRepository.fetchAllVectors()
+    }
+
     // MARK: - Vectorization Management
 
     /// Ensure a workout has been vectorized

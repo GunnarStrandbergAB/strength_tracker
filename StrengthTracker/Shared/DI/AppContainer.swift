@@ -39,6 +39,13 @@ public final class AppContainer: Sendable {
     public let qualityScoreService: WorkoutQualityScoreService
     public let analyticsFeatureGate: AnalyticsFeatureGate
     public let analyticsService: WorkoutAnalyticsService
+    public let coachingInsightService: CoachingInsightService
+    public let weightSuggestionService: WeightSuggestionService
+    public let adherenceAnalysisService: AdherenceAnalysisService
+    public let trajectoryAnalysisService: TrajectoryAnalysisService
+    public let workoutArchetypeService: WorkoutArchetypeService
+    public let changePointDetectionService: ChangePointDetectionService
+    public let achievementTrackingService: AchievementTrackingService
 
     // Progression
     public let trainingStatusDetector: TrainingStatusDetector
@@ -161,6 +168,19 @@ public final class AppContainer: Sendable {
             insightGenerator: insightGen
         )
 
+        coachingInsightService = CoachingInsightService(
+            searchService: searchService,
+            qualityScoreService: qualityScoreService,
+            insightGenerator: insightGen
+        )
+
+        weightSuggestionService = WeightSuggestionService()
+        adherenceAnalysisService = AdherenceAnalysisService()
+        trajectoryAnalysisService = TrajectoryAnalysisService()
+        workoutArchetypeService = WorkoutArchetypeService(searchService: searchService)
+        changePointDetectionService = ChangePointDetectionService(searchService: searchService)
+        achievementTrackingService = AchievementTrackingService()
+
         // Remaining progression services (stateless -- ADR-014)
         programDesignService = ProgramDesignService()
         sessionExecutionService = SessionExecutionService()
@@ -177,7 +197,9 @@ public final class AppContainer: Sendable {
             userPreferencesService: userPreferencesService,
             analyticsService: analyticsService,
             webhookService: webhookService,
-            progressionPlanRepository: progressionPlanRepository
+            progressionPlanRepository: progressionPlanRepository,
+            coachingInsightService: coachingInsightService,
+            weightSuggestionService: weightSuggestionService
         )
         templateViewModel = TemplateViewModel(
             templateRepository: templateRepository,
@@ -201,7 +223,9 @@ public final class AppContainer: Sendable {
             qualityScoreService: qualityScoreService,
             featureGate: analyticsFeatureGate,
             workoutRepository: workoutRepository,
-            proFeatureGate: proFeatureGate
+            proFeatureGate: proFeatureGate,
+            adherenceService: adherenceAnalysisService,
+            coachingInsightService: coachingInsightService
         )
         progressionPlanViewModel = ProgressionPlanViewModel(
             progressionPlanRepository: progressionPlanRepository,

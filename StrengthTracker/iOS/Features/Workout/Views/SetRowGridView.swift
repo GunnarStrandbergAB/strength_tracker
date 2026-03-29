@@ -6,6 +6,7 @@ struct SetRowGridView: View {
     let setNumber: Int
     let exerciseSet: ExerciseSet
     let previousText: String?
+    let weightSuggestion: WeightSuggestion?
     let showRPE: Bool
     let onWeightChange: (Double?) -> Void
     let onRepsChange: (Int?) -> Void
@@ -31,6 +32,7 @@ struct SetRowGridView: View {
         setNumber: Int,
         exerciseSet: ExerciseSet,
         previousText: String? = nil,
+        weightSuggestion: WeightSuggestion? = nil,
         showRPE: Bool = false,
         onWeightChange: @escaping (Double?) -> Void,
         onRepsChange: @escaping (Int?) -> Void,
@@ -41,6 +43,7 @@ struct SetRowGridView: View {
         self.setNumber = setNumber
         self.exerciseSet = exerciseSet
         self.previousText = previousText
+        self.weightSuggestion = weightSuggestion
         self.showRPE = showRPE
         self.onWeightChange = onWeightChange
         self.onRepsChange = onRepsChange
@@ -75,12 +78,22 @@ struct SetRowGridView: View {
             .buttonStyle(.plain)
 
             // PREVIOUS column (4fr)
-            Text(previousText ?? "--")
-                .font(.system(size: 12))
-                .italic()
-                .foregroundStyle(STColors.textTertiary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(previousText ?? "--")
+                    .font(.system(size: 12))
+                    .italic()
+                    .foregroundStyle(STColors.textTertiary)
+                    .lineLimit(1)
+
+                if let suggestion = weightSuggestion,
+                   !exerciseSet.isCompleted {
+                    Text("Try \(String(format: "%g", suggestion.weight)) kg")
+                        .font(.system(size: 10))
+                        .foregroundStyle(STColors.primary.opacity(0.8))
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             // KG column (3fr)
             STNumberField(

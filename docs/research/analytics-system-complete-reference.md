@@ -1,7 +1,7 @@
 # HellBentIron Analytics System — Complete Reference
 
 > Exhaustive documentation of every analytics service, equation, data model, UI element, and user-facing text string in the StrengthTracker analytics system.
-> Generated 2026-03-22.
+> Generated 2026-03-22. Updated 2026-03-29 (M1-M9 coaching insights).
 
 ---
 
@@ -28,6 +28,13 @@
    - 5.8 BlockComparisonService
    - 5.9 AnomalyDetectionService
    - 5.10 WorkoutQualityScoreService
+   - 5.11 CoachingInsightService
+   - 5.12 WeightSuggestionService
+   - 5.13 AdherenceAnalysisService
+   - 5.14 TrajectoryAnalysisService
+   - 5.15 WorkoutArchetypeService
+   - 5.16 ChangePointDetectionService
+   - 5.17 AchievementTrackingService
 6. [Progression & Coaching Services](#6-progression--coaching-services)
    - 6.1 TrainingStatusDetector
    - 6.2 ProgramDesignService
@@ -45,8 +52,11 @@
    - 8.5 ExerciseInsightsView
    - 8.6 SimilarWorkoutsView
    - 8.7 WorkoutQualityScoreView
-   - 8.8 Color Coding Reference
-   - 8.9 Number Formatting Rules
+   - 8.8 PostWorkoutSummaryView
+   - 8.9 PreWorkoutContextCard
+   - 8.10 WeeklyDigestCard
+   - 8.11 Color Coding Reference
+   - 8.12 Number Formatting Rules
 9. [Recommendations & Insights — How They Are Created and Presented](#9-recommendations--insights)
    - 9.1 Advanced Highlights (19+ workouts)
    - 9.2 Early Highlights (5–18 workouts)
@@ -58,6 +68,9 @@
    - 9.8 Post-Workout Summaries
    - 9.9 Drift & Block Comparison Text
    - 9.10 Phase Descriptions
+   - 9.11 Post-Workout Coaching Bullet Selection
+   - 9.12 Weekly Digest Top Insight Selection
+   - 9.13 Exercise Hint Priority
 10. [Apple Intelligence Integration](#10-apple-intelligence-integration)
 11. [Key Thresholds & Constants](#11-key-thresholds--constants)
 
@@ -85,15 +98,24 @@ WorkoutAnalyticsService.generateInsights()
     │   ├─ RecoveryEstimationService
     │   └─ VolumeLandmarkService
     │
-    └─ Phase 4 (19+ workouts — "Advanced Insights")
-        ├─ TrainingLoadService (ACWR)
-        ├─ OverloadTrackingService
-        ├─ DeloadDetectionService
-        ├─ TrainingDriftService
-        ├─ PhaseDetectionService
-        ├─ BlockComparisonService
-        ├─ AnomalyDetectionService
-        └─ InsightTextGenerator (Template or Apple Intelligence)
+    ├─ Phase 4 (19+ workouts — "Advanced Insights")
+    │   ├─ TrainingLoadService (ACWR)
+    │   ├─ OverloadTrackingService
+    │   ├─ DeloadDetectionService
+    │   ├─ TrainingDriftService
+    │   ├─ PhaseDetectionService
+    │   ├─ BlockComparisonService
+    │   ├─ AnomalyDetectionService
+    │   └─ InsightTextGenerator (Template or Apple Intelligence)
+    │
+    └─ Phase 5 (Coaching — all workouts, progressive content)
+        ├─ CoachingInsightService (post-workout debrief, weekly digest, exercise hints, muscle neglect)
+        ├─ WeightSuggestionService (e1RM-based suggestions, effort creep detection)
+        ├─ AdherenceAnalysisService (frequency, streaks, dropout risk)
+        ├─ TrajectoryAnalysisService (velocity/acceleration in vector space)
+        ├─ WorkoutArchetypeService (k-means clustering, fingerprinting)
+        ├─ ChangePointDetectionService (CUSUM, time-of-day analysis)
+        └─ AchievementTrackingService (badges, volume-response curves)
     │
     ▼
 WorkoutInsights aggregate ──► WorkoutAnalyticsViewModel ──► UI Views
@@ -109,28 +131,46 @@ WorkoutInsights aggregate ──► WorkoutAnalyticsViewModel ──► UI Views
 
 ## 2. Progressive Feature Unlocking
 
-`AnalyticsFeatureGate` gates features behind workout count thresholds:
+`AnalyticsFeatureGate` gates 24 features behind workout count thresholds:
 
 | Phase | Threshold | Features Unlocked |
 |-------|-----------|-------------------|
-| **1** | 1–4 workouts | Basic stats, PR tracking |
-| **2** | 5+ workouts | Similar Workouts, Quality Score, Strength Trends, Exercise Recommendations |
-| **3a** | 10+ workouts | Plateau Detection |
-| **3b** | 19+ workouts | Muscle Balance, Advanced Insights |
-| **3c** | 20+ workouts | Recovery Timeline |
+| **1** | 1 workout | Post-Workout Debrief (progressive content) |
+| **2** | 5+ workouts | Similar Workouts, Quality Score, Strength Trends, Exercise Recommendations, Weight Suggestions, Weekly Digest, Pre-Workout Context |
+| **3a** | 10+ workouts | Plateau Detection, Effort Creep Warning, Exercise Hints, Archetype Clustering, Achievements |
+| **3b** | 15+ workouts | Sequence Prediction, Workout Suggestion |
+| **3c** | 19+ workouts | Muscle Balance, Advanced Insights, Trajectory Analysis, Training Fingerprint, Muscle Neglect |
+| **3d** | 20+ workouts | Recovery Timeline, Time-of-Day Analysis, Change Point Detection |
+| **4** | 50+ workouts | Volume-Response Curves |
 
-**UI display names and descriptions:**
+**All 24 features with display names:**
 
-| Feature | Display Name | Description Shown |
-|---------|-------------|-------------------|
-| similarWorkouts | "Similar Workouts" | "Find past workouts that match your current session" |
-| qualityScore | "Quality Score" | "Rate each workout on volume, intensity, and balance" |
-| strengthTrends | "Strength Trends" | "Track strength changes over time per exercise" |
-| exerciseRecommendations | "Recommendations" | "Get exercise suggestions based on your training gaps" |
-| plateauDetection | "Plateau Detection" | "Spot exercises where progress has stalled" |
-| muscleBalance | "Muscle Balance" | "Check if opposing muscle groups are trained evenly" |
-| recoveryTimeline | "Recovery Timeline" | "Optimal rest days between sessions" |
-| advancedInsights | "Advanced Insights" | "Deep analysis across your full training history" |
+| Feature | Threshold | Display Name | Description Shown |
+|---------|:-:|-------------|-------------------|
+| postWorkoutDebrief | 1 | "Post-Workout Debrief" | "Summary and coaching bullets after every workout" |
+| weightSuggestion | 5 | "Weight Suggestions" | "Smart weight recommendations based on your recent performance" |
+| weeklyDigest | 5 | "Weekly Digest" | "Week-over-week training comparison" |
+| similarWorkouts | 5 | "Similar Workouts" | "Find past workouts that match your current session" |
+| qualityScore | 5 | "Quality Score" | "Rate each workout on volume, intensity, and balance" |
+| strengthTrends | 5 | "Strength Trends" | "Track strength changes over time per exercise" |
+| exerciseRecommendations | 5 | "Recommendations" | "Get exercise suggestions based on your training gaps" |
+| preWorkoutContext | 5 | "Pre-Workout Context" | "Recovery status, ACWR gauge, and adherence stats before you start" |
+| effortCreepWarning | 10 | "Effort Creep Warning" | "Detect when RPE rises without strength gains" |
+| exerciseHints | 10 | "Exercise Hints" | "Inline coaching tips per exercise" |
+| plateauDetection | 10 | "Plateau Detection" | "Spot exercises where progress has stalled" |
+| archetypeClustering | 10 | "Archetype Clustering" | "Discover your workout patterns via k-means clustering" |
+| achievements | 10 | "Achievements" | "Earn badges for training milestones" |
+| sequencePrediction | 15 | "Sequence Prediction" | "Predict your next workout type" |
+| workoutSuggestion | 15 | "Workout Suggestion" | "Get a suggested workout based on archetype analysis" |
+| muscleBalance | 19 | "Muscle Balance" | "Check if opposing muscle groups are trained evenly" |
+| advancedInsights | 19 | "Advanced Insights" | "Deep analysis across your full training history" |
+| trajectoryAnalysis | 19 | "Trajectory Analysis" | "Velocity and acceleration of training changes" |
+| trainingFingerprint | 19 | "Training Fingerprint" | "Your unique training pattern signature" |
+| muscleNeglect | 19 | "Muscle Neglect" | "Detect declining volume for specific muscle groups" |
+| recoveryTimeline | 20 | "Recovery Timeline" | "Optimal rest days between sessions" |
+| timeOfDayAnalysis | 20 | "Time-of-Day Analysis" | "Find your best training window" |
+| changePointDetection | 20 | "Change Point Detection" | "Detect significant shifts in your training pattern" |
+| volumeResponseCurve | 50 | "Volume-Response Curves" | "Personal MEV/MAV/MRV derived from your own data" |
 
 **Unlock progress text:** `"Complete [X] more workout(s) to unlock [Feature Name]"`
 
@@ -149,9 +189,22 @@ WorkoutInsights aggregate ──► WorkoutAnalyticsViewModel ──► UI Views
    b. Run applicable services based on workout count
    c. Generate insight text (template or AI)
    d. Assemble WorkoutInsights aggregate
-5. WorkoutAnalyticsViewModel receives aggregate
-6. UI views render from ViewModel properties
-7. Widget data refreshed via WidgetDataService
+5. CoachingInsightService.generatePostWorkoutDebrief() called
+   a. Compute basic stats (duration, volume, sets, PRs)
+   b. Find most similar past session via vector cosine similarity
+   c. Generate priority-ranked coaching bullets (max 3)
+   d. Optionally enhance bullet text via Apple Intelligence
+   e. Assemble PostWorkoutDebrief → PostWorkoutSummaryView sheet
+6. WorkoutAnalyticsViewModel receives aggregate
+7. UI views render from ViewModel properties
+8. Widget data refreshed via WidgetDataService
+
+Pre-workout path:
+1. User opens ActiveWorkoutView (with 5+ workouts)
+2. RecoveryEstimationService → per-muscle recovery status
+3. TrainingLoadService → ACWR and load zone
+4. AdherenceAnalysisService → gap, frequency, streak, dropout risk
+5. PreWorkoutContextCard renders recovery dots, ACWR gauge, adherence stats
 ```
 
 ### Caching:
@@ -819,6 +872,310 @@ trend = ((currentEWMA − ewma4WeeksAgo) / ewma4WeeksAgo) × 100%
 percentile = rank(currentEWMA) / totalWorkouts
 ```
 
+### 5.11 CoachingInsightService
+
+**File:** `Shared/Services/Analytics/CoachingInsightService.swift`
+
+Central coaching brain that produces contextual insights for post-workout, pre-workout, and inline contexts. Stateless.
+
+#### Post-Workout Debrief Generation
+
+Generates a `PostWorkoutDebrief` with basic stats and up to 3 priority-ranked coaching bullets:
+
+| Priority | Source | Condition | Title Example |
+|:-:|--------|-----------|---------------|
+| 1 | personalRecord | PRs in session | "2 New PRs" |
+| 2 | acwr | ACWR danger/caution (19+ wkts) | "High Training Load" |
+| 3 | qualityScore | Score >5 pts from EWMA (5+ wkts) | "Quality Up" / "Quality Down" |
+| 5 | overloadTrend | Exercise progressing (10+ wkts) | "Bench Press Trending Up" |
+| 6 | volumeDelta | Volume >10% from 30-day avg (5+ wkts) | "Volume Up" / "Volume Down" |
+| 7 | acwr | ACWR under-training (19+ wkts) | "Low Training Load" |
+| 8 | recovery | Muscle fatigued with ready date (19+ wkts) | "Recovery Note" |
+| 9 | sessionComparison | Similar session ≥70% match (10+ wkts) | "Similar to Mar 15, 2026" |
+
+Bullets are sorted by priority (ascending), top 3 selected. Optionally enhanced via `InsightTextGenerating.enhancePostWorkoutBullets()` (Apple Intelligence).
+
+#### Session Comparison (C6)
+
+Uses `VectorSearchService.findSimilar()` (cosine similarity, topK=1) to find the most similar past workout. Requires ≥0.70 similarity. Computes volume delta (%) and intensity delta (%) against the matched session.
+
+#### Muscle Neglect Detection (C5)
+
+Monitors weekly sets per muscle group over an 8-week window:
+
+```
+For each muscle with ≥4 weeks of data:
+    slope = linearRegression(weeklySets)
+    if slope < -0.5:
+        baseline = mean(first half of weeks)
+        current = mean(last 2 weeks)
+        decline% = (baseline − current) / baseline × 100
+        if decline% > 20%: emit MuscleNeglectWarning
+```
+
+Warnings sorted by `percentDecline` (worst first).
+
+#### Exercise Hints (C4)
+
+Per-exercise micro-insight, one per exercise, in priority order:
+
+| Priority | Condition | Text Example |
+|:-:|-----------|--------------|
+| 1 | Plateau ≥3 weeks | "Stalled 4 weeks — try a variation" |
+| 2 | Absence ≥14 days | "21 days since last session" |
+| 3 | Overload progressing | "Trending +1.5 kg/wk" |
+| 4 | Recovery status | "Primary muscle recovered — good to push" / "still recovering" / "fatigued — consider lighter work" |
+
+#### Weekly Digest (C2)
+
+Week-over-week comparison card (Mon-Wed display). Requires 5+ workouts and a non-empty previous week.
+
+Top insight selection priority:
+1. Best progressing exercise by slope → "[Exercise] Gaining"
+2. Volume delta >20% → "Volume Up/Down"
+3. Fallback → "Consistent Training"
+
+---
+
+### 5.12 WeightSuggestionService
+
+**File:** `Shared/Services/Analytics/WeightSuggestionService.swift`
+
+Suggests weights for upcoming sets based on recent e1RM, overload trends, recovery, and ACWR.
+
+#### Weight Suggestion Algorithm
+
+```
+1. bestE1RM = best e1RM for exercise in last 3 months
+2. adjustedE1RM = bestE1RM
+
+3. If overloadTrend is progressing:
+      weeksSince = weeks since last session of this exercise
+      adjustedE1RM += slopePerWeek × weeksSince
+
+4. If deload: return roundToNearest2.5(e1RM × 0.60)
+
+5. Apply recovery modifier:
+      fatigued:   adjustedE1RM × 0.90  (−10%)
+      recovering: adjustedE1RM × 0.95  (−5%)
+      ready:      no change
+
+6. Apply ACWR modifier:
+      danger:  adjustedE1RM × 0.85  (−15%)
+      caution: adjustedE1RM × 0.90  (−10%)
+      optimal/under: no change
+
+7. Convert e1RM to target weight:
+      reps = 1:  weight = e1RM
+      reps 2–5:  weight = e1RM / (1 + reps/30)         [inverse Epley]
+      reps 6+:   weight = e1RM × (37 − reps) / 36      [inverse Brzycki]
+
+8. Round to nearest 2.5 kg
+```
+
+#### Effort Creep Detection
+
+Detects when RPE rises while strength stagnates:
+
+```
+sessions = last 5 sessions for this exercise (need ≥3)
+rpeSlope = linearRegression(sessionIndex → avgRPE)
+e1rmSlope = linearRegression(sessionIndex → bestE1RM)
+
+if rpeSlope > 0.3/session AND e1rmSlope ≤ 0:
+    emit EffortCreepWarning(rpeIncrease, sessionsTracked)
+```
+
+---
+
+### 5.13 AdherenceAnalysisService
+
+**File:** `Shared/Services/Analytics/AdherenceAnalysisService.swift`
+
+Analyzes training frequency, consistency, and dropout risk over an 8-week window.
+
+#### Computed Metrics
+
+| Metric | Method |
+|--------|--------|
+| weeklyFrequency | Mean workouts per ISO week (8-week window) |
+| frequencyTrend | Linear regression on weekly counts: slope >0.2 → progressing, <−0.2 → regressing, else plateau |
+| mostCommonDays | Top 3 weekdays by workout count (1=Mon..7=Sun) |
+| averageGapDays | Mean inter-workout gap (days) |
+| currentGapDays | Days since last completed workout |
+| longestStreak | Max consecutive weeks with ≥1 workout (52-week scan) |
+| currentStreak | Current consecutive weeks with ≥1 workout |
+| dropoutRisk | See below |
+| expectedNextDate | Next occurrence of most common training day |
+| scheduleSummary | "You typically train Mon, Wed, Fri" |
+
+#### Dropout Risk Classification
+
+```
+gapStdDev = stddev(inter-workout gaps)  // population stddev, ≥3 gaps required
+                                         // fallback: avgGap × 0.5
+
+high:     currentGap > avgGap + 2σ AND frequencyTrend == regressing
+moderate: currentGap > avgGap + σ
+low:      otherwise
+```
+
+---
+
+### 5.14 TrajectoryAnalysisService
+
+**File:** `Shared/Services/Analytics/TrajectoryAnalysisService.swift`
+
+Computes velocity and acceleration of training changes in the 18-dimensional vector space using 3-window centroid differencing.
+
+#### Algorithm
+
+```
+sorted = vectors sorted by date, take last max(windowSize, 6)
+Divide into 3 equal windows: old, mid, new
+
+oldCentroid = mean(old window vectors)
+midCentroid = mean(mid window vectors)
+newCentroid = mean(new window vectors)
+
+velocity = newCentroid − midCentroid           (per-dimension)
+oldVelocity = midCentroid − oldCentroid
+acceleration = velocity − oldVelocity
+
+velMag = ‖velocity‖₂
+accMag = ‖acceleration‖₂
+```
+
+#### Derived Metrics
+
+| Metric | Condition |
+|--------|-----------|
+| isSteadyState | velMag < 0.05 AND accMag < 0.02 |
+| isDecelerating | Volume acceleration (dims 0–2) all negative |
+| volumeSubspaceStagnating | ‖velocity[0:2]‖ < 0.03 |
+| muscleSubspaceDrifting | ‖velocity[6:11]‖ > 0.10 |
+| spinningWheels | velMag < 0.05 AND angular change > 45° |
+| trajectoryEfficiency | velMag / (angularChange / 180°) |
+| predictedPlateauWeeks | ceil(velMag / accMag), capped at 52 (only if decelerating and velMag > 0.01) |
+
+Angular change = acos(cosineSimilarity(velocity, oldVelocity)) × 180/π
+
+---
+
+### 5.15 WorkoutArchetypeService
+
+**File:** `Shared/Services/Analytics/WorkoutArchetypeService.swift`
+
+Clusters workouts into archetypes using k-means++ with cosine distance, then generates training fingerprints.
+
+#### Archetype Clustering (A1)
+
+```
+1. L2-normalize all workout vectors
+2. For k in 2..min(8, n/3):
+      (assignments, centroids) = kMeans++(data, k, maxIter=50, cosineDistance)
+      score = silhouetteScore(data, assignments, k)
+3. Select k with best silhouette score
+4. Label each cluster from centroid muscle ratios:
+      legs > 0.35 → "Leg Day"
+      chest > 0.3 && arms > 0.15 → "Push Day"
+      back > 0.3 → "Pull Day"
+      shoulders > 0.3 → "Shoulder Day"
+      maxRatio < 0.25 && diversity > 0.5 → "Full Body"
+      compound > 0.6 → "Heavy Compounds"
+      arms > 0.35 → "Arms Day"
+      core > 0.3 → "Core Focus"
+      else → "Mixed Training"
+```
+
+#### Training Fingerprint (A6 + A7)
+
+Computed from archetypes over a configurable window (default 4 weeks):
+
+| Metric | Method |
+|--------|--------|
+| archetypeDistribution | Proportion of each archetype in recent period |
+| entropy | Shannon entropy / log₂(k), normalized 0–1 (higher = more variety) |
+| stabilityScore | Cosine similarity between current and prior period distributions |
+| varietyTrend | If entropy delta > 0.1 → progressing; < −0.1 → regressing; else plateau |
+| consecutiveSimilarity | Mean cosine similarity between consecutive workout vectors |
+
+---
+
+### 5.16 ChangePointDetectionService
+
+**File:** `Shared/Services/Analytics/ChangePointDetectionService.swift`
+
+Detects significant shifts in training patterns using CUSUM on dissimilarity time series.
+
+#### CUSUM Algorithm
+
+```
+1. Compute EWMA centroid (α=0.3) across sorted vectors
+2. For each vector i (starting from 1):
+      dissimilarity[i] = 1 − cosineSimilarity(vector[i], ewmaCentroid)
+      Update EWMA centroid
+
+3. On the dissimilarity series:
+      mean = mean(dissimilarities)
+      stdDev = stddev(dissimilarities)
+      cusumHigh = 0
+
+      For each i:
+          z = (dissimilarity[i] − mean) / stdDev
+          cusumHigh = max(0, cusumHigh + z − 0.5)
+          if cusumHigh > threshold (default 2.0):
+              Emit TrainingChangePoint
+              cusumHigh = 0  // reset
+
+4. For each change point, compute top 3 dimension shifts
+   (before vs after centroid, |delta| > 0.05)
+```
+
+#### Time-of-Day Analysis (B5)
+
+Groups workouts into 4 windows (Morning 6-11, Afternoon 11-5, Evening 5-10, Night 10-6) and compares average quality scores. Reports best and worst windows if delta > 5% and each window has ≥3 data points.
+
+---
+
+### 5.17 AchievementTrackingService
+
+**File:** `Shared/Services/Analytics/AchievementTrackingService.swift`
+
+Tracks 6 badge achievements and computes personal volume-response curves.
+
+#### 6 Badge Definitions
+
+| Badge | Criteria | Icon |
+|-------|----------|------|
+| Progressive Loader | 3+ exercises progressing simultaneously | arrow.up.right.circle.fill |
+| Plateau Breaker | Exercise went from plateau to 3+ weeks progressing | bolt.circle.fill |
+| Iron Consistency | 8 consecutive weeks with ≥1 workout | flame.circle.fill |
+| Balanced Builder | All muscle groups at optimal volume for 4 weeks | scale.3d |
+| Volume Explorer | All 6 muscle groups trained in one week | globe |
+| Smart Recovery | Took deload when recommended | heart.circle.fill |
+
+Earned achievements stored in UserDefaults (`earned_achievements`). Each badge can only be earned once.
+
+#### Volume-Response Curves (A9, 50+ workouts)
+
+Per-muscle-group quadratic regression of weekly sets vs. overload slope:
+
+```
+gain = a × sets² + b × sets + c
+
+Requires:
+  - 50+ completed workouts
+  - 12+ data points per muscle group
+  - R² > 0.3
+  - a < 0 (inverted parabola)
+
+Personal volume landmarks:
+  MAV = −b / (2a)                    // sets at peak gain
+  MEV = lower root (gain = 0)        // minimum effective volume
+  MRV = upper root (gain = 0)        // maximum recoverable volume
+```
+
 ---
 
 ## 6. Progression & Coaching Services
@@ -1008,6 +1365,7 @@ Not persisted — assembled fresh by services each time.
 | blockComparison | BlockComparison? | Block diff (19+) |
 | anomalies | [WorkoutAnomaly] | Outlier workouts (19+) |
 | highlights | [AnalyticsHighlight] | Top insights (19+) |
+| trajectoryAnalysis | TrajectoryAnalysis? | Trajectory velocity/acceleration (19+) |
 
 ### WorkoutVector
 
@@ -1064,6 +1422,82 @@ Exercise, reason, confidence (0.7–0.9), target muscle group.
 ### AnalyticsHighlight
 
 Type (personalRecord/streak/milestone/improvement/warning), title, detail text.
+
+### CoachingInsight
+
+Priority-ranked coaching bullet: priority (lower = more important), title, detail, SF Symbol icon, CoachingColor (.primary/.success/.warning/.danger/.info), InsightSource (personalRecord/qualityScore/effortCreep/overloadTrend/volumeDelta/acwr/recovery/sessionComparison/adherence/plateau/muscleNeglect/trajectory).
+
+### ExerciseHint
+
+Per-exercise micro-insight: text, SF Symbol icon.
+
+### ExerciseCoachingData
+
+Per-exercise coaching cache: `[Int: WeightSuggestion]` (setIndex → suggestion), optional EffortCreepWarning, optional ExerciseHint.
+
+### PostWorkoutDebrief
+
+Post-workout summary: workoutName, duration, totalVolume, totalSets, exerciseCount, optional WorkoutQualityScore, prsHit, coaching bullets `[CoachingInsight]`, optional SessionComparison.
+
+### SessionComparison
+
+Most similar past workout: matchDate, matchName, similarity (0–1), volumeDelta (%), intensityDelta (%).
+
+### WeightSuggestion
+
+Suggested weight for a set: weight (rounded to 2.5 kg), targetReps, explanation, modifiers (e.g. "Recovery: -5%", "High ACWR: -15%").
+
+### EffortCreepWarning
+
+RPE trending up without strength gains: exerciseName, rpeIncrease, sessionsTracked, message.
+
+### AdherenceAnalysis
+
+Training consistency analysis: weeklyFrequency, frequencyTrend (TrendStatus), mostCommonDays ([1=Mon..7=Sun]), averageGapDays, currentGapDays, longestStreak, currentStreak, dropoutRisk (DropoutRisk: .low/.moderate/.high), expectedNextDate, scheduleSummary.
+
+### TrajectoryAnalysis
+
+Vector-space trajectory: velocityMagnitude, accelerationMagnitude, isSteadyState, isDecelerating, trajectoryEfficiency, predictedPlateauWeeks, volumeSubspaceStagnating, muscleSubspaceDrifting, spinningWheels, topAcceleratingDims, topDeceleratingDims.
+
+### WeeklyDigest
+
+Week-over-week comparison: weekStart, topInsight (CoachingInsight), workoutsThisWeek, workoutsLastWeek, volumeDeltaPercent, qualityTrend, prsThisWeek.
+
+### WorkoutArchetype
+
+Cluster of similar workouts: label (auto-generated from centroid), centroid ([Double]), memberWorkoutIds, dominantFeatures (top 3), avgVolume, avgDuration, frequency (sessions/week), lastPerformed, daysSinceLastPerformed.
+
+### TrainingFingerprint
+
+Training pattern signature: archetypeDistribution ([String: Double]), entropy (0–1, normalized Shannon entropy), stabilityScore (cosine similarity vs prior period), varietyTrend (TrendStatus), consecutiveSimilarity.
+
+### MuscleNeglectWarning
+
+Declining muscle group volume: muscleGroup, weeksDecline, currentWeeklySets, baselineWeeklySets, percentDecline, message.
+
+### WorkoutSuggestion
+
+Archetype-based workout suggestion: suggestedArchetype, reason, optional overdueArchetype, optional overdueMessage.
+
+### ArchetypePrediction
+
+Predicted next workout type: predictedLabel, confidence (0–1), alternatives [(label, probability)].
+
+### TrainingChangePoint
+
+Detected training shift: date, workoutIndex, description, keyDimensionShifts ([DimensionDrift]: featureName, delta).
+
+### TimeOfDayAnalysis
+
+Best/worst training windows: bestWindow, bestAvgQuality, worstWindow, worstAvgQuality, message.
+
+### Achievement
+
+Training badge: id, name, description, SF Symbol icon, optional earnedAt. 6 badge types defined.
+
+### VolumeResponseCurve
+
+Personal volume-response per muscle: muscleGroup, personalMEV, personalMAV, personalMRV, rSquared, message.
 
 ---
 
@@ -1202,7 +1636,59 @@ Score color: ≥80 green, ≥60 primary, ≥40 orange, <40 red.
 
 ---
 
-### 8.8 Color Coding Reference
+### 8.8 PostWorkoutSummaryView
+
+**File:** `iOS/Features/Workout/Views/PostWorkoutSummaryView.swift`
+
+Full-screen sheet presented after every completed workout (1+ workouts). Animated entrance with staggered delays.
+
+**Layout (top to bottom):**
+
+1. **Checkmark header** — `checkmark.circle.fill` (56pt, spring animation, scale 0.3→1.0) + "Workout Done" (title2 bold)
+2. **Stats** — workout name (headline) + 3 stat pills (clock/duration, dumbbell/exercises, number/sets) + total volume (kg) + PR count if > 0 (trophy icon)
+3. **Quality score donut** (if available, 5+ workouts) — 72×72 circle, trim animates from 0 to score/100, color: ≥80 green, ≥60 primary, <60 red. Score number in center (title3 bold monospaced).
+4. **Coaching bullets** (0–3) — each in a card: SF Symbol icon (color-coded by CoachingColor) + title (subheadline bold) + detail (caption). Cards stagger-animate in (0.15s between each).
+5. **"Got It" button** — full-width, primary color, 12px rounded corners
+
+**Colors:** `STColors.primary` (gold), `STColors.success` (green), `.orange` (warning), `STColors.danger` (red), `STColors.textSecondary` (info/neutral).
+
+---
+
+### 8.9 PreWorkoutContextCard
+
+**File:** `iOS/Features/Workout/Views/PreWorkoutContextCard.swift`
+
+Card shown on ActiveWorkoutView before starting a workout (5+ workouts, replaces simple start view when analytics data available).
+
+**Layout (top to bottom):**
+
+1. **Header** — "READY TO TRAIN" (12pt bold, uppercase, tracking 1.5, primary color)
+2. **Recovery status** — per-muscle rows (up to 6): colored dot (green=ready, orange=recovering, red=fatigued) + muscle name + status label. Summary: "X ready, Y recovering"
+3. **Training load** — "Training Load" label + "ACWR X.XX" (15pt bold, color-coded by zone) + gauge bar (80px wide, fill = ACWR/2.0) + zone label (Under/Optimal/Caution/Danger)
+4. **Adherence** — 3-column: "Last workout: X days ago" + "This week: X typical" + streak (if >1 week): "Streak: X wk" (primary color)
+5. **Start buttons** — "START WORKOUT" (primary, full-width, 48px height) + optional "START FROM PLAN" (text-only, secondary)
+
+Sections separated by dividers. Entire card: surface background, rounded corners, border stroke.
+
+---
+
+### 8.10 WeeklyDigestCard
+
+**File:** `iOS/Features/Dashboard/Views/WeeklyDigestCard.swift`
+
+Dashboard card shown Monday through Wednesday. Positioned between ProgressionPlanCard and stats carousel.
+
+**Layout:**
+
+1. **Header row** — "LAST WEEK" (11pt bold, uppercase, tracking 1.5) + right-aligned "X so far this week (+/-delta)"
+2. **Stats row** — badges: workouts count, volume delta %, PRs (if > 0). Each badge: value (15pt bold) + label (10pt tertiary).
+3. **Top insight** — SF Symbol icon (color-coded) + title (13pt semibold) + detail (11pt, 2 lines max)
+
+Card: surface background, rounded corners, border stroke.
+
+---
+
+### 8.11 Color Coding Reference
 
 | Context | Green (success) | Primary/Gold | Orange | Red (danger) | Blue | Yellow |
 |---------|:-:|:-:|:-:|:-:|:-:|:-:|
@@ -1216,7 +1702,7 @@ Score color: ≥80 green, ≥60 primary, ≥40 orange, <40 red.
 
 ---
 
-### 8.9 Number Formatting Rules
+### 8.12 Number Formatting Rules
 
 | Data | Format | Example |
 |------|--------|---------|
@@ -1384,6 +1870,48 @@ Motivational Note: "Great work showing up today. Consistency is the key to progr
 | Deload | "Deload" | "Recovery phase — dissipating fatigue" | "Recovery phase — reduced training to dissipate fatigue" |
 | Mixed | "General" | "Varied training pattern" | "Varied training pattern — no single phase dominates" |
 
+### 9.11 Post-Workout Coaching Bullet Selection
+
+Generated by `CoachingInsightService.generatePostWorkoutDebrief()`. Max 3 bullets, sorted by priority (lower = higher priority):
+
+| Priority | Source | What It Says |
+|:-:|--------|--------------|
+| 1 | PRs | "X New PR(s)" / "Hit X personal record(s) this session" |
+| 2 | ACWR warning | "High Training Load" / "ACWR at X.XX — consider reducing volume next session" |
+| 3 | Quality delta | "Quality Up/Down" / "X/100 — Y pts above/below your average" |
+| 5 | Overload trend | "[Exercise] Trending Up" / "+X.X kg/week over recent weeks" |
+| 6 | Volume delta | "Volume Up/Down" / "X% above/below your 30-day average" |
+| 7 | Under-training | "Low Training Load" / "ACWR at X.XX — room to push harder" |
+| 8 | Recovery note | "Recovery Note" / "[Muscle] will be ready again [Day]" |
+| 9 | Session comparison | "Similar to [Date]" / "X% match — Y% more/less volume" |
+
+---
+
+### 9.12 Weekly Digest Top Insight Selection
+
+Generated by `CoachingInsightService.generateWeeklyDigest()`. Single insight shown:
+
+| Priority | Condition | Title | Detail |
+|:-:|-----------|-------|--------|
+| 1 | Best progressing exercise | "[Exercise] Gaining" | "+X.X kg/week over recent weeks" |
+| 2 | Volume delta > 20% | "Volume Up/Down" | "X% vs last week" |
+| 3 | Fallback | "Consistent Training" | "X workouts this week" |
+
+---
+
+### 9.13 Exercise Hint Priority
+
+Generated by `CoachingInsightService.generateExerciseHint()`. First matching condition wins:
+
+| Priority | Condition | Text | Icon |
+|:-:|-----------|------|------|
+| 1 | Plateau ≥ 3 weeks stalled | "Stalled X weeks — try a variation" | exclamationmark.triangle |
+| 2 | Last performed ≥ 14 days ago | "X days since last session" | clock.arrow.circlepath |
+| 3 | Overload trend progressing | "Trending +X.X kg/wk" | arrow.up.right |
+| 4 | Recovery ready | "Primary muscle recovered — good to push" | checkmark.circle |
+| 4 | Recovery recovering | "Primary muscle still recovering" | hourglass |
+| 4 | Recovery fatigued | "Primary muscle fatigued — consider lighter work" | exclamationmark.circle |
+
 ---
 
 ## 10. Apple Intelligence Integration
@@ -1414,6 +1942,10 @@ in 1-2 sentences as a strength coach would. Dimension changes: [deltas]"
 Overall drift: [X]%. Changes: [deltas]"
 ```
 
+**Post-workout bullet enhancement** (`enhancePostWorkoutBullets()`):
+
+Rewrites coaching bullet detail text via `LanguageModelSession` for more natural, coach-like phrasing. Falls back to original template text on error. Called from `CoachingInsightService.generatePostWorkoutDebrief()` when `InsightTextGenerating` is available.
+
 **Diagnostics:** Tracks `highlightsEnhanced`, `highlightsFalledBack`, `lastError`, `lastGenerationTime`.
 
 ### 10.2 Coaching Communication (FoundationModelsCoachingProvider)
@@ -1436,18 +1968,34 @@ for a [level]-level trainee who just did: [exercises]. Be encouraging and specif
 
 ## 11. Key Thresholds & Constants
 
-### Feature Unlocks
+### Feature Unlocks (24 features)
 
 | Feature | Workouts Required |
 |---------|:-:|
+| Post-Workout Debrief | 1 |
+| Weight Suggestions | 5 |
+| Weekly Digest | 5 |
 | Similar Workouts | 5 |
 | Quality Score | 5 |
 | Strength Trends | 5 |
 | Recommendations | 5 |
+| Pre-Workout Context | 5 |
+| Effort Creep Warning | 10 |
+| Exercise Hints | 10 |
 | Plateau Detection | 10 |
+| Archetype Clustering | 10 |
+| Achievements | 10 |
+| Sequence Prediction | 15 |
+| Workout Suggestion | 15 |
 | Muscle Balance | 19 |
 | Advanced Insights | 19 |
+| Trajectory Analysis | 19 |
+| Training Fingerprint | 19 |
+| Muscle Neglect | 19 |
 | Recovery Timeline | 20 |
+| Time-of-Day Analysis | 20 |
+| Change Point Detection | 20 |
+| Volume-Response Curves | 50 |
 
 ### Analysis Thresholds
 
@@ -1521,6 +2069,38 @@ for a [level]-level trainee who just did: [exercises]. Be encouraging and specif
 
 Constants are tuned to the 90th–95th percentile of real training data. `vectorVersion` (in `UserPreferencesService`) tracks the current constant set; vectors auto-recompute on version change.
 
+### Coaching Service Constants
+
+| Constant | Value | Used In |
+|----------|:-----:|---------|
+| Weight suggestion deload modifier | 60% of e1RM | WeightSuggestionService |
+| Recovery fatigued modifier | −10% | WeightSuggestionService |
+| Recovery recovering modifier | −5% | WeightSuggestionService |
+| ACWR danger modifier | −15% | WeightSuggestionService |
+| ACWR caution modifier | −10% | WeightSuggestionService |
+| Weight rounding | Nearest 2.5 kg | WeightSuggestionService |
+| Effort creep min sessions | 3 | WeightSuggestionService |
+| Effort creep RPE slope threshold | > 0.3/session | WeightSuggestionService |
+| Adherence window | 8 weeks | AdherenceAnalysisService |
+| Dropout risk high | gap > mean + 2σ AND declining | AdherenceAnalysisService |
+| Dropout risk moderate | gap > mean + σ | AdherenceAnalysisService |
+| Muscle neglect slope threshold | < −0.5 sets/week | CoachingInsightService |
+| Muscle neglect decline threshold | > 20% | CoachingInsightService |
+| Archetype k range | 2..min(8, n/3) | WorkoutArchetypeService |
+| Archetype selection | Best silhouette score | WorkoutArchetypeService |
+| Fingerprint entropy | Normalized Shannon (0–1) | WorkoutArchetypeService |
+| Trajectory steady state | velocity < 0.05 AND accel < 0.02 | TrajectoryAnalysisService |
+| Trajectory spinning wheels | velocity < 0.05 AND angular change > 45° | TrajectoryAnalysisService |
+| CUSUM threshold | 2.0 | ChangePointDetectionService |
+| CUSUM EWMA α | 0.3 | ChangePointDetectionService |
+| Time-of-day min per window | 3 workouts | ChangePointDetectionService |
+| Time-of-day min delta | > 5% quality difference | ChangePointDetectionService |
+| Volume-response min workouts | 50 | AchievementTrackingService |
+| Volume-response min data points | 12 per muscle | AchievementTrackingService |
+| Volume-response min R² | 0.3 | AchievementTrackingService |
+| Iron Consistency badge | 8 consecutive weeks | AchievementTrackingService |
+| Progressive Loader badge | 3+ exercises progressing | AchievementTrackingService |
+
 ### Additional Constants
 
 | Constant | Value | Used In |
@@ -1559,7 +2139,14 @@ Constants are tuned to the 90th–95th percentile of real training data. `vector
 | BlockComparisonService.swift | Block diff |
 | AnomalyDetectionService.swift | Outlier detection |
 | WorkoutQualityScoreService.swift | Quality metrics |
-| AnalyticsFeatureGate.swift | Progressive unlocking |
+| AnalyticsFeatureGate.swift | Progressive unlocking (24 features) |
+| CoachingInsightService.swift | Post-workout debrief, weekly digest, exercise hints, muscle neglect |
+| WeightSuggestionService.swift | e1RM-based weight suggestions, effort creep detection |
+| AdherenceAnalysisService.swift | Frequency, streaks, dropout risk |
+| TrajectoryAnalysisService.swift | Vector-space velocity/acceleration analysis |
+| WorkoutArchetypeService.swift | k-means++ clustering, training fingerprints |
+| ChangePointDetectionService.swift | CUSUM change point detection, time-of-day analysis |
+| AchievementTrackingService.swift | Badge achievements, volume-response curves |
 | TemplateInsightGenerator.swift | Template text |
 | AppleIntelligenceInsightGenerator.swift | AI-enhanced text |
 | InsightTextGenerating.swift | Generator protocol |
@@ -1588,6 +2175,14 @@ Constants are tuned to the 90th–95th percentile of real training data. `vector
 | SimilarWorkoutsView.swift | Similar workout list |
 | WorkoutQualityScoreView.swift | Quality score display |
 
+### Coaching UI Views
+
+| File | Location | Purpose |
+|------|----------|---------|
+| PostWorkoutSummaryView.swift | iOS/Features/Workout/Views/ | Full-screen post-workout debrief sheet |
+| PreWorkoutContextCard.swift | iOS/Features/Workout/Views/ | Pre-workout recovery/ACWR/adherence card |
+| WeeklyDigestCard.swift | iOS/Features/Dashboard/Views/ | Dashboard week-over-week comparison card |
+
 ### Domain Models (`Shared/Models/Domain/Analytics/`)
 
-WorkoutInsights, WorkoutVector, AnalyticsHighlight, TrainingLoad, OverloadTrend, DeloadRecommendation, TrainingDrift, TrainingPhase, RecoveryPattern, OptimalVolumeRange, PlateauAnalysis, MuscleBalance, ExerciseRecommendation, SimilarWorkout, WorkoutQualityScore, BlockComparison, WorkoutAnomaly
+WorkoutInsights, WorkoutVector, AnalyticsHighlight, TrainingLoad, OverloadTrend, DeloadRecommendation, TrainingDrift, TrainingPhase, RecoveryPattern, OptimalVolumeRange, PlateauAnalysis, MuscleBalance, ExerciseRecommendation, SimilarWorkout, WorkoutQualityScore, BlockComparison, WorkoutAnomaly, CoachingInsight, ExerciseHint, ExerciseCoachingData, PostWorkoutDebrief, SessionComparison, WeightSuggestion, EffortCreepWarning, AdherenceAnalysis, TrajectoryAnalysis, WeeklyDigest, WorkoutArchetype, TrainingFingerprint, MuscleNeglectWarning, WorkoutSuggestion, ArchetypePrediction, TrainingChangePoint, TimeOfDayAnalysis, Achievement, VolumeResponseCurve
