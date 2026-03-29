@@ -1,0 +1,65 @@
+Coaching Insights — the app now coaches you.
+
+This is the biggest update since launch. HellBentIron now has a coaching layer that gives you contextual feedback before, during, and after every workout. It gets smarter the more you train.
+
+WHAT'S NEW
+
+Post-Workout Debrief
+After every workout you'll see a summary sheet with your stats, a quality score ring, and 2-3 coaching bullets pulled from your actual data — PRs, load warnings, overload trends, volume changes, recovery notes, and comparisons to your most similar past session. Not filler text. Real insights.
+
+Pre-Workout Context
+Before you start, a new card shows recovery status per muscle group (green/orange/red), your ACWR training load gauge, and adherence stats (days since last workout, weekly frequency, streak). Available at 5+ workouts.
+
+Weight Suggestions
+Each set now shows a suggested weight based on your recent e1RM, adjusted for recovery and training load. Rounded to the nearest plate. Shows below the "PREVIOUS" line.
+
+Effort Creep Warnings
+If your RPE is climbing session over session without strength gains, the app flags it on the exercise card. Catches the problem before it becomes a stall.
+
+Exercise Hints
+Inline one-liners per exercise: plateau warnings, absence reminders, trend updates, recovery notes. Shows in the exercise card header.
+
+Weekly Digest
+A dashboard card (Mon-Wed) comparing this week vs last: workout count, volume delta, PRs, and a top coaching insight.
+
+Training Archetypes
+Your workouts are clustered into patterns (Push Day, Leg Day, Full Body, etc.) using k-means on the workout vectors. A training fingerprint tracks how varied and stable your routine is.
+
+Trajectory Analysis
+Tracks the velocity and acceleration of your training changes through vector space. Detects plateaus, deceleration, and "spinning wheels" (changing a lot but going nowhere).
+
+Achievements
+6 badges: Progressive Loader, Plateau Breaker, Iron Consistency, Balanced Builder, Volume Explorer, Smart Recovery.
+
+Change Point Detection
+Detects significant shifts in your training pattern and tells you what changed.
+
+Time-of-Day Analysis (20+ workouts)
+Compares quality scores across morning/afternoon/evening/night to find your best training window.
+
+Volume-Response Curves (50+ workouts)
+Personal MEV/MAV/MRV derived from your own data via quadratic regression.
+
+PROGRESSIVE UNLOCKS — 24 features total now:
+1+ workout: Post-workout debrief
+5+: Quality scores, weight suggestions, pre-workout context, weekly digest
+10+: Plateau detection, exercise hints, effort creep, archetypes, achievements
+15+: Workout suggestions, sequence prediction
+19+: Trajectory analysis, training fingerprints, muscle neglect alerts
+20+: Recovery timeline, time-of-day, change points
+50+: Volume-response curves
+
+WHAT TO TEST
+- Complete a workout and check the debrief sheet — do the coaching bullets make sense for your session?
+- Open a workout and look for weight suggestions on sets — are the numbers reasonable?
+- Check the dashboard for the weekly digest card (Mon-Wed)
+- If you have 10+ workouts, look for exercise hints and effort creep warnings
+- If you have 19+ workouts, check trajectory analysis in advanced insights
+- Let me know if any coaching text feels wrong, confusing, or shows at the wrong time
+
+KNOWN ISSUES
+- Weekly digest card only shows Mon-Wed and requires a non-empty previous week
+- Quality score donut animation may stutter on older devices
+- Volume-response curves need 50+ workouts so most testers won't see them yet
+
+All coaching runs on-device. No data sent anywhere.
