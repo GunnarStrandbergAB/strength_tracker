@@ -93,6 +93,10 @@ struct AdvancedInsightsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 sectionHeader("Training Load")
 
+                Text("Acute:Chronic Workload Ratio — recent effort vs. your baseline")
+                    .font(.system(size: 11))
+                    .foregroundStyle(STColors.textTertiary)
+
                 HStack(spacing: 20) {
                     // ACWR gauge
                     ZStack {
@@ -115,11 +119,15 @@ struct AdvancedInsightsView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
-                        loadRow("Acute", value: String(format: "%.0f", load.acuteLoad))
-                        loadRow("Chronic", value: String(format: "%.0f", load.chronicLoad))
-                        loadRow("Zone", value: zoneDisplayName(load.loadZone))
+                        loadRow("Recent (7d)", value: String(format: "%.0f", load.acuteLoad))
+                        loadRow("Baseline (28d)", value: String(format: "%.0f", load.chronicLoad))
                     }
                 }
+
+                Text(zoneExplanation(load.loadZone))
+                    .font(.system(size: 11))
+                    .foregroundStyle(zoneColor(load.loadZone))
+                    .padding(.top, 4)
             }
             .padding(STSpacing.cardPadding)
             .background(STColors.surface)
@@ -376,7 +384,7 @@ struct AdvancedInsightsView: View {
     @ViewBuilder
     private var anomaliesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Anomalous Workouts")
+            sectionHeader("Unusual Sessions")
 
             ForEach(viewModel.insights.anomalies.prefix(3)) { anomaly in
                 HStack(spacing: 10) {
@@ -385,15 +393,15 @@ struct AdvancedInsightsView: View {
                         .foregroundStyle(.orange)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(String(format: "Anomaly score: %.0f%%", anomaly.anomalyScore * 100))
+                        Text(anomalyDescription(anomaly.anomalyScore))
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(STColors.textPrimary)
 
                         let dims = anomaly.deviatingDimensions.prefix(2)
-                            .map { $0.featureName.replacingOccurrences(of: "_", with: " ") }
+                            .map { humanReadableDrift($0) }
                             .joined(separator: ", ")
                         if !dims.isEmpty {
-                            Text("Deviating: \(dims)")
+                            Text(dims)
                                 .font(.system(size: 11))
                                 .foregroundStyle(STColors.textSecondary)
                         }
@@ -444,6 +452,43 @@ struct AdvancedInsightsView: View {
         case .optimal: return "Optimal"
         case .caution: return "Caution"
         case .danger: return "Danger"
+        }
+    }
+
+    private func zoneExplanation(_ zone: LoadZone) -> String {
+        switch zone {
+        case .underTraining: return "Training well below your baseline — increase effort to keep progressing"
+        case .optimal:       return "Sustainable progression — slightly above baseline is ideal for gains"
+        case .caution:       return "Ramping up quickly — make sure recovery keeps up"
+        case .danger:        return "Very high load spike — ease off to reduce injury risk"
+        }
+    }
+
+    private func anomalyDescription(_ score: Double) -> String {
+        switch score {
+        case 0.7...:    return "Very different from your usual sessions"
+        case 0.5..<0.7: return "Noticeably different from your usual sessions"
+        default:        return "Somewhat different from your usual sessions"
+        }
+    }
+
+    private func humanReadableDrift(_ drift: DimensionDrift) -> String {
+        let direction = drift.delta > 0 ? "Higher" : "Lower"
+        switch drift.featureName {
+        case "volume_vs_prev_7d":    return "\(direction) volume than last week"
+        case "volume_vs_prev_30d":   return "\(direction) volume than your monthly avg"
+        case "total_volume_norm":    return "\(direction) total volume"
+        case "avg_weight_norm":      return "\(direction) average weight"
+        case "avg_reps_norm":        return "\(direction) reps per set"
+        case "set_count_norm":       return "\(direction) number of sets"
+        case "exercise_diversity":   return drift.delta > 0 ? "More exercise variety" : "Less exercise variety"
+        case "duration_norm":        return drift.delta > 0 ? "Longer session" : "Shorter session"
+        case "compound_ratio":       return drift.delta > 0 ? "More compound lifts" : "Fewer compound lifts"
+        case "avg_rpe":              return drift.delta > 0 ? "Higher effort (RPE)" : "Lower effort (RPE)"
+        case "pr_count_norm":        return drift.delta > 0 ? "More PRs than usual" : "Fewer PRs than usual"
+        default:
+            let name = drift.featureName.replacingOccurrences(of: "_", with: " ")
+            return "\(direction) \(name)"
         }
     }
 

@@ -16,9 +16,9 @@ public final class PlateauDetectionService: Sendable {
     /// Beginners can improve faster; advanced lifters maintain.
     private func thresholdForStatus(_ status: TrainingStatus) -> Double {
         switch status {
-        case .beginner:     return 1.05  // 5% week-over-week
-        case .intermediate: return 1.02  // 2%
-        case .advanced:     return 1.00  // Just maintain
+        case .beginner:     return 1.02  // 2% week-over-week (was 5%)
+        case .intermediate: return 1.00  // maintain or improve (was 2%)
+        case .advanced:     return 0.98  // tolerate 2% fluctuation (was 0%)
         }
     }
 
@@ -65,7 +65,7 @@ public final class PlateauDetectionService: Sendable {
                 stallThreshold: stallThreshold,
                 improvementThreshold: improvementThreshold
             )
-            if analysis.consecutiveWeeksStalled >= 2 {
+            if analysis.consecutiveWeeksStalled >= 3 {
                 analyses.append(analysis)
             }
         }
