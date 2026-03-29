@@ -63,19 +63,36 @@ public final class WorkoutVectorizer: Sendable {
         let muscleVolumes = calculateMuscleGroupVolumes(workout, bodyWeightKg: bodyWeightKg)
         let totalVolDenom = totalVol > 0 ? totalVol : 1.0
 
+        // 6: Chest (no sub-groups)
         features[6] = (muscleVolumes[.chest] ?? 0.0) / totalVolDenom
-        features[7] = (muscleVolumes[.back] ?? 0.0) / totalVolDenom
 
-        let legsVol = (muscleVolumes[.quadriceps] ?? 0.0) + (muscleVolumes[.hamstrings] ?? 0.0) +
-                      (muscleVolumes[.glutes] ?? 0.0) + (muscleVolumes[.calves] ?? 0.0)
+        // 7: Back = .back + .lats + .traps (not .lowerBack — that's core antagonist)
+        let backVol = (muscleVolumes[.back] ?? 0.0) +
+                      (muscleVolumes[.lats] ?? 0.0) +
+                      (muscleVolumes[.traps] ?? 0.0)
+        features[7] = backVol / totalVolDenom
+
+        // 8: Legs = quad + ham + glute + calf + adductors + abductors + hipFlexors
+        let legsMain = (muscleVolumes[.quadriceps] ?? 0.0) + (muscleVolumes[.hamstrings] ?? 0.0) +
+                       (muscleVolumes[.glutes] ?? 0.0) + (muscleVolumes[.calves] ?? 0.0)
+        let legsSub = (muscleVolumes[.adductors] ?? 0.0) + (muscleVolumes[.abductors] ?? 0.0) +
+                      (muscleVolumes[.hipFlexors] ?? 0.0)
+        let legsVol = legsMain + legsSub
         features[8] = legsVol / totalVolDenom
 
+        // 9: Shoulders (no sub-groups)
         features[9] = (muscleVolumes[.shoulders] ?? 0.0) / totalVolDenom
 
-        let armsVol = (muscleVolumes[.biceps] ?? 0.0) + (muscleVolumes[.triceps] ?? 0.0)
+        // 10: Arms = biceps + triceps + forearms
+        let armsVol = (muscleVolumes[.biceps] ?? 0.0) + (muscleVolumes[.triceps] ?? 0.0) +
+                      (muscleVolumes[.forearms] ?? 0.0)
         features[10] = armsVol / totalVolDenom
 
-        features[11] = (muscleVolumes[.core] ?? 0.0) / totalVolDenom
+        // 11: Core = core + obliques + lowerBack
+        let coreVol = (muscleVolumes[.core] ?? 0.0) +
+                      (muscleVolumes[.obliques] ?? 0.0) +
+                      (muscleVolumes[.lowerBack] ?? 0.0)
+        features[11] = coreVol / totalVolDenom
 
         // 12: Compound exercise ratio (barbell exercises)
         let compoundCount = workout.exercises.filter { $0.exercise.category == .barbell }.count
@@ -100,6 +117,9 @@ public final class WorkoutVectorizer: Sendable {
         let minuteOfDay = hour * 60 + Calendar.current.component(.minute, from: workout.startedAt)
         features[17] = min(Double(minuteOfDay) / 1440.0, 1.0)
 
+        // Capture L2 magnitude before normalization (enables future raw reconstruction)
+        let magnitude = sqrt(features.reduce(0) { $0 + $1 * $1 })
+
         // L2 normalization for cosine similarity
         let normalized = AnalyticsCalculations.l2Normalize(features)
 
@@ -107,6 +127,7 @@ public final class WorkoutVectorizer: Sendable {
             id: UUID(),
             workoutId: workout.id,
             dimensions: normalized,
+            magnitude: magnitude,
             createdAt: Date()
         )
     }

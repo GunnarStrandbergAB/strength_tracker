@@ -7,6 +7,7 @@ public struct WorkoutVector: Identifiable, Hashable, Sendable, Codable {
     public let id: UUID
     public let workoutId: UUID
     public let dimensions: [Double]
+    public let magnitude: Double?     // L2 magnitude before normalization
     public let createdAt: Date
 
     /// Human-readable feature names for debugging and display
@@ -35,12 +36,14 @@ public struct WorkoutVector: Identifiable, Hashable, Sendable, Codable {
         id: UUID = UUID(),
         workoutId: UUID,
         dimensions: [Double],
+        magnitude: Double? = nil,
         createdAt: Date = Date()
     ) {
         precondition(dimensions.count == 18, "WorkoutVector must have exactly 18 dimensions")
         self.id = id
         self.workoutId = workoutId
         self.dimensions = dimensions
+        self.magnitude = magnitude
         self.createdAt = createdAt
     }
 }

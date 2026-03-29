@@ -15,6 +15,9 @@ public final class WorkoutVectorEntity {
     // Using Float32 instead of Double64 to save 50% space (72 bytes vs 144 bytes)
     public var vectorData: Data
 
+    // L2 magnitude before normalization (nil for legacy vectors)
+    public var magnitude: Double?
+
     // Denormalized fields for faster querying without JOIN
     public var totalVolume: Double
     public var workoutDate: Date
@@ -25,6 +28,7 @@ public final class WorkoutVectorEntity {
         workoutId: UUID,
         createdAt: Date,
         vectorData: Data,
+        magnitude: Double? = nil,
         totalVolume: Double,
         workoutDate: Date,
         primaryMuscleGroups: [String]
@@ -33,6 +37,7 @@ public final class WorkoutVectorEntity {
         self.workoutId = workoutId
         self.createdAt = createdAt
         self.vectorData = vectorData
+        self.magnitude = magnitude
         self.totalVolume = totalVolume
         self.workoutDate = workoutDate
         self.primaryMuscleGroups = primaryMuscleGroups
