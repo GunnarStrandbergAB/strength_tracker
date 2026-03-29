@@ -17,6 +17,9 @@ public final class WorkoutViewModel {
     public var lastPR: PersonalRecord? = nil
     public var previousSetDataCache: [String: String] = [:]
     public var watchActiveWorkout: Workout? = nil
+    public var postWorkoutDebrief: PostWorkoutDebrief? = nil
+    public var showPostWorkoutSummary = false
+    public var exerciseCoachingCache: [UUID: ExerciseCoachingData] = [:]
 
     private let workoutRepository: any WorkoutRepository
     private let templateRepository: any TemplateRepository
@@ -27,6 +30,8 @@ public final class WorkoutViewModel {
     private let analyticsService: WorkoutAnalyticsService?
     private let webhookService: WebhookService?
     private let progressionPlanRepository: (any ProgressionPlanRepository)?
+    private let coachingInsightService: CoachingInsightService?
+    private let weightSuggestionService: WeightSuggestionService?
 
     public init(
         workoutRepository: any WorkoutRepository,
@@ -37,7 +42,9 @@ public final class WorkoutViewModel {
         userPreferencesService: UserPreferencesService? = nil,
         analyticsService: WorkoutAnalyticsService? = nil,
         webhookService: WebhookService? = nil,
-        progressionPlanRepository: (any ProgressionPlanRepository)? = nil
+        progressionPlanRepository: (any ProgressionPlanRepository)? = nil,
+        coachingInsightService: CoachingInsightService? = nil,
+        weightSuggestionService: WeightSuggestionService? = nil
     ) {
         self.workoutRepository = workoutRepository
         self.templateRepository = templateRepository
@@ -48,6 +55,8 @@ public final class WorkoutViewModel {
         self.analyticsService = analyticsService
         self.webhookService = webhookService
         self.progressionPlanRepository = progressionPlanRepository
+        self.coachingInsightService = coachingInsightService
+        self.weightSuggestionService = weightSuggestionService
     }
 
     public func toggleDeload() async {
@@ -258,15 +267,54 @@ public final class WorkoutViewModel {
         }
         #endif
 
-        // Vectorize workout for analytics in background
+        // Vectorize workout for analytics, then generate post-workout debrief
         Task {
             let bodyWeightKg = await resolveBodyWeightKg() ?? UserPreferencesService.defaultBodyWeightKg
             try? await analyticsService?.vectorizeWorkout(saved, bodyWeightKg: bodyWeightKg)
+
+            // Generate post-workout debrief after vectorization completes
+            if let coaching = coachingInsightService, let analytics = analyticsService {
+                await generateDebrief(workout: saved, analyticsService: analytics, coachingService: coaching, bodyWeightKg: bodyWeightKg)
+            }
         }
 
         // Send to webhook in background (fire-and-forget)
         Task {
             await webhookService?.send(saved)
+        }
+    }
+
+    private func generateDebrief(
+        workout: Workout,
+        analyticsService: WorkoutAnalyticsService,
+        coachingService: CoachingInsightService,
+        bodyWeightKg: Double
+    ) async {
+        do {
+            let insights = try await analyticsService.generateInsights()
+            let allWorkouts = try await workoutRepository.fetchAll()
+            let allVectors = try await analyticsService.fetchAllVectors()
+            let currentVector = allVectors.first { $0.workoutId == workout.id }
+
+            // Try to compute quality score for this workout
+            let qualityScore: WorkoutQualityScore? = nil  // scored async elsewhere if available
+
+            let debrief = await coachingService.generatePostWorkoutDebrief(
+                workout: workout,
+                allWorkouts: allWorkouts,
+                overloadTrends: insights.overloadTrends,
+                qualityScore: qualityScore,
+                recoveryPatterns: insights.recoveryPatterns,
+                trainingLoad: insights.trainingLoad,
+                optimalVolumes: insights.optimalVolumes,
+                currentVector: currentVector,
+                allVectors: allVectors,
+                bodyWeightKg: bodyWeightKg
+            )
+            postWorkoutDebrief = debrief
+            showPostWorkoutSummary = true
+        } catch {
+            // Debrief is best-effort; don't show if it fails
         }
     }
 
@@ -325,6 +373,53 @@ public final class WorkoutViewModel {
         guard let workout = currentWorkout else { return }
         for exercise in workout.exercises {
             await loadPreviousDataForExercise(exercise.id)
+        }
+    }
+
+    /// Load coaching data (weight suggestions, effort creep) for all exercises.
+    public func loadCoachingData() async {
+        guard let workout = currentWorkout, let wss = weightSuggestionService else { return }
+        do {
+            let allWorkouts = try await workoutRepository.fetchAll()
+            let recentCompleted = allWorkouts
+                .filter { $0.completedAt != nil && $0.id != workout.id }
+                .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+            guard recentCompleted.count >= 3 else { return }
+
+            for we in workout.exercises {
+                let exerciseId = we.exercise.id
+                var suggestions: [Int: WeightSuggestion] = [:]
+                for (setIndex, set) in we.sets.enumerated() {
+                    let targetReps = set.reps ?? 8
+                    if let suggestion = wss.suggest(
+                        exerciseId: exerciseId,
+                        exerciseName: we.exercise.name,
+                        targetReps: targetReps,
+                        recentWorkouts: recentCompleted,
+                        overloadTrend: nil,
+                        recoveryStatus: nil,
+                        trainingLoad: nil,
+                        isDeload: workout.isDeload
+                    ) {
+                        suggestions[setIndex] = suggestion
+                    }
+                }
+
+                let effortCreep = wss.checkEffortCreep(
+                    exerciseId: exerciseId,
+                    exerciseName: we.exercise.name,
+                    recentWorkouts: recentCompleted
+                )
+
+                if !suggestions.isEmpty || effortCreep != nil {
+                    exerciseCoachingCache[we.id] = ExerciseCoachingData(
+                        suggestions: suggestions,
+                        effortCreepWarning: effortCreep
+                    )
+                }
+            }
+        } catch {
+            // Coaching data is best-effort
         }
     }
 

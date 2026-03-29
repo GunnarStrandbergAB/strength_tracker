@@ -17,10 +17,13 @@ final class AnalyticsFeatureGateTests: XCTestCase {
     }
 
     @MainActor
-    func test_unlockedFeatures_threeWorkouts_returnsEmpty() async throws {
+    func test_unlockedFeatures_threeWorkouts_onlyDebriefUnlocked() async throws {
         let gate = AnalyticsFeatureGate(workoutRepository: makeSeededRepo(3))
         let features = try await gate.unlockedFeatures()
-        XCTAssertTrue(features.isEmpty, "No features should be unlocked with only 3 workouts")
+        XCTAssertTrue(features.contains(.postWorkoutDebrief),
+                       "Post-workout debrief should be unlocked at 1+ workouts")
+        XCTAssertFalse(features.contains(.similarWorkouts),
+                        "Similar workouts requires 5 workouts")
     }
 
     @MainActor
@@ -54,10 +57,11 @@ final class AnalyticsFeatureGateTests: XCTestCase {
         let features = try await gate.unlockedFeatures()
 
         XCTAssertTrue(features.contains(.muscleBalance),
-                       "Muscle balance should unlock at 20 workouts")
+                       "Muscle balance should unlock at 19 workouts")
         XCTAssertTrue(features.contains(.recoveryTimeline),
                        "Recovery timeline should unlock at 20 workouts")
-        XCTAssertFalse(features.contains(.advancedInsights))
+        XCTAssertTrue(features.contains(.advancedInsights),
+                       "Advanced insights should unlock at 19 workouts")
     }
 
     @MainActor
@@ -92,7 +96,7 @@ final class AnalyticsFeatureGateTests: XCTestCase {
 
         XCTAssertNotNil(next, "Should have a next unlock at 5 workouts")
         if let next = next {
-            XCTAssertEqual(next.feature, .plateauDetection)
+            XCTAssertEqual(next.feature, .effortCreepWarning)
             XCTAssertEqual(next.workoutsNeeded, 5)
         }
     }
@@ -105,14 +109,15 @@ final class AnalyticsFeatureGateTests: XCTestCase {
     }
 
     @MainActor
-    func test_nextUnlock_zeroWorkouts_returnsPhase2Feature() async throws {
+    func test_nextUnlock_zeroWorkouts_returnsPostWorkoutDebrief() async throws {
         let gate = AnalyticsFeatureGate(workoutRepository: makeSeededRepo(0))
         let next = try await gate.nextUnlock()
 
         XCTAssertNotNil(next)
         if let next = next {
-            XCTAssertEqual(next.workoutsNeeded, 5,
-                           "With 0 workouts, need 5 to unlock first feature")
+            XCTAssertEqual(next.feature, .postWorkoutDebrief)
+            XCTAssertEqual(next.workoutsNeeded, 1,
+                           "With 0 workouts, need 1 to unlock post-workout debrief")
         }
     }
 
@@ -133,10 +138,10 @@ final class AnalyticsFeatureGateTests: XCTestCase {
     }
 
     @MainActor
-    func test_isUnlocked_advancedInsights_requiresFifty() async throws {
-        let gate = AnalyticsFeatureGate(workoutRepository: makeSeededRepo(49))
+    func test_isUnlocked_advancedInsights_requiresNineteen() async throws {
+        let gate = AnalyticsFeatureGate(workoutRepository: makeSeededRepo(18))
         let unlocked = try await gate.isUnlocked(.advancedInsights)
-        XCTAssertFalse(unlocked, "Advanced insights requires 50 workouts, but only 49 are completed")
+        XCTAssertFalse(unlocked, "Advanced insights requires 19 workouts, but only 18 are completed")
     }
 
     // MARK: - Incomplete Workouts Excluded

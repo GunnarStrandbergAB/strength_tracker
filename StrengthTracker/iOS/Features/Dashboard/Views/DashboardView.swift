@@ -103,6 +103,16 @@ struct DashboardView: View {
                     .padding(.horizontal, 20)
                     .padding(.vertical, 4)
 
+                    // Weekly Digest (M5) — show Mon-Wed when prior week data is fresh
+                    if let digest = analyticsViewModel.weeklyDigest {
+                        let dayOfWeek = Calendar.current.component(.weekday, from: Date())
+                        let isMondayToWednesday = (2...4).contains(dayOfWeek)
+                        if isMondayToWednesday {
+                            WeeklyDigestCard(digest: digest)
+                                .padding(.horizontal, 20)
+                        }
+                    }
+
                     // Stats Carousel
                     StatsCarouselView(
                         formattedVolume: viewModel.formattedVolume(),

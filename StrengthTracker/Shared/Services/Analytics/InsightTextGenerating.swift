@@ -30,9 +30,13 @@ public protocol InsightTextGenerating: Sendable {
         recommendations: [ExerciseRecommendation],
         workoutCount: Int
     ) async -> [AnalyticsHighlight]
+
+    /// Optionally enhance post-workout coaching bullets with natural language.
+    @MainActor
+    func enhancePostWorkoutBullets(_ bullets: [CoachingInsight]) async -> [CoachingInsight]
 }
 
-// Default empty implementation so existing conformers don't break.
+// Default empty/pass-through implementations so existing conformers don't break.
 public extension InsightTextGenerating {
     @MainActor
     func generateEarlyHighlights(
@@ -41,4 +45,7 @@ public extension InsightTextGenerating {
         recommendations: [ExerciseRecommendation],
         workoutCount: Int
     ) async -> [AnalyticsHighlight] { [] }
+
+    @MainActor
+    func enhancePostWorkoutBullets(_ bullets: [CoachingInsight]) async -> [CoachingInsight] { bullets }
 }

@@ -7,6 +7,7 @@ struct ActiveWorkoutView: View {
     @State private var viewModel: WorkoutViewModel
     @State private var exerciseListViewModel: ExerciseListViewModel
     let restTimerService: RestTimerService
+    var analyticsViewModel: WorkoutAnalyticsViewModel?
     @State private var showingExercisePicker = false
     @State private var showingCancelConfirmation = false
     @State private var showingFinishError = false
@@ -15,10 +16,11 @@ struct ActiveWorkoutView: View {
     @State private var showingRestTimer = false
     @State private var notesText = ""
 
-    init(viewModel: WorkoutViewModel, exerciseListViewModel: ExerciseListViewModel, restTimerService: RestTimerService) {
+    init(viewModel: WorkoutViewModel, exerciseListViewModel: ExerciseListViewModel, restTimerService: RestTimerService, analyticsViewModel: WorkoutAnalyticsViewModel? = nil) {
         self._viewModel = State(initialValue: viewModel)
         self._exerciseListViewModel = State(initialValue: exerciseListViewModel)
         self.restTimerService = restTimerService
+        self.analyticsViewModel = analyticsViewModel
     }
 
     var body: some View {
@@ -125,31 +127,60 @@ struct ActiveWorkoutView: View {
     // MARK: - Start View
 
     private var startView: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "figure.strengthtraining.traditional")
-                .font(.system(size: 60))
-                .foregroundStyle(STColors.textSecondary)
-            Text("No Active Workout")
-                .font(.title2)
-                .foregroundStyle(STColors.textPrimary)
-            Button {
-                Task {
-                    await viewModel.startWorkout(name: "Quick Workout", from: nil)
-                    updateWidgetWorkoutState()
+        ScrollView {
+            VStack(spacing: 20) {
+                Spacer()
+                    .frame(height: 20)
+
+                // Pre-workout context card (M4) when analytics loaded
+                if let analytics = analyticsViewModel,
+                   !analytics.insights.recoveryPatterns.isEmpty {
+                    PreWorkoutContextCard(
+                        recoveryPatterns: analytics.insights.recoveryPatterns,
+                        trainingLoad: analytics.insights.trainingLoad,
+                        adherence: analytics.adherenceAnalysis,
+                        onStartWorkout: {
+                            Task {
+                                await viewModel.startWorkout(name: "Quick Workout", from: nil)
+                                updateWidgetWorkoutState()
+                            }
+                        },
+                        onStartFromPlan: nil
+                    )
+                } else {
+                    // Minimal start view for new users
+                    Image(systemName: "figure.strengthtraining.traditional")
+                        .font(.system(size: 60))
+                        .foregroundStyle(STColors.textSecondary)
+                    Text("No Active Workout")
+                        .font(.title2)
+                        .foregroundStyle(STColors.textPrimary)
+                    Button {
+                        Task {
+                            await viewModel.startWorkout(name: "Quick Workout", from: nil)
+                            updateWidgetWorkoutState()
+                        }
+                    } label: {
+                        Text("Start Workout")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(STColors.background)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 12)
+                            .background(STColors.primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
                 }
-            } label: {
-                Text("Start Workout")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(STColors.background)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-                    .background(STColors.primary)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                Spacer()
             }
-            .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(STColors.background)
+        .task {
+            // Load analytics for pre-workout context
+            await analyticsViewModel?.loadDashboardInsights()
+        }
     }
 
     // MARK: - Workout Content
@@ -160,6 +191,7 @@ struct ActiveWorkoutView: View {
         }
         .task {
             await viewModel.loadPreviousData()
+            await viewModel.loadCoachingData()
         }
         .onAppear {
             if let notes = workout.notes, !notes.isEmpty {
@@ -303,7 +335,8 @@ struct ActiveWorkoutView: View {
                         to: toIndex
                     )
                 }
-            }
+            },
+            coachingData: viewModel.exerciseCoachingCache[workoutExercise.id]
         )
     }
 

@@ -77,6 +77,39 @@ public final class AppleIntelligenceInsightGenerator: InsightTextGenerating, @un
         #endif
     }
 
+    @MainActor
+    public func enhancePostWorkoutBullets(_ bullets: [CoachingInsight]) async -> [CoachingInsight] {
+        #if canImport(FoundationModels)
+        do {
+            let session = LanguageModelSession()
+            var enhanced: [CoachingInsight] = []
+            for bullet in bullets {
+                let prompt = "Rewrite this post-workout coaching insight in a concise, motivating coach tone (max 15 words). Keep any numbers exact. Original: \(bullet.detail)"
+                do {
+                    let response = try await session.respond(to: prompt)
+                    let newDetail = String(response.content.trimmingCharacters(in: .whitespacesAndNewlines))
+                    enhanced.append(CoachingInsight(
+                        id: bullet.id,
+                        priority: bullet.priority,
+                        title: bullet.title,
+                        detail: newDetail.isEmpty ? bullet.detail : newDetail,
+                        icon: bullet.icon,
+                        color: bullet.color,
+                        source: bullet.source
+                    ))
+                } catch {
+                    enhanced.append(bullet)
+                }
+            }
+            return enhanced
+        } catch {
+            return bullets
+        }
+        #else
+        return bullets
+        #endif
+    }
+
     // MARK: - Private
 
     #if canImport(FoundationModels)
