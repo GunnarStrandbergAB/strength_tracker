@@ -22,9 +22,9 @@ public enum TrainingStatus: String, Codable, CaseIterable, Sendable {
 
     public var weeklyFrequencyRange: ClosedRange<Int> {
         switch self {
-        case .beginner: return 3...4
-        case .intermediate: return 4...5
-        case .advanced: return 4...6
+        case .beginner: return 2...4
+        case .intermediate: return 3...5
+        case .advanced: return 4...7
         }
     }
 
