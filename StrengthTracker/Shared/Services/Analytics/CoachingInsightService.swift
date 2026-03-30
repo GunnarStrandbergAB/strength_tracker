@@ -103,11 +103,23 @@ public final class CoachingInsightService: Sendable {
             }
         }
 
-        // Volume delta vs 30-day average (needs 5+ workouts)
-        if workoutCount >= 5 {
+        // Deload-specific bullet (replaces volume delta during deload)
+        if workout.isDeload {
+            candidates.append(CoachingInsight(
+                priority: 4,
+                title: "Deload Session",
+                detail: "Intentional recovery — reduced volume as planned",
+                icon: "heart.circle.fill",
+                color: .success,
+                source: .recovery
+            ))
+        }
+
+        // Volume delta vs 30-day average (needs 5+ workouts, skip during deload)
+        if !workout.isDeload && workoutCount >= 5 {
             let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
             let recentWorkouts = completedWorkouts.filter {
-                ($0.completedAt ?? .distantPast) >= thirtyDaysAgo
+                ($0.completedAt ?? .distantPast) >= thirtyDaysAgo && !$0.isDeload
             }
             if !recentWorkouts.isEmpty {
                 let avgVolume = recentWorkouts.map { $0.totalVolume(bodyWeightKg: bodyWeightKg) }.reduce(0, +) / Double(recentWorkouts.count)
@@ -272,7 +284,7 @@ public final class CoachingInsightService: Sendable {
         let now = Date()
         guard let windowStart = calendar.date(byAdding: .weekOfYear, value: -windowWeeks, to: now) else { return [] }
 
-        let recent = workouts.filter { ($0.completedAt ?? .distantPast) >= windowStart && $0.completedAt != nil }
+        let recent = workouts.filter { ($0.completedAt ?? .distantPast) >= windowStart && $0.completedAt != nil && !$0.isDeload }
         guard recent.count >= 8 else { return [] }
 
         // Compute weekly sets per muscle group
@@ -399,7 +411,8 @@ public final class CoachingInsightService: Sendable {
         let calendar = Calendar.current
         let now = Date()
         guard let thisWeekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)),
-              let lastWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeekStart) else {
+              let lastWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeekStart),
+              let priorWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: lastWeekStart) else {
             return nil
         }
 
@@ -408,12 +421,17 @@ public final class CoachingInsightService: Sendable {
             let d = $0.completedAt ?? .distantPast
             return d >= lastWeekStart && d < thisWeekStart
         }
+        let priorWeek = completed.filter {
+            let d = $0.completedAt ?? .distantPast
+            return d >= priorWeekStart && d < lastWeekStart
+        }
 
         guard !lastWeek.isEmpty else { return nil }
 
-        let thisVolume = thisWeek.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) }
+        // Compare two complete weeks (last vs prior) — avoids partial-week distortion
         let lastVolume = lastWeek.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) }
-        let volumeDelta = lastVolume > 0 ? ((thisVolume - lastVolume) / lastVolume) * 100 : 0
+        let priorVolume = priorWeek.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) }
+        let volumeDelta = priorVolume > 0 ? ((lastVolume - priorVolume) / priorVolume) * 100 : 0
 
         let thisWeekPRs = thisWeek.flatMap(\.exercises).flatMap(\.sets).filter(\.isPersonalRecord).count
 
