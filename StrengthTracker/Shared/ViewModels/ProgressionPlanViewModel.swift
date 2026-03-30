@@ -163,21 +163,22 @@ public final class ProgressionPlanViewModel {
 
     /// Default day-of-week templates (ISO 8601: Mon=2..Sat=7, Sun=1).
     public static let defaultDaySpread: [Int: [Int]] = [
+        1: [4],                  // Wed (midweek)
         2: [2, 5],              // Mon / Thu
         3: [2, 4, 6],           // Mon / Wed / Fri
         4: [2, 3, 5, 6],       // Mon / Tue / Thu / Fri
         5: [2, 3, 4, 6, 7],    // Mon / Tue / Wed / Fri / Sat
         6: [2, 3, 4, 5, 6, 7], // Mon - Sat
+        7: [1, 2, 3, 4, 5, 6, 7], // Every day
     ]
 
     public func toggleTrainingDay(_ day: Int) {
         if draftTrainingDays.contains(day) {
-            guard draftTrainingDays.count > 2 else { return }
+            guard draftTrainingDays.count > 1 else { return }
             draftTrainingDays.remove(day)
             // Remove from deload days if it was selected there
             draftDeloadDays.remove(day)
         } else {
-            guard draftTrainingDays.count < 6 else { return }
             draftTrainingDays.insert(day)
         }
         draftFrequency = draftTrainingDays.count

@@ -59,7 +59,7 @@ A 5-step wizard guides plan creation:
 1. **Goal** — select a primary training goal (strength, hypertrophy, power, or general fitness). Each goal defines an intensity range and rep scheme.
 2. **Program Type** — choose a periodization model: linear, daily undulating, weekly undulating, or block.
 3. **Exercises** — pick exercises from the library. For each exercise, the app estimates your current 1RM from workout history (or you enter it manually).
-4. **Schedule** — set training days per week (3–6) and assign each day to a specific weekday. Optionally link a **workout template** to each day and pick which exercises train on which days — when linked, the plan merges the template's structure (exercise order, notes) with the plan's progression-driven weights and reps.
+4. **Schedule** — set training days per week (1–7) and assign each day to a specific weekday. Optionally link a **workout template** to each day and pick which exercises train on which days — when linked, the plan merges the template's structure (exercise order, notes) with the plan's progression-driven weights and reps.
 5. **Start Date** — pick a start date (defaults to the next training day on or after today). The engine computes concrete **scheduled dates** for every session based on the start date and training days. Sessions show their date in the plan detail view and can be individually rescheduled.
 
 The engine then generates all 12 weeks upfront — every session, every exercise, every set, every target weight and rep count — organized into training blocks with structured deload weeks.
