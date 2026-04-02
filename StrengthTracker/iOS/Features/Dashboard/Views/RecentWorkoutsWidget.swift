@@ -5,6 +5,8 @@ import StrengthTrackerShared
 struct RecentWorkoutsWidget: View {
     let workouts: [Workout]
     let viewModel: DashboardViewModel
+    let historyViewModel: HistoryViewModel
+    let analyticsViewModel: WorkoutAnalyticsViewModel
     let onHistoryTapped: () -> Void
 
     var body: some View {
@@ -42,10 +44,14 @@ struct RecentWorkoutsWidget: View {
             } else {
                 VStack(spacing: 12) {
                     ForEach(workouts) { workout in
-                        RecentWorkoutCard(
-                            workout: workout,
-                            viewModel: viewModel
-                        )
+                        NavigationLink(value: workout) {
+                            RecentWorkoutCard(
+                                workout: workout,
+                                viewModel: viewModel,
+                                historyViewModel: historyViewModel
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -59,6 +65,8 @@ struct RecentWorkoutsWidget: View {
 private struct RecentWorkoutCard: View {
     let workout: Workout
     let viewModel: DashboardViewModel
+    let historyViewModel: HistoryViewModel
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -76,9 +84,19 @@ private struct RecentWorkoutCard: View {
 
                 Spacer()
 
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 16))
-                    .foregroundStyle(STColors.textTertiary)
+                Menu {
+                    Button(role: .destructive) {
+                        showDeleteConfirmation = true
+                    } label: {
+                        Label("Delete Workout", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 16))
+                        .foregroundStyle(STColors.textTertiary)
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
+                }
             }
             .padding(.bottom, 14)
 
@@ -113,6 +131,18 @@ private struct RecentWorkoutCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.white.opacity(0.05), lineWidth: 1)
         )
+        .confirmationDialog(
+            "Delete Workout",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                Task { await historyViewModel.deleteWorkout(workout) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently delete the workout and all its data.")
+        }
     }
 }
 

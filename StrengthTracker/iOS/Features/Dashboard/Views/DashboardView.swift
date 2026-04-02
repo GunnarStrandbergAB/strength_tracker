@@ -5,6 +5,7 @@ import StrengthTrackerShared
 struct DashboardView: View {
     @State private var viewModel: DashboardViewModel
     let analyticsViewModel: WorkoutAnalyticsViewModel
+    let historyViewModel: HistoryViewModel
     let progressionPlanViewModel: ProgressionPlanViewModel
     let exerciseListViewModel: ExerciseListViewModel
     let templateViewModel: TemplateViewModel
@@ -19,6 +20,7 @@ struct DashboardView: View {
     init(
         viewModel: DashboardViewModel,
         analyticsViewModel: WorkoutAnalyticsViewModel,
+        historyViewModel: HistoryViewModel,
         progressionPlanViewModel: ProgressionPlanViewModel,
         exerciseListViewModel: ExerciseListViewModel,
         templateViewModel: TemplateViewModel,
@@ -32,6 +34,7 @@ struct DashboardView: View {
     ) {
         self._viewModel = State(initialValue: viewModel)
         self.analyticsViewModel = analyticsViewModel
+        self.historyViewModel = historyViewModel
         self.progressionPlanViewModel = progressionPlanViewModel
         self.exerciseListViewModel = exerciseListViewModel
         self.templateViewModel = templateViewModel
@@ -130,6 +133,8 @@ struct DashboardView: View {
                     RecentWorkoutsWidget(
                         workouts: viewModel.recentWorkouts,
                         viewModel: viewModel,
+                        historyViewModel: historyViewModel,
+                        analyticsViewModel: analyticsViewModel,
                         onHistoryTapped: onHistoryTapped
                     )
                     .padding(.top, 4)
@@ -170,6 +175,13 @@ struct DashboardView: View {
                 async let a: () = analyticsViewModel.loadDashboardInsights(force: true)
                 async let p: () = progressionPlanViewModel.loadActivePlan()
                 _ = await (d, a, p)
+            }
+            .navigationDestination(for: Workout.self) { workout in
+                WorkoutDetailView(
+                    workout: workout,
+                    historyViewModel: historyViewModel,
+                    analyticsViewModel: analyticsViewModel
+                )
             }
         }
     }

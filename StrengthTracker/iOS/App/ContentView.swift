@@ -24,6 +24,7 @@ struct ContentView: View {
             DashboardView(
                 viewModel: dashboardViewModel,
                 analyticsViewModel: analyticsViewModel,
+                historyViewModel: historyViewModel,
                 progressionPlanViewModel: progressionPlanViewModel,
                 exerciseListViewModel: exerciseListViewModel,
                 templateViewModel: templateViewModel,
