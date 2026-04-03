@@ -215,7 +215,10 @@ public final class WorkoutAnalyticsService: Sendable {
 
                 // During active deload, suppress false warnings and add positive highlight
                 if latestIsDeload {
-                    highlights = highlights.filter { $0.type != .warning || $0.title == "Deload Recommended" }
+                    highlights = highlights.filter {
+                        ($0.type != .warning || $0.title == "Deload Recommended") &&
+                        $0.title != "Optimal Training Load"
+                    }
                     let deloadHighlight = AnalyticsHighlight(
                         type: .improvement,
                         title: "Deload In Progress",

@@ -90,6 +90,7 @@ struct AdvancedInsightsView: View {
     @ViewBuilder
     private var trainingLoadSection: some View {
         if let load = viewModel.insights.trainingLoad {
+            let isDeload = viewModel.insights.highlights.contains { $0.title == "Deload In Progress" }
             VStack(alignment: .leading, spacing: 12) {
                 sectionHeader("Training Load")
 
@@ -124,7 +125,7 @@ struct AdvancedInsightsView: View {
                     }
                 }
 
-                Text(zoneExplanation(load.loadZone))
+                Text(zoneExplanation(load.loadZone, acwr: load.acwr, isDeload: isDeload))
                     .font(.system(size: 11))
                     .foregroundStyle(zoneColor(load.loadZone))
                     .padding(.top, 4)
@@ -455,9 +456,13 @@ struct AdvancedInsightsView: View {
         }
     }
 
-    private func zoneExplanation(_ zone: LoadZone) -> String {
+    private func zoneExplanation(_ zone: LoadZone, acwr: Double, isDeload: Bool) -> String {
+        if isDeload {
+            return "Deload phase — reduced training load is intentional for recovery"
+        }
         switch zone {
         case .underTraining: return "Training well below your baseline — increase effort to keep progressing"
+        case .optimal where acwr < 1.0: return "Training within a sustainable range — load is slightly below your baseline"
         case .optimal:       return "Sustainable progression — slightly above baseline is ideal for gains"
         case .caution:       return "Ramping up quickly — make sure recovery keeps up"
         case .danger:        return "Very high load spike — ease off to reduce injury risk"
