@@ -350,7 +350,10 @@ struct ActiveWorkoutView: View {
                let completedSet = ex.sets.first(where: { $0.id == setId }),
                completedSet.isCompleted,
                viewModel.userPreferencesService?.autoStartRestTimer ?? true {
-                let restSeconds = workoutExercise.restTimerSeconds ?? viewModel.userPreferencesService?.defaultRestSeconds ?? UserPreferencesService.defaultRestSecondsValue
+                var restSeconds = workoutExercise.restTimerSeconds ?? viewModel.userPreferencesService?.defaultRestSeconds ?? UserPreferencesService.defaultRestSecondsValue
+                if isDeload, let pct = viewModel.userPreferencesService?.deloadRestPercentage {
+                    restSeconds = max(15, restSeconds * pct / 100)
+                }
                 let setIndex = ex.sets.firstIndex(where: { $0.id == setId }) ?? 0
                 restTimerService.start(
                     seconds: restSeconds,

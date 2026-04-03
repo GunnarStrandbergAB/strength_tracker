@@ -158,6 +158,39 @@ struct SettingsView: View {
                     }
                 }
 
+                // Deload Section
+                Section {
+                    Stepper(
+                        value: $preferencesService.deloadWeightPercentage,
+                        in: 10...80,
+                        step: 5
+                    ) {
+                        HStack {
+                            Text("Deload Weight")
+                            Spacer()
+                            Text("\(preferencesService.deloadWeightPercentage)%")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Stepper(
+                        value: $preferencesService.deloadRestPercentage,
+                        in: 25...100,
+                        step: 5
+                    ) {
+                        HStack {
+                            Text("Deload Rest Timer")
+                            Spacer()
+                            Text("\(preferencesService.deloadRestPercentage)%")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Deload")
+                } footer: {
+                    Text("Percentage of normal weight and rest time used when a workout is marked as deload.")
+                }
+
                 // Data Management Section
                 Section("Data") {
                     Button("Reset All Preferences") {
@@ -271,6 +304,8 @@ struct SettingsView: View {
             .onChange(of: preferencesService.autoStartRestTimer) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.defaultReps) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.distanceUnit) { _, _ in syncSettingsToWatch() }
+            .onChange(of: preferencesService.deloadWeightPercentage) { _, _ in syncSettingsToWatch() }
+            .onChange(of: preferencesService.deloadRestPercentage) { _, _ in syncSettingsToWatch() }
     }
 
     private func updateBodyWeightText() {

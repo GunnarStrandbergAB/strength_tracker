@@ -21,6 +21,9 @@ public final class WorkoutViewModel {
     public var showPostWorkoutSummary = false
     public var exerciseCoachingCache: [UUID: ExerciseCoachingData] = [:]
 
+    /// Stores original set weights before deload reduction, keyed by exerciseId → setId → weight
+    private var preDeloadWeights: [UUID: [UUID: Double?]]?
+
     private let workoutRepository: any WorkoutRepository
     private let templateRepository: any TemplateRepository
     private let personalRecordService: PersonalRecordService?
@@ -61,9 +64,47 @@ public final class WorkoutViewModel {
 
     public func toggleDeload() async {
         guard var workout = currentWorkout else { return }
+
+        if workout.isDeload {
+            // Toggling OFF — restore original weights
+            if let originals = preDeloadWeights {
+                for i in workout.exercises.indices {
+                    let exerciseId = workout.exercises[i].id
+                    if let exerciseOriginals = originals[exerciseId] {
+                        for j in workout.exercises[i].sets.indices {
+                            let setId = workout.exercises[i].sets[j].id
+                            if let original = exerciseOriginals[setId] {
+                                workout.exercises[i].sets[j].weight = original
+                            }
+                        }
+                    }
+                }
+            }
+            preDeloadWeights = nil
+        } else {
+            // Toggling ON — save originals, apply deload reduction
+            let pct = Double(userPreferencesService?.deloadWeightPercentage ?? 50) / 100.0
+            var originals: [UUID: [UUID: Double?]] = [:]
+            for i in workout.exercises.indices {
+                var exerciseOriginals: [UUID: Double?] = [:]
+                for j in workout.exercises[i].sets.indices {
+                    let set = workout.exercises[i].sets[j]
+                    exerciseOriginals[set.id] = set.weight
+                    if let w = set.weight, !set.isCompleted {
+                        workout.exercises[i].sets[j].weight = (w * pct).rounded(toNearest: 2.5)
+                    }
+                }
+                originals[workout.exercises[i].id] = exerciseOriginals
+            }
+            preDeloadWeights = originals
+        }
+
         workout.isDeload.toggle()
         do {
             currentWorkout = try await workoutRepository.save(workout)
+            // Refresh coaching data — suppresses/restores "Try" text
+            exerciseCoachingCache.removeAll()
+            await loadCoachingData()
         } catch {
             currentWorkout = workout
         }
