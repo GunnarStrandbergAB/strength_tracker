@@ -36,15 +36,9 @@ public final class WeightSuggestionService: Sendable {
             }
         }
 
-        // Deload override
+        // No coaching suggestions during deload — weights are intentionally reduced
         if isDeload {
-            let deloadWeight = roundToNearest2_5(e1rm * 0.6)
-            return WeightSuggestion(
-                weight: deloadWeight,
-                targetReps: targetReps,
-                explanation: "Deload: 60% of e1RM",
-                modifiers: ["Deload: -40%"]
-            )
+            return nil
         }
 
         // Recovery modifier

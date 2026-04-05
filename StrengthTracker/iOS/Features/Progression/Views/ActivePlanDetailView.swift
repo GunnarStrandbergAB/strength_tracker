@@ -286,7 +286,7 @@ struct ActivePlanDetailView: View {
             if isExpanded {
                 VStack(spacing: 8) {
                     ForEach(week.sessions) { session in
-                        sessionCard(session, plan: plan)
+                        sessionCard(session, plan: plan, weekIsDeload: week.isDeload)
                     }
                 }
                 .padding(.top, 6)
@@ -298,7 +298,7 @@ struct ActivePlanDetailView: View {
 
     // MARK: - Session Card
 
-    private func sessionCard(_ session: PlannedSession, plan: ProgressionPlan) -> some View {
+    private func sessionCard(_ session: PlannedSession, plan: ProgressionPlan, weekIsDeload: Bool = false) -> some View {
         let isCompleted = session.isCompleted
         let isPreparing = preparingSessionId == session.id
 
@@ -375,7 +375,7 @@ struct ActivePlanDetailView: View {
                     Task {
                         preparingSessionId = session.id
                         if let template = await viewModel.prepareSessionTemplate(for: session) {
-                            await onStartSession(template, session.id, plan.id, session.isDeload)
+                            await onStartSession(template, session.id, plan.id, session.isDeload || weekIsDeload)
                         }
                         preparingSessionId = nil
                     }

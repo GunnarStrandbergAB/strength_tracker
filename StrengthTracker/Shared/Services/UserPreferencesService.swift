@@ -75,6 +75,16 @@ public final class UserPreferencesService {
         didSet { UserDefaults.standard.set(vectorVersion, forKey: "vectorVersion") }
     }
 
+    /// Deload weight as a percentage of normal weight (e.g. 50 = use 50% of normal)
+    public var deloadWeightPercentage: Int {
+        didSet { UserDefaults.standard.set(deloadWeightPercentage, forKey: "deloadWeightPercentage") }
+    }
+
+    /// Deload rest timer as a percentage of normal rest (e.g. 75 = use 75% of normal)
+    public var deloadRestPercentage: Int {
+        didSet { UserDefaults.standard.set(deloadRestPercentage, forKey: "deloadRestPercentage") }
+    }
+
     /// User's body weight in kg (last-resort fallback for calorie estimation)
     public var bodyWeightKg: Double? {
         didSet {
@@ -115,6 +125,12 @@ public final class UserPreferencesService {
         self.webhookURL = defaults.string(forKey: "webhookURL") ?? ""
         self.webhookBearerToken = defaults.string(forKey: "webhookBearerToken") ?? ""
 
+        let deloadWeight = defaults.integer(forKey: "deloadWeightPercentage")
+        self.deloadWeightPercentage = deloadWeight != 0 ? deloadWeight : 50
+
+        let deloadRest = defaults.integer(forKey: "deloadRestPercentage")
+        self.deloadRestPercentage = deloadRest != 0 ? deloadRest : 75
+
         let weight = defaults.double(forKey: "bodyWeightKg")
         self.bodyWeightKg = weight > 0 ? weight : nil
 
@@ -128,6 +144,8 @@ public final class UserPreferencesService {
         defaultRestSeconds = Self.defaultRestSecondsValue
         defaultReps = Self.defaultRepsValue
         autoStartRestTimer = true
+        deloadWeightPercentage = 50
+        deloadRestPercentage = 75
         // Note: Don't reset onboarding, seeding, or HealthKit auth flags
     }
 }
