@@ -75,6 +75,11 @@ public final class UserPreferencesService {
         didSet { UserDefaults.standard.set(vectorVersion, forKey: "vectorVersion") }
     }
 
+    /// Whether to always show the RPE column in workout exercises
+    public var alwaysShowRPE: Bool {
+        didSet { UserDefaults.standard.set(alwaysShowRPE, forKey: "alwaysShowRPE") }
+    }
+
     /// Deload weight as a percentage of normal weight (e.g. 50 = use 50% of normal)
     public var deloadWeightPercentage: Int {
         didSet { UserDefaults.standard.set(deloadWeightPercentage, forKey: "deloadWeightPercentage") }
@@ -122,6 +127,8 @@ public final class UserPreferencesService {
 
         self.hasRequestedHealthKitAuth = defaults.bool(forKey: "hasRequestedHealthKitAuth")
 
+        self.alwaysShowRPE = defaults.bool(forKey: "alwaysShowRPE")
+
         self.webhookURL = defaults.string(forKey: "webhookURL") ?? ""
         self.webhookBearerToken = defaults.string(forKey: "webhookBearerToken") ?? ""
 
@@ -144,6 +151,7 @@ public final class UserPreferencesService {
         defaultRestSeconds = Self.defaultRestSecondsValue
         defaultReps = Self.defaultRepsValue
         autoStartRestTimer = true
+        alwaysShowRPE = false
         deloadWeightPercentage = 50
         deloadRestPercentage = 75
         // Note: Don't reset onboarding, seeding, or HealthKit auth flags

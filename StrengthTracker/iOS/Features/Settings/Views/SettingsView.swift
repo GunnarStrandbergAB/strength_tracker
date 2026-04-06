@@ -144,6 +144,8 @@ struct SettingsView: View {
 
                     Toggle("Auto-start Rest Timer", isOn: $preferencesService.autoStartRestTimer)
 
+                    Toggle("Always Show RPE", isOn: $preferencesService.alwaysShowRPE)
+
                     Stepper(
                         value: $preferencesService.defaultReps,
                         in: 1...30,
@@ -304,6 +306,7 @@ struct SettingsView: View {
             .onChange(of: preferencesService.autoStartRestTimer) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.defaultReps) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.distanceUnit) { _, _ in syncSettingsToWatch() }
+            .onChange(of: preferencesService.alwaysShowRPE) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.deloadWeightPercentage) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.deloadRestPercentage) { _, _ in syncSettingsToWatch() }
     }

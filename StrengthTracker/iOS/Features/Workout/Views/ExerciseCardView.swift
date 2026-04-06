@@ -17,6 +17,7 @@ struct ExerciseCardView: View {
     let onNoteChange: ((String) -> Void)?
     let onMoveSet: ((Int, Int) -> Void)?
     let coachingData: ExerciseCoachingData?
+    let alwaysShowRPE: Bool
 
     @State private var isReorderingSets: Bool = false
     @State private var isEditingNote: Bool = false
@@ -38,7 +39,8 @@ struct ExerciseCardView: View {
         onSetTypeChange: @escaping (UUID, SetType) -> Void = { _, _ in },
         onNoteChange: ((String) -> Void)? = nil,
         onMoveSet: ((Int, Int) -> Void)? = nil,
-        coachingData: ExerciseCoachingData? = nil
+        coachingData: ExerciseCoachingData? = nil,
+        alwaysShowRPE: Bool = false
     ) {
         self.workoutExercise = workoutExercise
         self.isActiveExercise = isActiveExercise
@@ -54,10 +56,11 @@ struct ExerciseCardView: View {
         self.onNoteChange = onNoteChange
         self.onMoveSet = onMoveSet
         self.coachingData = coachingData
+        self.alwaysShowRPE = alwaysShowRPE
         self._noteText = State(initialValue: workoutExercise.notes ?? "")
         self._isEditingNote = State(initialValue: workoutExercise.notes != nil && !workoutExercise.notes!.isEmpty)
-        // Show RPE column if any set already has RPE data
-        self._showRPE = State(initialValue: workoutExercise.sets.contains { $0.rpe != nil })
+        // Show RPE column if setting is on or any set already has RPE data
+        self._showRPE = State(initialValue: alwaysShowRPE || workoutExercise.sets.contains { $0.rpe != nil })
     }
 
     var body: some View {

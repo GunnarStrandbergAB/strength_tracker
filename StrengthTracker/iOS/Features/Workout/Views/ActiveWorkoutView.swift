@@ -336,7 +336,8 @@ struct ActiveWorkoutView: View {
                     )
                 }
             },
-            coachingData: viewModel.exerciseCoachingCache[workoutExercise.id]
+            coachingData: viewModel.exerciseCoachingCache[workoutExercise.id],
+            alwaysShowRPE: viewModel.userPreferencesService?.alwaysShowRPE ?? false
         )
     }
 
