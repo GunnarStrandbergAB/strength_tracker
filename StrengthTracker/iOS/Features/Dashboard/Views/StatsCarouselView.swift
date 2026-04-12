@@ -4,8 +4,8 @@ import StrengthTrackerShared
 
 struct StatsCarouselView: View {
     let formattedVolume: String
+    let formattedAvgSessions: String
     let formattedDuration: String
-    let prsCount: Int
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -18,17 +18,17 @@ struct StatsCarouselView: View {
                 )
 
                 StatCard(
-                    icon: "timer",
-                    label: "TIME",
-                    value: formattedDuration,
-                    unit: "HRS"
+                    icon: "calendar.badge.clock",
+                    label: "AVG / WEEK",
+                    value: formattedAvgSessions,
+                    unit: nil
                 )
 
                 StatCard(
-                    icon: "trophy",
-                    label: "PRS SET",
-                    value: "\(prsCount)",
-                    unit: nil
+                    icon: "timer",
+                    label: "TRAINING TIME",
+                    value: formattedDuration,
+                    unit: "HRS"
                 )
             }
             .padding(.horizontal, 20)

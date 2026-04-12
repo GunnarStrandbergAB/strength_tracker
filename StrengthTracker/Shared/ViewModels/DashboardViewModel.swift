@@ -8,9 +8,9 @@ public final class DashboardViewModel {
 
     public var weeklyWorkoutCounts: [Int] = Array(repeating: 0, count: 7) // Mon-Sun
     public var weeklyQualityScores: [Double?] = Array(repeating: nil, count: 7) // Mon-Sun, nil = no workout
-    public var totalVolume: Double = 0
-    public var totalDurationHours: Double = 0
-    public var prsThisWeek: Int = 0
+    public var allTimeVolume: Double = 0
+    public var allTimeHours: Double = 0
+    public var avgSessionsPerWeek: Double = 0
     public var recentWorkouts: [Workout] = []
     public var weeklyTrend: Double = 0 // percentage change vs last week
     public var weeklyWorkoutTotal: Int = 0
@@ -70,15 +70,20 @@ public final class DashboardViewModel {
             // Quality scores per day (Mon-Sun) — pass history to avoid N+1 fetches
             weeklyQualityScores = calculateDailyQualityScores(for: currentWeekWorkouts, allWorkouts: allWorkouts, calendar: calendar)
 
-            // Total volume this week (bodyweight-aware)
-            totalVolume = currentWeekWorkouts.reduce(0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
+            // All-time volume (bodyweight-aware)
+            allTimeVolume = completed.reduce(0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
 
-            // Total duration this week (in hours)
-            let totalSeconds = currentWeekWorkouts.compactMap(\.duration).reduce(0, +)
-            totalDurationHours = totalSeconds / 3600.0
+            // All-time training hours
+            let allTimeSeconds = completed.compactMap(\.duration).reduce(0, +)
+            allTimeHours = allTimeSeconds / 3600.0
 
-            // PRs this week: count sets flagged as personal records in this week's workouts
-            prsThisWeek = countPRsInWorkouts(currentWeekWorkouts)
+            // Average sessions per week
+            if let earliest = completed.map(\.startedAt).min() {
+                let weeksSinceStart = max(1, calendar.dateComponents([.weekOfYear], from: earliest, to: now).weekOfYear ?? 1)
+                avgSessionsPerWeek = Double(completed.count) / Double(weeksSinceStart)
+            } else {
+                avgSessionsPerWeek = 0
+            }
 
             // Recent 3 completed workouts (across all time, sorted newest first)
             let sorted = completed.sorted { $0.startedAt > $1.startedAt }
@@ -106,9 +111,9 @@ public final class DashboardViewModel {
             // Reset state on error
             weeklyWorkoutCounts = Array(repeating: 0, count: 7)
             weeklyQualityScores = Array(repeating: nil, count: 7)
-            totalVolume = 0
-            totalDurationHours = 0
-            prsThisWeek = 0
+            allTimeVolume = 0
+            allTimeHours = 0
+            avgSessionsPerWeek = 0
             recentWorkouts = []
             weeklyTrend = 0
             weeklyWorkoutTotal = 0
@@ -186,18 +191,28 @@ public final class DashboardViewModel {
     // MARK: - Formatting Helpers
 
     public func formattedVolume() -> String {
+        if allTimeVolume >= 1_000_000 {
+            return String(format: "%.1fM", allTimeVolume / 1_000_000)
+        } else if allTimeVolume >= 10_000 {
+            return String(format: "%.0fK", allTimeVolume / 1_000)
+        } else if allTimeVolume >= 1_000 {
+            return String(format: "%.1fK", allTimeVolume / 1_000)
+        }
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 0
-        formatter.groupingSeparator = ","
-        return formatter.string(from: NSNumber(value: totalVolume)) ?? "0"
+        return formatter.string(from: NSNumber(value: allTimeVolume)) ?? "0"
     }
 
     public func formattedDuration() -> String {
-        if totalDurationHours >= 10 {
-            return String(format: "%.0f", totalDurationHours)
+        if allTimeHours >= 10 {
+            return String(format: "%.0f", allTimeHours)
         }
-        return String(format: "%.1f", totalDurationHours)
+        return String(format: "%.1f", allTimeHours)
+    }
+
+    public func formattedAvgSessions() -> String {
+        String(format: "%.1f", avgSessionsPerWeek)
     }
 
     public func formattedTrend() -> String {
