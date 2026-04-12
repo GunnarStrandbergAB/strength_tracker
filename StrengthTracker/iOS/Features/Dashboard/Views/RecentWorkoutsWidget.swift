@@ -88,7 +88,7 @@ private struct RecentWorkoutCard: View {
                 Spacer()
 
                 if let score = qualityScore {
-                    Text("\(Int(score.overallScore))")
+                    Text("Quality \(Int(score.overallScore))/100")
                         .font(.system(size: 12, weight: .bold, design: .monospaced))
                         .foregroundStyle(scoreColor(score.overallScore))
                 }
