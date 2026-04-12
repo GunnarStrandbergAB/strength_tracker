@@ -119,8 +119,8 @@ struct DashboardView: View {
                     // Stats Carousel
                     StatsCarouselView(
                         formattedVolume: viewModel.formattedVolume(),
-                        formattedDuration: viewModel.formattedDuration(),
-                        prsCount: viewModel.prsThisWeek
+                        formattedAvgSessions: viewModel.formattedAvgSessions(),
+                        formattedDuration: viewModel.formattedDuration()
                     )
 
                     // Analytics Insights Card (hidden until close to first unlock)
@@ -135,6 +135,7 @@ struct DashboardView: View {
                         viewModel: viewModel,
                         historyViewModel: historyViewModel,
                         analyticsViewModel: analyticsViewModel,
+                        recentWorkoutScores: viewModel.recentWorkoutScores,
                         onHistoryTapped: onHistoryTapped
                     )
                     .padding(.top, 4)

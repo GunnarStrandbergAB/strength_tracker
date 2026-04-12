@@ -7,6 +7,7 @@ struct RecentWorkoutsWidget: View {
     let viewModel: DashboardViewModel
     let historyViewModel: HistoryViewModel
     let analyticsViewModel: WorkoutAnalyticsViewModel
+    let recentWorkoutScores: [UUID: WorkoutQualityScore]
     let onHistoryTapped: () -> Void
 
     var body: some View {
@@ -48,7 +49,8 @@ struct RecentWorkoutsWidget: View {
                             RecentWorkoutCard(
                                 workout: workout,
                                 viewModel: viewModel,
-                                historyViewModel: historyViewModel
+                                historyViewModel: historyViewModel,
+                                qualityScore: recentWorkoutScores[workout.id]
                             )
                         }
                         .buttonStyle(.plain)
@@ -66,6 +68,7 @@ private struct RecentWorkoutCard: View {
     let workout: Workout
     let viewModel: DashboardViewModel
     let historyViewModel: HistoryViewModel
+    let qualityScore: WorkoutQualityScore?
     @State private var showDeleteConfirmation = false
 
     var body: some View {
@@ -83,6 +86,12 @@ private struct RecentWorkoutCard: View {
                 }
 
                 Spacer()
+
+                if let score = qualityScore {
+                    Text("Quality \(Int(score.overallScore))/100")
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundStyle(scoreColor(score.overallScore))
+                }
 
                 Menu {
                     Button(role: .destructive) {
@@ -142,6 +151,15 @@ private struct RecentWorkoutCard: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will permanently delete the workout and all its data.")
+        }
+    }
+
+    private func scoreColor(_ score: Double) -> Color {
+        switch score {
+        case 80...: return STColors.success
+        case 60..<80: return STColors.primary
+        case 40..<60: return .orange
+        default: return STColors.danger
         }
     }
 }
