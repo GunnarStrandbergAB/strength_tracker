@@ -135,6 +135,7 @@ struct DashboardView: View {
                         viewModel: viewModel,
                         historyViewModel: historyViewModel,
                         analyticsViewModel: analyticsViewModel,
+                        recentWorkoutScores: viewModel.recentWorkoutScores,
                         onHistoryTapped: onHistoryTapped
                     )
                     .padding(.top, 4)

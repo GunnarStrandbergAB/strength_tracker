@@ -12,6 +12,7 @@ public final class DashboardViewModel {
     public var allTimeHours: Double = 0
     public var avgSessionsPerWeek: Double = 0
     public var recentWorkouts: [Workout] = []
+    public var recentWorkoutScores: [UUID: WorkoutQualityScore] = [:]
     public var weeklyTrend: Double = 0 // percentage change vs last week
     public var weeklyWorkoutTotal: Int = 0
     public var isLoading = false
@@ -89,6 +90,14 @@ public final class DashboardViewModel {
             let sorted = completed.sorted { $0.startedAt > $1.startedAt }
             recentWorkouts = Array(sorted.prefix(3))
 
+            // Quality scores for recent workout cards
+            var scores: [UUID: WorkoutQualityScore] = [:]
+            for workout in recentWorkouts {
+                let score = qualityScoreService.computeScore(for: workout, history: completed)
+                scores[workout.id] = score
+            }
+            recentWorkoutScores = scores
+
             // Weekly trend: EWMA-based via aggregate quality
             let aggregate = qualityScoreService.computeAggregateScore(workouts: allWorkouts)
             if aggregate.workoutsIncluded >= 3 {
@@ -114,6 +123,7 @@ public final class DashboardViewModel {
             allTimeVolume = 0
             allTimeHours = 0
             avgSessionsPerWeek = 0
+            recentWorkoutScores = [:]
             recentWorkouts = []
             weeklyTrend = 0
             weeklyWorkoutTotal = 0
