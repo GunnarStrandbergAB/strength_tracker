@@ -202,12 +202,12 @@ public final class ProgramDesignService: Sendable {
         var currentBlockWeeks: [TrainingWeek] = []
 
         var exerciseDayIndex = 0 // DUP rotation counter — accumulates across all weeks
+        var progressionWeekCount = 0 // Continuous overload counter — skips deload weeks
         for weekIndex in 0..<totalWeeks {
             let weekInBlock = (weekIndex % 4) + 1
             let isDeloadWeek = needsScheduledDeload && weekInBlock == 4
 
-            // M2: Reset overload per block, not across entire program
-            let overloadMultiplier = 1.0 + (Double(weekInBlock - 1) * Defaults.weeklyOverload)
+            let overloadMultiplier = isDeloadWeek ? 1.0 : 1.0 + (Double(progressionWeekCount) * Defaults.weeklyOverload)
 
             let weekDays = isDeloadWeek ? deloadDays : days
             var sessions: [PlannedSession] = []
@@ -279,6 +279,8 @@ public final class ProgramDesignService: Sendable {
                 }
             }
 
+            if !isDeloadWeek { progressionWeekCount += 1 }
+
             let week = TrainingWeek(
                 weekNumber: weekInBlock,
                 absoluteWeekNumber: absoluteWeek,
@@ -323,13 +325,13 @@ public final class ProgramDesignService: Sendable {
         var blockOrder = 0
         var currentBlockWeeks: [TrainingWeek] = []
 
+        var progressionWeekCount = 0 // Continuous overload counter — skips deload weeks
         for weekIndex in 0..<totalWeeks {
             let weekInBlock = (weekIndex % 4) + 1
             let isDeloadWeek = needsScheduledDeload && weekInBlock == 4
 
             let scheme = schemeRotation[weekIndex % schemeRotation.count]
-            // M2: Reset overload per block, not across entire program
-            let overloadMultiplier = 1.0 + (Double(weekInBlock - 1) * Defaults.weeklyOverload)
+            let overloadMultiplier = isDeloadWeek ? 1.0 : 1.0 + (Double(progressionWeekCount) * Defaults.weeklyOverload)
 
             let baseIntensity = (scheme.intensityRange.lowerBound + scheme.intensityRange.upperBound) / 2.0
             let intensity: Double
@@ -363,6 +365,8 @@ public final class ProgramDesignService: Sendable {
                     : "Week \(absoluteWeek) - \(scheme.rawValue.capitalized)",
                 isDeload: isDeloadWeek
             )
+
+            if !isDeloadWeek { progressionWeekCount += 1 }
 
             let week = TrainingWeek(
                 weekNumber: weekInBlock,
