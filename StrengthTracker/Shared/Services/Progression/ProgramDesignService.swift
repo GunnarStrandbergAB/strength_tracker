@@ -201,7 +201,7 @@ public final class ProgramDesignService: Sendable {
         var blockOrder = 0
         var currentBlockWeeks: [TrainingWeek] = []
 
-        var exerciseDayIndex = 0 // DUP rotation counter — accumulates across all weeks
+        var exerciseRotationCounters: [UUID: Int] = [:] // Per-exercise DUP rotation counters
         var progressionWeekCount = 0 // Continuous overload counter — skips deload weeks
         for weekIndex in 0..<totalWeeks {
             let weekInBlock = (weekIndex % 4) + 1
@@ -227,9 +227,9 @@ public final class ProgramDesignService: Sendable {
                         isDeload: isDeloadWeek
                     ))
                 } else {
-                    // DUP rotation counter only counts exercise-bearing days
-                    let dupType = sessionTypes[exerciseDayIndex % sessionTypes.count]
-                    exerciseDayIndex += 1
+                    // Per-exercise DUP rotation — first exercise's counter determines session type
+                    let firstExerciseId = sessionExercises[0].exerciseId
+                    let dupType = sessionTypes[(exerciseRotationCounters[firstExerciseId] ?? 0) % sessionTypes.count]
 
                     let baseIntensity = (dupType.intensityRange.lowerBound + dupType.intensityRange.upperBound) / 2.0
                     let intensity: Double
@@ -276,6 +276,11 @@ public final class ProgramDesignService: Sendable {
                         templateId: templateIdForDay(day, in: plan),
                         isDeload: isDeloadWeek
                     ))
+
+                    // Increment each exercise's rotation counter
+                    for exercise in sessionExercises {
+                        exerciseRotationCounters[exercise.exerciseId, default: 0] += 1
+                    }
                 }
             }
 
