@@ -234,6 +234,17 @@ enum ProgressionTestHelpers {
         )
     }
 
+    static func intermediateDUPPlan2Days() -> ProgressionPlan {
+        makeTestPlan(
+            name: "Intermediate DUP 2-Day",
+            exercises: standardExercises(),
+            trainingStatus: .intermediate,
+            programType: .dailyUndulating,
+            primaryGoal: .strength,
+            weeklyFrequency: 2
+        )
+    }
+
     static func intermediateWUPPlan() -> ProgressionPlan {
         makeTestPlan(
             name: "Intermediate WUP",

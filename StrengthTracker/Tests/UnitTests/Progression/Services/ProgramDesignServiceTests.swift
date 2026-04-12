@@ -127,6 +127,28 @@ struct ProgramDesignServiceTests {
         #expect(sessionTypes.contains(.power), "Should include power session")
     }
 
+    @Test("DUP rotation carries across weeks (2 days/week sees all 3 types over 2 weeks)")
+    func testDUPProgram_rotationCarriesAcrossWeeks() {
+        let plan = ProgressionTestHelpers.intermediateDUPPlan2Days()
+        let blocks = service.generateProgram(for: plan)
+
+        // With 2 days/week, all 3 DUP types must appear across the first 2 non-deload weeks
+        let nonDeloadWeeks = blocks.flatMap(\.weeks).filter { !$0.isDeload }
+        guard nonDeloadWeeks.count >= 2 else {
+            Issue.record("Need at least 2 non-deload weeks")
+            return
+        }
+
+        let first2Weeks = nonDeloadWeeks.prefix(2)
+        let allTypes = first2Weeks.flatMap { $0.sessions.compactMap(\.dupSessionType) }
+        let uniqueTypes = Set(allTypes)
+
+        #expect(uniqueTypes.contains(.hypertrophy), "Should include hypertrophy across first 2 weeks")
+        #expect(uniqueTypes.contains(.strength), "Should include strength across first 2 weeks")
+        #expect(uniqueTypes.contains(.power), "Should include power across first 2 weeks")
+        #expect(allTypes.count == 4, "2 days/week × 2 weeks = 4 sessions, got \(allTypes.count)")
+    }
+
     @Test("DUP program has percentage-based overload (weights increase week over week)")
     func testDUPProgram_percentageBasedOverload() {
         let plan = ProgressionTestHelpers.intermediateDUPPlan()
