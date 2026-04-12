@@ -201,6 +201,7 @@ public final class ProgramDesignService: Sendable {
         var blockOrder = 0
         var currentBlockWeeks: [TrainingWeek] = []
 
+        var exerciseDayIndex = 0 // DUP rotation counter — accumulates across all weeks
         for weekIndex in 0..<totalWeeks {
             let weekInBlock = (weekIndex % 4) + 1
             let isDeloadWeek = needsScheduledDeload && weekInBlock == 4
@@ -210,7 +211,6 @@ public final class ProgramDesignService: Sendable {
 
             let weekDays = isDeloadWeek ? deloadDays : days
             var sessions: [PlannedSession] = []
-            var exerciseDayIndex = 0
             for day in weekDays {
                 let sessionExercises = exercisesForDay(day, in: plan) ?? plan.exercises
                 let dayName = Self.dayNames[day] ?? "Day"
