@@ -553,11 +553,24 @@ public final class ProgressionPlanViewModel {
                 .map(\.exerciseId)
         )
 
-        // Early-exit: same template + same auto-pick = nothing to do.
+        // Early-exit: same template + same auto-pick AND no session on this day still has
+        // stale DUP-rotation metadata (`dupSessionType` set). The stale-metadata check
+        // ensures users who hit this fix via a re-tap also get their old labels cleared.
         if let existing = plan.daySchedule.first(where: { $0.dayOfWeek == dayOfWeek }),
            existing.templateId == templateId,
            Set(existing.exerciseIds) == autoPickedIds {
-            return
+            let anySessionStale = plan.blocks.contains { block in
+                block.weeks.contains { week in
+                    week.sessions.contains { s in
+                        s.dayOfWeek == dayOfWeek
+                            && s.completedWorkoutId == nil
+                            && s.dupSessionType != nil
+                    }
+                }
+            }
+            if !anySessionStale {
+                return
+            }
         }
 
         // Upsert the daySchedule entry, preserving the existing entry's id when present.
@@ -578,6 +591,10 @@ public final class ProgressionPlanViewModel {
         }
 
         // Propagate to every uncompleted session on this day across all weeks.
+        // Also clear the DUP rotation metadata — once the user manually overrides a day's
+        // template, the auto-generated rotation type no longer applies, so the label and
+        // badge would otherwise stick to the day even after the content has moved.
+        let neutralLabel = Self.dayName(for: dayOfWeek)
         for bi in plan.blocks.indices {
             for wi in plan.blocks[bi].weeks.indices {
                 let week = plan.blocks[bi].weeks[wi]
@@ -592,6 +609,8 @@ public final class ProgressionPlanViewModel {
                             planExercises: plan.exercises,
                             autoPickedIds: autoPickedIds
                         )
+                    plan.blocks[bi].weeks[wi].sessions[si].dupSessionType = nil
+                    plan.blocks[bi].weeks[wi].sessions[si].sessionLabel = neutralLabel
                 }
             }
         }
@@ -604,6 +623,15 @@ public final class ProgressionPlanViewModel {
         } catch {
             errorMessage = "Failed to link template: \(error.localizedDescription)"
         }
+    }
+
+    /// Day-of-week label matching `ProgramDesignService`'s Sun=1..Sat=7 convention.
+    static func dayName(for dayOfWeek: Int) -> String {
+        let names: [Int: String] = [
+            1: "Sunday", 2: "Monday", 3: "Tuesday", 4: "Wednesday",
+            5: "Thursday", 6: "Friday", 7: "Saturday"
+        ]
+        return names[dayOfWeek] ?? "Day"
     }
 
     /// Rebuild a target-day session's planned exercises for a newly-linked template.
