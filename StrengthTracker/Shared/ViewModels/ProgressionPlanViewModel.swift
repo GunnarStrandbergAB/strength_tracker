@@ -76,6 +76,7 @@ public final class ProgressionPlanViewModel {
     private let planAnalyticsService: PlanAnalyticsService
     private let exerciseRepository: any ExerciseRepository
     private let templateRepository: any TemplateRepository
+    private let userPreferencesService: UserPreferencesService?
 
     // MARK: - Init
 
@@ -85,7 +86,8 @@ public final class ProgressionPlanViewModel {
         programDesignService: ProgramDesignService,
         planAnalyticsService: PlanAnalyticsService,
         exerciseRepository: any ExerciseRepository,
-        templateRepository: any TemplateRepository
+        templateRepository: any TemplateRepository,
+        userPreferencesService: UserPreferencesService? = nil
     ) {
         self.progressionPlanRepository = progressionPlanRepository
         self.trainingStatusDetector = trainingStatusDetector
@@ -93,6 +95,7 @@ public final class ProgressionPlanViewModel {
         self.planAnalyticsService = planAnalyticsService
         self.exerciseRepository = exerciseRepository
         self.templateRepository = templateRepository
+        self.userPreferencesService = userPreferencesService
     }
 
     // MARK: - Active Plan
@@ -395,7 +398,8 @@ public final class ProgressionPlanViewModel {
                 creationSource: .structuredFlow
             )
 
-            let blocks = programDesignService.generateProgram(for: plan)
+            let deloadIntensity = Double(userPreferencesService?.deloadWeightPercentage ?? 50) / 100.0
+            let blocks = programDesignService.generateProgram(for: plan, deloadIntensity: deloadIntensity)
             plan.blocks = blocks
 
             // Assign concrete scheduled dates to all sessions

@@ -58,22 +58,22 @@ public final class ProgramDesignService: Sendable {
         plan.deloadDays ?? resolveDays(for: plan)
     }
 
-    public func generateProgram(for plan: ProgressionPlan) -> [TrainingBlock] {
+    public func generateProgram(for plan: ProgressionPlan, deloadIntensity: Double = 0.50) -> [TrainingBlock] {
         switch plan.programType {
         case .linear:
-            return generateLinearProgram(plan)
+            return generateLinearProgram(plan, deloadIntensity: deloadIntensity)
         case .dailyUndulating:
-            return generateDUPProgram(plan)
+            return generateDUPProgram(plan, deloadIntensity: deloadIntensity)
         case .weeklyUndulating:
-            return generateWUPProgram(plan)
+            return generateWUPProgram(plan, deloadIntensity: deloadIntensity)
         case .block:
-            return generateBlockProgram(plan)
+            return generateBlockProgram(plan, deloadIntensity: deloadIntensity)
         }
     }
 
     // MARK: - Linear Periodization
 
-    private func generateLinearProgram(_ plan: ProgressionPlan) -> [TrainingBlock] {
+    private func generateLinearProgram(_ plan: ProgressionPlan, deloadIntensity: Double) -> [TrainingBlock] {
         let totalWeeks = Defaults.linearWeeks
         let step = intensityStep(for: plan.trainingStatus)
         let goalRange = plan.primaryGoal.intensityRange
@@ -95,7 +95,6 @@ public final class ProgramDesignService: Sendable {
 
         // Build weeks, grouping into blocks of ~4 weeks
         var currentBlockWeeks: [TrainingWeek] = []
-        var blockStartIntensity = startIntensity
 
         for weekIndex in 0..<totalWeeks {
             currentWeekInCycle += 1
@@ -104,8 +103,8 @@ public final class ProgramDesignService: Sendable {
             let weekIntensity: Double
 
             if isDeloadWeek {
-                // Deload: use start intensity of current block
-                weekIntensity = blockStartIntensity
+                // Deload: user-configurable intensity (% of 1RM) from Settings
+                weekIntensity = deloadIntensity
             } else {
                 // Progressive: step up based on actual training weeks only
                 let rawIntensity = startIntensity + (Double(progressionWeekCount) * step)
@@ -113,13 +112,11 @@ public final class ProgramDesignService: Sendable {
                 progressionWeekCount += 1
             }
 
-            // Sets decrease as intensity rises
+            // Sets decrease as intensity rises — same logic applies to deload weeks.
             let normalizedIntensity = (weekIntensity - goalRange.lowerBound)
                 / max(0.001, goalRange.upperBound - goalRange.lowerBound)
             let sets: Int
-            if isDeloadWeek {
-                sets = 2
-            } else if normalizedIntensity > 0.7 {
+            if normalizedIntensity > 0.7 {
                 sets = 3
             } else {
                 sets = 4
@@ -178,7 +175,6 @@ public final class ProgramDesignService: Sendable {
                 blocks.append(block)
                 blockOrder += 1
                 currentWeekInCycle = 0
-                blockStartIntensity = weekIntensity
                 currentBlockWeeks = []
             }
         }
@@ -188,7 +184,7 @@ public final class ProgramDesignService: Sendable {
 
     // MARK: - DUP (Daily Undulating Periodization)
 
-    private func generateDUPProgram(_ plan: ProgressionPlan) -> [TrainingBlock] {
+    private func generateDUPProgram(_ plan: ProgressionPlan, deloadIntensity: Double) -> [TrainingBlock] {
         let totalWeeks = Defaults.linearWeeks
         let restSeconds = middleRest(for: plan.primaryGoal)
         let days = resolveDays(for: plan)
@@ -237,8 +233,8 @@ public final class ProgramDesignService: Sendable {
                     let reps: Int
 
                     if isDeloadWeek {
-                        intensity = 0.50
-                        sets = 2
+                        intensity = deloadIntensity
+                        sets = dupType.sets
                         reps = 8
                     } else {
                         intensity = min(
@@ -317,7 +313,7 @@ public final class ProgramDesignService: Sendable {
 
     // MARK: - WUP (Weekly Undulating Periodization)
 
-    private func generateWUPProgram(_ plan: ProgressionPlan) -> [TrainingBlock] {
+    private func generateWUPProgram(_ plan: ProgressionPlan, deloadIntensity: Double) -> [TrainingBlock] {
         let totalWeeks = Defaults.linearWeeks
         let restSeconds = middleRest(for: plan.primaryGoal)
         let days = resolveDays(for: plan)
@@ -344,8 +340,8 @@ public final class ProgramDesignService: Sendable {
             let reps: Int
 
             if isDeloadWeek {
-                intensity = 0.50
-                sets = 2
+                intensity = deloadIntensity
+                sets = scheme.sets
                 reps = 8
             } else {
                 intensity = min(
@@ -404,7 +400,7 @@ public final class ProgramDesignService: Sendable {
 
     // MARK: - Block Periodization
 
-    private func generateBlockProgram(_ plan: ProgressionPlan) -> [TrainingBlock] {
+    private func generateBlockProgram(_ plan: ProgressionPlan, deloadIntensity: Double) -> [TrainingBlock] {
         let restSeconds = middleRest(for: plan.primaryGoal)
         let days = resolveDays(for: plan)
         let deloadDays = resolveDeloadDays(for: plan)
@@ -418,7 +414,7 @@ public final class ProgramDesignService: Sendable {
             var weeks: [TrainingWeek] = []
 
             for weekInPhase in 0..<duration {
-                let phaseParams = blockPhaseParams(phase, weekInPhase: weekInPhase, totalPhaseWeeks: duration)
+                let phaseParams = blockPhaseParams(phase, weekInPhase: weekInPhase, totalPhaseWeeks: duration, deloadIntensity: deloadIntensity)
 
                 let weekDays = phase == .deload ? deloadDays : days
                 let sessions = buildSessions(
@@ -574,7 +570,7 @@ public final class ProgramDesignService: Sendable {
     /// m8: Block periodization uses fixed intra-phase templates — week-over-week progression
     /// within each phase is intentional (volume/intensity ramp within each mesocycle block).
     /// This differs from DUP/WUP where the entire scheme is fixed per session type.
-    private func blockPhaseParams(_ phase: BlockPhase, weekInPhase: Int, totalPhaseWeeks: Int) -> PhaseParams {
+    private func blockPhaseParams(_ phase: BlockPhase, weekInPhase: Int, totalPhaseWeeks: Int, deloadIntensity: Double) -> PhaseParams {
         switch phase {
         case .accumulation:
             // 65-75% 1RM, 3-4 sets, 8-12 reps. Progress within phase.
@@ -601,8 +597,8 @@ public final class ProgramDesignService: Sendable {
             return PhaseParams(intensity: intensity, sets: max(3, sets), reps: max(1, reps))
 
         case .deload:
-            // 50% intensity, low volume
-            return PhaseParams(intensity: 0.50, sets: 2, reps: 10)
+            // User-configurable deload intensity; keep a real volume floor (no halving of sets).
+            return PhaseParams(intensity: deloadIntensity, sets: 3, reps: 10)
         }
     }
 

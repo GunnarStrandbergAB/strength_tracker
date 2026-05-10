@@ -172,25 +172,19 @@ struct ProgramDesignServiceTests {
             "Weight should increase from week 1 (\(weight1)) to week 2 (\(weight2))")
     }
 
-    @Test("DUP program deload uses flat recovery prescription (50% 1RM, 2×8, no session type)")
-    func testDUPProgram_deloadReducesVolume() {
+    @Test("DUP program deload uses flat recovery prescription (50% 1RM, 8 reps, intensity-only — sets preserved)")
+    func testDUPProgram_deloadFlatRecovery() {
         let plan = ProgressionTestHelpers.intermediateDUPPlan()
         let blocks = service.generateProgram(for: plan)
 
         let allWeeks = blocks.flatMap(\.weeks)
-        guard let normalWeek = allWeeks.first(where: { !$0.isDeload }),
-              let deloadWeek = allWeeks.first(where: { $0.isDeload }) else {
-            Issue.record("Need both normal and deload weeks")
+        guard let deloadWeek = allWeeks.first(where: { $0.isDeload }) else {
+            Issue.record("Need a deload week")
             return
         }
 
-        // Volume should be reduced
-        let normalVolume = totalSets(of: normalWeek)
-        let deloadVolume = totalSets(of: deloadWeek)
-        #expect(deloadVolume < normalVolume,
-            "Deload volume (\(deloadVolume)) should be less than normal (\(normalVolume))")
+        let validDUPSets = Set(DUPSessionType.allCases.map(\.sets))
 
-        // Every deload session with exercises must use flat recovery prescription
         let exerciseSessions = deloadWeek.sessions.filter { !$0.plannedExercises.isEmpty }
         for session in exerciseSessions {
             // No session-type badge during deload
@@ -204,11 +198,32 @@ struct ProgramDesignServiceTests {
 
             for exerciseSet in session.plannedExercises {
                 #expect(exerciseSet.percentageOf1RM == 0.50,
-                    "Deload intensity should be 50%, got \(exerciseSet.percentageOf1RM)")
-                #expect(exerciseSet.sets == 2,
-                    "Deload sets should be 2, got \(exerciseSet.sets)")
+                    "Deload intensity should be 50% (default), got \(exerciseSet.percentageOf1RM)")
+                #expect(validDUPSets.contains(exerciseSet.sets),
+                    "Deload sets should match the underlying DUPSessionType.sets (3/4/5), got \(exerciseSet.sets)")
                 #expect(exerciseSet.targetReps == 8,
                     "Deload reps should be 8, got \(exerciseSet.targetReps)")
+            }
+        }
+    }
+
+    @Test("deloadIntensity parameter overrides default deload weight % across program types")
+    func testDeloadIntensity_parameterOverride() {
+        let plans: [ProgressionPlan] = [
+            ProgressionTestHelpers.beginnerLinearPlan(),
+            ProgressionTestHelpers.intermediateDUPPlan(),
+            ProgressionTestHelpers.intermediateWUPPlan(),
+            ProgressionTestHelpers.advancedBlockPlan(),
+        ]
+
+        for plan in plans {
+            let blocks = service.generateProgram(for: plan, deloadIntensity: 0.40)
+            let deloadSessions = blocks.flatMap(\.weeks).filter(\.isDeload).flatMap(\.sessions)
+            let deloadExercises = deloadSessions.flatMap(\.plannedExercises)
+            guard !deloadExercises.isEmpty else { continue }
+            for exerciseSet in deloadExercises {
+                #expect(exerciseSet.percentageOf1RM == 0.40,
+                    "\(plan.programType): deload intensity should follow parameter (0.40), got \(exerciseSet.percentageOf1RM)")
             }
         }
     }
