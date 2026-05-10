@@ -157,6 +157,8 @@ public final class WorkoutViewModel {
             notes: nil,
             templateId: template?.id,
             isDeload: isDeload,
+            plannedSessionId: plannedSessionId,
+            plannedPlanId: plannedPlanId,
             exercises: exercises
         )
 
@@ -284,9 +286,11 @@ public final class WorkoutViewModel {
         currentWorkout = saved
         isActive = false
 
-        // Mark progression plan session completed
-        if let sessionId = plannedSessionId,
-           let planId = plannedPlanId {
+        // Mark progression plan session completed.
+        // Prefer the IDs persisted on the workout itself so this works even if the VM was
+        // reset/rebuilt mid-workout (e.g., the app was killed and resumed).
+        if let sessionId = saved.plannedSessionId ?? plannedSessionId,
+           let planId = saved.plannedPlanId ?? plannedPlanId {
             let workoutId = saved.id
             try? await progressionPlanRepository?.markSessionCompleted(
                 sessionId, workoutId: workoutId, inPlan: planId

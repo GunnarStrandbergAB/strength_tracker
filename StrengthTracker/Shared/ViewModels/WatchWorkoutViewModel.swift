@@ -301,6 +301,8 @@ public final class WatchWorkoutViewModel {
             notes: nil,
             templateId: template.id,
             isDeload: isDeload,
+            plannedSessionId: plannedSessionId,
+            plannedPlanId: plannedPlanId,
             exercises: workoutExercises
         )
 
@@ -440,8 +442,10 @@ public final class WatchWorkoutViewModel {
 
         // Notify iPhone workout ended, then send full workout via transferUserInfo
         connectivityManager.sendWorkoutEnded()
+        // Prefer IDs persisted on the workout — survives VM resets/app restarts.
         var metadata: [String: String]? = nil
-        if let sid = plannedSessionId, let pid = plannedPlanId {
+        if let sid = saved.plannedSessionId ?? plannedSessionId,
+           let pid = saved.plannedPlanId ?? plannedPlanId {
             metadata = [
                 "plannedSessionId": sid.uuidString,
                 "plannedPlanId": pid.uuidString

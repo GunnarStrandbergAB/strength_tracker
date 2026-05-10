@@ -508,11 +508,29 @@ public final class ProgressionPlanViewModel {
 
     public func linkTemplate(templateId: UUID, toSession sessionId: UUID) async {
         guard var plan = activePlan else { return }
+
+        // Fetch the new template once before mutating; we need it to rebuild plannedExercises.
+        let newTemplate: WorkoutTemplate?
+        do {
+            let allTemplates = try await templateRepository.fetchAll()
+            newTemplate = allTemplates.first(where: { $0.id == templateId })
+        } catch {
+            errorMessage = "Failed to load template: \(error.localizedDescription)"
+            return
+        }
+
         for bi in plan.blocks.indices {
             for wi in plan.blocks[bi].weeks.indices {
                 if let si = plan.blocks[bi].weeks[wi].sessions
                     .firstIndex(where: { $0.id == sessionId }) {
                     plan.blocks[bi].weeks[wi].sessions[si].templateId = templateId
+                    if let template = newTemplate {
+                        plan.blocks[bi].weeks[wi].sessions[si].plannedExercises =
+                            Self.rebuildPlannedExercises(
+                                from: plan.blocks[bi].weeks[wi].sessions[si].plannedExercises,
+                                newTemplate: template
+                            )
+                    }
                     plan.updatedAt = Date()
                     do {
                         try await progressionPlanRepository.save(plan)
@@ -525,6 +543,61 @@ public final class ProgressionPlanViewModel {
                 }
             }
         }
+    }
+
+    /// Rebuild a session's planned exercises to match a newly-linked template's exercise list.
+    /// For each exercise in the new template, preserve progressed values (sets/reps/weight/RPE/etc.)
+    /// from the old planned exercises when they match by exerciseId or lowercased exerciseName.
+    /// Exercises only in the old planned set are dropped — the linked template now defines the shape.
+    static func rebuildPlannedExercises(
+        from oldPlanned: [PlannedExerciseSet],
+        newTemplate: WorkoutTemplate
+    ) -> [PlannedExerciseSet] {
+        let plannedById = Dictionary(
+            oldPlanned.map { ($0.exerciseId, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let plannedByName = Dictionary(
+            oldPlanned.map { ($0.exerciseName.lowercased(), $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        return newTemplate.exercises
+            .sorted(by: { $0.order < $1.order })
+            .map { te -> PlannedExerciseSet in
+                if let match = plannedById[te.exercise.id]
+                    ?? plannedByName[te.exercise.name.lowercased()] {
+                    // Carry progressed values over; rebind to the new template's exercise identity.
+                    return PlannedExerciseSet(
+                        id: match.id,
+                        planExerciseId: match.planExerciseId,
+                        exerciseId: te.exercise.id,
+                        exerciseName: te.exercise.name,
+                        sets: match.sets,
+                        targetReps: match.targetReps,
+                        targetWeight: match.targetWeight,
+                        percentageOf1RM: match.percentageOf1RM,
+                        targetRPE: match.targetRPE,
+                        restSeconds: match.restSeconds,
+                        isWarmup: match.isWarmup,
+                        notes: match.notes ?? te.notes
+                    )
+                }
+                // No match — fall back to the new template's defaults.
+                return PlannedExerciseSet(
+                    planExerciseId: te.id,
+                    exerciseId: te.exercise.id,
+                    exerciseName: te.exercise.name,
+                    sets: te.targetSets,
+                    targetReps: te.targetReps ?? 0,
+                    targetWeight: te.targetWeight ?? 0,
+                    percentageOf1RM: 0,
+                    targetRPE: nil,
+                    restSeconds: te.restTimerSeconds ?? 120,
+                    isWarmup: te.isWarmUp,
+                    notes: te.notes
+                )
+            }
     }
 
     // MARK: - Session Completion
