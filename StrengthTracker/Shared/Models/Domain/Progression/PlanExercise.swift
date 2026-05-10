@@ -64,3 +64,12 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
         (current1RM * pct).rounded(toNearest: 2.5)
     }
 }
+
+extension PlanExercise {
+    /// Counts how many of the user's tracked plan exercises appear (by library exercise id)
+    /// in the given template. Used by the Link Template picker to surface "N matching plan".
+    public static func matchCount(template: WorkoutTemplate, planExercises: [PlanExercise]) -> Int {
+        let ids = Set(planExercises.map(\.exerciseId))
+        return template.exercises.filter { ids.contains($0.exercise.id) }.count
+    }
+}

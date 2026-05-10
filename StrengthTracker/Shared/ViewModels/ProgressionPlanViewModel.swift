@@ -510,84 +510,148 @@ public final class ProgressionPlanViewModel {
 
     // MARK: - Template Linking
 
+    /// Plan-wide template change for the day-of-week of the targeted session.
+    ///
+    /// Updates `plan.daySchedule` for the session's day-of-week (template + auto-picked tracked
+    /// exercises), then propagates the new template + rebuilt planned exercises to every
+    /// uncompleted session on that day across all weeks. Sessions already completed keep their
+    /// historical plannedExercises and templateId untouched.
     public func linkTemplate(templateId: UUID, toSession sessionId: UUID) async {
         guard var plan = activePlan else { return }
 
-        // Fetch the new template once before mutating; we need it to rebuild plannedExercises.
-        let newTemplate: WorkoutTemplate?
+        // Resolve dayOfWeek from the targeted session.
+        var resolvedDay: Int?
+        outer: for block in plan.blocks {
+            for week in block.weeks {
+                if let s = week.sessions.first(where: { $0.id == sessionId }) {
+                    resolvedDay = s.dayOfWeek
+                    break outer
+                }
+            }
+        }
+        guard let dayOfWeek = resolvedDay else { return }
+
+        // Fetch the target template.
+        let template: WorkoutTemplate
         do {
             let allTemplates = try await templateRepository.fetchAll()
-            newTemplate = allTemplates.first(where: { $0.id == templateId })
+            guard let t = allTemplates.first(where: { $0.id == templateId }) else {
+                errorMessage = "Template not found."
+                return
+            }
+            template = t
         } catch {
             errorMessage = "Failed to load template: \(error.localizedDescription)"
             return
         }
 
+        // Auto-pick: plan.exercises whose library exerciseId is in the new template.
+        let templateExerciseIds = Set(template.exercises.map(\.exercise.id))
+        let autoPickedIds = Set(
+            plan.exercises
+                .filter { templateExerciseIds.contains($0.exerciseId) }
+                .map(\.exerciseId)
+        )
+
+        // Early-exit: same template + same auto-pick = nothing to do.
+        if let existing = plan.daySchedule.first(where: { $0.dayOfWeek == dayOfWeek }),
+           existing.templateId == templateId,
+           Set(existing.exerciseIds) == autoPickedIds {
+            return
+        }
+
+        // Upsert the daySchedule entry, preserving the existing entry's id when present.
+        let newExerciseIdsArray = Array(autoPickedIds)
+        if let idx = plan.daySchedule.firstIndex(where: { $0.dayOfWeek == dayOfWeek }) {
+            plan.daySchedule[idx].templateId = templateId
+            plan.daySchedule[idx].templateName = template.name
+            plan.daySchedule[idx].exerciseIds = newExerciseIdsArray
+        } else {
+            plan.daySchedule.append(
+                DayScheduleEntry(
+                    dayOfWeek: dayOfWeek,
+                    templateId: templateId,
+                    templateName: template.name,
+                    exerciseIds: newExerciseIdsArray
+                )
+            )
+        }
+
+        // Propagate to every uncompleted session on this day across all weeks.
         for bi in plan.blocks.indices {
             for wi in plan.blocks[bi].weeks.indices {
-                if let si = plan.blocks[bi].weeks[wi].sessions
-                    .firstIndex(where: { $0.id == sessionId }) {
+                let week = plan.blocks[bi].weeks[wi]
+                for si in plan.blocks[bi].weeks[wi].sessions.indices {
+                    guard plan.blocks[bi].weeks[wi].sessions[si].dayOfWeek == dayOfWeek else { continue }
+                    guard plan.blocks[bi].weeks[wi].sessions[si].completedWorkoutId == nil else { continue }
                     plan.blocks[bi].weeks[wi].sessions[si].templateId = templateId
-                    if let template = newTemplate {
-                        plan.blocks[bi].weeks[wi].sessions[si].plannedExercises =
-                            Self.rebuildPlannedExercises(
-                                from: plan.blocks[bi].weeks[wi].sessions[si].plannedExercises,
-                                newTemplate: template
-                            )
-                    }
-                    plan.updatedAt = Date()
-                    do {
-                        try await progressionPlanRepository.save(plan)
-                        activePlan = plan
-                        await refreshLinkedTemplateNames(for: plan)
-                    } catch {
-                        errorMessage = "Failed to link template: \(error.localizedDescription)"
-                    }
-                    return
+                    plan.blocks[bi].weeks[wi].sessions[si].plannedExercises =
+                        Self.rebuildSessionExercises(
+                            inWeek: week,
+                            newTemplate: template,
+                            planExercises: plan.exercises,
+                            autoPickedIds: autoPickedIds
+                        )
                 }
             }
         }
+
+        plan.updatedAt = Date()
+        do {
+            try await progressionPlanRepository.save(plan)
+            activePlan = plan
+            await refreshLinkedTemplateNames(for: plan)
+        } catch {
+            errorMessage = "Failed to link template: \(error.localizedDescription)"
+        }
     }
 
-    /// Rebuild a session's planned exercises to match a newly-linked template's exercise list.
-    /// For each exercise in the new template, preserve progressed values (sets/reps/weight/RPE/etc.)
-    /// from the old planned exercises when they match by exerciseId or lowercased exerciseName.
-    /// Exercises only in the old planned set are dropped — the linked template now defines the shape.
-    static func rebuildPlannedExercises(
-        from oldPlanned: [PlannedExerciseSet],
-        newTemplate: WorkoutTemplate
+    /// Rebuild a target-day session's planned exercises for a newly-linked template.
+    ///
+    /// For each exercise in the new template that is also a tracked PlanExercise
+    /// (`autoPickedIds`), inherit intensity / sets / reps / rest from the first non-empty
+    /// `PlannedExerciseSet` in the same week (any day) and compute `targetWeight` per the
+    /// PlanExercise's own 1RM. Non-tracked template exercises fall back to template defaults.
+    static func rebuildSessionExercises(
+        inWeek week: TrainingWeek,
+        newTemplate: WorkoutTemplate,
+        planExercises: [PlanExercise],
+        autoPickedIds: Set<UUID>
     ) -> [PlannedExerciseSet] {
-        let plannedById = Dictionary(
-            oldPlanned.map { ($0.exerciseId, $0) },
+        let planExerciseById = Dictionary(
+            planExercises.map { ($0.exerciseId, $0) },
             uniquingKeysWith: { first, _ in first }
         )
-        let plannedByName = Dictionary(
-            oldPlanned.map { ($0.exerciseName.lowercased(), $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
+
+        // Intensity donor: first non-empty plannedExercises in this week's sessions.
+        let donor: PlannedExerciseSet? = week.sessions
+            .lazy
+            .flatMap(\.plannedExercises)
+            .first
 
         return newTemplate.exercises
             .sorted(by: { $0.order < $1.order })
             .map { te -> PlannedExerciseSet in
-                if let match = plannedById[te.exercise.id]
-                    ?? plannedByName[te.exercise.name.lowercased()] {
-                    // Carry progressed values over; rebind to the new template's exercise identity.
+                if autoPickedIds.contains(te.exercise.id),
+                   let planExercise = planExerciseById[te.exercise.id] {
+                    let percentage = donor?.percentageOf1RM ?? 0
+                    let sets = donor?.sets ?? te.targetSets
+                    let reps = donor?.targetReps ?? (te.targetReps ?? 0)
+                    let rest = donor?.restSeconds ?? (te.restTimerSeconds ?? 120)
                     return PlannedExerciseSet(
-                        id: match.id,
-                        planExerciseId: match.planExerciseId,
+                        planExerciseId: planExercise.id,
                         exerciseId: te.exercise.id,
                         exerciseName: te.exercise.name,
-                        sets: match.sets,
-                        targetReps: match.targetReps,
-                        targetWeight: match.targetWeight,
-                        percentageOf1RM: match.percentageOf1RM,
-                        targetRPE: match.targetRPE,
-                        restSeconds: match.restSeconds,
-                        isWarmup: match.isWarmup,
-                        notes: match.notes ?? te.notes
+                        sets: sets,
+                        targetReps: reps,
+                        targetWeight: planExercise.targetWeight(atPercentage: percentage),
+                        percentageOf1RM: percentage,
+                        targetRPE: donor?.targetRPE,
+                        restSeconds: rest,
+                        isWarmup: te.isWarmUp,
+                        notes: te.notes
                     )
                 }
-                // No match — fall back to the new template's defaults.
                 return PlannedExerciseSet(
                     planExerciseId: te.id,
                     exerciseId: te.exercise.id,

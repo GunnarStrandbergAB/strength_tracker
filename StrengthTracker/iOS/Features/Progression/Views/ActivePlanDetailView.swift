@@ -50,6 +50,7 @@ struct ActivePlanDetailView: View {
         .sheet(item: $templatePickerSession) { session in
             TemplateMergePickerView(
                 session: session,
+                planExercises: viewModel.activePlan?.exercises ?? [],
                 templateViewModel: templateViewModel,
                 progressionPlanViewModel: viewModel
             )
