@@ -206,6 +206,119 @@ struct AggregateQualityScoreTests {
         #expect(result.ewmaConsistency <= 100)
     }
 
+    // MARK: - Volume Sub-Score Regression Tests
+    //
+    // These guard against two flaws fixed together:
+    //   1. Progressive overload was capped at a "60 floor" once a muscle group's
+    //      volume exceeded 1.4× its rolling per-session average. A workout that
+    //      doubled volume scored lower than one that matched the average.
+    //   2. The non-deload baseline included deload workouts, dragging the
+    //      per-muscle-group average down so regular workouts looked like they
+    //      overshot more than they really did.
+
+    @Test("Volume: progressive overload no longer penalized — 2× per-session volume still scores 100")
+    func volumeScore_progressiveOverloadNotPenalized() {
+        let service = makeService()
+        let cal = Calendar.current
+        let now = Date()
+
+        // 5 history workouts at chest = 4 × 10 × 80 kg (primary-only attribution).
+        let history = (1...5).map { i -> Workout in
+            let date = cal.date(byAdding: .day, value: -i * 3, to: now)!
+            return AnalyticsTestHelpers.makeWorkoutWithVolume(
+                primaryMuscleGroup: .chest,
+                sets: 4, reps: 10, weight: 80,
+                startedAt: date,
+                completedAt: date.addingTimeInterval(3600)
+            )
+        }
+
+        // Current: 2× volume (8 × 10 × 80 kg) → ratio 2.0 vs baseline.
+        let current = AnalyticsTestHelpers.makeWorkoutWithVolume(
+            primaryMuscleGroup: .chest,
+            sets: 8, reps: 10, weight: 80,
+            startedAt: now,
+            completedAt: now.addingTimeInterval(3600)
+        )
+
+        let score = service.computeScore(for: current, history: history + [current])
+        #expect(score.volumeScore == 100,
+            "ratio 2.0 should score 100 (no upper-taper); got \(score.volumeScore)")
+    }
+
+    @Test("Volume: deload workouts are excluded from the non-deload baseline")
+    func volumeScore_deloadExcludedFromBaseline() {
+        let service = makeService()
+        let cal = Calendar.current
+        let now = Date()
+
+        // 5 non-deload regular workouts at chest = 4 × 10 × 80.
+        let regular = (1...5).map { i -> Workout in
+            let date = cal.date(byAdding: .day, value: -i * 7, to: now)!
+            return AnalyticsTestHelpers.makeWorkoutWithVolume(
+                primaryMuscleGroup: .chest,
+                sets: 4, reps: 10, weight: 80,
+                startedAt: date,
+                completedAt: date.addingTimeInterval(3600)
+            )
+        }
+        // 5 deload workouts at half volume. If included in the baseline they'd
+        // pull perSessionAvg from 2240 down to ~1680 and the under-volume penalty
+        // below would resolve to ~83 instead of 62.5.
+        var deloads = (1...5).map { i -> Workout in
+            let date = cal.date(byAdding: .day, value: -(i * 7 + 3), to: now)!
+            return AnalyticsTestHelpers.makeWorkoutWithVolume(
+                primaryMuscleGroup: .chest,
+                sets: 2, reps: 10, weight: 80,
+                startedAt: date,
+                completedAt: date.addingTimeInterval(3600)
+            )
+        }
+        for i in deloads.indices { deloads[i].isDeload = true }
+
+        // Current: half the regular volume, non-deload. Filter active → ratio 0.5 → 62.5.
+        let current = AnalyticsTestHelpers.makeWorkoutWithVolume(
+            primaryMuscleGroup: .chest,
+            sets: 2, reps: 10, weight: 80,
+            startedAt: now,
+            completedAt: now.addingTimeInterval(3600)
+        )
+
+        let score = service.computeScore(for: current, history: regular + deloads + [current])
+        #expect(abs(score.volumeScore - 62.5) < 0.5,
+            "Deload-filtered baseline should yield score 62.5; got \(score.volumeScore)")
+    }
+
+    @Test("Volume: under-volume still penalized linearly below the 0.8 sweet spot")
+    func volumeScore_underVolumeStillPenalized() {
+        let service = makeService()
+        let cal = Calendar.current
+        let now = Date()
+
+        // 5 history workouts at chest = 4 × 10 × 80 (perSessionAvg of 2240 to chest).
+        let history = (1...5).map { i -> Workout in
+            let date = cal.date(byAdding: .day, value: -i * 3, to: now)!
+            return AnalyticsTestHelpers.makeWorkoutWithVolume(
+                primaryMuscleGroup: .chest,
+                sets: 4, reps: 10, weight: 80,
+                startedAt: date,
+                completedAt: date.addingTimeInterval(3600)
+            )
+        }
+
+        // Current at 0.4× volume (weight 32 vs 80 → ratio 0.4): linear penalty → 50.
+        let current = AnalyticsTestHelpers.makeWorkoutWithVolume(
+            primaryMuscleGroup: .chest,
+            sets: 4, reps: 10, weight: 32,
+            startedAt: now,
+            completedAt: now.addingTimeInterval(3600)
+        )
+
+        let score = service.computeScore(for: current, history: history + [current])
+        #expect(abs(score.volumeScore - 50.0) < 0.5,
+            "ratio 0.4 should linearly penalize to 50; got \(score.volumeScore)")
+    }
+
     // MARK: - Incomplete Workouts Filtered
 
     @Test("Incomplete workouts are excluded from aggregate")
