@@ -12,6 +12,8 @@ public final class WorkoutEntity {
     public var templateId: UUID?
     public var healthKitWorkoutId: UUID?
     public var isDeload: Bool = false
+    public var plannedSessionId: UUID?
+    public var plannedPlanId: UUID?
 
     @Relationship(deleteRule: .cascade)
     public var exercises: [WorkoutExerciseEntity]
@@ -25,6 +27,8 @@ public final class WorkoutEntity {
         templateId: UUID? = nil,
         healthKitWorkoutId: UUID? = nil,
         isDeload: Bool = false,
+        plannedSessionId: UUID? = nil,
+        plannedPlanId: UUID? = nil,
         exercises: [WorkoutExerciseEntity] = []
     ) {
         self.id = id
@@ -35,6 +39,8 @@ public final class WorkoutEntity {
         self.templateId = templateId
         self.healthKitWorkoutId = healthKitWorkoutId
         self.isDeload = isDeload
+        self.plannedSessionId = plannedSessionId
+        self.plannedPlanId = plannedPlanId
         self.exercises = exercises
     }
 }

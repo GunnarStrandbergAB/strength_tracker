@@ -233,7 +233,8 @@ public final class AppContainer: Sendable {
             programDesignService: programDesignService,
             planAnalyticsService: planAnalyticsService,
             exerciseRepository: exerciseRepository,
-            templateRepository: templateRepository
+            templateRepository: templateRepository,
+            userPreferencesService: userPreferencesService
         )
     }
 

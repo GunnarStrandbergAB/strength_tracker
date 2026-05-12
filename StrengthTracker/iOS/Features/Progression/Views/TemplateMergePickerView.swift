@@ -4,6 +4,7 @@ import StrengthTrackerShared
 
 struct TemplateMergePickerView: View {
     let session: PlannedSession
+    let planExercises: [PlanExercise]
     let templateViewModel: TemplateViewModel
     let progressionPlanViewModel: ProgressionPlanViewModel
     @Environment(\.dismiss) private var dismiss
@@ -74,8 +75,7 @@ struct TemplateMergePickerView: View {
     }
 
     private func countMatches(template: WorkoutTemplate) -> Int {
-        let plannedIds = Set(session.plannedExercises.map(\.exerciseId))
-        return template.exercises.filter { plannedIds.contains($0.exercise.id) }.count
+        PlanExercise.matchCount(template: template, planExercises: planExercises)
     }
 }
 #endif
