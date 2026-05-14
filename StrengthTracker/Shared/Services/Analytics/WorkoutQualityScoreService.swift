@@ -214,11 +214,16 @@ public final class WorkoutQualityScoreService: Sendable {
     // MARK: - Scoring Components (0-100 scale each)
 
     /// Per-muscle-group volume comparison against 12-week per-session averages.
+    ///
+    /// Deload workouts are intentionally ~50% volume and would otherwise drag the
+    /// rolling baseline down, making every regular workout look like an overshoot.
+    /// They're excluded from the baseline here, mirroring `computeDeloadVolumeScore`.
     private func computeVolumeScore(_ workout: Workout, history: [Workout], bodyWeightKg: Double) -> Double {
         let twelveWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -12, to: Date())!
 
         let historyWorkouts = history.filter {
             $0.id != workout.id &&
+            !$0.isDeload &&
             $0.completedAt != nil &&
             ($0.completedAt ?? $0.startedAt) >= twelveWeeksAgo
         }
@@ -286,15 +291,14 @@ public final class WorkoutQualityScoreService: Sendable {
             let perSessionAvg = histVol / Double(sessions)
             let ratio = currentVol / perSessionAvg
             let groupScore: Double
-            if ratio >= 0.8 && ratio <= 1.4 {
-                // Sweet spot: matching or exceeding average (progressive overload)
+            if ratio >= 0.8 {
+                // Matching or exceeding the rolling average: progressive overload
+                // is the goal; the Volume sub-score should not penalize doing more.
+                // Over-training concerns are surfaced via Balance / Consistency.
                 groupScore = 100.0
-            } else if ratio < 0.8 {
-                // Below average: linear penalty down to 0
-                groupScore = max(0, ratio / 0.8 * 100.0)
             } else {
-                // Well above average (>1.4x): gentle taper, floor at 60
-                groupScore = max(60.0, 100.0 - (ratio - 1.4) / 0.6 * 40.0)
+                // Below 0.8x average: linear penalty toward 0.
+                groupScore = max(0, ratio / 0.8 * 100.0)
             }
             groupScores.append(groupScore)
         }
