@@ -225,7 +225,8 @@ public final class AppContainer: Sendable {
             workoutRepository: workoutRepository,
             proFeatureGate: proFeatureGate,
             adherenceService: adherenceAnalysisService,
-            coachingInsightService: coachingInsightService
+            coachingInsightService: coachingInsightService,
+            achievementTrackingService: achievementTrackingService
         )
         progressionPlanViewModel = ProgressionPlanViewModel(
             progressionPlanRepository: progressionPlanRepository,

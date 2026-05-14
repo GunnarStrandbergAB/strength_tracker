@@ -30,7 +30,7 @@ struct AnalyticsDashboardView: View {
 
                     // Feature roadmap (shows locked features, hidden when all unlocked)
                     let roadmapFeatures: [AnalyticsFeatureGate.Feature] = [
-                        .qualityScore, .plateauDetection, .muscleBalance, .advancedInsights
+                        .qualityScore, .plateauDetection, .muscleBalance, .advancedInsights, .volumeResponseCurve
                     ]
                     if roadmapFeatures.contains(where: { !viewModel.isFeatureUnlocked($0) }) {
                         featureRoadmap
@@ -46,6 +46,11 @@ struct AnalyticsDashboardView: View {
                     if viewModel.isFeatureUnlocked(.muscleBalance),
                        let balance = viewModel.insights.muscleBalance {
                         muscleBalanceSection(balance)
+                    }
+
+                    // Volume-Response Curve (50+ workouts, Phase 4)
+                    if viewModel.isFeatureUnlocked(.volumeResponseCurve) {
+                        volumeResponseCurveSection(viewModel.volumeResponseCurves)
                     }
 
                     // Plateau Warnings
@@ -107,6 +112,7 @@ struct AnalyticsDashboardView: View {
             featureRow(.plateauDetection, threshold: 10, icon: "exclamationmark.triangle.fill")
             featureRow(.muscleBalance, threshold: 20, icon: "arrow.left.arrow.right")
             featureRow(.advancedInsights, threshold: 19, icon: "brain.head.profile")
+            featureRow(.volumeResponseCurve, threshold: 50, icon: "chart.xyaxis.line")
         }
         .padding(STSpacing.cardPadding)
         .background(STColors.surface)
@@ -314,6 +320,66 @@ struct AnalyticsDashboardView: View {
         .padding(STSpacing.cardPadding)
         .background(STColors.surface)
         .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+    }
+
+    private func volumeResponseCurveSection(_ curves: [VolumeResponseCurve]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Volume-Response Curve")
+
+            if curves.isEmpty {
+                Text("Building your personal curve — keep training with varied weekly set counts across muscle groups.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(STColors.textSecondary)
+            } else {
+                ForEach(curves, id: \.muscleGroup) { curve in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text(curve.muscleGroup.capitalized)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(STColors.textPrimary)
+
+                            Spacer()
+
+                            Text("Fit: \(Int(curve.rSquared * 100))%")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(STColors.textTertiary)
+                        }
+
+                        HStack(spacing: 8) {
+                            volumeChip(label: "Min", value: curve.personalMEV)
+                            volumeChip(label: "Best", value: curve.personalMAV)
+                            volumeChip(label: "Max", value: curve.personalMRV)
+                        }
+
+                        Text(curve.message)
+                            .font(.system(size: 11))
+                            .foregroundStyle(STColors.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .padding(STSpacing.cardPadding)
+        .background(STColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+    }
+
+    private func volumeChip(label: String, value: Double?) -> some View {
+        VStack(spacing: 2) {
+            Text(label)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(STColors.textTertiary)
+            Text(value.map { "\(Int($0.rounded()))" } ?? "—")
+                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                .foregroundStyle(STColors.textPrimary)
+            Text("sets/wk")
+                .font(.system(size: 9))
+                .foregroundStyle(STColors.textTertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(STColors.background)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private func plateauSection(_ plateaus: [PlateauAnalysis]) -> some View {

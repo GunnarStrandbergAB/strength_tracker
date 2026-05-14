@@ -30,6 +30,9 @@ public final class WorkoutAnalyticsViewModel {
     public var adherenceAnalysis: AdherenceAnalysis?
     public var weeklyDigest: WeeklyDigest?
 
+    /// Personal volume-response curves per muscle group (Phase 4, unlocks at 50 workouts)
+    public var volumeResponseCurves: [VolumeResponseCurve] = []
+
     /// Error handling
     public var errorMessage: String?
 
@@ -42,6 +45,7 @@ public final class WorkoutAnalyticsViewModel {
     private let proFeatureGate: ProFeatureGate?
     private let adherenceService: AdherenceAnalysisService?
     private let coachingInsightService: CoachingInsightService?
+    private let achievementTrackingService: AchievementTrackingService?
 
     private var lastInsightsLoadTime: Date?
 
@@ -56,7 +60,8 @@ public final class WorkoutAnalyticsViewModel {
         workoutRepository: (any WorkoutRepository)? = nil,
         proFeatureGate: ProFeatureGate? = nil,
         adherenceService: AdherenceAnalysisService? = nil,
-        coachingInsightService: CoachingInsightService? = nil
+        coachingInsightService: CoachingInsightService? = nil,
+        achievementTrackingService: AchievementTrackingService? = nil
     ) {
         self.analyticsService = analyticsService
         self.qualityScoreService = qualityScoreService
@@ -65,6 +70,7 @@ public final class WorkoutAnalyticsViewModel {
         self.proFeatureGate = proFeatureGate
         self.adherenceService = adherenceService
         self.coachingInsightService = coachingInsightService
+        self.achievementTrackingService = achievementTrackingService
     }
 
     // MARK: - Dashboard (loads WorkoutInsights aggregate)
@@ -155,6 +161,19 @@ public final class WorkoutAnalyticsViewModel {
 
                 // Aggregate EWMA quality across all workouts
                 aggregateQuality = qualityScoreService.computeAggregateScore(workouts: allCompleted)
+
+                // Personal volume-response curves (50+ workouts, Phase 4)
+                if unlockedFeatures.contains(.volumeResponseCurve),
+                   let achievementService = achievementTrackingService {
+                    volumeResponseCurves = achievementService.computeVolumeResponse(
+                        workouts: allCompleted,
+                        overloadTrends: rawInsights.overloadTrends
+                    )
+                } else {
+                    volumeResponseCurves = []
+                }
+            } else if !unlockedFeatures.contains(.volumeResponseCurve) {
+                volumeResponseCurves = []
             }
 
             // Adherence analysis (M3)
