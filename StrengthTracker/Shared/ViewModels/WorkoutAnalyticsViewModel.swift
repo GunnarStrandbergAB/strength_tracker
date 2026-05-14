@@ -30,8 +30,9 @@ public final class WorkoutAnalyticsViewModel {
     public var adherenceAnalysis: AdherenceAnalysis?
     public var weeklyDigest: WeeklyDigest?
 
-    /// Personal volume-response curves per muscle group (Phase 4, unlocks at 50 workouts)
-    public var volumeResponseCurves: [VolumeResponseCurve] = []
+    /// Per-muscle volume-response analyses. Observation-only; landmarks are derived
+    /// from the user's logged history with explicit data-shape gating per muscle.
+    public var volumeResponseAnalyses: [VolumeResponseAnalysis] = []
 
     /// Error handling
     public var errorMessage: String?
@@ -45,7 +46,6 @@ public final class WorkoutAnalyticsViewModel {
     private let proFeatureGate: ProFeatureGate?
     private let adherenceService: AdherenceAnalysisService?
     private let coachingInsightService: CoachingInsightService?
-    private let achievementTrackingService: AchievementTrackingService?
 
     private var lastInsightsLoadTime: Date?
 
@@ -60,8 +60,7 @@ public final class WorkoutAnalyticsViewModel {
         workoutRepository: (any WorkoutRepository)? = nil,
         proFeatureGate: ProFeatureGate? = nil,
         adherenceService: AdherenceAnalysisService? = nil,
-        coachingInsightService: CoachingInsightService? = nil,
-        achievementTrackingService: AchievementTrackingService? = nil
+        coachingInsightService: CoachingInsightService? = nil
     ) {
         self.analyticsService = analyticsService
         self.qualityScoreService = qualityScoreService
@@ -70,7 +69,6 @@ public final class WorkoutAnalyticsViewModel {
         self.proFeatureGate = proFeatureGate
         self.adherenceService = adherenceService
         self.coachingInsightService = coachingInsightService
-        self.achievementTrackingService = achievementTrackingService
     }
 
     // MARK: - Dashboard (loads WorkoutInsights aggregate)
@@ -162,18 +160,13 @@ public final class WorkoutAnalyticsViewModel {
                 // Aggregate EWMA quality across all workouts
                 aggregateQuality = qualityScoreService.computeAggregateScore(workouts: allCompleted)
 
-                // Personal volume-response curves (50+ workouts, Phase 4)
-                if unlockedFeatures.contains(.volumeResponseCurve),
-                   let achievementService = achievementTrackingService {
-                    volumeResponseCurves = achievementService.computeVolumeResponse(
-                        workouts: allCompleted,
-                        overloadTrends: rawInsights.overloadTrends
-                    )
-                } else {
-                    volumeResponseCurves = []
-                }
-            } else if !unlockedFeatures.contains(.volumeResponseCurve) {
-                volumeResponseCurves = []
+                // Per-muscle volume-response analyses (data-shape gated per muscle).
+                volumeResponseAnalyses = VolumeResponseService.computeAnalyses(
+                    workouts: allCompleted,
+                    overloadTrends: rawInsights.overloadTrends
+                )
+            } else {
+                volumeResponseAnalyses = []
             }
 
             // Adherence analysis (M3)
@@ -337,7 +330,6 @@ public final class WorkoutAnalyticsViewModel {
         case .muscleNeglect: return "Muscle Neglect Detection"
         case .timeOfDayAnalysis: return "Time-of-Day Analysis"
         case .changePointDetection: return "Change Point Detection"
-        case .volumeResponseCurve: return "Volume-Response Curve"
         }
     }
 
@@ -366,7 +358,6 @@ public final class WorkoutAnalyticsViewModel {
         case .muscleNeglect: return "Detect declining volume in muscle groups"
         case .timeOfDayAnalysis: return "Find your optimal training window"
         case .changePointDetection: return "Identify major shifts in your training"
-        case .volumeResponseCurve: return "Personal volume-response curve per muscle group"
         }
     }
 }

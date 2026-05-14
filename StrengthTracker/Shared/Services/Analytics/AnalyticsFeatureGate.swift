@@ -36,7 +36,6 @@ public final class AnalyticsFeatureGate: Sendable {
         case recoveryTimeline       // Phase 3: 20 workouts
         case timeOfDayAnalysis      // Phase 3: 20 workouts
         case changePointDetection   // Phase 3: 20 workouts
-        case volumeResponseCurve    // Phase 4: 50 workouts
     }
 
     private static let thresholds: [Feature: Int] = [
@@ -63,7 +62,6 @@ public final class AnalyticsFeatureGate: Sendable {
         .recoveryTimeline: 20,
         .timeOfDayAnalysis: 20,
         .changePointDetection: 20,
-        .volumeResponseCurve: 50,
     ]
 
     private let workoutRepository: any WorkoutRepository
