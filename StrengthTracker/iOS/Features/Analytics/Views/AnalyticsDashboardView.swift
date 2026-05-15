@@ -1,6 +1,9 @@
 #if canImport(SwiftUI)
 import SwiftUI
 import StrengthTrackerShared
+#if canImport(Charts)
+import Charts
+#endif
 
 /// Full analytics dashboard pushed from the InsightsCard.
 struct AnalyticsDashboardView: View {
@@ -46,6 +49,12 @@ struct AnalyticsDashboardView: View {
                     if viewModel.isFeatureUnlocked(.muscleBalance),
                        let balance = viewModel.insights.muscleBalance {
                         muscleBalanceSection(balance)
+                    }
+
+                    // Volume Response (per-muscle, data-shape gated)
+                    let visibleVolumeResponse = viewModel.volumeResponseAnalyses.filter { $0.confidence != .insufficient }
+                    if !visibleVolumeResponse.isEmpty {
+                        volumeResponseSection(visibleVolumeResponse)
                     }
 
                     // Plateau Warnings
@@ -314,6 +323,125 @@ struct AnalyticsDashboardView: View {
         .padding(STSpacing.cardPadding)
         .background(STColors.surface)
         .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+    }
+
+    private func volumeResponseSection(_ analyses: [VolumeResponseAnalysis]) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            sectionHeader("Volume Response")
+
+            Text("Your personal response curve per muscle. More muscle groups appear as your training builds varied weekly volume history.")
+                .font(.system(size: 11))
+                .foregroundStyle(STColors.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            ForEach(analyses, id: \.muscleGroup) { analysis in
+                volumeResponseSubcard(analysis)
+            }
+        }
+        .padding(STSpacing.cardPadding)
+        .background(STColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+    }
+
+    private func volumeResponseSubcard(_ analysis: VolumeResponseAnalysis) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(analysis.muscleGroup.capitalized)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(STColors.textPrimary)
+
+                Spacer()
+
+                confidencePill(analysis.confidence)
+            }
+
+            if analysis.confidence != .insufficient {
+                volumeResponseChart(analysis)
+                    .frame(height: 140)
+            }
+
+            Text(analysis.sentence)
+                .font(.system(size: 11))
+                .foregroundStyle(STColors.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func confidencePill(_ confidence: Confidence) -> some View {
+        let label: String
+        let color: Color
+        switch confidence {
+        case .high: label = "high"; color = STColors.success
+        case .medium: label = "medium"; color = STColors.primary
+        case .low: label = "low"; color = STColors.textTertiary
+        case .insufficient: label = "building"; color = STColors.textTertiary
+        }
+        return Text(label)
+            .font(.system(size: 9, weight: .medium))
+            .tracking(0.5)
+            .foregroundStyle(color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.12))
+            .clipShape(Capsule())
+    }
+
+    @ViewBuilder
+    private func volumeResponseChart(_ analysis: VolumeResponseAnalysis) -> some View {
+        #if canImport(Charts)
+        let bestBin = bestBin(analysis.best)
+        Chart {
+            ForEach(analysis.bins, id: \.bin) { bin in
+                let isBest = bin.bin == bestBin
+                if let smoothed = bin.smoothed {
+                    BarMark(
+                        x: .value("Volume", bin.bin.label),
+                        y: .value("Response", smoothed * 100)
+                    )
+                    .foregroundStyle(isBest ? STColors.success : STColors.primary.opacity(0.7))
+                    .cornerRadius(4)
+                } else {
+                    BarMark(
+                        x: .value("Volume", bin.bin.label),
+                        y: .value("Response", 0)
+                    )
+                    .foregroundStyle(STColors.background)
+                }
+
+                if let q1 = bin.q1, let q3 = bin.q3, bin.observationCount >= 5 {
+                    RectangleMark(
+                        x: .value("Volume", bin.bin.label),
+                        yStart: .value("Q1", q1 * 100),
+                        yEnd: .value("Q3", q3 * 100),
+                        width: .fixed(2)
+                    )
+                    .foregroundStyle(STColors.textTertiary)
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading) { _ in
+                AxisGridLine()
+                AxisValueLabel()
+            }
+        }
+        .chartYAxisLabel("% change")
+        #else
+        Text("Charts unavailable on this platform")
+            .font(.system(size: 11))
+            .foregroundStyle(STColors.textTertiary)
+        #endif
+    }
+
+    private func bestBin(_ status: BestRangeStatus) -> VolumeBin? {
+        switch status {
+        case .observedPeak(let bin), .bestObservedSoFar(let bin):
+            return bin
+        case .unclear(let bins):
+            return bins.first
+        case .insufficient:
+            return nil
+        }
     }
 
     private func plateauSection(_ plateaus: [PlateauAnalysis]) -> some View {

@@ -30,6 +30,10 @@ public final class WorkoutAnalyticsViewModel {
     public var adherenceAnalysis: AdherenceAnalysis?
     public var weeklyDigest: WeeklyDigest?
 
+    /// Per-muscle volume-response analyses. Observation-only; landmarks are derived
+    /// from the user's logged history with explicit data-shape gating per muscle.
+    public var volumeResponseAnalyses: [VolumeResponseAnalysis] = []
+
     /// Error handling
     public var errorMessage: String?
 
@@ -155,6 +159,14 @@ public final class WorkoutAnalyticsViewModel {
 
                 // Aggregate EWMA quality across all workouts
                 aggregateQuality = qualityScoreService.computeAggregateScore(workouts: allCompleted)
+
+                // Per-muscle volume-response analyses (data-shape gated per muscle).
+                volumeResponseAnalyses = VolumeResponseService.computeAnalyses(
+                    workouts: allCompleted,
+                    overloadTrends: rawInsights.overloadTrends
+                )
+            } else {
+                volumeResponseAnalyses = []
             }
 
             // Adherence analysis (M3)
@@ -318,7 +330,6 @@ public final class WorkoutAnalyticsViewModel {
         case .muscleNeglect: return "Muscle Neglect Detection"
         case .timeOfDayAnalysis: return "Time-of-Day Analysis"
         case .changePointDetection: return "Change Point Detection"
-        case .volumeResponseCurve: return "Volume-Response Curve"
         }
     }
 
@@ -347,7 +358,6 @@ public final class WorkoutAnalyticsViewModel {
         case .muscleNeglect: return "Detect declining volume in muscle groups"
         case .timeOfDayAnalysis: return "Find your optimal training window"
         case .changePointDetection: return "Identify major shifts in your training"
-        case .volumeResponseCurve: return "Personal volume-response curve per muscle group"
         }
     }
 }
