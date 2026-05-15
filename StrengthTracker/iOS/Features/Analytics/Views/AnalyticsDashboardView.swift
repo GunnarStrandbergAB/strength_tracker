@@ -52,8 +52,9 @@ struct AnalyticsDashboardView: View {
                     }
 
                     // Volume Response (per-muscle, data-shape gated)
-                    if !viewModel.volumeResponseAnalyses.isEmpty {
-                        volumeResponseSection(viewModel.volumeResponseAnalyses)
+                    let visibleVolumeResponse = viewModel.volumeResponseAnalyses.filter { $0.confidence != .insufficient }
+                    if !visibleVolumeResponse.isEmpty {
+                        volumeResponseSection(visibleVolumeResponse)
                     }
 
                     // Plateau Warnings
@@ -327,6 +328,11 @@ struct AnalyticsDashboardView: View {
     private func volumeResponseSection(_ analyses: [VolumeResponseAnalysis]) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             sectionHeader("Volume Response")
+
+            Text("Your personal response curve per muscle. More muscle groups appear as your training builds varied weekly volume history.")
+                .font(.system(size: 11))
+                .foregroundStyle(STColors.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             ForEach(analyses, id: \.muscleGroup) { analysis in
                 volumeResponseSubcard(analysis)
