@@ -19,9 +19,6 @@ struct AdvancedInsightsView: View {
                 if viewModel.insights.trainingPhase != nil {
                     phaseSection
                 }
-                if !viewModel.insights.optimalVolumes.isEmpty {
-                    volumeLandmarkSection
-                }
                 if !viewModel.insights.recoveryPatterns.isEmpty {
                     recoverySection
                 }
@@ -178,44 +175,6 @@ struct AdvancedInsightsView: View {
         }
     }
 
-    // MARK: - Volume Landmarks
-
-    @ViewBuilder
-    private var volumeLandmarkSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Volume Landmarks")
-
-            ForEach(viewModel.insights.optimalVolumes) { vol in
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(volumeStatusColor(vol.volumeStatus))
-                        .frame(width: 8, height: 8)
-
-                    Text(vol.muscleGroup.capitalized)
-                        .font(.system(size: 12))
-                        .foregroundStyle(STColors.textSecondary)
-                        .frame(width: 80, alignment: .leading)
-
-                    Text("\(vol.currentWeeklySets)")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(STColors.textPrimary)
-
-                    Text("/ \(vol.minimumWeeklySets)-\(vol.maximumWeeklySets)")
-                        .font(.system(size: 11))
-                        .foregroundStyle(STColors.textTertiary)
-
-                    Spacer()
-
-                    Text(volumeStatusLabel(vol.volumeStatus))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(volumeStatusColor(vol.volumeStatus))
-                }
-            }
-        }
-        .padding(STSpacing.cardPadding)
-        .background(STColors.surface)
-        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
-    }
 
     // MARK: - Recovery Status
 
@@ -399,7 +358,7 @@ struct AdvancedInsightsView: View {
                             .foregroundStyle(STColors.textPrimary)
 
                         let dims = anomaly.deviatingDimensions.prefix(2)
-                            .map { humanReadableDrift($0) }
+                            .map(\.humanReadableDescription)
                             .joined(separator: ", ")
                         if !dims.isEmpty {
                             Text(dims)
@@ -470,30 +429,11 @@ struct AdvancedInsightsView: View {
     }
 
     private func anomalyDescription(_ score: Double) -> String {
-        switch score {
-        case 0.7...:    return "Very different from your usual sessions"
-        case 0.5..<0.7: return "Noticeably different from your usual sessions"
-        default:        return "Somewhat different from your usual sessions"
-        }
-    }
-
-    private func humanReadableDrift(_ drift: DimensionDrift) -> String {
-        let direction = drift.delta > 0 ? "Higher" : "Lower"
-        switch drift.featureName {
-        case "volume_vs_prev_7d":    return "\(direction) volume than last week"
-        case "volume_vs_prev_30d":   return "\(direction) volume than your monthly avg"
-        case "total_volume_norm":    return "\(direction) total volume"
-        case "avg_weight_norm":      return "\(direction) average weight"
-        case "avg_reps_norm":        return "\(direction) reps per set"
-        case "set_count_norm":       return "\(direction) number of sets"
-        case "exercise_diversity":   return drift.delta > 0 ? "More exercise variety" : "Less exercise variety"
-        case "duration_norm":        return drift.delta > 0 ? "Longer session" : "Shorter session"
-        case "compound_ratio":       return drift.delta > 0 ? "More compound lifts" : "Fewer compound lifts"
-        case "avg_rpe":              return drift.delta > 0 ? "Higher effort (RPE)" : "Lower effort (RPE)"
-        case "pr_count_norm":        return drift.delta > 0 ? "More PRs than usual" : "Fewer PRs than usual"
-        default:
-            let name = drift.featureName.replacingOccurrences(of: "_", with: " ")
-            return "\(direction) \(name)"
+        // Below the surface floor we don't render anything; this maps the visible band only.
+        if score >= 0.7 {
+            return "Very different from your usual sessions"
+        } else {
+            return "Noticeably different from your usual sessions"
         }
     }
 
@@ -544,22 +484,6 @@ struct AdvancedInsightsView: View {
         case .peaking: return STColors.danger
         case .deload: return STColors.success
         case .mixed: return STColors.textTertiary
-        }
-    }
-
-    private func volumeStatusColor(_ status: VolumeStatus) -> Color {
-        switch status {
-        case .underVolume: return .blue
-        case .optimal: return STColors.success
-        case .overVolume: return STColors.danger
-        }
-    }
-
-    private func volumeStatusLabel(_ status: VolumeStatus) -> String {
-        switch status {
-        case .underVolume: return "Under"
-        case .optimal: return "Optimal"
-        case .overVolume: return "Over"
         }
     }
 

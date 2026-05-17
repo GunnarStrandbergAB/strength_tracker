@@ -4,6 +4,10 @@ import Foundation
 @MainActor
 public final class BlockComparisonService: Sendable {
 
+    /// Per-dimension delta threshold for "key changes". Block centroids are smoother
+    /// than per-workout vectors so this can be slightly lower than anomaly's 0.20.
+    public static let dimensionDeltaThreshold = 0.15
+
     private let searchService: VectorSearchService
 
     public init(searchService: VectorSearchService) {
@@ -27,14 +31,15 @@ public final class BlockComparisonService: Sendable {
 
         let similarity = searchService.cosineSimilarity(currentCentroid, previousCentroid)
 
-        // Per-dimension deltas > 10%
+        // Per-dimension deltas. Restrict to the signal allow-list so we don't surface
+        // muscle-distribution drift, time-of-day, or the redundant volume-vs-prev pair.
         var deltas: [DimensionDrift] = []
         for i in 0..<min(currentCentroid.count, previousCentroid.count) {
             let delta = currentCentroid[i] - previousCentroid[i]
-            if abs(delta) > 0.10 {
-                let name = i < WorkoutVector.featureNames.count ? WorkoutVector.featureNames[i] : "dim_\(i)"
-                deltas.append(DimensionDrift(featureName: name, delta: delta))
-            }
+            guard abs(delta) > Self.dimensionDeltaThreshold else { continue }
+            let name = i < WorkoutVector.featureNames.count ? WorkoutVector.featureNames[i] : "dim_\(i)"
+            guard WorkoutVector.signalDimensionNames.contains(name) else { continue }
+            deltas.append(DimensionDrift(featureName: name, delta: delta))
         }
         deltas.sort { abs($0.delta) > abs($1.delta) }
 
@@ -52,18 +57,13 @@ public final class BlockComparisonService: Sendable {
     // MARK: - Private
 
     private func generateSummary(deltas: [DimensionDrift], similarity: Double) -> String {
-        if deltas.isEmpty {
-            return "Training has been consistent between blocks."
-        }
-
-        let changes = deltas.prefix(3).map { drift in
-            let direction = drift.delta > 0 ? "increased" : "decreased"
-            let name = drift.featureName.replacingOccurrences(of: "_", with: " ")
-            return "\(name) \(direction)"
-        }
-
-        let changeList = changes.joined(separator: ", ")
         let simPct = String(format: "%.0f%%", similarity * 100)
+        if deltas.isEmpty {
+            return "Blocks are \(simPct) similar. Training has been consistent between blocks."
+        }
+
+        let changes = deltas.prefix(3).map(\.humanReadableDescription)
+        let changeList = changes.joined(separator: ", ")
         return "Blocks are \(simPct) similar. Key changes: \(changeList)."
     }
 }
