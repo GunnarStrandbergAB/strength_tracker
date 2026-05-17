@@ -61,39 +61,56 @@ public final class PhaseDetectionService: Sendable {
 
     // MARK: - Private
 
-    /// Classify a centroid into a training phase using key dimensions:
-    /// 0=volume, 1=weight, 2=reps, 3=sets, 12=compound_ratio
+    /// Active dim indices for phase classification:
+    /// 0=total_volume_norm, 1=avg_weight_norm, 2=avg_reps_norm, 3=set_count_norm,
+    /// 4=exercise_diversity, 5=duration_norm, 12=compound_ratio, 13=avg_rpe, 16=pr_count_norm.
+    /// Skipped: muscle ratios (workout-type, not phase), time-of-day (life logistics),
+    /// volume_vs_prev_7d/30d (week-to-week noise at this aggregation).
+    private static let activeDims: [Int] = [0, 1, 2, 3, 4, 5, 12, 13, 16]
+
+    /// Hand-tuned prototype centroids per phase. Values are in pre-normalisation space
+    /// and reflect "what this phase typically looks like" on the same scale as the
+    /// vectorizer output. Both prototype and observed centroid are L2-normalised over
+    /// `activeDims` before cosine similarity comparison, so absolute scale doesn't matter
+    /// — only the *shape* of the activation profile.
+    private static let phasePrototypes: [DetectedPhase: [Double]] = [
+        // [vol, wt, reps, sets, div, dur, cmp, rpe, pr]
+        .deload:          [0.20, 0.20, 0.30, 0.20, 0.30, 0.40, 0.30, 0.45, 0.05],
+        .accumulation:    [0.65, 0.40, 0.55, 0.65, 0.55, 0.65, 0.50, 0.65, 0.15],
+        .intensification: [0.45, 0.65, 0.30, 0.45, 0.40, 0.55, 0.65, 0.75, 0.25],
+        .peaking:         [0.25, 0.80, 0.15, 0.30, 0.25, 0.45, 0.80, 0.85, 0.45],
+    ]
+
+    /// Minimum cosine similarity to confidently assign a phase. Below this, return .mixed.
+    private static let confidenceFloor = 0.85
+    /// Minimum margin between the top and second-place phase score for an unambiguous pick.
+    private static let unambiguousMargin = 0.02
+
+    /// Classify a centroid by cosine distance to per-phase prototypes.
+    /// Returns the phase whose prototype best matches the centroid's activation profile
+    /// over the active dims; falls back to `.mixed` when no prototype dominates.
     private func classifyPhase(centroid: [Double]) -> DetectedPhase {
-        guard centroid.count >= 13 else { return .mixed }
+        guard centroid.count >= 17 else { return .mixed }
 
-        let volume = centroid[0]
-        let weight = centroid[1]
-        let reps = centroid[2]
-        let sets = centroid[3]
-        let compound = centroid[12]
+        // Project the observed centroid onto the active dims, then L2-normalise.
+        let projected = Self.activeDims.map { centroid[$0] }
+        let observed = AnalyticsCalculations.l2Normalize(projected)
 
-        // Phase prototypes (relative feature magnitudes)
-        // Deload: low everything
-        if volume < 0.15 && weight < 0.15 && sets < 0.15 {
-            return .deload
+        // Score each prototype.
+        var scored: [(phase: DetectedPhase, score: Double)] = []
+        for (phase, prototype) in Self.phasePrototypes {
+            let normProto = AnalyticsCalculations.l2Normalize(prototype)
+            let score = searchService.cosineSimilarity(observed, normProto)
+            scored.append((phase, score))
         }
+        scored.sort { $0.score > $1.score }
 
-        // Peaking: low volume/reps, high weight, high compound ratio
-        if weight > volume * 1.3 && reps < 0.2 && compound > 0.15 {
-            return .peaking
+        guard let top = scored.first else { return .mixed }
+        guard top.score >= Self.confidenceFloor else { return .mixed }
+        if scored.count >= 2, (top.score - scored[1].score) < Self.unambiguousMargin {
+            return .mixed
         }
-
-        // Intensification: moderate volume, high weight
-        if weight > volume && weight > reps {
-            return .intensification
-        }
-
-        // Accumulation: high volume/sets/reps, moderate weight
-        if (volume > weight || sets > weight) && reps > 0.1 {
-            return .accumulation
-        }
-
-        return .mixed
+        return top.phase
     }
 
     /// Apply 3-element moving mode filter for phase stability.
