@@ -2,7 +2,7 @@ import SwiftUI
 import StrengthTrackerShared
 
 struct ContentView: View {
-    @State private var selectedTab = 0
+    @State private var selectedTab: Int
 
     let dashboardViewModel: DashboardViewModel
     let exerciseListViewModel: ExerciseListViewModel
@@ -18,6 +18,39 @@ struct ContentView: View {
     var personalRecordService: PersonalRecordService? = nil
     var proFeatureGate: ProFeatureGate? = nil
     var storeService: StoreService? = nil
+
+    init(
+        dashboardViewModel: DashboardViewModel,
+        exerciseListViewModel: ExerciseListViewModel,
+        progressViewModel: ProgressViewModel,
+        workoutViewModel: WorkoutViewModel,
+        historyViewModel: HistoryViewModel,
+        templateViewModel: TemplateViewModel,
+        analyticsViewModel: WorkoutAnalyticsViewModel,
+        progressionPlanViewModel: ProgressionPlanViewModel,
+        userPreferencesService: UserPreferencesService,
+        connectivityManager: ConnectivityManager?,
+        restTimerService: RestTimerService,
+        personalRecordService: PersonalRecordService? = nil,
+        proFeatureGate: ProFeatureGate? = nil,
+        storeService: StoreService? = nil
+    ) {
+        self.dashboardViewModel = dashboardViewModel
+        self.exerciseListViewModel = exerciseListViewModel
+        self.progressViewModel = progressViewModel
+        self.workoutViewModel = workoutViewModel
+        self.historyViewModel = historyViewModel
+        self.templateViewModel = templateViewModel
+        self.analyticsViewModel = analyticsViewModel
+        self.progressionPlanViewModel = progressionPlanViewModel
+        self.userPreferencesService = userPreferencesService
+        self.connectivityManager = connectivityManager
+        self.restTimerService = restTimerService
+        self.personalRecordService = personalRecordService
+        self.proFeatureGate = proFeatureGate
+        self.storeService = storeService
+        _selectedTab = State(initialValue: workoutViewModel.isActive ? 1 : 0)
+    }
 
     var body: some View {
         TabView(selection: $selectedTab) {

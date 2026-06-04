@@ -9,6 +9,15 @@ public enum WorkoutError: Error, Sendable {
 @MainActor
 @Observable
 public final class WorkoutViewModel {
+    /// Synchronous flag used by the iOS app on cold launch to decide whether to gate
+    /// the first frame on `restoreActiveWorkout()`. Avoids drawing the Dashboard
+    /// momentarily before async restoration flips routing to ActiveWorkout.
+    private static let pendingActiveWorkoutKey = "st.hasPendingActiveWorkout"
+    public static var hasPendingActiveWorkout: Bool {
+        get { UserDefaults.standard.bool(forKey: pendingActiveWorkoutKey) }
+        set { UserDefaults.standard.set(newValue, forKey: pendingActiveWorkoutKey) }
+    }
+
     public var currentWorkout: Workout? = nil
     public var isActive = false
     public var plannedSessionId: UUID? = nil
@@ -166,6 +175,7 @@ public final class WorkoutViewModel {
             workout = try await workoutRepository.save(workout)
             currentWorkout = workout
             isActive = true
+            Self.hasPendingActiveWorkout = true
 
             // Update template usage stats
             if let template = template {
@@ -285,6 +295,7 @@ public final class WorkoutViewModel {
         let saved = try await workoutRepository.save(workout)
         currentWorkout = saved
         isActive = false
+        Self.hasPendingActiveWorkout = false
 
         // Mark progression plan session completed.
         // Prefer the IDs persisted on the workout itself so this works even if the VM was
@@ -640,14 +651,19 @@ public final class WorkoutViewModel {
             if let active = try await workoutRepository.fetchActive() {
                 if Date().timeIntervalSince(active.startedAt) > 12 * 60 * 60 {
                     try? await workoutRepository.deleteAllIncomplete()
+                    Self.hasPendingActiveWorkout = false
                     return
                 }
                 currentWorkout = active
                 isActive = true
+                Self.hasPendingActiveWorkout = true
                 await loadPreviousData()
+            } else {
+                Self.hasPendingActiveWorkout = false
             }
         } catch {
             print("[WorkoutVM] Failed to restore active workout: \(error)")
+            Self.hasPendingActiveWorkout = false
         }
     }
 
@@ -682,5 +698,6 @@ public final class WorkoutViewModel {
         isActive = false
         plannedSessionId = nil
         plannedPlanId = nil
+        Self.hasPendingActiveWorkout = false
     }
 }

@@ -183,6 +183,43 @@ struct WorkoutViewModelTests {
         }
     }
 
+    // MARK: - hasPendingActiveWorkout (cold-launch routing flag)
+
+    @Test("startWorkout sets pending flag; completeWorkout clears it")
+    func pendingFlagStartComplete() async throws {
+        WorkoutViewModel.hasPendingActiveWorkout = false
+        let (vm, _, _) = makeViewModel()
+
+        await vm.startWorkout(name: "Push Day")
+        #expect(WorkoutViewModel.hasPendingActiveWorkout == true)
+
+        try await vm.completeWorkout()
+        #expect(WorkoutViewModel.hasPendingActiveWorkout == false)
+    }
+
+    @Test("cancelWorkout clears pending flag")
+    func pendingFlagCancel() async {
+        WorkoutViewModel.hasPendingActiveWorkout = false
+        let (vm, _, _) = makeViewModel()
+
+        await vm.startWorkout(name: "Push Day")
+        #expect(WorkoutViewModel.hasPendingActiveWorkout == true)
+
+        await vm.cancelWorkout()
+        #expect(WorkoutViewModel.hasPendingActiveWorkout == false)
+    }
+
+    @Test("restoreActiveWorkout clears stale-true flag when no active workout exists")
+    func pendingFlagRestoreNoWorkout() async {
+        WorkoutViewModel.hasPendingActiveWorkout = true
+        let (vm, _, _) = makeViewModel()
+
+        await vm.restoreActiveWorkout()
+
+        #expect(vm.isActive == false)
+        #expect(WorkoutViewModel.hasPendingActiveWorkout == false)
+    }
+
     // MARK: - totalVolume
 
     @Test("totalVolume computed correctly as sets are added")
