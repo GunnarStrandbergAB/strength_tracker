@@ -71,3 +71,20 @@ public struct Workout: Identifiable, Hashable, Sendable, Codable {
         exercises = try container.decode([WorkoutExercise].self, forKey: .exercises)
     }
 }
+
+// MARK: - Set Completion
+
+extension Workout {
+    /// Toggles a set's completion state in place — the single implementation shared by
+    /// the active-workout and history editing flows.
+    /// - Returns: the new completion state, or nil if the exercise/set was not found.
+    @discardableResult
+    public mutating func toggleSetCompletion(exerciseId: UUID, setId: UUID) -> Bool? {
+        guard let ei = exercises.firstIndex(where: { $0.id == exerciseId }),
+              let si = exercises[ei].sets.firstIndex(where: { $0.id == setId }) else { return nil }
+        let wasCompleted = exercises[ei].sets[si].isCompleted
+        exercises[ei].sets[si].isCompleted = !wasCompleted
+        exercises[ei].sets[si].completedAt = wasCompleted ? nil : Date()
+        return !wasCompleted
+    }
+}

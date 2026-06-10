@@ -3,7 +3,7 @@ import Foundation
 /// Maps a training day to a template and subset of exercises.
 public struct DayScheduleEntry: Codable, Equatable, Sendable, Identifiable {
     public var id: UUID
-    public var dayOfWeek: Int          // ISO 8601 (Mon=2..Sat=7, Sun=1)
+    public var dayOfWeek: Int          // Calendar.weekday encoding (Sun=1, Mon=2..Sat=7) — NOT ISO 8601
     public var templateId: UUID?       // linked template for this day
     public var templateName: String?   // denormalized for display
     public var exerciseIds: [UUID]     // library exercise IDs to include
@@ -27,8 +27,8 @@ public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
     public var primaryGoal: TrainingGoal
     public var secondaryGoal: TrainingGoal?
     public var weeklyFrequency: Int                    // Training days per week
-    public var trainingDays: [Int]?                    // Specific ISO 8601 day numbers (Mon=2..Sun=1), nil = use defaults
-    public var deloadDays: [Int]?                      // ISO 8601 day numbers for deload weeks (nil = use trainingDays)
+    public var trainingDays: [Int]?                    // Calendar.weekday day numbers (Sun=1, Mon=2..Sat=7), nil = use defaults
+    public var deloadDays: [Int]?                      // Calendar.weekday day numbers for deload weeks (nil = use trainingDays)
     public var startDate: Date
     public var targetEndDate: Date?
     public var actualEndDate: Date?

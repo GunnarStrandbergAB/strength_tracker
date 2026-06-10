@@ -19,6 +19,15 @@ struct AdvancedInsightsView: View {
                 if viewModel.insights.trainingPhase != nil {
                     phaseSection
                 }
+                if !viewModel.insights.archetypes.isEmpty {
+                    archetypesSection
+                }
+                if let fingerprint = viewModel.insights.trainingFingerprint {
+                    fingerprintSection(fingerprint)
+                }
+                if let timeOfDay = viewModel.insights.timeOfDayAnalysis {
+                    timeOfDaySection(timeOfDay)
+                }
                 if !viewModel.insights.recoveryPatterns.isEmpty {
                     recoverySection
                 }
@@ -175,6 +184,135 @@ struct AdvancedInsightsView: View {
         }
     }
 
+
+    // MARK: - Workout Archetypes
+
+    @ViewBuilder
+    private var archetypesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Workout Types")
+
+            ForEach(viewModel.insights.archetypes) { archetype in
+                HStack(spacing: 10) {
+                    Image(systemName: "square.grid.2x2")
+                        .font(.system(size: 12))
+                        .foregroundStyle(STColors.primary)
+                        .frame(width: 20)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(archetype.label)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(STColors.textPrimary)
+                        Text("\(archetype.memberWorkoutIds.count) sessions · \(String(format: "%.1fx", archetype.frequency))/wk")
+                            .font(.system(size: 11))
+                            .foregroundStyle(STColors.textSecondary)
+                    }
+
+                    Spacer()
+
+                    if let days = archetype.daysSinceLastPerformed {
+                        Text(days == 0 ? "Today" : "\(days)d ago")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(days >= 14 ? STColors.danger : STColors.textTertiary)
+                    }
+                }
+            }
+
+            if let stale = viewModel.staleArchetype, let days = stale.daysSinceLastPerformed {
+                Text("You haven't done a \(stale.label) in \(days) days")
+                    .font(.system(size: 11))
+                    .foregroundStyle(STColors.danger)
+                    .padding(.top, 4)
+            }
+        }
+        .padding(STSpacing.cardPadding)
+        .background(STColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+    }
+
+    // MARK: - Training Fingerprint
+
+    @ViewBuilder
+    private func fingerprintSection(_ fingerprint: TrainingFingerprint) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Training Fingerprint")
+
+            // Variety (normalized entropy 0–1)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Variety")
+                        .font(.system(size: 12))
+                        .foregroundStyle(STColors.textTertiary)
+                    Spacer()
+                    Text(String(format: "%.0f%%", fingerprint.entropy * 100))
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(STColors.textSecondary)
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(STColors.background)
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(STColors.primary)
+                            .frame(width: geo.size.width * fingerprint.entropy)
+                    }
+                }
+                .frame(height: 4)
+            }
+
+            HStack {
+                Text("Stability vs prior month")
+                    .font(.system(size: 12))
+                    .foregroundStyle(STColors.textTertiary)
+                Spacer()
+                Text(String(format: "%.0f%%", fingerprint.stabilityScore * 100))
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(STColors.textSecondary)
+            }
+
+            HStack(spacing: 8) {
+                Image(systemName: trendIcon(fingerprint.varietyTrend))
+                    .font(.system(size: 11))
+                    .foregroundStyle(trendColor(fingerprint.varietyTrend))
+                Text("Variety \(trendLabel(fingerprint.varietyTrend).lowercased())")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(trendColor(fingerprint.varietyTrend))
+            }
+        }
+        .padding(STSpacing.cardPadding)
+        .background(STColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+    }
+
+    // MARK: - Time of Day
+
+    @ViewBuilder
+    private func timeOfDaySection(_ analysis: TimeOfDayAnalysis) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Best Training Time")
+
+            HStack(spacing: 10) {
+                Image(systemName: "clock.badge.checkmark")
+                    .font(.system(size: 16))
+                    .foregroundStyle(STColors.success)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(analysis.message)
+                        .font(.system(size: 13))
+                        .foregroundStyle(STColors.textPrimary)
+
+                    Text(String(format: "%@ %.0f%% · %@ %.0f%%",
+                                analysis.bestWindow, analysis.bestAvgQuality,
+                                analysis.worstWindow, analysis.worstAvgQuality))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(STColors.textTertiary)
+                }
+            }
+        }
+        .padding(STSpacing.cardPadding)
+        .background(STColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+    }
 
     // MARK: - Recovery Status
 

@@ -15,8 +15,8 @@ public final class ProgressionPlanEntity {
     public var primaryGoal: String         // TrainingGoal raw value
     public var secondaryGoal: String?      // TrainingGoal raw value (optional)
     public var weeklyFrequency: Int
-    public var trainingDaysJSON: Data?     // JSON-encoded [Int]? (ISO 8601 day numbers)
-    public var deloadDaysJSON: Data?       // JSON-encoded [Int]? (ISO 8601 day numbers for deload weeks)
+    public var trainingDaysJSON: Data?     // JSON-encoded [Int]? (Calendar.weekday day numbers, Sun=1)
+    public var deloadDaysJSON: Data?       // JSON-encoded [Int]? (Calendar.weekday day numbers for deload weeks)
     public var startDate: Date
     public var targetEndDate: Date?
     public var actualEndDate: Date?

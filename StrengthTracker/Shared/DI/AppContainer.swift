@@ -42,13 +42,12 @@ public final class AppContainer: Sendable {
     public let coachingInsightService: CoachingInsightService
     public let weightSuggestionService: WeightSuggestionService
     public let adherenceAnalysisService: AdherenceAnalysisService
-    public let trajectoryAnalysisService: TrajectoryAnalysisService
     public let workoutArchetypeService: WorkoutArchetypeService
     public let changePointDetectionService: ChangePointDetectionService
-    public let achievementTrackingService: AchievementTrackingService
 
     // Progression
     public let trainingStatusDetector: TrainingStatusDetector
+    public let coachingCommunicationService: CoachingCommunicationService
     public let programDesignService: ProgramDesignService
     public let sessionExecutionService: SessionExecutionService
     public let adaptiveAdjustmentService: AdaptiveAdjustmentService
@@ -148,6 +147,9 @@ public final class AppContainer: Sendable {
             insightGen = TemplateInsightGenerator()
         }
 
+        workoutArchetypeService = WorkoutArchetypeService(searchService: searchService)
+        changePointDetectionService = ChangePointDetectionService()
+
         analyticsService = WorkoutAnalyticsService(
             analyticsRepository: analyticsRepository,
             workoutRepository: workoutRepository,
@@ -165,7 +167,10 @@ public final class AppContainer: Sendable {
             phaseDetectionService: phaseDetection,
             blockComparisonService: blockComparison,
             anomalyDetectionService: anomalyDetection,
-            insightGenerator: insightGen
+            insightGenerator: insightGen,
+            archetypeService: workoutArchetypeService,
+            changePointService: changePointDetectionService,
+            qualityScoreService: qualityScoreService
         )
 
         coachingInsightService = CoachingInsightService(
@@ -176,16 +181,13 @@ public final class AppContainer: Sendable {
 
         weightSuggestionService = WeightSuggestionService()
         adherenceAnalysisService = AdherenceAnalysisService()
-        trajectoryAnalysisService = TrajectoryAnalysisService()
-        workoutArchetypeService = WorkoutArchetypeService(searchService: searchService)
-        changePointDetectionService = ChangePointDetectionService(searchService: searchService)
-        achievementTrackingService = AchievementTrackingService()
 
         // Remaining progression services (stateless -- ADR-014)
         programDesignService = ProgramDesignService()
         sessionExecutionService = SessionExecutionService()
         adaptiveAdjustmentService = AdaptiveAdjustmentService(workoutRepository: workoutRepository)
         planAnalyticsService = PlanAnalyticsService(workoutRepository: workoutRepository)
+        coachingCommunicationService = CoachingCommunicationService()
 
         // Initialize cached ViewModels
         workoutViewModel = WorkoutViewModel(
@@ -204,7 +206,8 @@ public final class AppContainer: Sendable {
         templateViewModel = TemplateViewModel(
             templateRepository: templateRepository,
             exerciseRepository: exerciseRepository,
-            connectivityManager: connectivityManager
+            connectivityManager: connectivityManager,
+            userPreferencesService: userPreferencesService
         )
         exerciseListViewModel = ExerciseListViewModel(exerciseRepository: exerciseRepository, exerciseSeeder: exerciseSeeder)
         watchWorkoutViewModel = WatchWorkoutViewModel(
@@ -225,7 +228,8 @@ public final class AppContainer: Sendable {
             workoutRepository: workoutRepository,
             proFeatureGate: proFeatureGate,
             adherenceService: adherenceAnalysisService,
-            coachingInsightService: coachingInsightService
+            coachingInsightService: coachingInsightService,
+            userPreferencesService: userPreferencesService
         )
         progressionPlanViewModel = ProgressionPlanViewModel(
             progressionPlanRepository: progressionPlanRepository,
@@ -234,8 +238,22 @@ public final class AppContainer: Sendable {
             planAnalyticsService: planAnalyticsService,
             exerciseRepository: exerciseRepository,
             templateRepository: templateRepository,
-            userPreferencesService: userPreferencesService
+            userPreferencesService: userPreferencesService,
+            workoutRepository: workoutRepository,
+            sessionExecutionService: sessionExecutionService,
+            adaptiveAdjustmentService: adaptiveAdjustmentService,
+            coachingCommunicationService: coachingCommunicationService
         )
+
+        // Route planned-session completions through the adaptive progression
+        // pipeline (APRE + 1RM updates + adviser proposals) instead of the
+        // plain markSessionCompleted repository call.
+        let planVM = progressionPlanViewModel
+        workoutViewModel.onPlannedSessionCompleted = { [weak planVM] sessionId, planId, workoutId in
+            await planVM?.handleSessionCompleted(
+                sessionId: sessionId, planId: planId, workoutId: workoutId
+            )
+        }
     }
 
     // Factory methods for ViewModels
@@ -248,7 +266,10 @@ public final class AppContainer: Sendable {
     }
 
     public func makeHistoryViewModel() -> HistoryViewModel {
-        HistoryViewModel(workoutRepository: workoutRepository)
+        HistoryViewModel(
+            workoutRepository: workoutRepository,
+            userPreferencesService: userPreferencesService
+        )
     }
 
     public func makeTemplateViewModel() -> TemplateViewModel {
@@ -268,7 +289,8 @@ public final class AppContainer: Sendable {
     public func makeProgressViewModel() -> ProgressViewModel {
         ProgressViewModel(
             exerciseRepository: exerciseRepository,
-            workoutRepository: workoutRepository
+            workoutRepository: workoutRepository,
+            userPreferencesService: userPreferencesService
         )
     }
 

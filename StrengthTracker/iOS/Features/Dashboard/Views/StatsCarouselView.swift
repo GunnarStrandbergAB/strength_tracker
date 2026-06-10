@@ -4,6 +4,7 @@ import StrengthTrackerShared
 
 struct StatsCarouselView: View {
     let formattedVolume: String
+    var volumeUnit: String = "KG"
     let formattedAvgSessions: String
     let formattedDuration: String
 
@@ -14,7 +15,7 @@ struct StatsCarouselView: View {
                     icon: "scalemass",
                     label: "TOTAL VOLUME",
                     value: formattedVolume,
-                    unit: "KG"
+                    unit: volumeUnit
                 )
 
                 StatCard(

@@ -52,10 +52,16 @@ public final class SwiftDataTemplateRepository: TemplateRepository, Sendable {
                     TemplateExerciseMapper.updateEntity(existing, from: domainExercise)
                     existing.template = existingEntity
                     updatedExercises.append(existing)
+                } else if let orphan = try fetchExerciseEntity(id: domainExercise.id) {
+                    // An entity with this ID already exists in the store (orphan from an
+                    // earlier update strategy). Reuse it in place — creating a second
+                    // entity with the same ID would violate @Attribute(.unique).
+                    TemplateExerciseMapper.updateEntity(orphan, from: domainExercise)
+                    orphan.template = existingEntity
+                    updatedExercises.append(orphan)
                 } else {
-                    // Fresh UUID avoids @Attribute(.unique) conflict with orphaned entities
+                    // Keep the domain ID so callers can address this exercise after save
                     let newExercise = TemplateExerciseMapper.toEntity(domainExercise)
-                    newExercise.id = UUID()
                     newExercise.template = existingEntity
                     modelContext.insert(newExercise)
                     updatedExercises.append(newExercise)
@@ -78,6 +84,14 @@ public final class SwiftDataTemplateRepository: TemplateRepository, Sendable {
             return TemplateMapper.toDomain(savedEntity)
         }
         return template
+    }
+
+    /// Fetches a TemplateExerciseEntity by ID regardless of template attachment.
+    private func fetchExerciseEntity(id: UUID) throws -> TemplateExerciseEntity? {
+        let descriptor = FetchDescriptor<TemplateExerciseEntity>(
+            predicate: #Predicate { $0.id == id }
+        )
+        return try modelContext.fetch(descriptor).first
     }
 
     public func delete(_ template: WorkoutTemplate) async throws {

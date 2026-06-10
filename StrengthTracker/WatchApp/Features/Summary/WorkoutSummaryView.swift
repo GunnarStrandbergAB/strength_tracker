@@ -18,6 +18,8 @@ struct WorkoutSummaryView: View {
     private let primaryYellow = Color(red: 0.949, green: 0.800, blue: 0.051)
     private let cardBackground = Color.white.opacity(0.1)
     private let secondaryText = Color.white.opacity(0.6)
+    // Watch prefs sync from the phone into UserDefaults
+    private let weightUnit = UserPreferencesService().weightUnit
 
     var body: some View {
         ScrollView {
@@ -73,7 +75,7 @@ struct WorkoutSummaryView: View {
                         statRow(
                             icon: "scalemass.fill",
                             label: "Volume",
-                            value: String(format: "%.0f kg", workout.totalVolume)
+                            value: weightUnit.format(workout.totalVolume, decimals: 0)
                         )
                     }
                 }

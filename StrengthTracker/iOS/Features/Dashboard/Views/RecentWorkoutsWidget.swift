@@ -129,7 +129,7 @@ private struct RecentWorkoutCard: View {
 
                 WorkoutStatItem(
                     label: "VOLUME",
-                    value: "\(viewModel.formattedWorkoutVolume(workout)) kg"
+                    value: "\(viewModel.formattedWorkoutVolume(workout)) \(viewModel.weightUnit.symbol)"
                 )
             }
         }

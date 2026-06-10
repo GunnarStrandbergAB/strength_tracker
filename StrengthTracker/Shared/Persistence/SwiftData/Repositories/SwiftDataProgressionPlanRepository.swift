@@ -19,7 +19,13 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
         let descriptor = FetchDescriptor<ProgressionPlanEntity>(
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
-        return try modelContext.fetch(descriptor).compactMap { ProgressionPlanMapper.toDomain($0) }
+        return try modelContext.fetch(descriptor).compactMap { entity in
+            guard let plan = ProgressionPlanMapper.toDomain(entity) else {
+                print("\u{26A0}\u{FE0F} SwiftDataProgressionPlanRepository: dropping plan \(entity.id) (\(entity.name)) — failed to decode; it will not appear in the UI")
+                return nil
+            }
+            return plan
+        }
     }
 
     public func fetchActive() async throws -> ProgressionPlan? {
@@ -57,9 +63,9 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
                     attemptedUpdatedAt: plan.updatedAt
                 )
             }
-            ProgressionPlanMapper.updateEntity(existing, from: plan)
+            try ProgressionPlanMapper.updateEntity(existing, from: plan)
         } else {
-            let entity = ProgressionPlanMapper.toEntity(plan)
+            let entity = try ProgressionPlanMapper.toEntity(plan)
             modelContext.insert(entity)
         }
 
@@ -107,7 +113,7 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
 
         plan.adjustments.append(adjustment)
         plan.updatedAt = Date()
-        ProgressionPlanMapper.updateEntity(entity, from: plan)
+        try ProgressionPlanMapper.updateEntity(entity, from: plan)
         try modelContext.save()
     }
 
@@ -124,7 +130,7 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
         if let index = plan.exercises.firstIndex(where: { $0.id == exercise.id }) {
             plan.exercises[index] = exercise
             plan.updatedAt = Date()
-            ProgressionPlanMapper.updateEntity(entity, from: plan)
+            try ProgressionPlanMapper.updateEntity(entity, from: plan)
             try modelContext.save()
         }
     }
@@ -142,7 +148,7 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
         if let index = plan.blocks.firstIndex(where: { $0.id == block.id }) {
             plan.blocks[index] = block
             plan.updatedAt = Date()
-            ProgressionPlanMapper.updateEntity(entity, from: plan)
+            try ProgressionPlanMapper.updateEntity(entity, from: plan)
             try modelContext.save()
         }
     }
@@ -163,7 +169,7 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
                     plan.blocks[blockIndex].weeks[weekIndex].sessions[sessionIndex].completedWorkoutId = workoutId
                     plan.blocks[blockIndex].weeks[weekIndex].sessions[sessionIndex].completedAt = Date()
                     plan.updatedAt = Date()
-                    ProgressionPlanMapper.updateEntity(entity, from: plan)
+                    try ProgressionPlanMapper.updateEntity(entity, from: plan)
                     try modelContext.save()
                     return
                 }

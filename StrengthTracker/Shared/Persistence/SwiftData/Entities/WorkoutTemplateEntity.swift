@@ -109,21 +109,4 @@ public final class TemplateExerciseEntity {
         self.isWarmUp = isWarmUp
     }
 }
-
-@Model
-public final class TemplateFolderEntity {
-    @Attribute(.unique) public var id: UUID
-    public var name: String
-    public var sortOrder: Int
-
-    public init(
-        id: UUID,
-        name: String,
-        sortOrder: Int
-    ) {
-        self.id = id
-        self.name = name
-        self.sortOrder = sortOrder
-    }
-}
 #endif

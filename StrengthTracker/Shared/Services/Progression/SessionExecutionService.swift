@@ -1,8 +1,9 @@
 import Foundation
 
 /// Bridges planned sessions with actual workout execution.
-/// Handles session preparation (PlannedSession -> WorkoutTemplate),
-/// session completion with APRE adjustments, and 1RM estimation with EWMA smoothing.
+/// Handles session completion with APRE adjustments and 1RM estimation with EWMA smoothing.
+/// (Session preparation lives in ProgressionPlanViewModel.prepareSessionTemplate, which
+/// also handles linked-template merging.)
 ///
 /// Design notes (i8):
 /// - This service computes *ongoing* 1RM with EWMA smoothing for progressive updates.
@@ -25,59 +26,6 @@ public struct SessionExecutionService: Sendable {
     private let regressionThreshold: Double = 0.95
 
     public init() {}
-
-    // MARK: - Prepare Session
-
-    /// Converts a PlannedSession into a WorkoutTemplate ready for execution.
-    /// Each PlannedExerciseSet becomes a TemplateExercise with per-set weight targets.
-    public func prepareSession(
-        _ session: PlannedSession,
-        exercises: [Exercise] = []
-    ) -> WorkoutTemplate {
-        let exerciseLookup = Dictionary(exercises.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-
-        let templateExercises: [TemplateExercise] = session.plannedExercises.enumerated().map { index, planned in
-            let exercise = exerciseLookup[planned.exerciseId] ?? makeMinimalExercise(
-                id: planned.exerciseId,
-                name: planned.exerciseName
-            )
-
-            let setTargets = (0..<planned.sets).map { setIndex in
-                TemplateSetTarget(
-                    order: setIndex,
-                    targetReps: planned.targetReps,
-                    targetWeight: planned.targetWeight,
-                    setType: planned.isWarmup ? .warmup : .normal
-                )
-            }
-
-            return TemplateExercise(
-                id: planned.id,
-                exercise: exercise,
-                order: index,
-                supersetGroup: nil,
-                notes: planned.notes,
-                restTimerSeconds: planned.restSeconds,
-                targetSets: planned.sets,
-                targetReps: planned.targetReps,
-                targetWeight: planned.targetWeight,
-                targetDurationSeconds: nil,
-                targetDistanceMeters: nil,
-                setTargets: setTargets,
-                isWarmUp: planned.isWarmup
-            )
-        }
-
-        return WorkoutTemplate(
-            id: UUID(),
-            name: session.sessionLabel,
-            notes: session.notes,
-            sortOrder: 0,
-            lastUsedAt: nil,
-            timesUsed: 0,
-            exercises: templateExercises
-        )
-    }
 
     // MARK: - Complete Session
 
@@ -246,21 +194,5 @@ public struct SessionExecutionService: Sendable {
         }
 
         return bestEstimate > 0 ? bestEstimate.rounded(toNearest: 2.5) : nil
-    }
-
-    // MARK: - Helpers
-
-    private func makeMinimalExercise(id: UUID, name: String) -> Exercise {
-        Exercise(
-            id: id,
-            name: name,
-            primaryMuscleGroup: .other,
-            secondaryMuscleGroups: [],
-            category: .barbell,
-            exerciseType: .weightedReps,
-            instructions: nil,
-            isCustom: false,
-            isArchived: false
-        )
     }
 }

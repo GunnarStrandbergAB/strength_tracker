@@ -68,7 +68,28 @@ public enum AnalyticsCalculations {
         }
     }
 
+    // MARK: - Time Windows
+
+    /// Canonical analysis windows shared across analytics services so "recent"
+    /// means the same thing everywhere.
+    public enum Windows {
+        /// Acute training load window (ACWR numerator)
+        public static let acuteLoadDays = 7
+        /// Chronic training load window (ACWR denominator)
+        public static let chronicLoadDays = 28
+        /// Default lookback for volume landmarks / plateau analysis
+        public static let recentWeeks = 4
+        /// Lookback for current recovery state
+        public static let recoveryLookbackWeeks = 2
+    }
+
     // MARK: - Volume Attribution
+    //
+    // Two attribution policies, one per metric:
+    // - kg-volume (muscle balance): 70% primary, 30% split across secondaries.
+    // - hard-set credits (volume landmarks, recovery): 1.0 primary per set,
+    //   0.5 per set split across secondaries (MEV/MRV literature convention).
+    // All services must go through these helpers so the policies can't drift.
 
     /// Attribute volume across primary (70%) and secondary (30% split) muscle groups.
     public static func attributeVolume(
@@ -82,6 +103,23 @@ public enum AnalyticsCalculations {
         let secondaryShare = volume * 0.3 / Double(max(secondaryCount, 1))
         for muscle in secondaryMuscles {
             result[muscle, default: 0] += secondaryShare
+        }
+        return result
+    }
+
+    /// Attribute hard-set credits: primary muscle gets 1.0 per set, secondaries
+    /// split 0.5 per set equally.
+    public static func attributeHardSetCredits(
+        hardSets: Int,
+        primaryMuscle: MuscleGroup,
+        secondaryMuscles: [MuscleGroup]
+    ) -> [MuscleGroup: Double] {
+        var result: [MuscleGroup: Double] = [:]
+        result[primaryMuscle] = Double(hardSets)
+        let secondaryCount = max(secondaryMuscles.count, 1)
+        let creditPerSecondary = Double(hardSets) * 0.5 / Double(secondaryCount)
+        for muscle in secondaryMuscles {
+            result[muscle, default: 0] += creditPerSecondary
         }
         return result
     }

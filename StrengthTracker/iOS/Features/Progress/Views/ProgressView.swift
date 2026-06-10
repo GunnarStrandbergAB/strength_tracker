@@ -34,7 +34,7 @@ struct ExerciseProgressView: View {
 
             if viewModel.selectedExercise != nil {
                 Section {
-                    ExerciseProgressChart(data: viewModel.progressionData)
+                    ExerciseProgressChart(data: viewModel.progressionData, weightUnit: viewModel.weightUnit)
                 } header: {
                     Text("Weight Progression")
                 }
@@ -42,7 +42,7 @@ struct ExerciseProgressView: View {
                 Section {
                     if let best = viewModel.bestWeight {
                         LabeledContent("Best Weight") {
-                            Text(String(format: "%.1f kg", best))
+                            Text(viewModel.weightUnit.format(best, decimals: 1))
                                 .fontWeight(.semibold)
                         }
                     }
@@ -54,13 +54,13 @@ struct ExerciseProgressView: View {
                     }
                     if let e1rm = viewModel.estimated1RM {
                         LabeledContent("Est. 1RM") {
-                            Text(String(format: "%.1f kg", e1rm))
+                            Text(viewModel.weightUnit.format(e1rm, decimals: 1))
                                 .fontWeight(.semibold)
                                 .foregroundStyle(.blue)
                         }
                     }
                     LabeledContent("Total Volume") {
-                        Text(String(format: "%.0f kg", viewModel.totalVolume))
+                        Text(viewModel.weightUnit.format(viewModel.totalVolume, decimals: 0))
                             .fontWeight(.semibold)
                     }
                 } header: {

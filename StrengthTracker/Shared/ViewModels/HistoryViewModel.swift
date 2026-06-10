@@ -11,9 +11,14 @@ public final class HistoryViewModel {
     public var errorMessage: String? = nil
 
     private let workoutRepository: any WorkoutRepository
+    public let userPreferencesService: UserPreferencesService?
 
-    public init(workoutRepository: any WorkoutRepository) {
+    public init(
+        workoutRepository: any WorkoutRepository,
+        userPreferencesService: UserPreferencesService? = nil
+    ) {
         self.workoutRepository = workoutRepository
+        self.userPreferencesService = userPreferencesService
     }
 
     public func loadHistory() async {
@@ -79,11 +84,7 @@ public final class HistoryViewModel {
 
     public func toggleSetCompletion(exerciseId: UUID, setId: UUID) async {
         guard var workout = selectedWorkout,
-              let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
-              let si = workout.exercises[ei].sets.firstIndex(where: { $0.id == setId }) else { return }
-        let wasCompleted = workout.exercises[ei].sets[si].isCompleted
-        workout.exercises[ei].sets[si].isCompleted = !wasCompleted
-        workout.exercises[ei].sets[si].completedAt = wasCompleted ? nil : Date()
+              workout.toggleSetCompletion(exerciseId: exerciseId, setId: setId) != nil else { return }
         await saveAndSync(workout)
     }
 

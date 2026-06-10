@@ -85,20 +85,26 @@ struct StrengthTrackeriOSApp: App {
             // Watch already saves HKWorkout with sensor-based calories — iPhone must NOT touch HealthKit
             let workoutRepo = container.workoutRepository
             let webhookService = container.webhookService
-            let progressionPlanRepo = container.progressionPlanRepository
+            let progressionPlanVM = container.progressionPlanViewModel
             container.connectivityManager.onWorkoutReceived = { workout, metadata in
                 Task { @MainActor in
                     do {
+                        // Guard against duplicate/out-of-order transfers: never let a
+                        // non-completed copy overwrite an already-completed stored workout.
+                        if let existing = try await workoutRepo.fetchAll().first(where: { $0.id == workout.id }),
+                           existing.completedAt != nil, workout.completedAt == nil {
+                            return
+                        }
                         _ = try await workoutRepo.save(workout)
                         await webhookService.send(workout)
 
-                        // Mark planned session completed if Watch sent session/plan IDs
+                        // Run the adaptive completion pipeline if Watch sent session/plan IDs
                         if let sessionIdStr = metadata?["plannedSessionId"],
                            let planIdStr = metadata?["plannedPlanId"],
                            let sessionId = UUID(uuidString: sessionIdStr),
                            let planId = UUID(uuidString: planIdStr) {
-                            try? await progressionPlanRepo.markSessionCompleted(
-                                sessionId, workoutId: workout.id, inPlan: planId
+                            await progressionPlanVM.handleSessionCompleted(
+                                sessionId: sessionId, planId: planId, workoutId: workout.id
                             )
                         }
                     } catch {
@@ -334,45 +340,32 @@ struct ContentViewWrapper: View {
                 )
             }
 
-            // Supplement with volume trend if room remains (calendar-week, bodyweight-aware)
+            // Supplement with volume trend if room remains (calendar-week, bodyweight-aware).
+            // Uses the same week-split as the widget payload so the numbers always agree.
             if highlights.count < 3 {
-                let now = Date()
-                let calendar = Calendar.mondayStart
                 let completedWorkouts = workouts.filter { $0.completedAt != nil }
+                let (thisWeekWorkouts, lastWeekWorkouts) = widgetService.weeklyWorkoutSplit(from: completedWorkouts)
 
-                if let currentWeekInterval = calendar.dateInterval(of: .weekOfYear, for: now) {
-                    let previousWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: currentWeekInterval.start)!
-                    let previousWeekInterval = calendar.dateInterval(of: .weekOfYear, for: previousWeekStart)
+                let thisWeekVol = thisWeekWorkouts.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
+                let lastWeekVol = lastWeekWorkouts.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
 
-                    let thisWeekWorkouts = completedWorkouts
-                        .filter { currentWeekInterval.contains($0.completedAt ?? .distantPast) }
-                    let lastWeekWorkouts = completedWorkouts
-                        .filter { previousWeekInterval?.contains($0.completedAt ?? .distantPast) ?? false }
-
-                    let thisWeekVol = thisWeekWorkouts.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
-                    let lastWeekVol = lastWeekWorkouts.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
-
-                    let thisCount = thisWeekWorkouts.count
-                    let lastCount = lastWeekWorkouts.count
-
-                    // Compare per-session averages to avoid misleading partial-week comparisons
-                    if thisCount > 0 && lastCount > 0 {
-                        let thisAvg = thisWeekVol / Double(thisCount)
-                        let lastAvg = lastWeekVol / Double(lastCount)
-                        let pct = ((thisAvg - lastAvg) / lastAvg) * 100
-                        if pct > 0 {
-                            highlights.append(AnalyticsHighlight(
-                                type: .improvement,
-                                title: "Volume Up",
-                                detail: "+\(Int(pct))% avg/session vs last week"
-                            ))
-                        } else if pct < -5 {
-                            highlights.append(AnalyticsHighlight(
-                                type: .warning,
-                                title: "Volume Down",
-                                detail: "\(Int(pct))% avg/session vs last week"
-                            ))
-                        }
+                // Compare per-session averages to avoid misleading partial-week comparisons
+                if !thisWeekWorkouts.isEmpty && !lastWeekWorkouts.isEmpty {
+                    let thisAvg = thisWeekVol / Double(thisWeekWorkouts.count)
+                    let lastAvg = lastWeekVol / Double(lastWeekWorkouts.count)
+                    let pct = ((thisAvg - lastAvg) / lastAvg) * 100
+                    if pct > 0 {
+                        highlights.append(AnalyticsHighlight(
+                            type: .improvement,
+                            title: "Volume Up",
+                            detail: "+\(Int(pct))% avg/session vs last week"
+                        ))
+                    } else if pct < -5 {
+                        highlights.append(AnalyticsHighlight(
+                            type: .warning,
+                            title: "Volume Down",
+                            detail: "\(Int(pct))% avg/session vs last week"
+                        ))
                     }
                 }
             }

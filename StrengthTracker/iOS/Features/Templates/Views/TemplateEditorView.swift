@@ -55,7 +55,7 @@ struct TemplateEditorView: View {
                         Button {
                             activeSheet = .exerciseConfig(index)
                         } label: {
-                            TemplateExerciseEditorRowView(templateExercise: exercises[index])
+                            TemplateExerciseEditorRowView(templateExercise: exercises[index], weightUnit: viewModel.weightUnit)
                         }
                         .buttonStyle(.plain)
                     }
@@ -141,6 +141,7 @@ struct TemplateEditorView: View {
                     if exercises.indices.contains(index) {
                         TemplateExerciseConfigView(
                             templateExercise: exercises[index],
+                            weightUnit: viewModel.weightUnit,
                             onSave: { updated in
                                 exercises[index] = updated
                                 activeSheet = nil
@@ -195,6 +196,7 @@ struct TemplateEditorView: View {
 
 private struct TemplateExerciseEditorRowView: View {
     let templateExercise: TemplateExercise
+    var weightUnit: WeightUnit = .kg
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -222,7 +224,7 @@ private struct TemplateExerciseEditorRowView: View {
     }
 
     private var targetsSummary: String {
-        compactTargetSummary(for: templateExercise)
+        compactTargetSummary(for: templateExercise, weightUnit: weightUnit)
     }
 }
 
@@ -230,6 +232,7 @@ private struct TemplateExerciseEditorRowView: View {
 
 private struct TemplateExerciseConfigView: View {
     let templateExercise: TemplateExercise
+    let weightUnit: WeightUnit
     let onSave: (TemplateExercise) -> Void
     let onCancel: () -> Void
 
@@ -246,8 +249,9 @@ private struct TemplateExerciseConfigView: View {
     private var showsDuration: Bool { exerciseType == .duration }
     private var showsDistance: Bool { exerciseType == .cardio || exerciseType == .weightedCardio }
 
-    init(templateExercise: TemplateExercise, onSave: @escaping (TemplateExercise) -> Void, onCancel: @escaping () -> Void) {
+    init(templateExercise: TemplateExercise, weightUnit: WeightUnit = .kg, onSave: @escaping (TemplateExercise) -> Void, onCancel: @escaping () -> Void) {
         self.templateExercise = templateExercise
+        self.weightUnit = weightUnit
         self.onSave = onSave
         self.onCancel = onCancel
 
@@ -299,7 +303,8 @@ private struct TemplateExerciseConfigView: View {
                             showsReps: showsReps,
                             showsWeight: showsWeight,
                             showsDuration: showsDuration,
-                            showsDistance: showsDistance
+                            showsDistance: showsDistance,
+                            weightUnit: weightUnit
                         )
                     }
                 }
@@ -417,22 +422,24 @@ private struct SetTargetRow: View {
     let showsWeight: Bool
     let showsDuration: Bool
     let showsDistance: Bool
+    let weightUnit: WeightUnit
 
     @State private var repsText: String
     @State private var weightText: String
     @State private var durationText: String
     @State private var distanceText: String
 
-    init(index: Int, target: Binding<TemplateSetTarget>, showsReps: Bool, showsWeight: Bool, showsDuration: Bool, showsDistance: Bool) {
+    init(index: Int, target: Binding<TemplateSetTarget>, showsReps: Bool, showsWeight: Bool, showsDuration: Bool, showsDistance: Bool, weightUnit: WeightUnit = .kg) {
         self.index = index
         self._target = target
         self.showsReps = showsReps
         self.showsWeight = showsWeight
         self.showsDuration = showsDuration
         self.showsDistance = showsDistance
+        self.weightUnit = weightUnit
         let t = target.wrappedValue
         _repsText = State(initialValue: t.targetReps.map { String($0) } ?? "")
-        _weightText = State(initialValue: t.targetWeight.map { String(format: "%g", $0) } ?? "")
+        _weightText = State(initialValue: t.targetWeight.map { weightUnit.formatValue($0) } ?? "")
         _durationText = State(initialValue: t.targetDurationSeconds.map { String($0) } ?? "")
         _distanceText = State(initialValue: t.targetDistanceMeters.map { String(format: "%g", $0) } ?? "")
     }
@@ -458,14 +465,14 @@ private struct SetTargetRow: View {
             }
 
             if showsWeight {
-                TextField("kg", text: $weightText)
+                TextField(weightUnit.symbol, text: $weightText)
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 64)
                     .onChange(of: weightText) { _, newValue in
-                        target.targetWeight = Double(newValue)
+                        target.targetWeight = Double(newValue).map { weightUnit.toKg($0) }
                     }
-                Text("kg")
+                Text(weightUnit.symbol)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -545,7 +552,7 @@ private struct SetTargetRow: View {
 
 // MARK: - Compact Target Summary
 
-private func compactTargetSummary(for te: TemplateExercise) -> String {
+private func compactTargetSummary(for te: TemplateExercise, weightUnit: WeightUnit = .kg) -> String {
     let targets = te.setTargets
     let sets = te.targetSets
 
@@ -553,7 +560,7 @@ private func compactTargetSummary(for te: TemplateExercise) -> String {
     guard !targets.isEmpty else {
         var parts: [String] = ["\(sets) sets"]
         if let reps = te.targetReps { parts.append("\(reps) reps") }
-        if let w = te.targetWeight { parts.append("\(formatWeight(w)) kg") }
+        if let w = te.targetWeight { parts.append(weightUnit.format(w)) }
         if let d = te.targetDurationSeconds { parts.append("\(d)s") }
         if let dist = te.targetDistanceMeters { parts.append("\(Int(dist))m") }
         return parts.joined(separator: " \u{00B7} ")
@@ -576,8 +583,8 @@ private func compactTargetSummary(for te: TemplateExercise) -> String {
     // Weight portion
     if !weights.isEmpty {
         let allSame = Set(weights).count == 1
-        let wStr = allSame ? formatWeight(weights[0]) : weights.map { formatWeight($0) }.joined(separator: "/")
-        result += " @ \(wStr) kg"
+        let wStr = allSame ? weightUnit.formatValue(weights[0]) : weights.map { weightUnit.formatValue($0) }.joined(separator: "/")
+        result += " @ \(wStr) \(weightUnit.symbol)"
     }
 
     // Duration
@@ -595,10 +602,6 @@ private func compactTargetSummary(for te: TemplateExercise) -> String {
     }
 
     return result
-}
-
-private func formatWeight(_ w: Double) -> String {
-    w.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(w)) : String(format: "%.1f", w)
 }
 
 #endif

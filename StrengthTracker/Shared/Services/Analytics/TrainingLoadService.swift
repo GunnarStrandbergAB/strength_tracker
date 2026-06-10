@@ -109,8 +109,8 @@ public enum TrainingLoadService {
     ) -> [String: Double] {
         let now = Date()
         let calendar = Calendar.current
-        guard let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: now),
-              let twentyEightDaysAgo = calendar.date(byAdding: .day, value: -28, to: now) else {
+        guard let sevenDaysAgo = calendar.date(byAdding: .day, value: -AnalyticsCalculations.Windows.acuteLoadDays, to: now),
+              let twentyEightDaysAgo = calendar.date(byAdding: .day, value: -AnalyticsCalculations.Windows.chronicLoadDays, to: now) else {
             return [:]
         }
 

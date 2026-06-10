@@ -62,7 +62,7 @@ struct TemplateDetailView: View {
 
             Section("Exercises") {
                 ForEach(template.exercises.sorted(by: { $0.order < $1.order })) { templateExercise in
-                    TemplateExerciseRowView(templateExercise: templateExercise)
+                    TemplateExerciseRowView(templateExercise: templateExercise, weightUnit: viewModel.weightUnit)
                 }
             }
 
@@ -122,6 +122,7 @@ struct TemplateDetailView: View {
 
 private struct TemplateExerciseRowView: View {
     let templateExercise: TemplateExercise
+    var weightUnit: WeightUnit = .kg
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -162,7 +163,7 @@ private struct TemplateExerciseRowView: View {
         guard !targets.isEmpty else {
             var parts: [String] = ["\(sets) sets"]
             if let reps = te.targetReps { parts.append("\(reps) reps") }
-            if let w = te.targetWeight { parts.append("\(detailFormatWeight(w)) kg") }
+            if let w = te.targetWeight { parts.append(weightUnit.format(w)) }
             if let d = te.targetDurationSeconds { parts.append("\(d)s") }
             if let dist = te.targetDistanceMeters { parts.append("\(Int(dist))m") }
             return parts.joined(separator: " \u{00B7} ")
@@ -183,8 +184,8 @@ private struct TemplateExerciseRowView: View {
 
         if !weights.isEmpty {
             let allSame = Set(weights).count == 1
-            let wStr = allSame ? detailFormatWeight(weights[0]) : weights.map { detailFormatWeight($0) }.joined(separator: "/")
-            result += " @ \(wStr) kg"
+            let wStr = allSame ? weightUnit.formatValue(weights[0]) : weights.map { weightUnit.formatValue($0) }.joined(separator: "/")
+            result += " @ \(wStr) \(weightUnit.symbol)"
         }
 
         if !durations.isEmpty && weights.isEmpty {
@@ -200,10 +201,6 @@ private struct TemplateExerciseRowView: View {
         }
 
         return result
-    }
-
-    private func detailFormatWeight(_ w: Double) -> String {
-        w.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(w)) : String(format: "%.1f", w)
     }
 }
 #endif

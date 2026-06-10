@@ -119,6 +119,7 @@ struct DashboardView: View {
                     // Stats Carousel
                     StatsCarouselView(
                         formattedVolume: viewModel.formattedVolume(),
+                        volumeUnit: viewModel.weightUnit.symbol.uppercased(),
                         formattedAvgSessions: viewModel.formattedAvgSessions(),
                         formattedDuration: viewModel.formattedDuration()
                     )

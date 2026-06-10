@@ -211,10 +211,12 @@ struct CalorieEstimationServiceTests {
         #expect(factor == 0.06)
     }
 
-    @Test("EPOC factor is 15% for max RPE")
+    @Test("EPOC factor is capped at 10% for max RPE")
     func epocMaximum() {
+        // EPOC is deliberately capped at 10% (literature upper bound for
+        // resistance training), so max RPE yields 0.10, not the nominal 0.15.
         let factor = service.calculateEpocFactor(averageRPE: 10.0, compoundRatio: 0)
-        #expect(factor == 0.15)
+        #expect(factor == 0.10)
     }
 
     @Test("EPOC factor scales with RPE")
@@ -229,7 +231,8 @@ struct CalorieEstimationServiceTests {
         let allCompound = service.calculateEpocFactor(averageRPE: nil, compoundRatio: 1.0)
         let allIsolation = service.calculateEpocFactor(averageRPE: nil, compoundRatio: 0.0)
         #expect(allCompound > allIsolation)
-        #expect(allCompound == 0.15)
+        // All-compound hits the deliberate 10% EPOC cap (literature upper bound)
+        #expect(allCompound == 0.10)
         #expect(allIsolation == 0.06)
     }
 

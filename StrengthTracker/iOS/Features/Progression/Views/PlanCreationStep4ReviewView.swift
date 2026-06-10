@@ -90,7 +90,7 @@ struct PlanCreationStep5ReviewView: View {
                                     .foregroundStyle(STColors.textPrimary)
                                 Spacer()
                                 if draft.oneRM > 0 {
-                                    Text("\(Int(draft.oneRM)) kg")
+                                    Text(viewModel.weightUnit.format(draft.oneRM, decimals: 0))
                                         .font(.system(size: 13))
                                         .foregroundStyle(STColors.textSecondary)
                                 } else {

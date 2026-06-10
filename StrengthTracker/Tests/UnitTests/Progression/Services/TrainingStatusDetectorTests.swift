@@ -232,12 +232,16 @@ final class TrainingStatusDetectorTests: XCTestCase {
 
     func testDetect_19Months201Workouts_highFrequency_advanced() async throws {
         // > 18 months, > 200 workouts, freq >= 3.0 -> advanced
-        let earlyWorkouts = generateWorkouts(count: 161, startingMonthsAgo: 19, endingMonthsAgo: 3)
+        // Note: completedAt is startedAt + 1h, so a history starting exactly
+        // 19 months ago truncates to 18 full calendar months and fails the
+        // strict "> 18 months" check. Start 20 months ago to be clearly past
+        // the boundary (monthsTraining = 19 > 18).
+        let earlyWorkouts = generateWorkouts(count: 161, startingMonthsAgo: 20, endingMonthsAgo: 3)
         let recentWorkouts = generateWorkouts(count: 40, startingMonthsAgo: 3)
         let allWorkouts = earlyWorkouts + recentWorkouts
         let sut = makeSUT(workouts: allWorkouts)
         let status = try await sut.detect()
-        // 201 workouts, 19 months, freq = 40/13 ~3.1 -> advanced
+        // 201 workouts, >18 months, freq = 40/13 ~3.1 -> advanced
         XCTAssertEqual(status, .advanced)
     }
 

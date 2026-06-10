@@ -8,6 +8,8 @@ struct SetRowGridView: View {
     let previousText: String?
     let weightSuggestion: WeightSuggestion?
     let showRPE: Bool
+    /// Display/input unit. Stored weights are always kg; text fields show and accept this unit.
+    let weightUnit: WeightUnit
     let onWeightChange: (Double?) -> Void
     let onRepsChange: (Int?) -> Void
     let onRPEChange: ((Double?) -> Void)?
@@ -34,6 +36,7 @@ struct SetRowGridView: View {
         previousText: String? = nil,
         weightSuggestion: WeightSuggestion? = nil,
         showRPE: Bool = false,
+        weightUnit: WeightUnit = .kg,
         onWeightChange: @escaping (Double?) -> Void,
         onRepsChange: @escaping (Int?) -> Void,
         onRPEChange: ((Double?) -> Void)? = nil,
@@ -45,6 +48,7 @@ struct SetRowGridView: View {
         self.previousText = previousText
         self.weightSuggestion = weightSuggestion
         self.showRPE = showRPE
+        self.weightUnit = weightUnit
         self.onWeightChange = onWeightChange
         self.onRepsChange = onRepsChange
         self.onRPEChange = onRPEChange
@@ -52,7 +56,7 @@ struct SetRowGridView: View {
         self.onSetTypeChange = onSetTypeChange
 
         _weightText = State(
-            initialValue: exerciseSet.weight.map { String(format: "%g", $0) } ?? ""
+            initialValue: exerciseSet.weight.map { weightUnit.formatValue($0) } ?? ""
         )
         _repsText = State(
             initialValue: exerciseSet.reps.map { String($0) } ?? ""
@@ -87,7 +91,7 @@ struct SetRowGridView: View {
 
                 if let suggestion = weightSuggestion,
                    !exerciseSet.isCompleted {
-                    Text("Try \(String(format: "%g", suggestion.weight)) kg")
+                    Text("Try \(weightUnit.format(suggestion.weight))")
                         .font(.system(size: 10))
                         .foregroundStyle(STColors.primary.opacity(0.8))
                         .lineLimit(1)
@@ -97,7 +101,7 @@ struct SetRowGridView: View {
 
             // KG column (3fr)
             STNumberField(
-                placeholder: exerciseSet.weight.map { String(format: "%g", $0) } ?? "0",
+                placeholder: exerciseSet.weight.map { weightUnit.formatValue($0) } ?? "0",
                 text: $weightText,
                 keyboardType: .decimalPad
             )
@@ -111,7 +115,7 @@ struct SetRowGridView: View {
                     if trimmed.isEmpty {
                         onWeightChange(nil)
                     } else if let value = Self.parseDouble(trimmed) {
-                        onWeightChange(value)
+                        onWeightChange(weightUnit.toKg(value))
                     }
                 }
             }
@@ -171,7 +175,7 @@ struct SetRowGridView: View {
 
                 let tw = weightText.trimmingCharacters(in: .whitespaces)
                 if tw.isEmpty { onWeightChange(nil) }
-                else if let w = Self.parseDouble(tw) { onWeightChange(w) }
+                else if let w = Self.parseDouble(tw) { onWeightChange(weightUnit.toKg(w)) }
 
                 let tr = repsText.trimmingCharacters(in: .whitespaces)
                 if tr.isEmpty { onRepsChange(nil) }
@@ -195,7 +199,7 @@ struct SetRowGridView: View {
 
             let tw = weightText.trimmingCharacters(in: .whitespaces)
             if tw.isEmpty { onWeightChange(nil) }
-            else if let w = Self.parseDouble(tw) { onWeightChange(w) }
+            else if let w = Self.parseDouble(tw) { onWeightChange(weightUnit.toKg(w)) }
 
             let tr = repsText.trimmingCharacters(in: .whitespaces)
             if tr.isEmpty { onRepsChange(nil) }

@@ -10,6 +10,11 @@ public final class WidgetDataService: Sendable {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
+    /// Serializes read-modify-write cycles on shared UserDefaults within this process.
+    /// (Cross-process races with the widget extension remain possible but are bounded
+    /// by UserDefaults' own atomicity per key.)
+    private let pendingCompletionsLock = NSLock()
+
     /// Write widget data to shared App Group UserDefaults
     public func updateWidgetData(_ data: WidgetData) {
         guard let defaults = UserDefaults(suiteName: WidgetData.appGroupId) else { return }
@@ -183,32 +188,33 @@ public final class WidgetDataService: Sendable {
         return trained
     }
 
-    private func calculateVolumeTrend(
-        from workouts: [Workout], calendar: Calendar, now: Date,
-        bodyWeightKg: Double = 70.0
-    ) -> (current: Double?, previous: Double?) {
-        // Calendar-week windows (Monday-start) to match dashboard
+    /// Splits completed workouts into the current and previous calendar week
+    /// (Monday-start). Single source of truth for week-windowing shared by the
+    /// widget payload and app-side highlight generation.
+    public func weeklyWorkoutSplit(
+        from workouts: [Workout], calendar: Calendar = .mondayStart, now: Date = Date()
+    ) -> (current: [Workout], previous: [Workout]) {
         guard let currentWeekInterval = calendar.dateInterval(of: .weekOfYear, for: now) else {
-            return (nil, nil)
+            return ([], [])
         }
         let previousWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: currentWeekInterval.start)!
         guard let previousWeekInterval = calendar.dateInterval(of: .weekOfYear, for: previousWeekStart) else {
-            return (nil, nil)
+            return ([], [])
         }
 
-        let thisWeekVolume = workouts
-            .filter {
-                let d = $0.completedAt ?? .distantPast
-                return currentWeekInterval.contains(d)
-            }
-            .reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) }
+        let current = workouts.filter { currentWeekInterval.contains($0.completedAt ?? .distantPast) }
+        let previous = workouts.filter { previousWeekInterval.contains($0.completedAt ?? .distantPast) }
+        return (current, previous)
+    }
 
-        let lastWeekVolume = workouts
-            .filter {
-                let d = $0.completedAt ?? .distantPast
-                return previousWeekInterval.contains(d)
-            }
-            .reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) }
+    /// Calendar-week (Monday-start) volume for the current and previous week.
+    public func calculateVolumeTrend(
+        from workouts: [Workout], calendar: Calendar = .mondayStart, now: Date = Date(),
+        bodyWeightKg: Double = 70.0
+    ) -> (current: Double?, previous: Double?) {
+        let (thisWeek, lastWeek) = weeklyWorkoutSplit(from: workouts, calendar: calendar, now: now)
+        let thisWeekVolume = thisWeek.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) }
+        let lastWeekVolume = lastWeek.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) }
 
         return (
             thisWeekVolume > 0 ? thisWeekVolume : nil,
@@ -312,8 +318,11 @@ public final class WidgetDataService: Sendable {
         defaults.removeObject(forKey: WidgetData.pendingCompletionsKey)
     }
 
-    /// Append a pending completion (used by widget intents)
+    /// Append a pending completion (used by widget intents).
+    /// Locked: two rapid widget taps would otherwise lose the first append.
     public func appendPendingCompletion(_ completion: WidgetPendingCompletion) {
+        pendingCompletionsLock.lock()
+        defer { pendingCompletionsLock.unlock() }
         var existing = readPendingCompletions()
         existing.append(completion)
         guard let defaults = UserDefaults(suiteName: WidgetData.appGroupId),

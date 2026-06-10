@@ -18,7 +18,8 @@ struct WatchSetInputView: View {
     init(viewModel: WatchWorkoutViewModel, targetWeight: Double? = nil, targetReps: Int? = nil) {
         let prefs = UserPreferencesService()
         self._viewModel = State(initialValue: viewModel)
-        self._weight = State(initialValue: targetWeight ?? 20.0)
+        // targetWeight is stored in kg; the crown/steppers operate in the display unit.
+        self._weight = State(initialValue: prefs.weightUnit.fromKg(targetWeight ?? 20.0))
         self._reps = State(initialValue: Double(targetReps ?? prefs.defaultReps))
         self.weightUnit = prefs.weightUnit
     }
@@ -42,7 +43,7 @@ struct WatchSetInputView: View {
                     onIncrement: { weight += weightStep }
                 )
                 .focused($focusedField, equals: .weight)
-                .digitalCrownRotation($weight, from: 0, through: 500, by: weightStep)
+                .digitalCrownRotation($weight, from: 0, through: weightUnit == .kg ? 500 : 1100, by: weightStep)
 
                 // Reps card
                 inputCard(
@@ -92,11 +93,13 @@ struct WatchSetInputView: View {
 
                 // FINISH SET / UPDATE
                 Button {
+                    // Convert the displayed value back to kg for storage.
+                    let weightKg = weightUnit.toKg(weight)
                     if viewModel.isEditingCompletedSet {
-                        viewModel.updateSet(weight: weight, reps: Int(reps))
+                        viewModel.updateSet(weight: weightKg, reps: Int(reps))
                     } else {
                         Task {
-                            try? await viewModel.logSet(weight: weight, reps: Int(reps))
+                            try? await viewModel.logSet(weight: weightKg, reps: Int(reps))
                         }
                     }
                 } label: {

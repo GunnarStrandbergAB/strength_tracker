@@ -18,6 +18,7 @@ struct ExerciseCardView: View {
     let onMoveSet: ((Int, Int) -> Void)?
     let coachingData: ExerciseCoachingData?
     let alwaysShowRPE: Bool
+    let weightUnit: WeightUnit
 
     @State private var isReorderingSets: Bool = false
     @State private var isEditingNote: Bool = false
@@ -40,7 +41,8 @@ struct ExerciseCardView: View {
         onNoteChange: ((String) -> Void)? = nil,
         onMoveSet: ((Int, Int) -> Void)? = nil,
         coachingData: ExerciseCoachingData? = nil,
-        alwaysShowRPE: Bool = false
+        alwaysShowRPE: Bool = false,
+        weightUnit: WeightUnit = .kg
     ) {
         self.workoutExercise = workoutExercise
         self.isActiveExercise = isActiveExercise
@@ -57,6 +59,7 @@ struct ExerciseCardView: View {
         self.onMoveSet = onMoveSet
         self.coachingData = coachingData
         self.alwaysShowRPE = alwaysShowRPE
+        self.weightUnit = weightUnit
         self._noteText = State(initialValue: workoutExercise.notes ?? "")
         self._isEditingNote = State(initialValue: workoutExercise.notes != nil && !workoutExercise.notes!.isEmpty)
         // Show RPE column if setting is on or any set already has RPE data
@@ -119,6 +122,7 @@ struct ExerciseCardView: View {
                         previousText: previousSetData[index],
                         weightSuggestion: coachingData?.suggestions[index],
                         showRPE: showRPE,
+                        weightUnit: weightUnit,
                         onWeightChange: { weight in
                             onWeightChange(exerciseSet.id, weight)
                         },
@@ -229,7 +233,7 @@ struct ExerciseCardView: View {
             STColumnHeader(title: "PREVIOUS", alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            STColumnHeader(title: "KG")
+            STColumnHeader(title: weightUnit.symbol.uppercased())
                 .frame(width: 72)
 
             STColumnHeader(title: "REPS")
@@ -364,7 +368,7 @@ struct ExerciseCardView: View {
     }
 
     private func setSummary(_ set: ExerciseSet) -> String {
-        let weight = set.weight.map { String(format: "%g", $0) + " kg" } ?? "–"
+        let weight = set.weight.map { weightUnit.format($0) } ?? "–"
         let reps = set.reps.map { "\($0) reps" } ?? "–"
         return "\(weight) × \(reps)"
     }

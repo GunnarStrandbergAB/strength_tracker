@@ -46,6 +46,9 @@ public final class WorkoutAnalyticsViewModel {
     private let proFeatureGate: ProFeatureGate?
     private let adherenceService: AdherenceAnalysisService?
     private let coachingInsightService: CoachingInsightService?
+    public let userPreferencesService: UserPreferencesService?
+
+    public var weightUnit: WeightUnit { userPreferencesService?.weightUnit ?? .kg }
 
     private var lastInsightsLoadTime: Date?
 
@@ -60,7 +63,8 @@ public final class WorkoutAnalyticsViewModel {
         workoutRepository: (any WorkoutRepository)? = nil,
         proFeatureGate: ProFeatureGate? = nil,
         adherenceService: AdherenceAnalysisService? = nil,
-        coachingInsightService: CoachingInsightService? = nil
+        coachingInsightService: CoachingInsightService? = nil,
+        userPreferencesService: UserPreferencesService? = nil
     ) {
         self.analyticsService = analyticsService
         self.qualityScoreService = qualityScoreService
@@ -69,6 +73,7 @@ public final class WorkoutAnalyticsViewModel {
         self.proFeatureGate = proFeatureGate
         self.adherenceService = adherenceService
         self.coachingInsightService = coachingInsightService
+        self.userPreferencesService = userPreferencesService
     }
 
     // MARK: - Dashboard (loads WorkoutInsights aggregate)
@@ -100,44 +105,7 @@ public final class WorkoutAnalyticsViewModel {
             nextFeatureUnlock = try? await featureGate.nextUnlock()
 
             // Always generate insights (workoutCount is always useful)
-            var rawInsights = try await analyticsService.generateInsights()
-
-            // Gate quality score data
-            if !unlockedFeatures.contains(.qualityScore) {
-                rawInsights = WorkoutInsights(
-                    generatedAt: rawInsights.generatedAt,
-                    workoutCount: rawInsights.workoutCount,
-                    plateaus: [],
-                    muscleBalance: nil,
-                    recommendations: [],
-                    recoveryPatterns: rawInsights.recoveryPatterns,
-                    optimalVolumes: rawInsights.optimalVolumes
-                )
-            }
-
-            // Enforce feature gate: only include data for unlocked features
-            if !unlockedFeatures.contains(.plateauDetection) {
-                rawInsights = WorkoutInsights(
-                    generatedAt: rawInsights.generatedAt,
-                    workoutCount: rawInsights.workoutCount,
-                    plateaus: [],
-                    muscleBalance: rawInsights.muscleBalance,
-                    recommendations: rawInsights.recommendations,
-                    recoveryPatterns: rawInsights.recoveryPatterns,
-                    optimalVolumes: rawInsights.optimalVolumes
-                )
-            }
-            if !unlockedFeatures.contains(.muscleBalance) {
-                rawInsights = WorkoutInsights(
-                    generatedAt: rawInsights.generatedAt,
-                    workoutCount: rawInsights.workoutCount,
-                    plateaus: rawInsights.plateaus,
-                    muscleBalance: nil,
-                    recommendations: rawInsights.recommendations,
-                    recoveryPatterns: rawInsights.recoveryPatterns,
-                    optimalVolumes: rawInsights.optimalVolumes
-                )
-            }
+            let rawInsights = applyFeatureGates(try await analyticsService.generateInsights())
 
             insights = rawInsights
             errorMessage = nil
@@ -190,6 +158,38 @@ public final class WorkoutAnalyticsViewModel {
             errorMessage = "Failed to load insights: \(error.localizedDescription)"
             insights = .empty
         }
+    }
+
+    /// Strips data for locked features in a single pass.
+    /// (Replaces the previous chain of full-struct re-inits, where each step
+    /// silently dropped fields it didn't copy over.)
+    private func applyFeatureGates(_ raw: WorkoutInsights) -> WorkoutInsights {
+        let quality = unlockedFeatures.contains(.qualityScore)
+        return WorkoutInsights(
+            generatedAt: raw.generatedAt,
+            workoutCount: raw.workoutCount,
+            plateaus: quality && unlockedFeatures.contains(.plateauDetection) ? raw.plateaus : [],
+            muscleBalance: quality && unlockedFeatures.contains(.muscleBalance) ? raw.muscleBalance : nil,
+            recommendations: quality ? raw.recommendations : [],
+            recoveryPatterns: raw.recoveryPatterns,
+            optimalVolumes: raw.optimalVolumes,
+            trainingLoad: quality ? raw.trainingLoad : nil,
+            overloadTrends: quality ? raw.overloadTrends : [],
+            deloadRecommendation: quality ? raw.deloadRecommendation : nil,
+            trainingDrift: quality ? raw.trainingDrift : nil,
+            trainingPhase: quality ? raw.trainingPhase : nil,
+            blockComparison: quality ? raw.blockComparison : nil,
+            anomalies: quality ? raw.anomalies : [],
+            highlights: quality ? raw.highlights : [],
+            archetypes: unlockedFeatures.contains(.archetypeClustering) ? raw.archetypes : [],
+            trainingFingerprint: unlockedFeatures.contains(.trainingFingerprint) ? raw.trainingFingerprint : nil,
+            timeOfDayAnalysis: unlockedFeatures.contains(.timeOfDayAnalysis) ? raw.timeOfDayAnalysis : nil
+        )
+    }
+
+    /// First archetype not performed in 14+ days — surfaced as a "neglected workout type" nudge.
+    public var staleArchetype: WorkoutArchetype? {
+        insights.archetypes.first { ($0.daysSinceLastPerformed ?? 0) >= 14 }
     }
 
     // MARK: - Per-Workout (outside aggregate)
@@ -266,7 +266,7 @@ public final class WorkoutAnalyticsViewModel {
     }
 
     public func formatSlope(_ slope: Double) -> String {
-        String(format: "%+.1f kg/wk", slope)
+        String(format: "%+.1f %@/wk", weightUnit.fromKg(slope), weightUnit.symbol)
     }
 
     // MARK: - Feature Gate Helpers
@@ -319,17 +319,14 @@ public final class WorkoutAnalyticsViewModel {
         case .preWorkoutContext: return "Pre-Workout Context"
         case .plateauDetection: return "Plateau Detection"
         case .archetypeClustering: return "Workout Archetypes"
-        case .achievements: return "Achievements"
         case .sequencePrediction: return "Sequence Prediction"
         case .workoutSuggestion: return "Workout Suggestions"
         case .muscleBalance: return "Muscle Balance"
         case .recoveryTimeline: return "Recovery Timeline"
         case .advancedInsights: return "Advanced Insights"
-        case .trajectoryAnalysis: return "Training Trajectory"
         case .trainingFingerprint: return "Training Fingerprint"
         case .muscleNeglect: return "Muscle Neglect Detection"
         case .timeOfDayAnalysis: return "Time-of-Day Analysis"
-        case .changePointDetection: return "Change Point Detection"
         }
     }
 
@@ -347,17 +344,14 @@ public final class WorkoutAnalyticsViewModel {
         case .preWorkoutContext: return "Recovery and load status before training"
         case .plateauDetection: return "Spot exercises where progress has stalled"
         case .archetypeClustering: return "Identify your distinct workout types"
-        case .achievements: return "Earn badges for training milestones"
         case .sequencePrediction: return "Predict your likely next workout type"
         case .workoutSuggestion: return "Recovery-aware next workout suggestion"
         case .muscleBalance: return "Check if opposing muscle groups are trained evenly"
         case .recoveryTimeline: return "Optimal rest days between sessions"
         case .advancedInsights: return "Deep analysis across your full training history"
-        case .trajectoryAnalysis: return "Track how your training is changing over time"
         case .trainingFingerprint: return "Your training variety and consistency profile"
         case .muscleNeglect: return "Detect declining volume in muscle groups"
         case .timeOfDayAnalysis: return "Find your optimal training window"
-        case .changePointDetection: return "Identify major shifts in your training"
         }
     }
 }

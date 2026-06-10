@@ -45,7 +45,8 @@ public final class AdherenceAnalysisService: Sendable {
         // Gap analysis
         let dates = completed.compactMap(\.completedAt).sorted()
         var gaps: [Double] = []
-        for i in 1..<dates.count {
+        // indices.dropFirst() — `1..<dates.count` traps on an empty history
+        for i in dates.indices.dropFirst() {
             gaps.append(dates[i].timeIntervalSince(dates[i - 1]) / 86400)
         }
         let avgGap = gaps.isEmpty ? 0 : gaps.reduce(0, +) / Double(gaps.count)

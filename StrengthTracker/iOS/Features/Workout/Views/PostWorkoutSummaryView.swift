@@ -4,6 +4,7 @@ import StrengthTrackerShared
 
 struct PostWorkoutSummaryView: View {
     let debrief: PostWorkoutDebrief
+    var weightUnit: WeightUnit = .kg
     let onDismiss: () -> Void
 
     @State private var showContent = false
@@ -62,7 +63,7 @@ struct PostWorkoutSummaryView: View {
                 statPill(label: "\(debrief.totalSets) sets", icon: "number")
             }
 
-            Text("Total: \(formatVolume(debrief.totalVolume)) kg")
+            Text("Total: \(formatVolume(weightUnit.fromKg(debrief.totalVolume))) \(weightUnit.symbol)")
                 .font(.subheadline)
                 .foregroundStyle(STColors.textSecondary)
 

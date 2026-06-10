@@ -447,8 +447,13 @@ public final class AdaptiveAdjustmentService: Sendable {
         // (Since we only generate decreases currently, this is a safeguard for future)
         proposals = removeContradictions(proposals)
 
-        // Sort by priority (lower = higher priority)
-        proposals.sort { $0.priority < $1.priority }
+        // Sort by priority (lower = higher priority); deloads win ties so they
+        // always lead within a priority tier (deload proposals are highest priority)
+        proposals.sort {
+            if $0.priority != $1.priority { return $0.priority < $1.priority }
+            return $0.adjustment.adjustmentType == .deload
+                && $1.adjustment.adjustmentType != .deload
+        }
 
         // Cap at max 3
         return Array(proposals.prefix(3))
