@@ -144,30 +144,54 @@ struct StrengthTrackeriOSApp: App {
 struct ContentViewWrapper: View {
     let container: AppContainer
     @Environment(\.scenePhase) private var scenePhase
+    @State private var didRestore: Bool
+
+    init(container: AppContainer) {
+        self.container = container
+        // Skip the gate when no active workout is pending — normal launches stay instant.
+        // When a workout is pending (cold relaunch during a rest timer), gate the first
+        // frame on `restoreActiveWorkout()` so we never momentarily show Dashboard.
+        _didRestore = State(initialValue: !WorkoutViewModel.hasPendingActiveWorkout)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if didRestore {
+            ContentView(
+                dashboardViewModel: container.makeDashboardViewModel(),
+                exerciseListViewModel: container.makeExerciseListViewModel(),
+                progressViewModel: container.makeProgressViewModel(),
+                workoutViewModel: container.makeWorkoutViewModel(),
+                historyViewModel: container.makeHistoryViewModel(),
+                templateViewModel: container.makeTemplateViewModel(),
+                analyticsViewModel: container.makeWorkoutAnalyticsViewModel(),
+                progressionPlanViewModel: container.makeProgressionPlanViewModel(),
+                userPreferencesService: container.userPreferencesService,
+                connectivityManager: container.connectivityManager,
+                restTimerService: container.restTimerService,
+                personalRecordService: container.personalRecordService,
+                proFeatureGate: container.proFeatureGate,
+                storeService: container.storeService
+            )
+        } else {
+            STColors.background.ignoresSafeArea()
+        }
+    }
 
     var body: some View {
-        ContentView(
-            dashboardViewModel: container.makeDashboardViewModel(),
-            exerciseListViewModel: container.makeExerciseListViewModel(),
-            progressViewModel: container.makeProgressViewModel(),
-            workoutViewModel: container.makeWorkoutViewModel(),
-            historyViewModel: container.makeHistoryViewModel(),
-            templateViewModel: container.makeTemplateViewModel(),
-            analyticsViewModel: container.makeWorkoutAnalyticsViewModel(),
-            progressionPlanViewModel: container.makeProgressionPlanViewModel(),
-            userPreferencesService: container.userPreferencesService,
-            connectivityManager: container.connectivityManager,
-            restTimerService: container.restTimerService,
-            personalRecordService: container.personalRecordService,
-            proFeatureGate: container.proFeatureGate,
-            storeService: container.storeService
-        )
+        content
         .onOpenURL { url in
             // Handle deep links from widgets
             handleDeepLink(url)
         }
         .task {
             await container.workoutViewModel.restoreActiveWorkout()
+            didRestore = true
+        }
+        .task {
+            // Failsafe: never trap the user on a blank splash if restore hangs.
+            try? await Task.sleep(for: .seconds(3))
+            if !didRestore { didRestore = true }
         }
         .onChange(of: scenePhase, initial: true) { _, newPhase in
             if newPhase == .active {
