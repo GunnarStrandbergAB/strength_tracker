@@ -208,10 +208,15 @@ final class ProgressionPlanTests: XCTestCase {
 
     // MARK: - totalWeeks
 
-    func testTotalWeeksSumsBlockDurations() {
-        let block1 = ProgressionTestHelpers.makeTestTrainingBlock(name: "Block 1", durationWeeks: 4)
-        let block2 = ProgressionTestHelpers.makeTestTrainingBlock(name: "Block 2", durationWeeks: 3)
-        let block3 = ProgressionTestHelpers.makeTestTrainingBlock(name: "Block 3", durationWeeks: 2)
+    func testTotalWeeksIsHighestAbsoluteWeekNumber() {
+        // Calendar buckets can straddle block boundaries, so totalWeeks is the
+        // highest absoluteWeekNumber, not the sum of block durations.
+        func weeks(_ range: ClosedRange<Int>) -> [TrainingWeek] {
+            range.map { ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: $0, absoluteWeekNumber: $0) }
+        }
+        let block1 = ProgressionTestHelpers.makeTestTrainingBlock(name: "Block 1", durationWeeks: 4, weeks: weeks(1...4))
+        let block2 = ProgressionTestHelpers.makeTestTrainingBlock(name: "Block 2", durationWeeks: 3, weeks: weeks(5...7))
+        let block3 = ProgressionTestHelpers.makeTestTrainingBlock(name: "Block 3", durationWeeks: 2, weeks: weeks(8...9))
         let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block1, block2, block3])
 
         XCTAssertEqual(plan.totalWeeks, 9)
@@ -223,7 +228,10 @@ final class ProgressionPlanTests: XCTestCase {
     }
 
     func testTotalWeeksWithSingleBlock() {
-        let block = ProgressionTestHelpers.makeTestTrainingBlock(durationWeeks: 6)
+        let weeks = (1...6).map {
+            ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: $0, absoluteWeekNumber: $0)
+        }
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(durationWeeks: 6, weeks: weeks)
         let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block])
         XCTAssertEqual(plan.totalWeeks, 6)
     }
@@ -323,10 +331,16 @@ final class ProgressionPlanTests: XCTestCase {
     }
 
     func testOverallProgressAcrossMultipleBlocks() {
-        let c1 = ProgressionTestHelpers.makeCompletedSession(label: "C1")
-        let c2 = ProgressionTestHelpers.makeCompletedSession(label: "C2")
-        let i1 = ProgressionTestHelpers.makeIncompleteSession(label: "I1")
-        let i2 = ProgressionTestHelpers.makeIncompleteSession(label: "I2")
+        // Elapsed scoping is date-based: only sessions scheduled before end of
+        // today count. Week 1 (past dates, completed) elapsed; week 2 (future
+        // dates, incomplete) hasn't -> 2/2 = 1.0.
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+        let twoDaysAgo = Calendar.current.date(byAdding: .day, value: -2, to: Date())!
+        let nextWeek = Calendar.current.date(byAdding: .day, value: 7, to: Date())!
+        let c1 = ProgressionTestHelpers.makeCompletedSession(label: "C1", scheduledDate: twoDaysAgo)
+        let c2 = ProgressionTestHelpers.makeCompletedSession(label: "C2", scheduledDate: yesterday)
+        let i1 = ProgressionTestHelpers.makeIncompleteSession(label: "I1", scheduledDate: nextWeek)
+        let i2 = ProgressionTestHelpers.makeIncompleteSession(label: "I2", scheduledDate: nextWeek)
 
         let week1 = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: [c1, c2])
         let week2 = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 2, sessions: [i1, i2])
@@ -334,9 +348,6 @@ final class ProgressionPlanTests: XCTestCase {
         let block2 = ProgressionTestHelpers.makeTestTrainingBlock(name: "B2", order: 1, weeks: [week2])
         let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block1, block2])
 
-        // overallProgress is adherence scoped to ELAPSED sessions, not the full
-        // plan: the plan starts today, so only week 1 has elapsed. Both of its
-        // sessions are completed -> 2/2 = 1.0 (week 2 hasn't elapsed yet).
         XCTAssertEqual(plan.overallProgress, 1.0, accuracy: 0.001)
     }
 
@@ -403,46 +414,58 @@ final class ProgressionPlanTests: XCTestCase {
         XCTAssertEqual(plan.completedWeeks, 0)
     }
 
-    // MARK: - projectedDateRange
+    // MARK: - Week date ranges (calendar buckets)
 
-    func testProjectedDateRangeForWeek1StartsOnPlanStartDate() {
-        let startDate = Date()
-        let plan = ProgressionTestHelpers.makeTestPlan(startDate: startDate)
-
-        let range = plan.projectedDateRange(forAbsoluteWeek: 1)
-        // Week 1: daysOffset = 0 * averageDaysPerWeek = 0
-        let expectedStart = Calendar.current.date(byAdding: .day, value: 0, to: startDate)!
-        XCTAssertEqual(
-            Calendar.current.dateComponents([.year, .month, .day], from: range.start),
-            Calendar.current.dateComponents([.year, .month, .day], from: expectedStart)
-        )
+    private func pinnedDate(_ year: Int, _ month: Int, _ day: Int) -> Date {
+        var comps = DateComponents()
+        comps.year = year; comps.month = month; comps.day = day; comps.hour = 12
+        return Calendar.current.date(from: comps)!
     }
 
-    func testProjectedDateRangeForWeek2OffsetsCorrectly() {
-        let startDate = Date()
-        // No completed weeks, so averageDaysPerWeek defaults to 7.0
-        let plan = ProgressionTestHelpers.makeTestPlan(startDate: startDate)
+    func testWeekDateRangeSpansItsSessionDates() {
+        // Weeks are calendar buckets — their range comes from real session dates.
+        let s1 = ProgressionTestHelpers.makeTestPlannedSession(
+            label: "A", scheduledDate: pinnedDate(2026, 6, 15)) // Mon
+        let s2 = ProgressionTestHelpers.makeTestPlannedSession(
+            label: "B", scheduledDate: pinnedDate(2026, 6, 19)) // Fri
+        let week = ProgressionTestHelpers.makeTestTrainingWeek(sessions: [s1, s2])
 
-        let range = plan.projectedDateRange(forAbsoluteWeek: 2)
-        // Week 2: daysOffset = 1 * 7.0 = 7
-        let expectedStart = Calendar.current.date(byAdding: .day, value: 7, to: startDate)!
-        XCTAssertEqual(
-            Calendar.current.dateComponents([.year, .month, .day], from: range.start),
-            Calendar.current.dateComponents([.year, .month, .day], from: expectedStart)
-        )
+        guard let range = week.dateRange else {
+            XCTFail("Week with dated sessions must have a dateRange")
+            return
+        }
+        XCTAssertEqual(range.lowerBound, pinnedDate(2026, 6, 15))
+        XCTAssertEqual(range.upperBound, pinnedDate(2026, 6, 19))
     }
 
-    func testProjectedDateRangeEndIsDaysPerWeekMinusOneAfterStart() {
-        let startDate = Date()
-        let plan = ProgressionTestHelpers.makeTestPlan(startDate: startDate)
+    func testWeekDateRangeNilWithoutDates() {
+        let session = ProgressionTestHelpers.makeTestPlannedSession(label: "A")
+        let week = ProgressionTestHelpers.makeTestTrainingWeek(sessions: [session])
+        XCTAssertNil(week.dateRange)
+    }
 
-        let range = plan.projectedDateRange(forAbsoluteWeek: 1)
-        // Default averageDaysPerWeek = 7.0 => end = start + 6 days
-        let expectedEnd = Calendar.current.date(byAdding: .day, value: 6, to: range.start)!
-        XCTAssertEqual(
-            Calendar.current.dateComponents([.year, .month, .day], from: range.end),
-            Calendar.current.dateComponents([.year, .month, .day], from: expectedEnd)
-        )
+    func testProjectedEndDateIsLastOpenSessionDate() {
+        let done = ProgressionTestHelpers.makeTestPlannedSession(
+            label: "Done", completedWorkoutId: UUID(),
+            scheduledDate: pinnedDate(2026, 6, 15))
+        let open = ProgressionTestHelpers.makeTestPlannedSession(
+            label: "Open", scheduledDate: pinnedDate(2026, 6, 19))
+        let week = ProgressionTestHelpers.makeTestTrainingWeek(sessions: [done, open])
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week])
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block])
+
+        XCTAssertEqual(plan.projectedEndDate, pinnedDate(2026, 6, 19))
+    }
+
+    func testProjectedEndDateNilWhenAllSessionsClosed() {
+        let done = ProgressionTestHelpers.makeTestPlannedSession(
+            label: "Done", completedWorkoutId: UUID(),
+            scheduledDate: pinnedDate(2026, 6, 15))
+        let week = ProgressionTestHelpers.makeTestTrainingWeek(sessions: [done])
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week])
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block])
+
+        XCTAssertNil(plan.projectedEndDate)
     }
 }
 

@@ -54,21 +54,32 @@ public final class ProgramDesignService: Sendable {
     }
 
     /// Resolve deload days: prefer explicit `deloadDays`, fall back to regular training days.
+    /// Custom deload days are constrained to the plan's training days — a deload session
+    /// must never land on a day the user doesn't train.
     private func resolveDeloadDays(for plan: ProgressionPlan) -> [Int] {
-        plan.deloadDays ?? resolveDays(for: plan)
+        let days = resolveDays(for: plan)
+        guard let custom = plan.deloadDays else { return days }
+        let valid = custom.filter { days.contains($0) }
+        return valid.isEmpty ? days : valid
     }
 
     public func generateProgram(for plan: ProgressionPlan, deloadIntensity: Double = 0.50) -> [TrainingBlock] {
+        var blocks: [TrainingBlock]
         switch plan.programType {
         case .linear:
-            return generateLinearProgram(plan, deloadIntensity: deloadIntensity)
+            blocks = generateLinearProgram(plan, deloadIntensity: deloadIntensity)
         case .dailyUndulating:
-            return generateDUPProgram(plan, deloadIntensity: deloadIntensity)
+            blocks = generateDUPProgram(plan, deloadIntensity: deloadIntensity)
         case .weeklyUndulating:
-            return generateWUPProgram(plan, deloadIntensity: deloadIntensity)
+            blocks = generateWUPProgram(plan, deloadIntensity: deloadIntensity)
         case .block:
-            return generateBlockProgram(plan, deloadIntensity: deloadIntensity)
+            blocks = generateBlockProgram(plan, deloadIntensity: deloadIntensity)
         }
+
+        // Date the microcycles sequentially from the start date, then regroup into
+        // Monday-anchored calendar-week buckets (Model A).
+        CalendarWeekBucketer.assignSequentialDates(to: &blocks, startDate: plan.startDate)
+        return CalendarWeekBucketer.rebucket(blocks)
     }
 
     // MARK: - Linear Periodization
@@ -143,7 +154,7 @@ public final class ProgramDesignService: Sendable {
                 intensity: weekIntensity,
                 restSeconds: restSeconds,
                 dupSessionType: nil,
-                label: isDeloadWeek ? "Deload" : "Week \(absoluteWeek)",
+                label: isDeloadWeek ? "Deload" : "",
                 isDeload: isDeloadWeek
             )
 
@@ -363,7 +374,7 @@ public final class ProgramDesignService: Sendable {
                 dupSessionType: nil,
                 label: isDeloadWeek
                     ? "Deload"
-                    : "Week \(absoluteWeek) - \(scheme.rawValue.capitalized)",
+                    : scheme.rawValue.capitalized,
                 isDeload: isDeloadWeek
             )
 
@@ -404,7 +415,11 @@ public final class ProgramDesignService: Sendable {
         let restSeconds = middleRest(for: plan.primaryGoal)
         let days = resolveDays(for: plan)
         let deloadDays = resolveDeloadDays(for: plan)
-        let phases: [BlockPhase] = [.accumulation, .transmutation, .realization, .deload]
+        // M1 applies to Block too: advanced lifters get no scheduled deload phase —
+        // their macrocycle ends after realization; deloads come from adaptive proposals.
+        let phases: [BlockPhase] = plan.trainingStatus == .advanced
+            ? [.accumulation, .transmutation, .realization]
+            : [.accumulation, .transmutation, .realization, .deload]
 
         var blocks: [TrainingBlock] = []
         var absoluteWeek = 1
@@ -517,19 +532,28 @@ public final class ProgramDesignService: Sendable {
             let dayName = Self.dayNames[day] ?? "Day"
             let sessionExercises = exercisesForDay(day, in: plan) ?? plan.exercises
 
+            // Labels are day-name/scheme based — weeks are calendar buckets, so a
+            // microcycle "Week N" prefix would mislead. Empty label = plain day name.
+            let sessionLabel: String
+            if label.isEmpty {
+                sessionLabel = dayName
+            } else if days.count > 1 {
+                sessionLabel = "\(label) - \(dayName)"
+            } else {
+                sessionLabel = label
+            }
+
             if sessionExercises.isEmpty {
                 return PlannedSession(
                     dayOfWeek: day,
                     dupSessionType: nil,
-                    sessionLabel: days.count > 1 ? "\(label) - \(dayName)" : label,
+                    sessionLabel: sessionLabel,
                     plannedExercises: [],
                     estimatedDurationMinutes: 60,
                     templateId: templateIdForDay(day, in: plan),
                     isDeload: isDeload
                 )
             }
-
-            let sessionLabel = days.count > 1 ? "\(label) - \(dayName)" : label
             let exerciseSets = sessionExercises.map { exercise in
                 PlannedExerciseSet(
                     planExerciseId: exercise.id,

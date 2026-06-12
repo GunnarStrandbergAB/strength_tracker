@@ -21,7 +21,9 @@ public enum ProgressionPlanMapper {
 
     // MARK: - Current Schema Version
 
-    public static let currentSchemaVersion = 1
+    /// v2: weeks are Monday-anchored calendar buckets of dated sessions (Model A).
+    /// v1 plans (microcycle weeks) are migrated lazily on fetch by the repository.
+    public static let currentSchemaVersion = 2
 
     // MARK: - Entity -> Domain
 

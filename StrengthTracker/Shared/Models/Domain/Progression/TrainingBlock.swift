@@ -47,16 +47,16 @@ public struct TrainingBlock: Identifiable, Codable, Equatable, Sendable {
     }
 
     public var currentWeek: TrainingWeek? {
-        weeks.first { !$0.allSessionsCompleted }
+        weeks.first { !$0.allSessionsClosed }
     }
 
     public var progress: Double {
         guard !weeks.isEmpty else { return 0 }
-        let completed = weeks.filter { $0.allSessionsCompleted }.count
-        return Double(completed) / Double(weeks.count)
+        let closed = weeks.filter { $0.allSessionsClosed }.count
+        return Double(closed) / Double(weeks.count)
     }
 
     public var allWeeksCompleted: Bool {
-        !weeks.isEmpty && weeks.allSatisfy { $0.allSessionsCompleted }
+        !weeks.isEmpty && weeks.allSatisfy { $0.allSessionsClosed }
     }
 }

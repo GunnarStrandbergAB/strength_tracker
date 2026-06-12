@@ -68,10 +68,10 @@ struct PlanCreationStep2GoalView: View {
                         .foregroundStyle(STColors.textPrimary)
 
                     HStack(spacing: 8) {
-                        ForEach(dayOptions, id: \.isoDay) { option in
-                            let isSelected = viewModel.draftTrainingDays.contains(option.isoDay)
+                        ForEach(dayOptions, id: \.calendarWeekday) { option in
+                            let isSelected = viewModel.draftTrainingDays.contains(option.calendarWeekday)
                             Button {
-                                viewModel.toggleTrainingDay(option.isoDay)
+                                viewModel.toggleTrainingDay(option.calendarWeekday)
                             } label: {
                                 Text(option.letter)
                                     .font(.system(size: 14, weight: .bold))
@@ -88,7 +88,20 @@ struct PlanCreationStep2GoalView: View {
                 }
                 .padding(.horizontal, 20)
 
-                // Deload Days
+                // Deload Days — advanced plans have no scheduled deload weeks (M1)
+                if viewModel.draftStatus == .advanced {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("DELOAD DAYS")
+                            .font(.system(size: 10, weight: .bold))
+                            .textCase(.uppercase)
+                            .foregroundStyle(STColors.textSecondary)
+
+                        Text("Advanced plans use adaptive deload proposals instead of scheduled deload weeks.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(STColors.textSecondary)
+                    }
+                    .padding(.horizontal, 20)
+                } else {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("DELOAD DAYS")
                         .font(.system(size: 10, weight: .bold))
@@ -116,11 +129,11 @@ struct PlanCreationStep2GoalView: View {
                             .foregroundStyle(STColors.textSecondary)
 
                         HStack(spacing: 8) {
-                            ForEach(dayOptions, id: \.isoDay) { option in
-                                let isTrainingDay = viewModel.draftTrainingDays.contains(option.isoDay)
-                                let isDeloadDay = viewModel.draftDeloadDays.contains(option.isoDay)
+                            ForEach(dayOptions, id: \.calendarWeekday) { option in
+                                let isTrainingDay = viewModel.draftTrainingDays.contains(option.calendarWeekday)
+                                let isDeloadDay = viewModel.draftDeloadDays.contains(option.calendarWeekday)
                                 Button {
-                                    viewModel.toggleDeloadDay(option.isoDay)
+                                    viewModel.toggleDeloadDay(option.calendarWeekday)
                                 } label: {
                                     Text(option.letter)
                                         .font(.system(size: 14, weight: .bold))
@@ -142,6 +155,7 @@ struct PlanCreationStep2GoalView: View {
                     }
                 }
                 .padding(.horizontal, 20)
+                }
 
                 // Start Date
                 VStack(alignment: .leading, spacing: 10) {
@@ -304,18 +318,18 @@ struct PlanCreationStep2GoalView: View {
     // MARK: - Day Options
 
     private struct DayOption {
-        let isoDay: Int   // Calendar.weekday encoding: Sun=1, Mon=2..Sat=7
+        let calendarWeekday: Int   // Calendar.weekday encoding: Sun=1, Mon=2..Sat=7 (NOT ISO 8601)
         let letter: String
     }
 
     private let dayOptions: [DayOption] = [
-        DayOption(isoDay: 2, letter: "M"),
-        DayOption(isoDay: 3, letter: "T"),
-        DayOption(isoDay: 4, letter: "W"),
-        DayOption(isoDay: 5, letter: "T"),
-        DayOption(isoDay: 6, letter: "F"),
-        DayOption(isoDay: 7, letter: "S"),
-        DayOption(isoDay: 1, letter: "S"),
+        DayOption(calendarWeekday: 2, letter: "M"),
+        DayOption(calendarWeekday: 3, letter: "T"),
+        DayOption(calendarWeekday: 4, letter: "W"),
+        DayOption(calendarWeekday: 5, letter: "T"),
+        DayOption(calendarWeekday: 6, letter: "F"),
+        DayOption(calendarWeekday: 7, letter: "S"),
+        DayOption(calendarWeekday: 1, letter: "S"),
     ]
 
     // MARK: - Helpers

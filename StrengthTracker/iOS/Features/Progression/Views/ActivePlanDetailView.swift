@@ -357,15 +357,23 @@ struct ActivePlanDetailView: View {
             } label: {
                 HStack(spacing: 12) {
                     Circle()
-                        .fill(week.allSessionsCompleted ? STColors.success : (isCurrentWeek ? STColors.primary : STColors.textTertiary.opacity(0.3)))
+                        .fill(week.allSessionsClosed ? STColors.success : (isCurrentWeek ? STColors.primary : STColors.textTertiary.opacity(0.3)))
                         .frame(width: 10, height: 10)
 
-                    Text("Week \(week.absoluteWeekNumber)")
-                        .font(.system(size: 13, weight: isCurrentWeek ? .semibold : .regular))
-                        .foregroundStyle(isCurrentWeek ? STColors.textPrimary : STColors.textSecondary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Week \(week.absoluteWeekNumber)")
+                            .font(.system(size: 13, weight: isCurrentWeek ? .semibold : .regular))
+                            .foregroundStyle(isCurrentWeek ? STColors.textPrimary : STColors.textSecondary)
 
-                    if week.isDeload {
-                        Text("Deload")
+                        if let range = week.dateRange {
+                            Text(weekDateRangeText(range))
+                                .font(.system(size: 10))
+                                .foregroundStyle(STColors.textTertiary)
+                        }
+                    }
+
+                    if week.containsDeloadSessions {
+                        Text(week.isDeload ? "Deload" : "Partial deload")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(STColors.primary.opacity(0.8))
                     }
@@ -406,15 +414,17 @@ struct ActivePlanDetailView: View {
 
     private func sessionCard(_ session: PlannedSession, plan: ProgressionPlan, weekIsDeload: Bool = false) -> some View {
         let isCompleted = session.isCompleted
+        let isSkipped = session.isSkipped
+        let isMuted = isCompleted || isSkipped
         let isPreparing = preparingSessionId == session.id
 
         return VStack(alignment: .leading, spacing: 8) {
-            // Header: label + linked badge + completion badge
+            // Header: label + linked badge + completion/skipped badge
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(session.sessionLabel)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(isCompleted ? STColors.textTertiary : STColors.textPrimary)
+                        .foregroundStyle(isMuted ? STColors.textTertiary : STColors.textPrimary)
 
                     if let date = session.scheduledDate {
                         Button {
@@ -425,7 +435,7 @@ struct ActivePlanDetailView: View {
                         } label: {
                             Text(date, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
                                 .font(.system(size: 12))
-                                .foregroundStyle(isCompleted ? .secondary : isOverdue(session) ? STColors.danger : .secondary)
+                                .foregroundStyle(isMuted ? .secondary : isOverdue(session) ? STColors.danger : .secondary)
                         }
                         .buttonStyle(.plain)
                         .disabled(isCompleted)
@@ -448,12 +458,20 @@ struct ActivePlanDetailView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 14))
                         .foregroundStyle(STColors.success)
+                } else if isSkipped {
+                    Text("SKIPPED")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(STColors.textSecondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(STColors.textTertiary.opacity(0.15))
+                        .clipShape(Capsule())
                 }
             }
 
             // Exercise lines
             ForEach(session.plannedExercises) { exercise in
-                exerciseLine(exercise, muted: isCompleted)
+                exerciseLine(exercise, muted: isMuted)
             }
 
             // Duration + RPE info
@@ -463,6 +481,16 @@ struct ActivePlanDetailView: View {
                     .foregroundStyle(STColors.textTertiary)
 
                 Spacer()
+
+                if session.isDeload {
+                    Text("Deload")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(STColors.primary.opacity(0.8))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(STColors.primary.opacity(0.1))
+                        .clipShape(Capsule())
+                }
 
                 if session.dupSessionType != nil {
                     Text(session.dupSessionType?.rawValue.capitalized ?? "")
@@ -475,8 +503,8 @@ struct ActivePlanDetailView: View {
                 }
             }
 
-            // Start Session button
-            if !isCompleted && plan.status == .active {
+            // Start Session button (hidden for skipped sessions)
+            if !isCompleted && !isSkipped && plan.status == .active {
                 Button {
                     Task {
                         preparingSessionId = session.id
@@ -531,7 +559,19 @@ struct ActivePlanDetailView: View {
         .padding(12)
         .background(STColors.surface)
         .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
-        .opacity(isCompleted ? 0.7 : 1.0)
+        .opacity(isMuted ? 0.7 : 1.0)
+        .contextMenu {
+            if !isCompleted && plan.status == .active {
+                Button {
+                    Task { await viewModel.toggleSessionSkipped(sessionId: session.id) }
+                } label: {
+                    Label(
+                        isSkipped ? "Undo skip" : "Skip session",
+                        systemImage: isSkipped ? "arrow.uturn.backward" : "forward.end"
+                    )
+                }
+            }
+        }
     }
 
     // MARK: - Exercise Line
@@ -614,8 +654,24 @@ struct ActivePlanDetailView: View {
 
     private func isOverdue(_ session: PlannedSession) -> Bool {
         guard !session.isCompleted,
+              !session.isSkipped,
               let scheduled = session.scheduledDate else { return false }
         return scheduled < Calendar.current.startOfDay(for: Date())
+    }
+
+    /// Compact "14–15 Jun" / "30 Jun–3 Jul" range label for a week's sessions.
+    private func weekDateRangeText(_ range: ClosedRange<Date>) -> String {
+        let calendar = Calendar.current
+        let start = range.lowerBound
+        let end = range.upperBound
+        let endText = end.formatted(.dateTime.day().month(.abbreviated))
+        if calendar.isDate(start, inSameDayAs: end) {
+            return endText
+        }
+        if calendar.isDate(start, equalTo: end, toGranularity: .month) {
+            return "\(calendar.component(.day, from: start))–\(endText)"
+        }
+        return "\(start.formatted(.dateTime.day().month(.abbreviated)))–\(endText)"
     }
 
     private func formattedWeight(_ weight: Double) -> String {

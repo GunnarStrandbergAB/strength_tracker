@@ -20,7 +20,7 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
         return try modelContext.fetch(descriptor).compactMap { entity in
-            guard let plan = ProgressionPlanMapper.toDomain(entity) else {
+            guard let plan = migratedDomainPlan(from: entity) else {
                 print("\u{26A0}\u{FE0F} SwiftDataProgressionPlanRepository: dropping plan \(entity.id) (\(entity.name)) — failed to decode; it will not appear in the UI")
                 return nil
             }
@@ -35,7 +35,7 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]  // m14: deterministic ordering
         )
         guard let entity = try modelContext.fetch(descriptor).first else { return nil }
-        return ProgressionPlanMapper.toDomain(entity)
+        return migratedDomainPlan(from: entity)
     }
 
     public func fetch(id: UUID) async throws -> ProgressionPlan? {
@@ -43,7 +43,29 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
             predicate: #Predicate { $0.id == id }
         )
         guard let entity = try modelContext.fetch(descriptor).first else { return nil }
-        return ProgressionPlanMapper.toDomain(entity)
+        return migratedDomainPlan(from: entity)
+    }
+
+    // MARK: - Lazy v1 → v2 Migration
+
+    /// Maps an entity to its domain plan, migrating v1 microcycle weeks to v2
+    /// calendar-week buckets on the fly (Model A). Dates only sessions that have no
+    /// scheduledDate (preserving user reschedules), then re-buckets. The migration is
+    /// persisted best-effort without bumping `updatedAt` so optimistic-concurrency
+    /// checks against in-flight domain copies are unaffected.
+    private func migratedDomainPlan(from entity: ProgressionPlanEntity) -> ProgressionPlan? {
+        guard var plan = ProgressionPlanMapper.toDomain(entity) else { return nil }
+        if entity.schemaVersion < 2 {
+            CalendarWeekBucketer.assignSequentialDates(
+                to: &plan.blocks, startDate: plan.startDate, onlyMissing: true
+            )
+            plan.blocks = CalendarWeekBucketer.rebucket(plan.blocks)
+            // updateEntity stamps schemaVersion = currentSchemaVersion and writes
+            // entity.updatedAt = plan.updatedAt (unchanged here by design).
+            try? ProgressionPlanMapper.updateEntity(entity, from: plan)
+            try? modelContext.save()
+        }
+        return plan
     }
 
     // MARK: - Save (Upsert with Optimistic Concurrency)
@@ -168,6 +190,9 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
                 if let sessionIndex = plan.blocks[blockIndex].weeks[weekIndex].sessions.firstIndex(where: { $0.id == sessionId }) {
                     plan.blocks[blockIndex].weeks[weekIndex].sessions[sessionIndex].completedWorkoutId = workoutId
                     plan.blocks[blockIndex].weeks[weekIndex].sessions[sessionIndex].completedAt = Date()
+                    // Completion wins over a prior skip.
+                    plan.blocks[blockIndex].weeks[weekIndex].sessions[sessionIndex].isSkipped = false
+                    plan.blocks[blockIndex].weeks[weekIndex].sessions[sessionIndex].skippedAt = nil
                     plan.updatedAt = Date()
                     try ProgressionPlanMapper.updateEntity(entity, from: plan)
                     try modelContext.save()

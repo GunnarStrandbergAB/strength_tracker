@@ -94,74 +94,83 @@ public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
 
     // MARK: - Computed Properties
 
+    /// Highest calendar-week index across all blocks (weeks are calendar buckets, so a
+    /// block boundary inside a calendar week makes a plain durationWeeks sum overcount).
     public var totalWeeks: Int {
-        blocks.reduce(0) { $0 + $1.durationWeeks }
+        blocks.flatMap(\.weeks).map(\.absoluteWeekNumber).max() ?? 0
     }
 
-    /// Current block = first block that has incomplete weeks
+    /// Current block = first block that has open (not closed) weeks
     public var currentBlock: TrainingBlock? {
         blocks.first { !$0.allWeeksCompleted }
     }
 
-    /// Current week = first incomplete week in the current block
+    /// Current week resolved against the calendar (see `currentWeek(asOf:)`).
     public var currentWeek: TrainingWeek? {
-        currentBlock?.currentWeek
+        currentWeek(asOf: Date())
+    }
+
+    /// The calendar week containing `now`, preferring a bucket with open sessions.
+    /// Falls back to the last bucket of this calendar week, then to the first week
+    /// anywhere with open sessions.
+    public func currentWeek(asOf now: Date = Date()) -> TrainingWeek? {
+        let weeks = blocks.flatMap(\.weeks)
+        let nowWeekStart = CalendarWeekBucketer.weekStart(of: now)
+        let candidates = weeks.filter { $0.weekStartDate == nowWeekStart }
+        return candidates.first { !$0.allSessionsClosed }
+            ?? candidates.last
+            ?? weeks.first { !$0.allSessionsClosed }
     }
 
     public var overallProgress: Double {
         guard !blocks.isEmpty else { return 0 }
-        let currentWeekNumber = elapsedCalendarWeeks + 1
         let today = Calendar.current.startOfDay(for: Date())
         let endOfToday = Calendar.current.date(byAdding: .day, value: 1, to: today)!
 
-        let elapsedSessions = blocks.flatMap(\.weeks)
-            .filter { $0.absoluteWeekNumber <= currentWeekNumber }
-            .flatMap(\.sessions)
-            .filter { session in
-                guard let scheduledDate = session.scheduledDate else { return true }
-                return scheduledDate < endOfToday
-            }
-        let completedSessions = blocks.flatMap(\.weeks).flatMap(\.sessions).filter(\.isCompleted).count
+        let allSessions = blocks.flatMap(\.weeks).flatMap(\.sessions)
+        let elapsedSessions = allSessions.filter { session in
+            guard let scheduledDate = session.scheduledDate else { return true }
+            return session.isSkipped || scheduledDate < endOfToday
+        }
+        let completedSessions = allSessions.filter(\.isCompleted).count
         guard !elapsedSessions.isEmpty else { return 0 }
         return min(1.0, Double(completedSessions) / Double(elapsedSessions.count))
     }
 
     public var isActive: Bool { status == .active }
 
-    /// Completed microcycles since plan start
+    /// Closed calendar weeks (every session completed or skipped) since plan start
     public var completedWeeks: Int {
-        blocks.flatMap(\.weeks).filter(\.allSessionsCompleted).count
+        blocks.flatMap(\.weeks).filter(\.allSessionsClosed).count
     }
 
-    /// Elapsed calendar weeks since start
+    /// Elapsed calendar weeks since the plan's anchor week (week of the earliest
+    /// scheduled session, falling back to startDate).
     public var elapsedCalendarWeeks: Int {
-        Calendar.current.dateComponents([.weekOfYear], from: startDate, to: Date()).weekOfYear ?? 0
+        elapsedCalendarWeeks(asOf: Date())
     }
 
-    // MARK: - Dynamic Date Projection
-
-    public var averageDaysPerWeek: Double {
-        guard completedWeeks > 0 else { return 7.0 }
-        let allCompletionDates = blocks.flatMap(\.weeks).flatMap(\.sessions).compactMap(\.completedAt)
-        guard let firstCompletion = allCompletionDates.min(),
-              let lastCompletion = allCompletionDates.max() else { return 7.0 }
-        let elapsed = lastCompletion.timeIntervalSince(firstCompletion)
-        let days = max(1, elapsed / 86400)
-        return days / Double(completedWeeks)
+    public func elapsedCalendarWeeks(asOf now: Date = Date()) -> Int {
+        let earliest = blocks.flatMap(\.weeks).flatMap(\.sessions).compactMap(\.scheduledDate).min()
+        let anchorWeekStart = CalendarWeekBucketer.weekStart(of: earliest ?? startDate)
+        let nowWeekStart = CalendarWeekBucketer.weekStart(of: now)
+        let days = CalendarWeekBucketer.mondayCalendar
+            .dateComponents([.day], from: anchorWeekStart, to: nowWeekStart).day ?? 0
+        return max(0, days / 7)
     }
 
-    public func projectedDateRange(forAbsoluteWeek weekNum: Int) -> (start: Date, end: Date) {
-        let weeksFromStart = weekNum - 1
-        let daysOffset = Int(Double(weeksFromStart) * averageDaysPerWeek)
-        let start = Calendar.current.date(byAdding: .day, value: daysOffset, to: startDate)!
-        let end = Calendar.current.date(byAdding: .day, value: Int(averageDaysPerWeek) - 1, to: start)!
-        return (start, end)
+    /// First open (not completed, not skipped) session ordered by scheduled date.
+    public var nextPlannedSession: PlannedSession? {
+        blocks.flatMap(\.weeks).flatMap(\.sessions)
+            .filter { !$0.isClosed }
+            .min { ($0.scheduledDate ?? .distantFuture) < ($1.scheduledDate ?? .distantFuture) }
     }
 
+    /// Latest scheduled date among open sessions — nil when nothing remains.
     public var projectedEndDate: Date? {
-        let remainingWeeks = totalWeeks - completedWeeks
-        guard remainingWeeks > 0 else { return nil }
-        let daysRemaining = Int(Double(remainingWeeks) * averageDaysPerWeek)
-        return Calendar.current.date(byAdding: .day, value: daysRemaining, to: Date())
+        blocks.flatMap(\.weeks).flatMap(\.sessions)
+            .filter { !$0.isClosed }
+            .compactMap(\.scheduledDate)
+            .max()
     }
 }

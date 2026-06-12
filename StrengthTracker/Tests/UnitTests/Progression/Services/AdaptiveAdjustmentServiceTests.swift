@@ -148,11 +148,22 @@ final class AdaptiveAdjustmentServiceTests: XCTestCase {
             exerciseName: "Bench Press",
             targetReps: 8
         )
-        let session = ProgressionTestHelpers.makeTestPlannedSession(
+        // Regression targets are resolved per completed session — link workouts to sessions
+        let workout1Id = UUID()
+        let workout2Id = UUID()
+        let session1 = ProgressionTestHelpers.makeTestPlannedSession(
             label: "S1",
-            exercises: [plannedSet]
+            exercises: [plannedSet],
+            completedWorkoutId: workout1Id,
+            completedAt: daysAgo(1)
         )
-        let week = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: [session])
+        let session2 = ProgressionTestHelpers.makeTestPlannedSession(
+            label: "S2",
+            exercises: [plannedSet],
+            completedWorkoutId: workout2Id,
+            completedAt: daysAgo(3)
+        )
+        let week = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: [session1, session2])
         let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week])
 
         let plan = ProgressionTestHelpers.makeTestPlan(
@@ -174,8 +185,8 @@ final class AdaptiveAdjustmentServiceTests: XCTestCase {
         )
 
         let workouts = [
-            makeWorkout(completedAt: daysAgo(1), exercises: [workout1Exercise]),
-            makeWorkout(completedAt: daysAgo(3), exercises: [workout2Exercise]),
+            makeWorkout(id: workout1Id, completedAt: daysAgo(1), exercises: [workout1Exercise]),
+            makeWorkout(id: workout2Id, completedAt: daysAgo(3), exercises: [workout2Exercise]),
         ]
 
         let sut = makeSUT()
@@ -207,11 +218,17 @@ final class AdaptiveAdjustmentServiceTests: XCTestCase {
             exerciseName: "Bench Press",
             targetReps: 8
         )
-        let session = ProgressionTestHelpers.makeTestPlannedSession(
-            label: "S1",
-            exercises: [plannedSet]
-        )
-        let week = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: [session])
+        // Regression targets are resolved per completed session — link workouts to sessions
+        let workoutIds = (0..<3).map { _ in UUID() }
+        let sessions = (0..<3).map { i in
+            ProgressionTestHelpers.makeTestPlannedSession(
+                label: "S\(i + 1)",
+                exercises: [plannedSet],
+                completedWorkoutId: workoutIds[i],
+                completedAt: daysAgo(i + 1)
+            )
+        }
+        let week = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: sessions)
         let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week])
 
         let plan = ProgressionTestHelpers.makeTestPlan(
@@ -224,7 +241,7 @@ final class AdaptiveAdjustmentServiceTests: XCTestCase {
         let workouts = (0..<3).map { i in
             let sets = [makeSet(weight: 50, reps: 5)] // 5 < 8 target
             let we = makeWorkoutExercise(exerciseId: exerciseId, name: "Bench Press", sets: sets)
-            return makeWorkout(completedAt: daysAgo(i + 1), exercises: [we])
+            return makeWorkout(id: workoutIds[i], completedAt: daysAgo(i + 1), exercises: [we])
         }
 
         let sut = makeSUT()
@@ -429,11 +446,17 @@ final class AdaptiveAdjustmentServiceTests: XCTestCase {
             exerciseName: "Squat",
             targetReps: 8
         )
-        let session = ProgressionTestHelpers.makeTestPlannedSession(
-            label: "S1",
-            exercises: [plannedSet]
-        )
-        let week = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: [session])
+        // Regression targets are resolved per completed session — link workouts to sessions
+        let workoutIds = (0..<2).map { _ in UUID() }
+        let sessions = (0..<2).map { i in
+            ProgressionTestHelpers.makeTestPlannedSession(
+                label: "S\(i + 1)",
+                exercises: [plannedSet],
+                completedWorkoutId: workoutIds[i],
+                completedAt: daysAgo(25 + i)
+            )
+        }
+        let week = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: sessions)
         let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week])
 
         let plan = ProgressionTestHelpers.makeTestPlan(
@@ -446,7 +469,7 @@ final class AdaptiveAdjustmentServiceTests: XCTestCase {
         let workouts = (0..<2).map { i -> Workout in
             let sets = [makeSet(weight: 80, reps: 5)] // reps < 8 target, 1RM ~93 < 120 (decline)
             let we = makeWorkoutExercise(exerciseId: exerciseId, name: "Squat", sets: sets)
-            return makeWorkout(completedAt: daysAgo(25 + i), exercises: [we])
+            return makeWorkout(id: workoutIds[i], completedAt: daysAgo(25 + i), exercises: [we])
         }
 
         let sut = makeSUT()
@@ -602,6 +625,78 @@ final class AdaptiveAdjustmentServiceTests: XCTestCase {
                 "50-day gap (42+ tier) should include repeatBlock=true"
             )
         }
+    }
+
+    // MARK: - Periodized Rep Targets (session-specific)
+
+    func testAnalyze_periodizedRepDecrease_doesNotTriggerFalseRegression() async throws {
+        // Week 1 targets 8 reps, week 3 targets 5 reps (normal periodization).
+        // Hitting 5 reps in the week-3 session is NOT a miss — targets must come
+        // from the completed session, not the plan's first occurrence.
+        let exerciseId = UUID()
+        let planExerciseId = UUID()
+
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(
+            id: planExerciseId,
+            exerciseId: exerciseId,
+            name: "Bench Press",
+            current1RM: 60.0
+        )
+
+        let week1Set = ProgressionTestHelpers.makeTestPlannedExerciseSet(
+            planExerciseId: planExerciseId,
+            exerciseId: exerciseId,
+            exerciseName: "Bench Press",
+            targetReps: 8
+        )
+        let week3Set = ProgressionTestHelpers.makeTestPlannedExerciseSet(
+            planExerciseId: planExerciseId,
+            exerciseId: exerciseId,
+            exerciseName: "Bench Press",
+            targetReps: 5
+        )
+
+        let workout1Id = UUID()
+        let workout2Id = UUID()
+        let session1 = ProgressionTestHelpers.makeTestPlannedSession(
+            label: "W3 S1", exercises: [week3Set],
+            completedWorkoutId: workout1Id, completedAt: daysAgo(1)
+        )
+        let session2 = ProgressionTestHelpers.makeTestPlannedSession(
+            label: "W3 S2", exercises: [week3Set],
+            completedWorkoutId: workout2Id, completedAt: daysAgo(3)
+        )
+        let week1 = ProgressionTestHelpers.makeTestTrainingWeek(
+            weekNumber: 1,
+            sessions: [ProgressionTestHelpers.makeTestPlannedSession(label: "W1 S1", exercises: [week1Set])]
+        )
+        let week3 = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 3, sessions: [session1, session2])
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week1, week3])
+
+        let plan = ProgressionTestHelpers.makeTestPlan(
+            blocks: [block],
+            exercises: [planExercise],
+            trainingStatus: .beginner
+        )
+
+        // User hits exactly the week-3 target (5 reps) twice — would be flagged as
+        // 2 consecutive misses against the old plan-wide 8-rep target.
+        let workouts = [workout1Id, workout2Id].enumerated().map { i, id -> Workout in
+            let we = makeWorkoutExercise(
+                exerciseId: exerciseId, name: "Bench Press",
+                sets: [makeSet(weight: 50, reps: 5)]
+            )
+            return makeWorkout(id: id, completedAt: daysAgo(i * 2 + 1), exercises: [we])
+        }
+
+        let sut = makeSUT()
+        let proposals = try await sut.analyzeAndPropose(plan: plan, recentWorkouts: workouts)
+
+        let regressionProposals = proposals.filter {
+            $0.adjustment.adjustmentType == .loadDecrease && $0.adjustment.trigger != .oneRMUpdate
+        }
+        XCTAssertTrue(regressionProposals.isEmpty,
+                      "Meeting the session-specific rep target must not count as regression")
     }
 
     // MARK: - m26: Non-Beginner Regression Behavior
