@@ -207,43 +207,6 @@ struct TemplateExerciseTests {
     }
 }
 
-// MARK: - TemplateFolder Tests
-
-@Suite("TemplateFolder Tests")
-struct TemplateFolderTests {
-
-    @Test("TemplateFolder creation with name and sortOrder")
-    func testCreation() {
-        let folder = TemplateFolder(
-            id: UUID(),
-            name: "PPL Program",
-            sortOrder: 0
-        )
-
-        #expect(folder.name == "PPL Program")
-        #expect(folder.sortOrder == 0)
-    }
-
-    @Test("TemplateFolder is Identifiable")
-    func testIdentifiable() {
-        let id = UUID()
-        let folder = TemplateFolder(id: id, name: "Test", sortOrder: 1)
-        #expect(folder.id == id)
-    }
-
-    @Test("TemplateFolder Codable roundtrip")
-    func testCodable() throws {
-        let original = TemplateFolder(id: UUID(), name: "5/3/1", sortOrder: 3)
-
-        let data = try JSONEncoder().encode(original)
-        let decoded = try JSONDecoder().decode(TemplateFolder.self, from: data)
-
-        #expect(decoded.id == original.id)
-        #expect(decoded.name == "5/3/1")
-        #expect(decoded.sortOrder == 3)
-    }
-}
-
 // MARK: - BodyMeasurement Tests
 
 @Suite("BodyMeasurement Tests")

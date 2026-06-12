@@ -104,15 +104,3 @@ public struct TemplateExercise: Identifiable, Hashable, Sendable, Codable {
         )
     }
 }
-
-public struct TemplateFolder: Identifiable, Hashable, Sendable, Codable {
-    public let id: UUID
-    public var name: String
-    public var sortOrder: Int
-
-    public init(id: UUID, name: String, sortOrder: Int) {
-        self.id = id
-        self.name = name
-        self.sortOrder = sortOrder
-    }
-}

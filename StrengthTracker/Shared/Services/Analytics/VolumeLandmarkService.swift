@@ -25,7 +25,7 @@ public final class VolumeLandmarkService: Sendable {
         } else {
             allWorkouts = try await workoutRepository.fetchAll()
         }
-        let fourWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -4, to: Date())!
+        let fourWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -AnalyticsCalculations.Windows.recentWeeks, to: Date())!
         let recentWorkouts = allWorkouts.filter {
             $0.completedAt != nil && ($0.completedAt ?? $0.startedAt) >= fourWeeksAgo
         }
@@ -67,13 +67,13 @@ public final class VolumeLandmarkService: Sendable {
                 let hardSets = we.sets.filter { $0.isCompleted && $0.setType != .warmup }.count
                 guard hardSets > 0 else { continue }
 
-                let primary = we.exercise.primaryMuscleGroup.rawValue
-                totalCredits[primary, default: 0] += Double(hardSets)
-
-                let secondaryCount = max(we.exercise.secondaryMuscleGroups.count, 1)
-                let secondaryCreditPerMuscle = Double(hardSets) * 0.5 / Double(secondaryCount)
-                for secondary in we.exercise.secondaryMuscleGroups {
-                    totalCredits[secondary.rawValue, default: 0] += secondaryCreditPerMuscle
+                let credits = AnalyticsCalculations.attributeHardSetCredits(
+                    hardSets: hardSets,
+                    primaryMuscle: we.exercise.primaryMuscleGroup,
+                    secondaryMuscles: we.exercise.secondaryMuscleGroups
+                )
+                for (muscle, credit) in credits {
+                    totalCredits[muscle.rawValue, default: 0] += credit
                 }
             }
         }

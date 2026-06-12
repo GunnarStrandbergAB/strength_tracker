@@ -112,12 +112,12 @@ struct PlanCreationStep3ExercisesView: View {
 
             Spacer()
 
-            // 1RM input
+            // 1RM input (displayed in the user's unit; stored in kg)
             HStack(spacing: 4) {
                 TextField("1RM", value: Binding(
-                    get: { draft.oneRM == 0 ? nil : draft.oneRM },
+                    get: { draft.oneRM == 0 ? nil : viewModel.weightUnit.fromKg(draft.oneRM) },
                     set: { newVal in
-                        viewModel.updateOneRM(for: draft.id, value: newVal ?? 0)
+                        viewModel.updateOneRM(for: draft.id, value: viewModel.weightUnit.toKg(newVal ?? 0))
                     }
                 ), format: .number)
                 .keyboardType(.decimalPad)
@@ -126,7 +126,7 @@ struct PlanCreationStep3ExercisesView: View {
                 .frame(width: 60)
                 .foregroundStyle(STColors.textPrimary)
 
-                Text("kg")
+                Text(viewModel.weightUnit.symbol)
                     .font(.system(size: 12))
                     .foregroundStyle(STColors.textTertiary)
             }

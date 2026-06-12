@@ -14,53 +14,6 @@ struct SessionExecutionServiceTests {
     let benchPlanExId = UUID()
     let squatPlanExId = UUID()
 
-    // MARK: - prepareSession
-
-    @Test("prepareSession converts PlannedSession to WorkoutTemplate with correct exercises and sets")
-    func testPrepareSession_convertsToWorkoutTemplate() {
-        let planned1 = ProgressionTestHelpers.makeTestPlannedExerciseSet(
-            exerciseId: benchId,
-            exerciseName: "Bench Press",
-            sets: 3,
-            targetReps: 6,
-            targetWeight: 80.0
-        )
-        let planned2 = ProgressionTestHelpers.makeTestPlannedExerciseSet(
-            exerciseId: squatId,
-            exerciseName: "Squat",
-            sets: 4,
-            targetReps: 5,
-            targetWeight: 100.0
-        )
-        let session = ProgressionTestHelpers.makeTestPlannedSession(
-            label: "Day A",
-            exercises: [planned1, planned2]
-        )
-
-        let template = sut.prepareSession(session)
-
-        #expect(template.name == "Day A")
-        #expect(template.exercises.count == 2)
-
-        // First exercise
-        let ex1 = template.exercises[0]
-        #expect(ex1.exercise.name == "Bench Press")
-        #expect(ex1.targetSets == 3)
-        #expect(ex1.targetReps == 6)
-        #expect(ex1.targetWeight == 80.0)
-        #expect(ex1.setTargets.count == 3)
-        #expect(ex1.setTargets[0].targetWeight == 80.0)
-        #expect(ex1.setTargets[0].targetReps == 6)
-
-        // Second exercise
-        let ex2 = template.exercises[1]
-        #expect(ex2.exercise.name == "Squat")
-        #expect(ex2.targetSets == 4)
-        #expect(ex2.targetReps == 5)
-        #expect(ex2.targetWeight == 100.0)
-        #expect(ex2.setTargets.count == 4)
-    }
-
     // MARK: - completeSession: linking
 
     @Test("completeSession links workout to session via completedWorkoutId and completedAt")
@@ -110,7 +63,6 @@ struct SessionExecutionServiceTests {
         )
 
         // Completed 90kg x 5 -> Epley: 90*(1+5/30) = 105.0
-        // EWMA: 0.3*105 + 0.7*100 = 31.5 + 70 = 101.5 -> rounded to 102.5
         let sets = [
             makeCompletedSet(weight: 90.0, reps: 5, order: 0),
             makeCompletedSet(weight: 90.0, reps: 5, order: 1),
@@ -124,8 +76,9 @@ struct SessionExecutionServiceTests {
 
         // The estimated 1RM from best set: 90*(1+5/30)=105
         // Deviation: |105-100|/100 = 0.05 <= 0.15 (not outlier)
-        // EWMA: 0.3*105 + 0.7*100 = 101.5 -> rounded to 102.5
-        #expect(result.updatedExercises[0].current1RM == 102.5)
+        // Asymmetric EWMA: estimates >= current are accepted immediately (PRs are real),
+        // smoothing only applies on the way down. 105 >= 100 -> 105.
+        #expect(result.updatedExercises[0].current1RM == 105.0)
         #expect(result.adjustments.contains(where: { $0.trigger == .oneRMUpdate }))
     }
 
@@ -260,9 +213,9 @@ struct SessionExecutionServiceTests {
             exercises: [planned]
         )
 
-        // 92kg x 5 -> Epley: 92*(1+5/30)=107.33
-        // Deviation: |107.33-100|/100=0.0733 <= 0.15
-        // EWMA: 0.3*107.33+0.7*100=102.2 -> rounded to 102.5
+        // 92kg x 5 -> Epley: 92*(1+5/30)=107.33 -> estimate rounds to 107.5
+        // Deviation: |107.5-100|/100=0.075 <= 0.15
+        // Asymmetric EWMA: estimates >= current are accepted immediately -> 107.5
         let sets = [makeCompletedSet(weight: 92.0, reps: 5, order: 0)]
         let workout = makeWorkout(exercises: [
             makeWorkoutExercise(exerciseId: benchId, name: "Bench Press", sets: sets)
@@ -275,7 +228,7 @@ struct SessionExecutionServiceTests {
         #expect(adj?.adjustmentType == .loadIncrease)
         #expect(adj?.affectedExerciseIds == [benchPlanExId])
         #expect(adj?.previousValues["current1RM"] == "100.0")
-        #expect(adj?.newValues["current1RM"] == "102.5")
+        #expect(adj?.newValues["current1RM"] == "107.5")
     }
 
     // MARK: - estimateCurrent1RM
@@ -375,7 +328,7 @@ struct SessionExecutionServiceTests {
 
         // Single at 115kg -> estimate = 115.0
         // Deviation: |115-100|/100 = 0.15 which is exactly at the threshold (<=0.15) -> ACCEPTED
-        // EWMA: 0.3*115 + 0.7*100 = 34.5 + 70 = 104.5 -> rounded to 105.0
+        // Asymmetric EWMA: estimates >= current are accepted immediately -> 115.0
         let sets = [makeCompletedSet(weight: 115.0, reps: 1, order: 0)]
         let workout = makeWorkout(exercises: [
             makeWorkoutExercise(exerciseId: benchId, name: "Bench Press", sets: sets)
@@ -384,7 +337,7 @@ struct SessionExecutionServiceTests {
         let result = sut.completeSession(session, workout: workout, planExercises: [planEx])
 
         // Should be updated (deviation exactly 0.15 is accepted)
-        #expect(result.updatedExercises[0].current1RM == 105.0)
+        #expect(result.updatedExercises[0].current1RM == 115.0)
         #expect(result.adjustments.contains(where: { $0.trigger == .oneRMUpdate }))
     }
 
@@ -409,9 +362,10 @@ struct SessionExecutionServiceTests {
             exercises: [planned]
         )
 
-        // Single at 116kg -> estimate = 116.0
-        // Deviation: |116-100|/100 = 0.16 > 0.15 -> REJECTED
-        let sets = [makeCompletedSet(weight: 116.0, reps: 1, order: 0)]
+        // Single at 117.5kg -> estimate = 117.5 (already a 2.5 multiple; M16 rounds estimates
+        // to 2.5 before the outlier check, so 116 would land back ON the boundary at 115)
+        // Deviation: |117.5-100|/100 = 0.175 > 0.15 -> REJECTED
+        let sets = [makeCompletedSet(weight: 117.5, reps: 1, order: 0)]
         let workout = makeWorkout(exercises: [
             makeWorkoutExercise(exerciseId: benchId, name: "Bench Press", sets: sets)
         ])

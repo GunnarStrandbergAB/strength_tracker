@@ -3,6 +3,7 @@ import StrengthTrackerShared
 
 struct SetRowView: View {
     let exerciseSet: ExerciseSet
+    var weightUnit: WeightUnit = .kg
 
     var body: some View {
         HStack {
@@ -20,9 +21,9 @@ struct SetRowView: View {
             Spacer()
 
             if let weight = exerciseSet.weight {
-                Text(String(format: "%.1f", weight))
+                Text(weightUnit.formatValue(weight, decimals: 1))
                     .monospacedDigit()
-                Text("kg")
+                Text(weightUnit.symbol)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

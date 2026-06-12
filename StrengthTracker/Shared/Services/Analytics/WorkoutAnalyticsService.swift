@@ -29,11 +29,20 @@ public final class WorkoutAnalyticsService: Sendable {
     private let blockComparisonService: BlockComparisonService?
     private let anomalyDetectionService: AnomalyDetectionService?
     private let insightGenerator: (any InsightTextGenerating)?
+    private let archetypeService: WorkoutArchetypeService?
+    private let changePointService: ChangePointDetectionService?
+    private let qualityScoreService: WorkoutQualityScoreService?
 
     // Cache
     private var cachedVectors: [UUID: WorkoutVector] = [:]
     private var cacheTimestamp: Date?
     private let cacheValidityDuration: TimeInterval = 300
+
+    // Archetype cache: k-means is expensive — recompute only when the vector set grows.
+    private var cachedArchetypes: [WorkoutArchetype] = []
+    private var archetypeCacheVectorCount: Int = -1
+    // Quality scores memoized per workout (completed workouts are immutable).
+    private var cachedQualityScores: [UUID: WorkoutQualityScore] = [:]
 
     public init(
         analyticsRepository: any AnalyticsRepository,
@@ -52,7 +61,10 @@ public final class WorkoutAnalyticsService: Sendable {
         phaseDetectionService: PhaseDetectionService? = nil,
         blockComparisonService: BlockComparisonService? = nil,
         anomalyDetectionService: AnomalyDetectionService? = nil,
-        insightGenerator: (any InsightTextGenerating)? = nil
+        insightGenerator: (any InsightTextGenerating)? = nil,
+        archetypeService: WorkoutArchetypeService? = nil,
+        changePointService: ChangePointDetectionService? = nil,
+        qualityScoreService: WorkoutQualityScoreService? = nil
     ) {
         self.analyticsRepository = analyticsRepository
         self.workoutRepository = workoutRepository
@@ -71,6 +83,9 @@ public final class WorkoutAnalyticsService: Sendable {
         self.blockComparisonService = blockComparisonService
         self.anomalyDetectionService = anomalyDetectionService
         self.insightGenerator = insightGenerator
+        self.archetypeService = archetypeService
+        self.changePointService = changePointService
+        self.qualityScoreService = qualityScoreService
     }
 
     // MARK: - Similar Workouts
@@ -175,6 +190,9 @@ public final class WorkoutAnalyticsService: Sendable {
         var blockComparison: BlockComparison?
         var anomalies: [WorkoutAnomaly] = []
         var highlights: [AnalyticsHighlight] = []
+        var archetypes: [WorkoutArchetype] = []
+        var trainingFingerprint: TrainingFingerprint?
+        var timeOfDayAnalysis: TimeOfDayAnalysis?
 
         if completedWorkouts.count >= 19 {
             let bestE1RM = AnalyticsCalculations.buildBestE1RMMap(from: nonDeloadWorkouts)
@@ -200,6 +218,34 @@ public final class WorkoutAnalyticsService: Sendable {
             trainingPhase = phaseDetectionService?.detectPhases(vectors: allVectors)
             blockComparison = blockComparisonService?.compareBlocks(vectors: nonDeloadVectors)
             anomalies = anomalyDetectionService?.detectAnomalies(vectors: nonDeloadVectors) ?? []
+
+            // Workout archetypes + training fingerprint.
+            // K-means clusters are recomputed only when the vector set grows; the
+            // fingerprint is cheap and its 4-week windows shift daily, so it always runs.
+            if let archetypeService {
+                if nonDeloadVectors.count != archetypeCacheVectorCount {
+                    cachedArchetypes = archetypeService.cluster(
+                        vectors: nonDeloadVectors, workouts: nonDeloadWorkouts
+                    )
+                    archetypeCacheVectorCount = nonDeloadVectors.count
+                }
+                archetypes = cachedArchetypes
+                trainingFingerprint = archetypeService.fingerprint(
+                    archetypes: archetypes, vectors: nonDeloadVectors
+                )
+            }
+
+            // Time-of-day quality analysis (per-workout scores memoized — immutable once completed)
+            if let changePointService, let qualityScoreService {
+                for workout in completedWorkouts where cachedQualityScores[workout.id] == nil {
+                    cachedQualityScores[workout.id] = qualityScoreService.computeScore(
+                        for: workout, history: completedWorkouts
+                    )
+                }
+                timeOfDayAnalysis = changePointService.analyzeTimeOfDay(
+                    workouts: completedWorkouts, qualityScores: cachedQualityScores
+                )
+            }
 
             // Smart highlights
             if let generator = insightGenerator {
@@ -252,7 +298,10 @@ public final class WorkoutAnalyticsService: Sendable {
             trainingPhase: trainingPhase,
             blockComparison: blockComparison,
             anomalies: anomalies,
-            highlights: highlights
+            highlights: highlights,
+            archetypes: archetypes,
+            trainingFingerprint: trainingFingerprint,
+            timeOfDayAnalysis: timeOfDayAnalysis
         )
     }
 

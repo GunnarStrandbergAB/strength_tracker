@@ -128,7 +128,10 @@ struct ContentView: View {
             set: { if !$0 { workoutViewModel.showPostWorkoutSummary = false; workoutViewModel.postWorkoutDebrief = nil } }
         )) {
             if let debrief = workoutViewModel.postWorkoutDebrief {
-                PostWorkoutSummaryView(debrief: debrief) {
+                PostWorkoutSummaryView(
+                    debrief: debrief,
+                    weightUnit: workoutViewModel.userPreferencesService?.weightUnit ?? .kg
+                ) {
                     workoutViewModel.showPostWorkoutSummary = false
                     workoutViewModel.postWorkoutDebrief = nil
                 }

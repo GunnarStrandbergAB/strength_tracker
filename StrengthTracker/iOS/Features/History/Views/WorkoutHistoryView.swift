@@ -17,7 +17,10 @@ struct WorkoutHistoryView: View {
             List {
                 ForEach(viewModel.workouts) { workout in
                     NavigationLink(value: workout) {
-                        WorkoutHistoryRow(workout: workout)
+                        WorkoutHistoryRow(
+                            workout: workout,
+                            weightUnit: viewModel.userPreferencesService?.weightUnit ?? .kg
+                        )
                     }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
@@ -84,6 +87,7 @@ struct WorkoutHistoryView: View {
 
 private struct WorkoutHistoryRow: View {
     let workout: Workout
+    var weightUnit: WeightUnit = .kg
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -104,7 +108,7 @@ private struct WorkoutHistoryRow: View {
             .foregroundStyle(.secondary)
 
             if workout.totalVolume > 0 {
-                Text("Volume: \(String(format: "%.0f", workout.totalVolume)) kg")
+                Text("Volume: \(weightUnit.format(workout.totalVolume, decimals: 0))")
                     .font(.caption)
                     .foregroundStyle(.blue)
             }

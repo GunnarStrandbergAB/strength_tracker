@@ -13,6 +13,10 @@ struct WorkoutDetailView: View {
         historyViewModel?.selectedWorkout ?? workout
     }
 
+    private var weightUnit: WeightUnit {
+        historyViewModel?.userPreferencesService?.weightUnit ?? .kg
+    }
+
     var body: some View {
         let isEditing = historyViewModel?.isEditing ?? false
 
@@ -31,7 +35,7 @@ struct WorkoutDetailView: View {
                 if let duration = displayedWorkout.duration {
                     LabeledContent("Duration", value: formatDuration(duration))
                 }
-                LabeledContent("Total Volume", value: String(format: "%.0f kg", displayedWorkout.totalVolume))
+                LabeledContent("Total Volume", value: weightUnit.format(displayedWorkout.totalVolume, decimals: 0))
                 LabeledContent("Exercises", value: "\(displayedWorkout.exercises.count)")
             }
 
@@ -50,6 +54,7 @@ struct WorkoutDetailView: View {
                                 setNumber: index + 1,
                                 exerciseSet: exerciseSet,
                                 showRPE: workoutExercise.sets.contains { $0.rpe != nil },
+                                weightUnit: hvm.userPreferencesService?.weightUnit ?? .kg,
                                 onWeightChange: { weight in
                                     Task { await hvm.updateSetWeight(exerciseId: workoutExercise.id, setId: exerciseSet.id, weight: weight) }
                                 },
@@ -87,13 +92,16 @@ struct WorkoutDetailView: View {
                         }
                     } else {
                         ForEach(workoutExercise.sets) { exerciseSet in
-                            SetRowView(exerciseSet: exerciseSet)
+                            SetRowView(
+                                exerciseSet: exerciseSet,
+                                weightUnit: historyViewModel?.userPreferencesService?.weightUnit ?? .kg
+                            )
                         }
                     }
 
                     if workoutExercise.exerciseVolume > 0 {
                         LabeledContent("Exercise Volume") {
-                            Text(String(format: "%.0f kg", workoutExercise.exerciseVolume))
+                            Text(weightUnit.format(workoutExercise.exerciseVolume, decimals: 0))
                                 .foregroundStyle(.blue)
                         }
                     }

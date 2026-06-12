@@ -27,8 +27,11 @@ public final class PersonalRecordService {
 
         // Check max weight PR
         if let weight = set.weight, weight > 0 {
-            let maxWeightRecord = existingRecords.first { $0.recordType == .maxWeight }
-            if maxWeightRecord == nil || weight > maxWeightRecord!.value {
+            // Compare against the best existing record — multiple records of the same
+            // type can accumulate, and `.first` would pick an arbitrary (possibly
+            // stale, lower) one, flagging false PRs.
+            let bestWeight = existingRecords.filter { $0.recordType == .maxWeight }.map(\.value).max() ?? 0
+            if weight > bestWeight {
                 newRecords.append(PersonalRecord(
                     id: UUID(),
                     exerciseId: exercise.id,
@@ -42,8 +45,8 @@ public final class PersonalRecordService {
 
         // Check max reps PR (at any weight)
         if let reps = set.reps, reps > 0 {
-            let maxRepsRecord = existingRecords.first { $0.recordType == .maxReps }
-            if maxRepsRecord == nil || Double(reps) > maxRepsRecord!.value {
+            let bestReps = existingRecords.filter { $0.recordType == .maxReps }.map(\.value).max() ?? 0
+            if Double(reps) > bestReps {
                 newRecords.append(PersonalRecord(
                     id: UUID(),
                     exerciseId: exercise.id,
@@ -55,11 +58,11 @@ public final class PersonalRecordService {
             }
         }
 
-        // Check estimated 1RM PR (Epley formula: weight * (1 + reps/30))
+        // Check estimated 1RM PR (shared hybrid Epley/Brzycki — must match analytics e1RM)
         if let weight = set.weight, let reps = set.reps, weight > 0, reps > 0 {
-            let estimated1RM = weight * (1.0 + Double(reps) / 30.0)
-            let e1RMRecord = existingRecords.first { $0.recordType == .estimatedOneRepMax }
-            if e1RMRecord == nil || estimated1RM > e1RMRecord!.value {
+            let estimated1RM = AnalyticsCalculations.calculateOneRM(weight: weight, reps: reps)
+            let bestE1RM = existingRecords.filter { $0.recordType == .estimatedOneRepMax }.map(\.value).max() ?? 0
+            if estimated1RM > bestE1RM {
                 newRecords.append(PersonalRecord(
                     id: UUID(),
                     exerciseId: exercise.id,
@@ -73,8 +76,8 @@ public final class PersonalRecordService {
 
         // Check max volume PR (weight * reps for this single set)
         if set.setVolume > 0 {
-            let maxVolumeRecord = existingRecords.first { $0.recordType == .maxVolume }
-            if maxVolumeRecord == nil || set.setVolume > maxVolumeRecord!.value {
+            let bestVolume = existingRecords.filter { $0.recordType == .maxVolume }.map(\.value).max() ?? 0
+            if set.setVolume > bestVolume {
                 newRecords.append(PersonalRecord(
                     id: UUID(),
                     exerciseId: exercise.id,
@@ -170,7 +173,7 @@ public final class PersonalRecordService {
             let setsWithE1RM = sets.compactMap { item -> (set: ExerciseSet, e1RM: Double)? in
                 guard let weight = item.set.weight, let reps = item.set.reps,
                       weight > 0, reps > 0 else { return nil }
-                let e1RM = weight * (1.0 + Double(reps) / 30.0)
+                let e1RM = AnalyticsCalculations.calculateOneRM(weight: weight, reps: reps)
                 return (item.set, e1RM)
             }
 

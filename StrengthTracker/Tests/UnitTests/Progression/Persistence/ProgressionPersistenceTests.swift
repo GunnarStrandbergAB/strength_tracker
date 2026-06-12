@@ -409,7 +409,7 @@ final class ProgressionPlanMapperTests: XCTestCase {
             adjustments: [adjustment]
         )
 
-        let entity = ProgressionPlanMapper.toEntity(original)
+        let entity = try ProgressionPlanMapper.toEntity(original)
         let roundTripped = ProgressionPlanMapper.toDomain(entity)
 
         XCTAssertNotNil(roundTripped)
@@ -430,7 +430,7 @@ final class ProgressionPlanMapperTests: XCTestCase {
 
     func testTolerantDecoding_missingOptionalFields() throws {
         let plan = ProgressionTestHelpers.makeTestPlan(name: "Tolerant Test")
-        let entity = ProgressionPlanMapper.toEntity(plan)
+        let entity = try ProgressionPlanMapper.toEntity(plan)
 
         // Simulate stored data with nil optional fields
         entity.adjustmentsJSON = Data("[]".utf8)
@@ -464,7 +464,7 @@ final class ProgressionPlanMapperTests: XCTestCase {
         original.targetEndDate = targetEndDate
         original.actualEndDate = actualEndDate
 
-        let entity = ProgressionPlanMapper.toEntity(original)
+        let entity = try ProgressionPlanMapper.toEntity(original)
         let roundTripped = ProgressionPlanMapper.toDomain(entity)
 
         XCTAssertNotNil(roundTripped, "Round-tripped plan must not be nil")
@@ -492,7 +492,7 @@ final class ProgressionPlanMapperTests: XCTestCase {
             name: "Corrupt JSON Plan",
             exercises: [ProgressionTestHelpers.makeTestPlanExercise(name: "Deadlift")]
         )
-        let entity = ProgressionPlanMapper.toEntity(plan)
+        let entity = try ProgressionPlanMapper.toEntity(plan)
 
         // Overwrite the exercises JSON with invalid data
         entity.exercisesJSON = Data("not-json".utf8)

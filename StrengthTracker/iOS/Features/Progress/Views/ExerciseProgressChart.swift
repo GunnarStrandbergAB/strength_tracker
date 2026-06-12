@@ -8,6 +8,7 @@ import Charts
 
 struct ExerciseProgressChart: View {
     let data: [(date: Date, weight: Double, reps: Int)]
+    var weightUnit: WeightUnit = .kg
 
     var body: some View {
         if data.isEmpty {
@@ -37,18 +38,18 @@ struct ExerciseProgressChart: View {
             ForEach(Array(data.enumerated()), id: \.offset) { _, entry in
                 LineMark(
                     x: .value("Date", entry.date),
-                    y: .value("Weight", entry.weight)
+                    y: .value("Weight", weightUnit.fromKg(entry.weight))
                 )
                 .foregroundStyle(Color.blue)
 
                 PointMark(
                     x: .value("Date", entry.date),
-                    y: .value("Weight", entry.weight)
+                    y: .value("Weight", weightUnit.fromKg(entry.weight))
                 )
                 .foregroundStyle(Color.blue)
             }
         }
-        .chartYAxisLabel("Weight (kg)")
+        .chartYAxisLabel("Weight (\(weightUnit.symbol))")
         .chartXAxis {
             AxisMarks(values: .automatic) { _ in
                 AxisValueLabel(format: .dateTime.month(.abbreviated).day())
@@ -71,7 +72,7 @@ struct ExerciseProgressChart: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Text(String(format: "%.1f kg", entry.weight))
+                    Text(weightUnit.format(entry.weight, decimals: 1))
                         .monospacedDigit()
                     Text("\u{00D7} \(entry.reps)")
                         .foregroundStyle(.secondary)

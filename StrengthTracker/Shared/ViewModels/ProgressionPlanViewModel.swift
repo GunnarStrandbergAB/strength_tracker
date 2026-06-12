@@ -77,6 +77,12 @@ public final class ProgressionPlanViewModel {
     private let exerciseRepository: any ExerciseRepository
     private let templateRepository: any TemplateRepository
     private let userPreferencesService: UserPreferencesService?
+    private let workoutRepository: (any WorkoutRepository)?
+    private let sessionExecutionService: SessionExecutionService
+    private let adaptiveAdjustmentService: AdaptiveAdjustmentService?
+    private let coachingCommunicationService: CoachingCommunicationService?
+
+    public var weightUnit: WeightUnit { userPreferencesService?.weightUnit ?? .kg }
 
     // MARK: - Init
 
@@ -87,7 +93,11 @@ public final class ProgressionPlanViewModel {
         planAnalyticsService: PlanAnalyticsService,
         exerciseRepository: any ExerciseRepository,
         templateRepository: any TemplateRepository,
-        userPreferencesService: UserPreferencesService? = nil
+        userPreferencesService: UserPreferencesService? = nil,
+        workoutRepository: (any WorkoutRepository)? = nil,
+        sessionExecutionService: SessionExecutionService = SessionExecutionService(),
+        adaptiveAdjustmentService: AdaptiveAdjustmentService? = nil,
+        coachingCommunicationService: CoachingCommunicationService? = nil
     ) {
         self.progressionPlanRepository = progressionPlanRepository
         self.trainingStatusDetector = trainingStatusDetector
@@ -96,6 +106,10 @@ public final class ProgressionPlanViewModel {
         self.exerciseRepository = exerciseRepository
         self.templateRepository = templateRepository
         self.userPreferencesService = userPreferencesService
+        self.workoutRepository = workoutRepository
+        self.sessionExecutionService = sessionExecutionService
+        self.adaptiveAdjustmentService = adaptiveAdjustmentService
+        self.coachingCommunicationService = coachingCommunicationService
     }
 
     // MARK: - Active Plan
@@ -164,7 +178,7 @@ public final class ProgressionPlanViewModel {
 
     // MARK: - Weekday Selection
 
-    /// Default day-of-week templates (ISO 8601: Mon=2..Sat=7, Sun=1).
+    /// Default day-of-week templates (Calendar.weekday encoding: Sun=1, Mon=2..Sat=7).
     public static let defaultDaySpread: [Int: [Int]] = [
         1: [4],                  // Wed (midweek)
         2: [2, 5],              // Mon / Thu
@@ -212,10 +226,11 @@ public final class ProgressionPlanViewModel {
 
     // MARK: - Start Date
 
-    /// ISO weekday number for a given date (Sun=1, Mon=2, ..., Sat=7)
-    private func isoDayOfWeek(_ date: Date) -> Int {
-        let weekday = Calendar.current.component(.weekday, from: date) // Sun=1..Sat=7
-        return weekday
+    /// Calendar.weekday number for a given date (Sun=1, Mon=2, ..., Sat=7).
+    /// Note: this is NOT ISO 8601 (which is Mon=1..Sun=7) — persisted plan day
+    /// numbers use Calendar.weekday encoding throughout.
+    private func calendarWeekday(_ date: Date) -> Int {
+        Calendar.current.component(.weekday, from: date) // Sun=1..Sat=7
     }
 
     /// Returns the next training day on or after today.
@@ -223,11 +238,11 @@ public final class ProgressionPlanViewModel {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         guard !draftTrainingDays.isEmpty else { return today }
-        let todayISO = isoDayOfWeek(today)
-        if draftTrainingDays.contains(todayISO) { return today }
+        let todayWeekday = calendarWeekday(today)
+        if draftTrainingDays.contains(todayWeekday) { return today }
         for offset in 1...7 {
             let candidate = calendar.date(byAdding: .day, value: offset, to: today)!
-            if draftTrainingDays.contains(isoDayOfWeek(candidate)) { return candidate }
+            if draftTrainingDays.contains(calendarWeekday(candidate)) { return candidate }
         }
         return today
     }
@@ -304,7 +319,7 @@ public final class ProgressionPlanViewModel {
     private func assignScheduledDates(to plan: inout ProgressionPlan) {
         let calendar = Calendar.current
         let planStartDay = calendar.startOfDay(for: plan.startDate)
-        let startISO = calendar.component(.weekday, from: planStartDay) // Sun=1..Sat=7
+        let startWeekday = calendar.component(.weekday, from: planStartDay) // Sun=1..Sat=7
 
         for blockIdx in plan.blocks.indices {
             for weekIdx in plan.blocks[blockIdx].weeks.indices {
@@ -313,7 +328,7 @@ public final class ProgressionPlanViewModel {
 
                 for sessionIdx in plan.blocks[blockIdx].weeks[weekIdx].sessions.indices {
                     guard let dow = plan.blocks[blockIdx].weeks[weekIdx].sessions[sessionIdx].dayOfWeek else { continue }
-                    let dayOffset = (dow - startISO + 7) % 7
+                    let dayOffset = (dow - startWeekday + 7) % 7
                     let sessionDate = calendar.date(byAdding: .day, value: dayOffset, to: weekAnchor)!
                     plan.blocks[blockIdx].weeks[weekIdx].sessions[sessionIdx].scheduledDate = sessionDate
                 }
@@ -698,12 +713,297 @@ public final class ProgressionPlanViewModel {
 
     // MARK: - Session Completion
 
+    /// Full adaptive completion pipeline: links the workout to the planned session, runs the
+    /// APRE/EWMA engine, propagates updated targets to future sessions, and asks the adviser
+    /// for new proposals. Any failure degrades to a plain `markSessionCompleted` so the
+    /// completion itself is never lost.
     public func handleSessionCompleted(sessionId: UUID, planId: UUID, workoutId: UUID) async {
+        // Step 1: fetch the plan and locate the session — fall back if either is missing.
+        let fetchedPlan = try? await progressionPlanRepository.fetch(id: planId)
+        guard var plan = fetchedPlan,
+              let (bi, wi, si) = Self.locateSession(sessionId, in: plan) else {
+            await fallbackMarkSessionCompleted(sessionId: sessionId, planId: planId, workoutId: workoutId)
+            return
+        }
+
+        // Step 2: idempotency — Watch transfers can retry the same completion.
+        guard plan.blocks[bi].weeks[wi].sessions[si].completedWorkoutId == nil else {
+            await loadActivePlan()
+            return
+        }
+
+        do {
+            // Step 3: resolve the completed workout.
+            guard let workoutRepository else {
+                await fallbackMarkSessionCompleted(sessionId: sessionId, planId: planId, workoutId: workoutId)
+                return
+            }
+            let allWorkouts = try await workoutRepository.fetchAll()
+            guard let workout = allWorkouts.first(where: { $0.id == workoutId }) else {
+                await fallbackMarkSessionCompleted(sessionId: sessionId, planId: planId, workoutId: workoutId)
+                return
+            }
+
+            // Step 4: run the APRE + EWMA 1RM engine.
+            let result = sessionExecutionService.completeSession(
+                plan.blocks[bi].weeks[wi].sessions[si],
+                workout: workout,
+                planExercises: plan.exercises
+            )
+            plan.blocks[bi].weeks[wi].sessions[si] = result.updatedSession
+            plan.exercises = result.updatedExercises
+
+            // Step 5: engine adjustments are auto-applied (recorded as accepted).
+            for var adjustment in result.adjustments {
+                adjustment.wasAccepted = true
+                if let coaching = coachingCommunicationService {
+                    let explanation = await coaching.provider.explain(
+                        adjustment: adjustment, trainingStatus: plan.trainingStatus
+                    )
+                    adjustment.coachingExplanation = explanation.body
+                }
+                plan.adjustments.append(adjustment)
+            }
+
+            // Step 6: propagate updated targets to future sessions.
+            applyExerciseUpdatesToFutureSessions(plan: &plan, adjustments: result.adjustments)
+
+            // Step 7: adviser proposals over the last 8 weeks of completed workouts.
+            if let adviser = adaptiveAdjustmentService {
+                let cutoff = Calendar.current.date(byAdding: .weekOfYear, value: -8, to: Date()) ?? .distantPast
+                let recentWorkouts = allWorkouts.filter {
+                    guard let completedAt = $0.completedAt else { return false }
+                    return completedAt >= cutoff
+                }
+                let proposals = try await adviser.analyzeAndPropose(plan: plan, recentWorkouts: recentWorkouts)
+                for proposal in proposals {
+                    guard !Self.isDuplicateProposal(proposal.adjustment, existing: plan.adjustments) else { continue }
+                    var adjustment = proposal.adjustment
+                    adjustment.wasAccepted = nil
+                    if let coaching = coachingCommunicationService {
+                        let explanation = await coaching.provider.explain(
+                            adjustment: adjustment, trainingStatus: plan.trainingStatus
+                        )
+                        adjustment.coachingExplanation = "\(explanation.body) \(proposal.reasoning)"
+                    } else {
+                        adjustment.coachingExplanation = proposal.reasoning
+                    }
+                    plan.adjustments.append(adjustment)
+                }
+            }
+
+            // Step 8: persist everything atomically.
+            plan.updatedAt = Date()
+            try await progressionPlanRepository.save(plan)
+            await loadActivePlan()
+        } catch {
+            // Completion marking must never be lost — degrade to the plain repo call.
+            print("[ProgressionPlanVM] Adaptive completion pipeline failed, falling back: \(error)")
+            await fallbackMarkSessionCompleted(sessionId: sessionId, planId: planId, workoutId: workoutId)
+        }
+    }
+
+    /// Pre-pipeline behavior: just mark the session completed and reload.
+    private func fallbackMarkSessionCompleted(sessionId: UUID, planId: UUID, workoutId: UUID) async {
         do {
             try await progressionPlanRepository.markSessionCompleted(sessionId, workoutId: workoutId, inPlan: planId)
             await loadActivePlan()
         } catch {
             errorMessage = "Failed to mark session completed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Returns the (block, week, session) indices for a session id, or nil if absent.
+    private static func locateSession(_ sessionId: UUID, in plan: ProgressionPlan) -> (Int, Int, Int)? {
+        for bi in plan.blocks.indices {
+            for wi in plan.blocks[bi].weeks.indices {
+                if let si = plan.blocks[bi].weeks[wi].sessions.firstIndex(where: { $0.id == sessionId }) {
+                    return (bi, wi, si)
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Propagates post-session exercise state to all future sessions (uncompleted and not
+    /// scheduled in the past).
+    ///
+    /// Precedence rule:
+    /// - Percentage-based sets (`percentageOf1RM > 0`) are governed by the exercise's 1RM:
+    ///   `targetWeight` is recomputed from the updated `PlanExercise.current1RM` at the set's
+    ///   own percentage. APRE deltas are NOT layered on top — the 1RM update already absorbed
+    ///   the session's performance.
+    /// - Absolute sets (`percentageOf1RM == 0`) have no 1RM anchor, so they take the
+    ///   APRE-adjusted target weight directly when an APRE adjustment affected their exercise.
+    private func applyExerciseUpdatesToFutureSessions(
+        plan: inout ProgressionPlan,
+        adjustments: [PlanAdjustment]
+    ) {
+        let startOfToday = Calendar.current.startOfDay(for: Date())
+        let planExercisesById = Dictionary(
+            plan.exercises.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let planExercisesByLibraryId = Dictionary(
+            plan.exercises.map { ($0.exerciseId, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let apreAdjustments = adjustments.filter { $0.trigger == .apre }
+
+        for bi in plan.blocks.indices {
+            for wi in plan.blocks[bi].weeks.indices {
+                for si in plan.blocks[bi].weeks[wi].sessions.indices {
+                    let session = plan.blocks[bi].weeks[wi].sessions[si]
+                    guard session.completedWorkoutId == nil else { continue }
+                    if let scheduled = session.scheduledDate, scheduled < startOfToday { continue }
+
+                    for ei in plan.blocks[bi].weeks[wi].sessions[si].plannedExercises.indices {
+                        let set = plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei]
+                        // Untracked template exercises carry a template-exercise id in
+                        // planExerciseId; fall back to the library exercise id.
+                        guard let planExercise = planExercisesById[set.planExerciseId]
+                            ?? planExercisesByLibraryId[set.exerciseId] else { continue }
+
+                        if set.percentageOf1RM > 0 {
+                            plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei].targetWeight =
+                                planExercise.targetWeight(atPercentage: set.percentageOf1RM)
+                        } else if let apre = apreAdjustments.first(where: { $0.affectedExerciseIds.contains(planExercise.id) }),
+                                  let newWeightString = apre.newValues["targetWeight"],
+                                  let newWeight = Double(newWeightString) {
+                            plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei].targetWeight = newWeight
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// A proposal is a duplicate when an adjustment with the same type + trigger + affected
+    /// exercises was already recorded within the last 14 days — regardless of whether the
+    /// user accepted or dismissed it.
+    private static func isDuplicateProposal(
+        _ proposal: PlanAdjustment,
+        existing: [PlanAdjustment],
+        now: Date = Date()
+    ) -> Bool {
+        guard let cutoff = Calendar.current.date(byAdding: .day, value: -14, to: now) else { return false }
+        return existing.contains { recorded in
+            recorded.adjustmentType == proposal.adjustmentType
+                && recorded.trigger == proposal.trigger
+                && Set(recorded.affectedExerciseIds) == Set(proposal.affectedExerciseIds)
+                && recorded.appliedAt >= cutoff
+        }
+    }
+
+    // MARK: - Pending Adjustments
+
+    /// Adviser proposals awaiting a user decision (engine adjustments are recorded as accepted).
+    public var pendingAdjustments: [PlanAdjustment] {
+        activePlan?.adjustments.filter { $0.wasAccepted == nil } ?? []
+    }
+
+    /// Accepts a pending adjustment and applies its effect to future sessions.
+    public func acceptAdjustment(id: UUID) async {
+        guard var plan = activePlan,
+              let index = plan.adjustments.firstIndex(where: { $0.id == id }) else { return }
+        plan.adjustments[index].wasAccepted = true
+        let adjustment = plan.adjustments[index]
+
+        switch adjustment.adjustmentType {
+        case .loadDecrease:
+            // AdaptiveAdjustmentService encodes the percentage as "decreasePercent"
+            // (beginner regression) or "reductionPercent" (detraining).
+            let percentString = adjustment.newValues["decreasePercent"]
+                ?? adjustment.newValues["reductionPercent"]
+            if let percentString, let percent = Double(percentString) {
+                applyLoadScale(
+                    plan: &plan,
+                    factor: 1.0 - percent / 100.0,
+                    affectedExerciseIds: adjustment.affectedExerciseIds
+                )
+            }
+        case .deload:
+            applyDeloadToCurrentWeek(plan: &plan)
+        case .blockExtension:
+            // TODO: Repeat-week / block-extension structural changes are deferred —
+            // acceptance is recorded but the program structure is left unchanged.
+            break
+        default:
+            break
+        }
+
+        plan.updatedAt = Date()
+        do {
+            try await progressionPlanRepository.save(plan)
+            await loadActivePlan()
+        } catch {
+            errorMessage = "Failed to apply adjustment: \(error.localizedDescription)"
+        }
+    }
+
+    /// Dismisses a pending adjustment without applying it.
+    public func dismissAdjustment(id: UUID) async {
+        guard var plan = activePlan,
+              let index = plan.adjustments.firstIndex(where: { $0.id == id }) else { return }
+        plan.adjustments[index].wasAccepted = false
+        plan.updatedAt = Date()
+        do {
+            try await progressionPlanRepository.save(plan)
+            await loadActivePlan()
+        } catch {
+            errorMessage = "Failed to dismiss adjustment: \(error.localizedDescription)"
+        }
+    }
+
+    /// Scales target weights of future uncompleted sets by `factor`, rounded to nearest 2.5.
+    /// `affectedExerciseIds` may carry library exercise ids (adviser proposals) or
+    /// PlanExercise ids (engine adjustments); empty means all exercises.
+    private func applyLoadScale(
+        plan: inout ProgressionPlan,
+        factor: Double,
+        affectedExerciseIds: [UUID]
+    ) {
+        let startOfToday = Calendar.current.startOfDay(for: Date())
+        let affected = Set(affectedExerciseIds)
+
+        for bi in plan.blocks.indices {
+            for wi in plan.blocks[bi].weeks.indices {
+                for si in plan.blocks[bi].weeks[wi].sessions.indices {
+                    let session = plan.blocks[bi].weeks[wi].sessions[si]
+                    guard session.completedWorkoutId == nil else { continue }
+                    if let scheduled = session.scheduledDate, scheduled < startOfToday { continue }
+
+                    for ei in plan.blocks[bi].weeks[wi].sessions[si].plannedExercises.indices {
+                        let set = plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei]
+                        guard affected.isEmpty
+                            || affected.contains(set.exerciseId)
+                            || affected.contains(set.planExerciseId) else { continue }
+                        let scaled = (set.targetWeight * factor).rounded(toNearest: 2.5)
+                        plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei].targetWeight = scaled
+                    }
+                }
+            }
+        }
+    }
+
+    /// Marks the current week's uncompleted sessions as deload and scales their set weights
+    /// by the user's deload percentage preference.
+    private func applyDeloadToCurrentWeek(plan: inout ProgressionPlan) {
+        guard let currentWeekId = plan.currentWeek?.id else { return }
+        let factor = Double(userPreferencesService?.deloadWeightPercentage ?? 50) / 100.0
+
+        for bi in plan.blocks.indices {
+            for wi in plan.blocks[bi].weeks.indices where plan.blocks[bi].weeks[wi].id == currentWeekId {
+                for si in plan.blocks[bi].weeks[wi].sessions.indices {
+                    guard plan.blocks[bi].weeks[wi].sessions[si].completedWorkoutId == nil else { continue }
+                    plan.blocks[bi].weeks[wi].sessions[si].isDeload = true
+                    for ei in plan.blocks[bi].weeks[wi].sessions[si].plannedExercises.indices {
+                        let weight = plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei].targetWeight
+                        plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei].targetWeight =
+                            (weight * factor).rounded(toNearest: 2.5)
+                    }
+                }
+            }
         }
     }
 

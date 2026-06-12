@@ -10,6 +10,10 @@ struct ExerciseDetailView: View {
     @State private var records: [PersonalRecord] = []
     @State private var showAddPR = false
 
+    private var weightUnit: WeightUnit {
+        progressViewModel?.weightUnit ?? analyticsViewModel?.weightUnit ?? .kg
+    }
+
     var body: some View {
         List {
             Section("Details") {
@@ -44,7 +48,7 @@ struct ExerciseDetailView: View {
                     } else {
                         ForEach(bestByType, id: \.recordType) { record in
                             LabeledContent(record.recordType.displayName) {
-                                Text(record.formattedValue)
+                                Text(record.formattedValue(weightUnit: weightUnit))
                                     .fontWeight(.semibold)
                             }
                         }
@@ -79,7 +83,7 @@ struct ExerciseDetailView: View {
             await loadRecords()
         }
         .sheet(isPresented: $showAddPR) {
-            AddPRSheet(exercise: exercise, personalRecordService: personalRecordService!) { newRecord in
+            AddPRSheet(exercise: exercise, personalRecordService: personalRecordService!, weightUnit: weightUnit) { newRecord in
                 records.append(newRecord)
             }
         }
@@ -111,6 +115,7 @@ struct ExerciseDetailView: View {
 private struct AddPRSheet: View {
     let exercise: Exercise
     let personalRecordService: PersonalRecordService
+    var weightUnit: WeightUnit = .kg
     let onSave: (PersonalRecord) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -129,7 +134,7 @@ private struct AddPRSheet: View {
                 }
 
                 HStack {
-                    Text(selectedType.unitLabel)
+                    Text(selectedType.unitLabel(weightUnit: weightUnit))
                         .foregroundStyle(.secondary)
                     TextField("Value", text: $valueText)
                         .keyboardType(.decimalPad)
@@ -145,11 +150,19 @@ private struct AddPRSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         guard let value = Double(valueText), value > 0 else { return }
+                        // Weight-based records are persisted in kg; convert user input.
+                        let storedValue: Double
+                        switch selectedType {
+                        case .estimatedOneRepMax, .maxWeight, .maxVolume, .maxTotalVolume:
+                            storedValue = weightUnit.toKg(value)
+                        default:
+                            storedValue = value
+                        }
                         let record = PersonalRecord(
                             id: UUID(),
                             exerciseId: exercise.id,
                             recordType: selectedType,
-                            value: value,
+                            value: storedValue,
                             setId: nil,
                             achievedAt: Date()
                         )
@@ -182,11 +195,11 @@ extension RecordType {
         }
     }
 
-    var unitLabel: String {
+    func unitLabel(weightUnit: WeightUnit = .kg) -> String {
         switch self {
-        case .estimatedOneRepMax, .maxWeight: return "kg"
+        case .estimatedOneRepMax, .maxWeight: return weightUnit.symbol
         case .maxReps: return "reps"
-        case .maxVolume, .maxTotalVolume: return "kg"
+        case .maxVolume, .maxTotalVolume: return weightUnit.symbol
         case .bestPace: return "min/km"
         case .longestDuration: return "seconds"
         case .longestDistance: return "meters"
@@ -208,12 +221,12 @@ extension RecordType {
 }
 
 extension PersonalRecord {
-    var formattedValue: String {
+    func formattedValue(weightUnit: WeightUnit = .kg) -> String {
         switch recordType {
         case .maxReps:
             return "\(Int(value))"
         case .estimatedOneRepMax, .maxWeight, .maxVolume, .maxTotalVolume:
-            return String(format: "%g kg", value)
+            return weightUnit.format(value)
         default:
             return String(format: "%g", value)
         }

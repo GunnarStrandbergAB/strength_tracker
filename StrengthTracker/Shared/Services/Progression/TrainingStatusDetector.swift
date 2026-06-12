@@ -55,7 +55,8 @@ public final class TrainingStatusDetector: Sendable {
         let sorted = completed.sorted {
             ($0.completedAt ?? $0.startedAt) < ($1.completedAt ?? $1.startedAt)
         }
-        let firstWorkoutDate = sorted.first!.completedAt ?? sorted.first!.startedAt
+        guard let firstWorkout = sorted.first else { return .beginner }
+        let firstWorkoutDate = firstWorkout.completedAt ?? firstWorkout.startedAt
         let now = Date()
 
         let monthsTraining = Calendar.current.dateComponents(

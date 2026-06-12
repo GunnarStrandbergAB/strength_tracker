@@ -5,6 +5,7 @@ import StrengthTrackerShared
 struct AddExerciseView: View {
     let viewModel: ExerciseListViewModel
     var personalRecordService: PersonalRecordService? = nil
+    var weightUnit: WeightUnit = .kg
     var onExerciseCreated: ((Exercise) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
@@ -78,7 +79,7 @@ struct AddExerciseView: View {
                         HStack {
                             TextField("e.g. 100", text: $known1RM)
                                 .keyboardType(.decimalPad)
-                            Text("kg")
+                            Text(weightUnit.symbol)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -113,7 +114,7 @@ struct AddExerciseView: View {
                                     id: UUID(),
                                     exerciseId: exercise.id,
                                     recordType: .estimatedOneRepMax,
-                                    value: value,
+                                    value: weightUnit.toKg(value),
                                     setId: nil,
                                     achievedAt: Date()
                                 )

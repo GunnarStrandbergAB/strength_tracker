@@ -18,16 +18,18 @@ final class TrainingStatusTests: XCTestCase {
         XCTAssertEqual(TrainingStatus.advanced.recommendedProgramType, .block)
     }
 
+    // Ranges were deliberately widened to allow 1-7 training days per week
+    // in the progression plan wizard (was 3...4 / 4...5 / 4...6).
     func testBeginnerWeeklyFrequencyRange() {
-        XCTAssertEqual(TrainingStatus.beginner.weeklyFrequencyRange, 3...4)
+        XCTAssertEqual(TrainingStatus.beginner.weeklyFrequencyRange, 2...4)
     }
 
     func testIntermediateWeeklyFrequencyRange() {
-        XCTAssertEqual(TrainingStatus.intermediate.weeklyFrequencyRange, 4...5)
+        XCTAssertEqual(TrainingStatus.intermediate.weeklyFrequencyRange, 3...5)
     }
 
     func testAdvancedWeeklyFrequencyRange() {
-        XCTAssertEqual(TrainingStatus.advanced.weeklyFrequencyRange, 4...6)
+        XCTAssertEqual(TrainingStatus.advanced.weeklyFrequencyRange, 4...7)
     }
 
     func testBeginnerProgressionRate() {
@@ -332,8 +334,10 @@ final class ProgressionPlanTests: XCTestCase {
         let block2 = ProgressionTestHelpers.makeTestTrainingBlock(name: "B2", order: 1, weeks: [week2])
         let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block1, block2])
 
-        // 2 completed out of 4 total = 0.5
-        XCTAssertEqual(plan.overallProgress, 0.5, accuracy: 0.001)
+        // overallProgress is adherence scoped to ELAPSED sessions, not the full
+        // plan: the plan starts today, so only week 1 has elapsed. Both of its
+        // sessions are completed -> 2/2 = 1.0 (week 2 hasn't elapsed yet).
+        XCTAssertEqual(plan.overallProgress, 1.0, accuracy: 0.001)
     }
 
     // MARK: - isActive

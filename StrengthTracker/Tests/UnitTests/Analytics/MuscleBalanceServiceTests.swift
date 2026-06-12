@@ -10,16 +10,20 @@ final class MuscleBalanceServiceTests: XCTestCase {
     // MARK: - Empty / No Data
 
     @MainActor
-    func test_analyzeBalance_emptyWorkouts_returnsHighScore() async {
+    func test_analyzeBalance_emptyWorkouts_returnsZeroScore() async {
+        // With zero training volume the service deliberately returns a 0.0 score
+        // rather than a misleading "perfect balance" 1.0 (see analyzeBalance guard).
         let service = MuscleBalanceService()
         let result = service.analyzeBalance(workouts: [])
-        XCTAssertEqual(result.overallBalanceScore, 1.0, accuracy: 1e-10)
+        XCTAssertEqual(result.overallBalanceScore, 0.0, accuracy: 1e-10)
         XCTAssertTrue(result.imbalances.isEmpty)
         XCTAssertTrue(result.muscleGroupVolumes.isEmpty)
     }
 
     @MainActor
-    func test_analyzeBalance_noCompletedWorkouts_returnsHighScore() async {
+    func test_analyzeBalance_noCompletedWorkouts_returnsZeroScore() async {
+        // No completed workouts means zero volume -> deliberate 0.0 score
+        // rather than a misleading "perfect balance" 1.0.
         let service = MuscleBalanceService()
         let workout = AnalyticsTestHelpers.makeWorkout(
             exercises: [AnalyticsTestHelpers.makeWorkoutExercise()],
@@ -27,7 +31,7 @@ final class MuscleBalanceServiceTests: XCTestCase {
             completedAt: nil
         )
         let result = service.analyzeBalance(workouts: [workout])
-        XCTAssertEqual(result.overallBalanceScore, 1.0, accuracy: 1e-10)
+        XCTAssertEqual(result.overallBalanceScore, 0.0, accuracy: 1e-10)
         XCTAssertTrue(result.imbalances.isEmpty)
     }
 
@@ -151,8 +155,18 @@ final class MuscleBalanceServiceTests: XCTestCase {
 
     @MainActor
     func test_analyzeBalance_perfectBalance_returnsScoreOne() async {
+        // Perfect balance requires actual training volume: empty workouts now
+        // deliberately score 0.0, so use equal antagonist volume to get 1.0.
         let service = MuscleBalanceService()
-        let result = service.analyzeBalance(workouts: [])
+        let chestWorkout = AnalyticsTestHelpers.makeWorkoutWithVolume(
+            primaryMuscleGroup: .chest, sets: 4, reps: 10, weight: 80.0,
+            startedAt: Date().addingTimeInterval(-3600)
+        )
+        let backWorkout = AnalyticsTestHelpers.makeWorkoutWithVolume(
+            primaryMuscleGroup: .back, sets: 4, reps: 10, weight: 80.0,
+            startedAt: Date().addingTimeInterval(-1800)
+        )
+        let result = service.analyzeBalance(workouts: [chestWorkout, backWorkout])
         XCTAssertEqual(result.overallBalanceScore, 1.0, accuracy: 1e-10)
     }
 

@@ -30,6 +30,11 @@ public final class WorkoutViewModel {
     public var showPostWorkoutSummary = false
     public var exerciseCoachingCache: [UUID: ExerciseCoachingData] = [:]
 
+    /// Adaptive progression hook: when set, planned-session completions are routed through
+    /// the full pipeline (ProgressionPlanViewModel.handleSessionCompleted) instead of the
+    /// plain markSessionCompleted repository call.
+    public var onPlannedSessionCompleted: ((_ sessionId: UUID, _ planId: UUID, _ workoutId: UUID) async -> Void)?
+
     /// Stores original set weights before deload reduction, keyed by exerciseId → setId → weight
     private var preDeloadWeights: [UUID: [UUID: Double?]]?
 
@@ -303,9 +308,13 @@ public final class WorkoutViewModel {
         if let sessionId = saved.plannedSessionId ?? plannedSessionId,
            let planId = saved.plannedPlanId ?? plannedPlanId {
             let workoutId = saved.id
-            try? await progressionPlanRepository?.markSessionCompleted(
-                sessionId, workoutId: workoutId, inPlan: planId
-            )
+            if let onPlannedSessionCompleted {
+                await onPlannedSessionCompleted(sessionId, planId, workoutId)
+            } else {
+                try? await progressionPlanRepository?.markSessionCompleted(
+                    sessionId, workoutId: workoutId, inPlan: planId
+                )
+            }
             plannedSessionId = nil
             plannedPlanId = nil
         }
@@ -413,9 +422,10 @@ public final class WorkoutViewModel {
             }
 
             let prevSet = prevExercise.sets[setIndex]
-            let weight = prevSet.weight.map { String(format: "%g", $0) } ?? "0"
+            let unit = userPreferencesService?.weightUnit ?? .kg
+            let weight = prevSet.weight.map { unit.formatValue($0) } ?? "0"
             let reps = prevSet.reps.map { String($0) } ?? "0"
-            return "\(weight)kg × \(reps)"
+            return "\(weight)\(unit.symbol) × \(reps)"
         } catch {
             return nil
         }
@@ -598,15 +608,7 @@ public final class WorkoutViewModel {
     /// Toggle the completion status of a specific set.
     public func toggleSetCompletion(exerciseId: UUID, setId: UUID) async {
         guard var workout = currentWorkout else { return }
-
-        guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
-              let setIndex = workout.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setId }) else {
-            return
-        }
-
-        let wasCompleted = workout.exercises[exerciseIndex].sets[setIndex].isCompleted
-        workout.exercises[exerciseIndex].sets[setIndex].isCompleted = !wasCompleted
-        workout.exercises[exerciseIndex].sets[setIndex].completedAt = wasCompleted ? nil : Date()
+        guard workout.toggleSetCompletion(exerciseId: exerciseId, setId: setId) != nil else { return }
         do {
             currentWorkout = try await workoutRepository.save(workout)
         } catch {

@@ -24,7 +24,6 @@ public final class RecoveryEstimationService: Sendable {
 
         guard !completedWorkouts.isEmpty else { return [] }
 
-        let bestE1RM = AnalyticsCalculations.buildBestE1RMMap(from: completedWorkouts)
         let muscleLastTrained = findLastTrainedDates(workouts: completedWorkouts)
 
         return muscleLastTrained.compactMap { entry in
@@ -78,7 +77,7 @@ public final class RecoveryEstimationService: Sendable {
         workouts: [Workout]
     ) -> [String: (lastDate: Date, sets: Int, effortRatios: [Double], avgRPE: Double?)] {
         let bestE1RM = AnalyticsCalculations.buildBestE1RMMap(from: workouts)
-        let twoWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -2, to: Date())!
+        let twoWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -AnalyticsCalculations.Windows.recoveryLookbackWeeks, to: Date())!
 
         var result: [String: (lastDate: Date, sets: Int, effortRatios: [Double], avgRPE: Double?)] = [:]
 
@@ -115,11 +114,18 @@ public final class RecoveryEstimationService: Sendable {
                     result[primary] = (workoutDate, hardSets.count, effortRatios, avgRPE)
                 }
 
-                // Update secondary muscle groups
+                // Update secondary muscle groups — same set-credit policy as
+                // volume landmarks: 0.5 per set split across all secondaries.
+                let credits = AnalyticsCalculations.attributeHardSetCredits(
+                    hardSets: hardSets.count,
+                    primaryMuscle: we.exercise.primaryMuscleGroup,
+                    secondaryMuscles: we.exercise.secondaryMuscleGroups
+                )
                 for secondary in we.exercise.secondaryMuscleGroups {
                     let key = secondary.rawValue
                     if result[key] == nil || workoutDate > result[key]!.lastDate {
-                        result[key] = (workoutDate, Int(Double(hardSets.count) * 0.5), effortRatios, avgRPE)
+                        let credit = credits[secondary] ?? 0
+                        result[key] = (workoutDate, Int(credit.rounded()), effortRatios, avgRPE)
                     }
                 }
             }

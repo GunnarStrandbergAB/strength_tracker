@@ -92,7 +92,10 @@ public struct PlannedExerciseSet: Identifiable, Codable, Equatable, Sendable {
             adjustmentPct = min(max(deviation, -0.10), 0.10)
         }
 
-        let rawAdjusted = workingWeight * (1.0 + adjustmentPct)
+        // Computed as w + w*pct rather than w * (1+pct) to avoid floating-point
+        // drift at rounding midpoints (e.g. 100 * 1.025 == 102.4999... would
+        // incorrectly round down to 100 instead of up to 105).
+        let rawAdjusted = workingWeight + workingWeight * adjustmentPct
 
         // m6: Lower-body compounds use 5kg rounding for plate-friendly jumps
         let increment: Double

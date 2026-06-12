@@ -25,17 +25,14 @@ public final class AnalyticsFeatureGate: Sendable {
         case exerciseHints          // Phase 3: 10 workouts
         case plateauDetection       // Phase 3: 10 workouts
         case archetypeClustering    // Phase 3: 10 workouts
-        case achievements           // Phase 3: 10 workouts
         case sequencePrediction     // Phase 3: 15 workouts
         case workoutSuggestion      // Phase 3: 15 workouts
         case muscleBalance          // Phase 3: 19 workouts
         case advancedInsights       // Phase 3: 19 workouts
-        case trajectoryAnalysis     // Phase 3: 19 workouts
         case trainingFingerprint    // Phase 3: 19 workouts
         case muscleNeglect          // Phase 3: 19 workouts
         case recoveryTimeline       // Phase 3: 20 workouts
         case timeOfDayAnalysis      // Phase 3: 20 workouts
-        case changePointDetection   // Phase 3: 20 workouts
     }
 
     private static let thresholds: [Feature: Int] = [
@@ -51,17 +48,14 @@ public final class AnalyticsFeatureGate: Sendable {
         .exerciseHints: 10,
         .plateauDetection: 10,
         .archetypeClustering: 10,
-        .achievements: 10,
         .sequencePrediction: 15,
         .workoutSuggestion: 15,
         .muscleBalance: 19,
         .advancedInsights: 19,
-        .trajectoryAnalysis: 19,
         .trainingFingerprint: 19,
         .muscleNeglect: 19,
         .recoveryTimeline: 20,
         .timeOfDayAnalysis: 20,
-        .changePointDetection: 20,
     ]
 
     private let workoutRepository: any WorkoutRepository

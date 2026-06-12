@@ -25,6 +25,11 @@ struct ActivePlanDetailView: View {
                     // Overall progress
                     progressSection(plan)
 
+                    // Pending coach suggestions
+                    if !viewModel.pendingAdjustments.isEmpty {
+                        pendingAdjustmentsSection
+                    }
+
                     // Block sections
                     ForEach(plan.blocks) { block in
                         blockSection(block, plan: plan)
@@ -200,6 +205,106 @@ struct ActivePlanDetailView: View {
         .background(STColors.surface)
         .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
         .padding(.horizontal, 20)
+    }
+
+    // MARK: - Pending Adjustments
+
+    private var pendingAdjustmentsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("COACH SUGGESTIONS")
+                .font(.system(size: 10, weight: .bold))
+                .textCase(.uppercase)
+                .foregroundStyle(STColors.textSecondary)
+
+            ForEach(viewModel.pendingAdjustments) { adjustment in
+                adjustmentCard(adjustment)
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+
+    private func adjustmentCard(_ adjustment: PlanAdjustment) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: adjustmentIcon(adjustment.adjustmentType))
+                    .font(.system(size: 14))
+                    .foregroundStyle(STColors.primary)
+
+                Text(adjustmentTitle(adjustment.adjustmentType))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(STColors.textPrimary)
+
+                Spacer()
+            }
+
+            Text(adjustment.coachingExplanation ?? adjustment.description)
+                .font(.system(size: 12))
+                .foregroundStyle(STColors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 10) {
+                Button {
+                    Task { await viewModel.acceptAdjustment(id: adjustment.id) }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12))
+                        Text("APPLY")
+                            .font(.system(size: 13, weight: .bold))
+                            .tracking(0.5)
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 42)
+                    .background(STColors.success)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    Task { await viewModel.dismissAdjustment(id: adjustment.id) }
+                } label: {
+                    Text("DISMISS")
+                        .font(.system(size: 13, weight: .bold))
+                        .tracking(0.5)
+                        .foregroundStyle(STColors.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 42)
+                        .background(STColors.textTertiary.opacity(0.15))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .background(STColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+    }
+
+    private func adjustmentIcon(_ type: AdjustmentType) -> String {
+        switch type {
+        case .deload: return "leaf.fill"
+        case .loadDecrease: return "arrow.down.circle"
+        case .loadIncrease: return "arrow.up.circle"
+        case .blockExtension: return "calendar.badge.plus"
+        case .exerciseSwap: return "arrow.triangle.2.circlepath"
+        case .volumeAdjustment: return "slider.horizontal.3"
+        case .frequencyChange: return "calendar"
+        case .reforecast: return "chart.line.uptrend.xyaxis"
+        }
+    }
+
+    private func adjustmentTitle(_ type: AdjustmentType) -> String {
+        switch type {
+        case .deload: return "Recovery Week"
+        case .loadDecrease: return "Reduce Weight"
+        case .loadIncrease: return "Increase Weight"
+        case .blockExtension: return "Extend Block"
+        case .exerciseSwap: return "Swap Exercise"
+        case .volumeAdjustment: return "Adjust Volume"
+        case .frequencyChange: return "Change Frequency"
+        case .reforecast: return "Update Timeline"
+        }
     }
 
     // MARK: - Block Section
@@ -514,10 +619,7 @@ struct ActivePlanDetailView: View {
     }
 
     private func formattedWeight(_ weight: Double) -> String {
-        if weight == weight.rounded() {
-            return "\(Int(weight)) kg"
-        }
-        return String(format: "%.1f kg", weight)
+        viewModel.weightUnit.format(weight)
     }
 }
 #endif

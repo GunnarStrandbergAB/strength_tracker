@@ -15,15 +15,20 @@ public final class TemplateViewModel {
     private let templateRepository: any TemplateRepository
     private let exerciseRepository: any ExerciseRepository
     private let connectivityManager: ConnectivityManager?
+    public let userPreferencesService: UserPreferencesService?
+
+    public var weightUnit: WeightUnit { userPreferencesService?.weightUnit ?? .kg }
 
     public init(
         templateRepository: any TemplateRepository,
         exerciseRepository: any ExerciseRepository,
-        connectivityManager: ConnectivityManager? = nil
+        connectivityManager: ConnectivityManager? = nil,
+        userPreferencesService: UserPreferencesService? = nil
     ) {
         self.templateRepository = templateRepository
         self.exerciseRepository = exerciseRepository
         self.connectivityManager = connectivityManager
+        self.userPreferencesService = userPreferencesService
     }
 
     public func loadTemplates() async {

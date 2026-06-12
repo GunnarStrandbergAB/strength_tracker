@@ -79,7 +79,10 @@ struct SimilarWorkoutsView: View {
             }
 
             HStack(spacing: 12) {
-                Label(viewModel.formatVolume(similar.totalVolume) + " kg", systemImage: "scalemass")
+                Label(
+                    viewModel.formatVolume(viewModel.weightUnit.fromKg(similar.totalVolume)) + " \(viewModel.weightUnit.symbol)",
+                    systemImage: "scalemass"
+                )
                     .font(.system(size: 11))
                     .foregroundStyle(STColors.textSecondary)
 

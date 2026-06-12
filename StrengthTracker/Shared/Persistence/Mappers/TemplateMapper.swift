@@ -35,25 +35,6 @@ public enum TemplateMapper {
         return entity
     }
 
-    /// Updates an existing WorkoutTemplateEntity with values from a WorkoutTemplate domain model
-    public static func updateEntity(_ entity: WorkoutTemplateEntity, from domain: WorkoutTemplate) {
-        entity.name = domain.name
-        entity.notes = domain.notes
-        entity.sortOrder = domain.sortOrder
-        entity.lastUsedAt = domain.lastUsedAt
-        entity.timesUsed = domain.timesUsed
-        entity.isCustom = domain.isCustom
-
-        // Remove old exercise entities before replacing
-        entity.exercises.removeAll()
-
-        // Create new exercise entities with parent reference
-        let exerciseEntities = domain.exercises.map { TemplateExerciseMapper.toEntity($0) }
-        for ex in exerciseEntities {
-            ex.template = entity
-        }
-        entity.exercises = exerciseEntities
-    }
 }
 
 public enum TemplateExerciseMapper {

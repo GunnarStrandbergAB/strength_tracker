@@ -25,6 +25,8 @@ public final class DashboardViewModel {
     private let healthKitService: any HealthKitServiceProtocol
     private let userPreferencesService: UserPreferencesService
 
+    public var weightUnit: WeightUnit { userPreferencesService.weightUnit }
+
     // MARK: - Init
 
     public init(
@@ -60,16 +62,16 @@ public final class DashboardViewModel {
             let now = Date()
 
             // Determine start of current week (Monday-based)
-            let currentWeekWorkouts = workoutsInWeek(from: completed, containing: now, calendar: calendar)
+            let currentWeekWorkouts = workoutsInWeek(from: completed, containing: now)
 
             // Calculate weekly counts Mon-Sun
-            weeklyWorkoutCounts = calculateDailyCounts(for: currentWeekWorkouts, in: now, calendar: calendar)
+            weeklyWorkoutCounts = calculateDailyCounts(for: currentWeekWorkouts)
 
             // Weekly total
             weeklyWorkoutTotal = currentWeekWorkouts.count
 
             // Quality scores per day (Mon-Sun) — pass history to avoid N+1 fetches
-            weeklyQualityScores = calculateDailyQualityScores(for: currentWeekWorkouts, allWorkouts: allWorkouts, calendar: calendar)
+            weeklyQualityScores = calculateDailyQualityScores(for: currentWeekWorkouts, allWorkouts: allWorkouts)
 
             // All-time volume (bodyweight-aware)
             allTimeVolume = completed.reduce(0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
@@ -105,7 +107,7 @@ public final class DashboardViewModel {
             } else {
                 // Fall back to simple week-over-week for very new users
                 let previousWeekDate = calendar.date(byAdding: .weekOfYear, value: -1, to: now) ?? now
-                let previousWeekWorkouts = workoutsInWeek(from: completed, containing: previousWeekDate, calendar: calendar)
+                let previousWeekWorkouts = workoutsInWeek(from: completed, containing: previousWeekDate)
                 let currentAvg = averageQualityScore(for: currentWeekWorkouts, allWorkouts: allWorkouts)
                 let previousAvg = averageQualityScore(for: previousWeekWorkouts, allWorkouts: allWorkouts)
                 if let curr = currentAvg, let prev = previousAvg, prev > 0 {
@@ -132,7 +134,7 @@ public final class DashboardViewModel {
 
     // MARK: - Helpers
 
-    private func workoutsInWeek(from workouts: [Workout], containing date: Date, calendar: Calendar) -> [Workout] {
+    private func workoutsInWeek(from workouts: [Workout], containing date: Date) -> [Workout] {
         let cal = Calendar.mondayStart
         guard let weekInterval = cal.dateInterval(of: .weekOfYear, for: date) else {
             return []
@@ -140,7 +142,7 @@ public final class DashboardViewModel {
         return workouts.filter { weekInterval.contains($0.startedAt) }
     }
 
-    private func calculateDailyCounts(for workouts: [Workout], in referenceDate: Date, calendar: Calendar) -> [Int] {
+    private func calculateDailyCounts(for workouts: [Workout]) -> [Int] {
         let cal = Calendar.mondayStart
         var counts = Array(repeating: 0, count: 7)
 
@@ -155,7 +157,7 @@ public final class DashboardViewModel {
         return counts
     }
 
-    private func calculateDailyQualityScores(for workouts: [Workout], allWorkouts: [Workout], calendar: Calendar) -> [Double?] {
+    private func calculateDailyQualityScores(for workouts: [Workout], allWorkouts: [Workout]) -> [Double?] {
         let cal = Calendar.mondayStart
         // Group workouts by weekday index (Mon=0 .. Sun=6)
         var grouped: [Int: [Workout]] = [:]
@@ -201,17 +203,18 @@ public final class DashboardViewModel {
     // MARK: - Formatting Helpers
 
     public func formattedVolume() -> String {
-        if allTimeVolume >= 1_000_000 {
-            return String(format: "%.1fM", allTimeVolume / 1_000_000)
-        } else if allTimeVolume >= 10_000 {
-            return String(format: "%.0fK", allTimeVolume / 1_000)
-        } else if allTimeVolume >= 1_000 {
-            return String(format: "%.1fK", allTimeVolume / 1_000)
+        let volume = weightUnit.fromKg(allTimeVolume)
+        if volume >= 1_000_000 {
+            return String(format: "%.1fM", volume / 1_000_000)
+        } else if volume >= 10_000 {
+            return String(format: "%.0fK", volume / 1_000)
+        } else if volume >= 1_000 {
+            return String(format: "%.1fK", volume / 1_000)
         }
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: allTimeVolume)) ?? "0"
+        return formatter.string(from: NSNumber(value: volume)) ?? "0"
     }
 
     public func formattedDuration() -> String {
@@ -290,6 +293,6 @@ public final class DashboardViewModel {
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 0
         formatter.groupingSeparator = ","
-        return formatter.string(from: NSNumber(value: workout.totalVolume)) ?? "0"
+        return formatter.string(from: NSNumber(value: weightUnit.fromKg(workout.totalVolume))) ?? "0"
     }
 }

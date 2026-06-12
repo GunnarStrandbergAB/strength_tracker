@@ -304,7 +304,7 @@ struct PlanCreationStep2GoalView: View {
     // MARK: - Day Options
 
     private struct DayOption {
-        let isoDay: Int   // ISO 8601: Sun=1, Mon=2..Sat=7
+        let isoDay: Int   // Calendar.weekday encoding: Sun=1, Mon=2..Sat=7
         let letter: String
     }
 

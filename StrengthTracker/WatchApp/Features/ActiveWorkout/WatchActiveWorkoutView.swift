@@ -15,6 +15,8 @@ struct WatchActiveWorkoutView: View {
 
     private let primaryYellow = Color(red: 0.949, green: 0.800, blue: 0.051)
     private let secondaryText = Color.white.opacity(0.6)
+    // Watch prefs sync from the phone into UserDefaults
+    private let weightUnit = UserPreferencesService().weightUnit
 
     var body: some View {
         if let workout = viewModel.activeWorkout {
@@ -258,7 +260,7 @@ struct WatchActiveWorkoutView: View {
                 if volume > 0 {
                     Text("·")
                         .foregroundStyle(secondaryText)
-                    Text(String(format: "%.0f kg", volume))
+                    Text(weightUnit.format(volume, decimals: 0))
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(secondaryText)
                 }

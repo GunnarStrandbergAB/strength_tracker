@@ -73,7 +73,11 @@ struct ExerciseListView: View {
                 }
             }
             .sheet(isPresented: $showAddExercise) {
-                AddExerciseView(viewModel: viewModel, personalRecordService: personalRecordService)
+                AddExerciseView(
+                    viewModel: viewModel,
+                    personalRecordService: personalRecordService,
+                    weightUnit: progressViewModel.weightUnit
+                )
             }
             .navigationDestination(for: Exercise.self) { exercise in
                 ExerciseDetailView(exercise: exercise, progressViewModel: progressViewModel, analyticsViewModel: analyticsViewModel, personalRecordService: personalRecordService)
