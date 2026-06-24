@@ -213,7 +213,7 @@ struct ProgramDesignServiceTests {
             ProgressionTestHelpers.beginnerLinearPlan(),
             ProgressionTestHelpers.intermediateDUPPlan(),
             ProgressionTestHelpers.intermediateWUPPlan(),
-            ProgressionTestHelpers.advancedBlockPlan(),
+            ProgressionTestHelpers.intermediateBlockPlan(),
         ]
 
         for plan in plans {
@@ -276,7 +276,8 @@ struct ProgramDesignServiceTests {
 
     @Test("Block program phases in correct order (accumulation -> transmutation -> realization -> deload)")
     func testBlockProgram_phasesInCorrectOrder() {
-        let plan = ProgressionTestHelpers.advancedBlockPlan()
+        // Advanced plans skip the scheduled deload phase (M1) — use intermediate here.
+        let plan = ProgressionTestHelpers.intermediateBlockPlan()
         let blocks = service.generateProgram(for: plan)
 
         #expect(blocks.count == 4, "Block program should have 4 phases")
@@ -294,9 +295,22 @@ struct ProgramDesignServiceTests {
         #expect(blocks[3].durationWeeks == BlockPhase.deload.weekDuration)
     }
 
+    @Test("Advanced block program skips the scheduled deload phase (M1)")
+    func testBlockProgram_advancedSkipsDeloadPhase() {
+        let plan = ProgressionTestHelpers.advancedBlockPlan()
+        let blocks = service.generateProgram(for: plan)
+
+        #expect(blocks.count == 3, "Advanced macrocycle ends after realization")
+        #expect(blocks.allSatisfy { $0.blockPhase != .deload })
+        let allSessions = blocks.flatMap(\.weeks).flatMap(\.sessions)
+        #expect(allSessions.allSatisfy { !$0.isDeload },
+            "Advanced plans must contain no scheduled deload sessions")
+    }
+
     @Test("Block program intensity matches phase ranges")
     func testBlockProgram_intensityMatchesPhase() {
-        let plan = ProgressionTestHelpers.advancedBlockPlan()
+        // Intermediate: includes the deload phase asserted at blocks[3]
+        let plan = ProgressionTestHelpers.intermediateBlockPlan()
         let blocks = service.generateProgram(for: plan)
 
         // Accumulation: 65-75%
@@ -414,25 +428,30 @@ struct ProgramDesignServiceTests {
         }
     }
 
-    @Test("All programs set isDeload correctly on sessions matching week.isDeload")
+    @Test("week.isDeload is true exactly when all of its sessions are deload")
     func testAllPrograms_isDeloadMatchesWeek() {
+        // Model A: deload is per-session truth; a calendar week's isDeload is the
+        // all-sessions cache (a deload microcycle may straddle two calendar weeks
+        // for non-Monday start dates).
         let plans: [ProgressionPlan] = [
             ProgressionTestHelpers.beginnerLinearPlan(),
             ProgressionTestHelpers.intermediateDUPPlan(),
             ProgressionTestHelpers.intermediateWUPPlan(),
-            ProgressionTestHelpers.advancedBlockPlan(),
+            ProgressionTestHelpers.intermediateBlockPlan(),
         ]
 
         for plan in plans {
             let blocks = service.generateProgram(for: plan)
+            var sawDeloadWeek = false
             for block in blocks {
                 for week in block.weeks {
-                    for session in week.sessions {
-                        #expect(session.isDeload == week.isDeload,
-                            "\(plan.programType): session.isDeload (\(session.isDeload)) != week.isDeload (\(week.isDeload)) in week \(week.absoluteWeekNumber)")
-                    }
+                    let allDeload = !week.sessions.isEmpty && week.sessions.allSatisfy(\.isDeload)
+                    #expect(week.isDeload == allDeload,
+                        "\(plan.programType): week.isDeload (\(week.isDeload)) must equal all-sessions-deload (\(allDeload)) in week \(week.absoluteWeekNumber)")
+                    if week.isDeload { sawDeloadWeek = true }
                 }
             }
+            #expect(sawDeloadWeek, "\(plan.programType): non-advanced plans should contain at least one deload week")
         }
     }
 

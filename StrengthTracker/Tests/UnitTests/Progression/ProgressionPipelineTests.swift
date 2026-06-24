@@ -267,7 +267,11 @@ struct ProgressionPipelineTests {
         let workouts = [completingWorkout, previousMiss, olderHit]
 
         // Without a recent matching record, the proposal IS appended (positive control).
-        let freshPlan = makePlan(trainingStatus: .beginner)
+        // Regression targets resolve per completed session, so the previous miss must
+        // be linked to a planned session to count toward the streak.
+        var freshPlan = makePlan(trainingStatus: .beginner)
+        freshPlan.blocks[0].weeks[0].sessions[1].completedWorkoutId = previousMiss.id
+        freshPlan.blocks[0].weeks[0].sessions[1].completedAt = previousMiss.completedAt
         let freshFixture = makeFixture(plan: freshPlan, workouts: workouts, withAdviser: true)
         await freshFixture.vm.handleSessionCompleted(
             sessionId: sessionAId, planId: freshPlan.id, workoutId: completingWorkout.id
@@ -289,7 +293,9 @@ struct ProgressionPipelineTests {
             appliedAt: now.addingTimeInterval(-3 * 86400),
             wasAccepted: false
         )
-        let seededPlan = makePlan(trainingStatus: .beginner, adjustments: [recentRecord])
+        var seededPlan = makePlan(trainingStatus: .beginner, adjustments: [recentRecord])
+        seededPlan.blocks[0].weeks[0].sessions[1].completedWorkoutId = previousMiss.id
+        seededPlan.blocks[0].weeks[0].sessions[1].completedAt = previousMiss.completedAt
         let seededFixture = makeFixture(plan: seededPlan, workouts: workouts, withAdviser: true)
         await seededFixture.vm.handleSessionCompleted(
             sessionId: sessionAId, planId: seededPlan.id, workoutId: completingWorkout.id

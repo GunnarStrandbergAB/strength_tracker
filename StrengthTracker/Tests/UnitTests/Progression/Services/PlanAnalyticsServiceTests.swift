@@ -123,8 +123,13 @@ final class PlanAnalyticsServiceTests: XCTestCase {
     func testGenerateProgress_adherenceScopedToElapsedWeeks() async throws {
         // Bug scenario: 3/3 sessions completed in week 1, 9 weeks of future sessions incomplete.
         // Adherence should be 100% (3/3 elapsed), not 3/30 = 10%.
+        // Elapsed scoping is date-based: completed sessions in the past, the
+        // remaining 27 scheduled in future weeks.
         let completedSessions = (0..<3).map { i in
-            ProgressionTestHelpers.makeCompletedSession(label: "W1S\(i + 1)")
+            ProgressionTestHelpers.makeCompletedSession(
+                label: "W1S\(i + 1)",
+                scheduledDate: Calendar.current.date(byAdding: .day, value: -(4 - i), to: Date())!
+            )
         }
         let week1 = ProgressionTestHelpers.makeTestTrainingWeek(
             weekNumber: 1, absoluteWeekNumber: 1, sessions: completedSessions
@@ -133,7 +138,10 @@ final class PlanAnalyticsServiceTests: XCTestCase {
         var futureWeeks: [TrainingWeek] = []
         for w in 2...10 {
             let sessions = (0..<3).map { i in
-                ProgressionTestHelpers.makeIncompleteSession(label: "W\(w)S\(i + 1)")
+                ProgressionTestHelpers.makeIncompleteSession(
+                    label: "W\(w)S\(i + 1)",
+                    scheduledDate: Calendar.current.date(byAdding: .day, value: (w - 1) * 7 + i, to: Date())!
+                )
             }
             futureWeeks.append(ProgressionTestHelpers.makeTestTrainingWeek(
                 weekNumber: w, absoluteWeekNumber: w, sessions: sessions

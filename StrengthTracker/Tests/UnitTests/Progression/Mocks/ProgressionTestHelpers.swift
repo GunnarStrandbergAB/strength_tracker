@@ -139,6 +139,15 @@ enum ProgressionTestHelpers {
 
     // MARK: - ProgressionPlan Builder
 
+    /// Fixed Monday used as the default plan start so calendar-week bucketing is
+    /// deterministic in tests (a Date() default makes generated week structure
+    /// depend on the weekday the suite happens to run on).
+    static let fixedMondayStart: Date = {
+        var comps = DateComponents()
+        comps.year = 2026; comps.month = 1; comps.day = 5; comps.hour = 8 // Monday
+        return Calendar.current.date(from: comps)!
+    }()
+
     static func makeTestPlan(
         id: UUID = UUID(),
         name: String = "Test Plan",
@@ -149,7 +158,7 @@ enum ProgressionTestHelpers {
         programType: ProgramType = .linear,
         primaryGoal: TrainingGoal = .strength,
         weeklyFrequency: Int = 4,
-        startDate: Date = Date(),
+        startDate: Date = ProgressionTestHelpers.fixedMondayStart,
         adjustments: [PlanAdjustment] = []
     ) -> ProgressionPlan {
         ProgressionPlan(
@@ -173,14 +182,16 @@ enum ProgressionTestHelpers {
         id: UUID = UUID(),
         label: String = "Session A",
         exercises: [PlannedExerciseSet] = [],
-        completedAt: Date = Date()
+        completedAt: Date = Date(),
+        scheduledDate: Date? = nil
     ) -> PlannedSession {
         makeTestPlannedSession(
             id: id,
             label: label,
             exercises: exercises,
             completedWorkoutId: UUID(),
-            completedAt: completedAt
+            completedAt: completedAt,
+            scheduledDate: scheduledDate
         )
     }
 
@@ -189,14 +200,16 @@ enum ProgressionTestHelpers {
     static func makeIncompleteSession(
         id: UUID = UUID(),
         label: String = "Session B",
-        exercises: [PlannedExerciseSet] = []
+        exercises: [PlannedExerciseSet] = [],
+        scheduledDate: Date? = nil
     ) -> PlannedSession {
         makeTestPlannedSession(
             id: id,
             label: label,
             exercises: exercises,
             completedWorkoutId: nil,
-            completedAt: nil
+            completedAt: nil,
+            scheduledDate: scheduledDate
         )
     }
 
@@ -261,6 +274,18 @@ enum ProgressionTestHelpers {
             name: "Advanced Block",
             exercises: standardExercises(),
             trainingStatus: .advanced,
+            programType: .block,
+            primaryGoal: .strength,
+            weeklyFrequency: 4
+        )
+    }
+
+    /// Block plan with a scheduled deload phase (advanced plans skip it per M1).
+    static func intermediateBlockPlan() -> ProgressionPlan {
+        makeTestPlan(
+            name: "Intermediate Block",
+            exercises: standardExercises(),
+            trainingStatus: .intermediate,
             programType: .block,
             primaryGoal: .strength,
             weeklyFrequency: 4

@@ -231,7 +231,7 @@ struct ContentViewWrapper: View {
                             let vm = container.progressionPlanViewModel
 
                             let sessions: [PlannedSessionSync] = week.sessions
-                                .filter { !$0.isCompleted }
+                                .filter { !$0.isClosed }
                                 .map { session in
                                     let template: WorkoutTemplate
                                     if let tid = session.templateId,
@@ -328,11 +328,10 @@ struct ContentViewWrapper: View {
             // Fetch active plan once — reused for next session + weekly goal
             let activePlan = try await container.progressionPlanRepository.fetchActive()
 
-            // Build next planned session
+            // Build next planned session (first open session across the whole plan)
             var nextPlanned: WidgetPlannedSession? = nil
             if let plan = activePlan,
-               let week = plan.currentWeek,
-               let nextSession = week.sessions.first(where: { !$0.isCompleted }) {
+               let nextSession = plan.nextPlannedSession {
                 nextPlanned = WidgetPlannedSession(
                     sessionName: nextSession.sessionLabel,
                     exerciseNames: Array(nextSession.plannedExercises.prefix(4).map(\.exerciseName)),

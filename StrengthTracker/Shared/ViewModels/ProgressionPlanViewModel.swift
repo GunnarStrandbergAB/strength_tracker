@@ -174,6 +174,12 @@ public final class ProgressionPlanViewModel {
         draftProgramType = draftStatus.recommendedProgramType
         draftFrequency = draftStatus.weeklyFrequencyRange.lowerBound
         draftTrainingDays = Set(Self.defaultDaySpread[draftFrequency] ?? Self.defaultDaySpread[3]!)
+        // Advanced plans have no scheduled deload weeks (M1, all program types) —
+        // stale custom deload days must not leak into the generated plan.
+        if draftStatus == .advanced {
+            draftUseCustomDeloadDays = false
+            draftDeloadDays = []
+        }
     }
 
     // MARK: - Weekday Selection
@@ -316,36 +322,44 @@ public final class ProgressionPlanViewModel {
 
     // MARK: - Scheduled Dates
 
-    private func assignScheduledDates(to plan: inout ProgressionPlan) {
-        let calendar = Calendar.current
-        let planStartDay = calendar.startOfDay(for: plan.startDate)
-        let startWeekday = calendar.component(.weekday, from: planStartDay) // Sun=1..Sat=7
-
-        for blockIdx in plan.blocks.indices {
-            for weekIdx in plan.blocks[blockIdx].weeks.indices {
-                let weekNum = plan.blocks[blockIdx].weeks[weekIdx].absoluteWeekNumber
-                let weekAnchor = calendar.date(byAdding: .day, value: (weekNum - 1) * 7, to: planStartDay)!
-
-                for sessionIdx in plan.blocks[blockIdx].weeks[weekIdx].sessions.indices {
-                    guard let dow = plan.blocks[blockIdx].weeks[weekIdx].sessions[sessionIdx].dayOfWeek else { continue }
-                    let dayOffset = (dow - startWeekday + 7) % 7
-                    let sessionDate = calendar.date(byAdding: .day, value: dayOffset, to: weekAnchor)!
-                    plan.blocks[blockIdx].weeks[weekIdx].sessions[sessionIdx].scheduledDate = sessionDate
-                }
-            }
-        }
-    }
-
     public func rescheduleSession(sessionId: UUID, to newDate: Date) async {
         guard var plan = activePlan else { return }
         for blockIdx in plan.blocks.indices {
             for weekIdx in plan.blocks[blockIdx].weeks.indices {
                 if let sIdx = plan.blocks[blockIdx].weeks[weekIdx].sessions.firstIndex(where: { $0.id == sessionId }) {
                     plan.blocks[blockIdx].weeks[weekIdx].sessions[sIdx].scheduledDate = newDate
+                    // Moving a session across a calendar-week boundary changes its bucket.
+                    plan.blocks = CalendarWeekBucketer.rebucket(plan.blocks)
                     plan.updatedAt = Date()
                     do {
                         try await progressionPlanRepository.save(plan)
                         activePlan = plan
+                        planProgress = try await planAnalyticsService.generateProgress(for: plan)
+                    } catch {
+                        errorMessage = error.localizedDescription
+                    }
+                    return
+                }
+            }
+        }
+    }
+
+    // MARK: - Skip Session
+
+    /// Toggles a session's skipped state. Completed sessions cannot be skipped.
+    public func toggleSessionSkipped(sessionId: UUID) async {
+        guard var plan = activePlan else { return }
+        for blockIdx in plan.blocks.indices {
+            for weekIdx in plan.blocks[blockIdx].weeks.indices {
+                if let sIdx = plan.blocks[blockIdx].weeks[weekIdx].sessions.firstIndex(where: { $0.id == sessionId }) {
+                    guard plan.blocks[blockIdx].weeks[weekIdx].sessions[sIdx].completedWorkoutId == nil else { return }
+                    let nowSkipped = !plan.blocks[blockIdx].weeks[weekIdx].sessions[sIdx].isSkipped
+                    plan.blocks[blockIdx].weeks[weekIdx].sessions[sIdx].isSkipped = nowSkipped
+                    plan.blocks[blockIdx].weeks[weekIdx].sessions[sIdx].skippedAt = nowSkipped ? Date() : nil
+                    plan.updatedAt = Date()
+                    do {
+                        try await progressionPlanRepository.save(plan)
+                        await loadActivePlan()
                     } catch {
                         errorMessage = error.localizedDescription
                     }
@@ -414,24 +428,15 @@ public final class ProgressionPlanViewModel {
             )
 
             let deloadIntensity = Double(userPreferencesService?.deloadWeightPercentage ?? 50) / 100.0
-            let blocks = programDesignService.generateProgram(for: plan, deloadIntensity: deloadIntensity)
-            plan.blocks = blocks
+            // generateProgram dates all sessions sequentially and re-buckets them into
+            // calendar weeks (sessions arrive sorted chronologically within each week).
+            plan.blocks = programDesignService.generateProgram(for: plan, deloadIntensity: deloadIntensity)
 
-            // Assign concrete scheduled dates to all sessions
-            assignScheduledDates(to: &plan)
-
-            // Sort sessions chronologically within each week
-            for blockIdx in plan.blocks.indices {
-                for weekIdx in plan.blocks[blockIdx].weeks.indices {
-                    plan.blocks[blockIdx].weeks[weekIdx].sessions.sort {
-                        ($0.scheduledDate ?? .distantFuture) < ($1.scheduledDate ?? .distantFuture)
-                    }
-                }
-            }
-
-            // Calculate target end date
-            let totalWeeks = plan.totalWeeks
-            plan.targetEndDate = Calendar.current.date(byAdding: .weekOfYear, value: totalWeeks, to: plan.startDate)
+            // Target end date = last scheduled session (fallback: startDate + totalWeeks)
+            let lastScheduledDate = plan.blocks.flatMap(\.weeks).flatMap(\.sessions)
+                .compactMap(\.scheduledDate).max()
+            plan.targetEndDate = lastScheduledDate
+                ?? Calendar.current.date(byAdding: .weekOfYear, value: plan.totalWeeks, to: plan.startDate)
 
             try await progressionPlanRepository.save(plan)
             activePlan = plan
@@ -496,8 +501,7 @@ public final class ProgressionPlanViewModel {
     }
 
     public var nextSessionLabel: String? {
-        guard let week = activePlan?.currentWeek else { return nil }
-        return week.sessions.first { !$0.isCompleted }?.sessionLabel
+        activePlan?.nextPlannedSession?.sessionLabel
     }
 
     public var adherencePercent: Int {
@@ -622,7 +626,8 @@ public final class ProgressionPlanViewModel {
                             inWeek: week,
                             newTemplate: template,
                             planExercises: plan.exercises,
-                            autoPickedIds: autoPickedIds
+                            autoPickedIds: autoPickedIds,
+                            targetDayOfWeek: dayOfWeek
                         )
                     plan.blocks[bi].weeks[wi].sessions[si].dupSessionType = nil
                     plan.blocks[bi].weeks[wi].sessions[si].sessionLabel = neutralLabel
@@ -652,25 +657,35 @@ public final class ProgressionPlanViewModel {
     /// Rebuild a target-day session's planned exercises for a newly-linked template.
     ///
     /// For each exercise in the new template that is also a tracked PlanExercise
-    /// (`autoPickedIds`), inherit intensity / sets / reps / rest from the first non-empty
-    /// `PlannedExerciseSet` in the same week (any day) and compute `targetWeight` per the
-    /// PlanExercise's own 1RM. Non-tracked template exercises fall back to template defaults.
+    /// (`autoPickedIds`), inherit intensity / sets / reps / rest from a donor
+    /// `PlannedExerciseSet` in the same week — preferring a session on the target
+    /// day-of-week, falling back to the first non-empty session on any day — and compute
+    /// `targetWeight` per the PlanExercise's own 1RM. Non-tracked template exercises fall
+    /// back to template defaults.
     static func rebuildSessionExercises(
         inWeek week: TrainingWeek,
         newTemplate: WorkoutTemplate,
         planExercises: [PlanExercise],
-        autoPickedIds: Set<UUID>
+        autoPickedIds: Set<UUID>,
+        targetDayOfWeek: Int? = nil
     ) -> [PlannedExerciseSet] {
         let planExerciseById = Dictionary(
             planExercises.map { ($0.exerciseId, $0) },
             uniquingKeysWith: { first, _ in first }
         )
 
-        // Intensity donor: first non-empty plannedExercises in this week's sessions.
-        let donor: PlannedExerciseSet? = week.sessions
-            .lazy
-            .flatMap(\.plannedExercises)
-            .first
+        // Intensity donor: prefer a session sharing the target day-of-week (calendar
+        // weeks can mix microcycle intensities), else first non-empty in this week.
+        let sameDayDonor: PlannedExerciseSet? = targetDayOfWeek.flatMap { day in
+            week.sessions
+                .first { $0.dayOfWeek == day && !$0.plannedExercises.isEmpty }?
+                .plannedExercises.first
+        }
+        let donor: PlannedExerciseSet? = sameDayDonor
+            ?? week.sessions
+                .lazy
+                .flatMap(\.plannedExercises)
+                .first
 
         return newTemplate.exercises
             .sorted(by: { $0.order < $1.order })
@@ -751,6 +766,9 @@ public final class ProgressionPlanViewModel {
                 planExercises: plan.exercises
             )
             plan.blocks[bi].weeks[wi].sessions[si] = result.updatedSession
+            // Completion wins over a prior skip.
+            plan.blocks[bi].weeks[wi].sessions[si].isSkipped = false
+            plan.blocks[bi].weeks[wi].sessions[si].skippedAt = nil
             plan.exercises = result.updatedExercises
 
             // Step 5: engine adjustments are auto-applied (recorded as accepted).
@@ -825,8 +843,13 @@ public final class ProgressionPlanViewModel {
         return nil
     }
 
-    /// Propagates post-session exercise state to all future sessions (uncompleted and not
-    /// scheduled in the past).
+    /// Propagates post-session exercise state to future sessions.
+    ///
+    /// Scope: every open (not completed, not skipped) session in the CURRENT block is
+    /// updated regardless of its scheduled date — calendar-week buckets can place a
+    /// later microcycle's session on an earlier date, and overdue current-block sessions
+    /// should still train at the updated targets. Sessions in later blocks keep the
+    /// "not scheduled in the past" gate.
     ///
     /// Precedence rule:
     /// - Percentage-based sets (`percentageOf1RM > 0`) are governed by the exercise's 1RM:
@@ -849,13 +872,16 @@ public final class ProgressionPlanViewModel {
             uniquingKeysWith: { first, _ in first }
         )
         let apreAdjustments = adjustments.filter { $0.trigger == .apre }
+        let currentBlockIndex = plan.blocks.firstIndex { !$0.allWeeksCompleted }
 
         for bi in plan.blocks.indices {
             for wi in plan.blocks[bi].weeks.indices {
                 for si in plan.blocks[bi].weeks[wi].sessions.indices {
                     let session = plan.blocks[bi].weeks[wi].sessions[si]
-                    guard session.completedWorkoutId == nil else { continue }
-                    if let scheduled = session.scheduledDate, scheduled < startOfToday { continue }
+                    guard !session.isClosed else { continue }
+                    // Past-date gate only applies beyond the current block.
+                    if bi != currentBlockIndex,
+                       let scheduled = session.scheduledDate, scheduled < startOfToday { continue }
 
                     for ei in plan.blocks[bi].weeks[wi].sessions[si].plannedExercises.indices {
                         let set = plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei]
@@ -886,12 +912,16 @@ public final class ProgressionPlanViewModel {
         existing: [PlanAdjustment],
         now: Date = Date()
     ) -> Bool {
-        guard let cutoff = Calendar.current.date(byAdding: .day, value: -14, to: now) else { return false }
+        // Normalize to day granularity so a proposal recorded earlier in the day
+        // doesn't slip past the cutoff because of its time-of-day component.
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        guard let cutoff = calendar.date(byAdding: .day, value: -14, to: today) else { return false }
         return existing.contains { recorded in
             recorded.adjustmentType == proposal.adjustmentType
                 && recorded.trigger == proposal.trigger
                 && Set(recorded.affectedExerciseIds) == Set(proposal.affectedExerciseIds)
-                && recorded.appliedAt >= cutoff
+                && calendar.startOfDay(for: recorded.appliedAt) >= cutoff
         }
     }
 
@@ -923,7 +953,13 @@ public final class ProgressionPlanViewModel {
                 )
             }
         case .deload:
-            applyDeloadToCurrentWeek(plan: &plan)
+            // Prefer a percentage already stored on the adjustment over the live
+            // preference, then persist whichever was used so the record stays faithful
+            // even if the user later changes the preference.
+            let percent = adjustment.newValues["deloadPercent"].flatMap(Double.init)
+                ?? Double(userPreferencesService?.deloadWeightPercentage ?? 50)
+            plan.adjustments[index].newValues["deloadPercent"] = String(percent)
+            applyDeloadToCurrentWeek(plan: &plan, deloadPercent: percent)
         case .blockExtension:
             // TODO: Repeat-week / block-extension structural changes are deferred —
             // acceptance is recorded but the program structure is left unchanged.
@@ -986,16 +1022,16 @@ public final class ProgressionPlanViewModel {
         }
     }
 
-    /// Marks the current week's uncompleted sessions as deload and scales their set weights
-    /// by the user's deload percentage preference.
-    private func applyDeloadToCurrentWeek(plan: inout ProgressionPlan) {
+    /// Marks the current week's open (not completed/skipped) sessions as deload and scales
+    /// their set weights by the given deload percentage.
+    private func applyDeloadToCurrentWeek(plan: inout ProgressionPlan, deloadPercent: Double) {
         guard let currentWeekId = plan.currentWeek?.id else { return }
-        let factor = Double(userPreferencesService?.deloadWeightPercentage ?? 50) / 100.0
+        let factor = deloadPercent / 100.0
 
         for bi in plan.blocks.indices {
             for wi in plan.blocks[bi].weeks.indices where plan.blocks[bi].weeks[wi].id == currentWeekId {
                 for si in plan.blocks[bi].weeks[wi].sessions.indices {
-                    guard plan.blocks[bi].weeks[wi].sessions[si].completedWorkoutId == nil else { continue }
+                    guard !plan.blocks[bi].weeks[wi].sessions[si].isClosed else { continue }
                     plan.blocks[bi].weeks[wi].sessions[si].isDeload = true
                     for ei in plan.blocks[bi].weeks[wi].sessions[si].plannedExercises.indices {
                         let weight = plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei].targetWeight
@@ -1003,6 +1039,9 @@ public final class ProgressionPlanViewModel {
                             (weight * factor).rounded(toNearest: 2.5)
                     }
                 }
+                // Week-level deload flag mirrors per-session truth (all-or-nothing).
+                plan.blocks[bi].weeks[wi].isDeload =
+                    plan.blocks[bi].weeks[wi].sessions.allSatisfy(\.isDeload)
             }
         }
     }

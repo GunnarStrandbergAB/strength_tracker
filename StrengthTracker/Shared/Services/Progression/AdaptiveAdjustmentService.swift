@@ -236,10 +236,15 @@ public final class AdaptiveAdjustmentService: Sendable {
         for planExercise in plan.exercises {
             var consecutiveMisses = 0
 
-            // Get the target reps from the plan's latest sessions
-            let targetReps = findTargetReps(for: planExercise, in: plan)
-
             for workout in sortedWorkouts {
+                // Compare against the target reps of the SESSION this workout completed.
+                // Periodized programs lower target reps week over week, so comparing
+                // against a single plan-wide target flags normal rep decreases as misses.
+                // Ad-hoc workouts (no matching planned session) have no target to miss — skip.
+                guard let targetReps = findTargetReps(
+                    for: planExercise, completedWorkoutId: workout.id, in: plan
+                ) else { continue }
+
                 let exerciseSets = workout.exercises
                     .filter { $0.exercise.id == planExercise.exerciseId }
                     .flatMap(\.sets)
@@ -271,16 +276,24 @@ public final class AdaptiveAdjustmentService: Sendable {
         }
     }
 
-    /// Find the target reps for a plan exercise from its planned sessions.
-    private func findTargetReps(for planExercise: PlanExercise, in plan: ProgressionPlan) -> Int {
-        let allPlannedSets = plan.blocks
-            .flatMap(\.weeks)
-            .flatMap(\.sessions)
-            .flatMap(\.plannedExercises)
-            .filter { $0.planExerciseId == planExercise.id }
-
-        guard let firstSet = allPlannedSets.first else { return 0 }
-        return firstSet.targetReps
+    /// Target reps for a plan exercise in the specific session a workout completed.
+    /// Returns nil for workouts that don't correspond to a planned session.
+    private func findTargetReps(
+        for planExercise: PlanExercise,
+        completedWorkoutId: UUID,
+        in plan: ProgressionPlan
+    ) -> Int? {
+        for block in plan.blocks {
+            for week in block.weeks {
+                for session in week.sessions where session.completedWorkoutId == completedWorkoutId {
+                    if let planned = session.plannedExercises.first(where: { $0.planExerciseId == planExercise.id }) {
+                        return planned.targetReps
+                    }
+                    return nil
+                }
+            }
+        }
+        return nil
     }
 
     // MARK: - Performance Decline Detection
