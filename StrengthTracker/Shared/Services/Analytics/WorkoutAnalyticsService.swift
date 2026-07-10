@@ -381,10 +381,9 @@ public final class WorkoutAnalyticsService: Sendable {
     private func computePrimaryMuscleGroups(_ workout: Workout, bodyWeightKg: Double) -> [String] {
         var volumes: [String: Double] = [:]
         for exercise in workout.exercises {
-            let vol = exercise.sets.filter(\.isCompleted).reduce(0.0) { sum, set in
-                let weight = set.weight ?? (exercise.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : 0.0)
-                return sum + weight * Double(set.reps ?? 0)
-            }
+            // Drop-aware; also now excludes warmups like every other volume site
+            // (this only feeds muscle-group ranking).
+            let vol = exercise.exerciseVolume(bodyWeightKg: bodyWeightKg)
             let group = exercise.exercise.primaryMuscleGroup.rawValue
             volumes[group, default: 0] += vol
         }

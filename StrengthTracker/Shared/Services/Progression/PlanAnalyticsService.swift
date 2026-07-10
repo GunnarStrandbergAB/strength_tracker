@@ -172,10 +172,11 @@ public final class PlanAnalyticsService: Sendable {
                 for workoutExercise in workout.exercises {
                     guard workoutExercise.exercise.id == planExercise.exerciseId else { continue }
                     for set in workoutExercise.sets where set.isCompleted && set.setType != .warmup {
+                        // A drop set counts as ONE working set; its reps and volume
+                        // include every segment.
                         totalSets += 1
-                        let reps = set.reps ?? 0
-                        totalReps += reps
-                        totalVolume += (set.weight ?? 0) * Double(reps)
+                        totalReps += set.totalReps
+                        totalVolume += set.setVolume
                         if set.isPersonalRecord { prCount += 1 }  // m4
                     }
                     if let completedAt = workout.completedAt {

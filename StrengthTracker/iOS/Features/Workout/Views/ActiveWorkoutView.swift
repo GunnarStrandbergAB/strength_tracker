@@ -280,12 +280,13 @@ struct ActiveWorkoutView: View {
                     )
                 }
             },
-            onRPEChange: { setId, rpe in
+            onIntensityChange: { setId, value in
                 Task {
-                    await viewModel.updateSetRPE(
+                    await viewModel.updateSetIntensity(
                         exerciseId: workoutExercise.id,
                         setId: setId,
-                        rpe: rpe
+                        value: value,
+                        metric: intensityMetric
                     )
                 }
             },
@@ -319,6 +320,51 @@ struct ActiveWorkoutView: View {
                     )
                 }
             },
+            onAddDropEntry: { setId in
+                Task {
+                    await viewModel.addDropEntry(exerciseId: workoutExercise.id, setId: setId)
+                }
+            },
+            onToggleFailure: { setId in
+                Task {
+                    await viewModel.toggleSetFailure(exerciseId: workoutExercise.id, setId: setId)
+                }
+            },
+            onDropEntryWeightChange: { setId, entryId, weight in
+                Task {
+                    await viewModel.updateDropEntryWeight(
+                        exerciseId: workoutExercise.id, setId: setId, entryId: entryId, weight: weight
+                    )
+                }
+            },
+            onDropEntryRepsChange: { setId, entryId, reps in
+                Task {
+                    await viewModel.updateDropEntryReps(
+                        exerciseId: workoutExercise.id, setId: setId, entryId: entryId, reps: reps
+                    )
+                }
+            },
+            onDropEntryIntensityChange: { setId, entryId, value in
+                Task {
+                    await viewModel.updateDropEntryIntensity(
+                        exerciseId: workoutExercise.id, setId: setId, entryId: entryId, value: value, metric: intensityMetric
+                    )
+                }
+            },
+            onDropEntryToggleFailure: { setId, entryId in
+                Task {
+                    await viewModel.toggleDropEntryFailure(
+                        exerciseId: workoutExercise.id, setId: setId, entryId: entryId
+                    )
+                }
+            },
+            onRemoveDropEntry: { setId, entryId in
+                Task {
+                    await viewModel.removeDropEntry(
+                        exerciseId: workoutExercise.id, setId: setId, entryId: entryId
+                    )
+                }
+            },
             onNoteChange: { notes in
                 Task {
                     await viewModel.updateExerciseNotes(
@@ -338,8 +384,13 @@ struct ActiveWorkoutView: View {
             },
             coachingData: viewModel.exerciseCoachingCache[workoutExercise.id],
             alwaysShowRPE: viewModel.userPreferencesService?.alwaysShowRPE ?? false,
+            intensityMetric: intensityMetric,
             weightUnit: viewModel.userPreferencesService?.weightUnit ?? .kg
         )
+    }
+
+    private var intensityMetric: IntensityMetric {
+        viewModel.userPreferencesService?.intensityMetric ?? .rpe
     }
 
     private func handleSetToggle(workoutExercise: WorkoutExercise, setId: UUID) {

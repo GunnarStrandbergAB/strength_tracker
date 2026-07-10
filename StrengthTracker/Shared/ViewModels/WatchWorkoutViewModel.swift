@@ -349,13 +349,17 @@ public final class WatchWorkoutViewModel {
         if let incompleteIndex = workout.exercises[currentExerciseIndex].sets.firstIndex(where: { !$0.isCompleted }) {
             workout.exercises[currentExerciseIndex].sets[incompleteIndex].weight = weight
             workout.exercises[currentExerciseIndex].sets[incompleteIndex].reps = reps
-            workout.exercises[currentExerciseIndex].sets[incompleteIndex].rpe = rpe
+            workout.exercises[currentExerciseIndex].sets[incompleteIndex].applyRPE(rpe)
+            // Re-assert failure defaults in case a nil RPE cleared them just above.
+            if workout.exercises[currentExerciseIndex].sets[incompleteIndex].isFailure {
+                workout.exercises[currentExerciseIndex].sets[incompleteIndex].setFailureFlag(true)
+            }
             workout.exercises[currentExerciseIndex].sets[incompleteIndex].isCompleted = true
             workout.exercises[currentExerciseIndex].sets[incompleteIndex].completedAt = Date()
         } else {
             // All pre-populated sets done (or none existed), append a new one
             let setOrder = workout.exercises[currentExerciseIndex].sets.count + 1
-            let newSet = ExerciseSet(
+            var newSet = ExerciseSet(
                 id: UUID(),
                 order: setOrder,
                 setType: pendingSetType,
@@ -363,11 +367,15 @@ public final class WatchWorkoutViewModel {
                 reps: reps,
                 durationSeconds: nil,
                 distanceMeters: nil,
-                rpe: rpe,
+                rpe: nil,
                 isCompleted: true,
                 isPersonalRecord: false,
                 completedAt: Date()
             )
+            newSet.applyRPE(rpe)
+            // Watch still marks failure via the set-type cycle — carry the per-set flag
+            // so analytics and the iPhone UI see it.
+            if newSet.setType == .failure { newSet.setFailureFlag(true) }
             workout.exercises[currentExerciseIndex].sets.append(newSet)
         }
 
@@ -549,9 +557,16 @@ public final class WatchWorkoutViewModel {
         if let idx = viewingSetIndex,
            idx < workout.exercises[currentExerciseIndex].sets.count {
             workout.exercises[currentExerciseIndex].sets[idx].setType = setType
+            // Watch still marks failure via the set-type cycle — carry the per-set flag.
+            if setType == .failure {
+                workout.exercises[currentExerciseIndex].sets[idx].setFailureFlag(true)
+            }
             activeWorkout = workout
         } else if let incompleteIdx = workout.exercises[currentExerciseIndex].sets.firstIndex(where: { !$0.isCompleted }) {
             workout.exercises[currentExerciseIndex].sets[incompleteIdx].setType = setType
+            if setType == .failure {
+                workout.exercises[currentExerciseIndex].sets[incompleteIdx].setFailureFlag(true)
+            }
             activeWorkout = workout
         } else {
             // No set exists yet (quick-start) — store for next logSet()

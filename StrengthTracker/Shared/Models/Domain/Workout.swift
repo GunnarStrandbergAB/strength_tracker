@@ -26,15 +26,7 @@ public struct Workout: Identifiable, Hashable, Sendable, Codable {
 
     /// Body-weight-aware volume: substitutes `bodyWeightKg` for bodyweight exercises with nil weight.
     public func totalVolume(bodyWeightKg: Double) -> Double {
-        exercises.reduce(0) { total, exercise in
-            total + exercise.sets
-                .filter(\.isCompleted)
-                .filter { $0.setType != .warmup }
-                .reduce(0) { sum, set in
-                    let w = set.weight ?? (exercise.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : 0)
-                    return sum + w * Double(set.reps ?? 0)
-                }
-        }
+        exercises.reduce(0) { $0 + $1.exerciseVolume(bodyWeightKg: bodyWeightKg) }
     }
 
     public init(id: UUID, name: String, startedAt: Date, completedAt: Date?, notes: String?, templateId: UUID?, healthKitWorkoutId: UUID? = nil, isDeload: Bool = false, plannedSessionId: UUID? = nil, plannedPlanId: UUID? = nil, exercises: [WorkoutExercise]) {

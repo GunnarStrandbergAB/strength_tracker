@@ -537,8 +537,8 @@ public final class WorkoutViewModel {
         }
     }
 
-    /// Update the weight of a specific set within an exercise.
-    public func updateSetWeight(exerciseId: UUID, setId: UUID, weight: Double?) async {
+    /// Find-mutate-save helper shared by the per-set editing methods below.
+    private func mutateSet(exerciseId: UUID, setId: UUID, _ mutate: (inout ExerciseSet) -> Void) async {
         guard var workout = currentWorkout else { return }
 
         guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
@@ -546,62 +546,116 @@ public final class WorkoutViewModel {
             return
         }
 
-        workout.exercises[exerciseIndex].sets[setIndex].weight = weight
+        mutate(&workout.exercises[exerciseIndex].sets[setIndex])
         do {
             currentWorkout = try await workoutRepository.save(workout)
         } catch {
             currentWorkout = workout
+        }
+    }
+
+    /// Update the weight of a specific set within an exercise.
+    public func updateSetWeight(exerciseId: UUID, setId: UUID, weight: Double?) async {
+        await mutateSet(exerciseId: exerciseId, setId: setId) { set in
+            // Parent fields of a grouped drop set mirror its top segment — edit the segment instead.
+            guard set.dropSets.isEmpty else { return }
+            set.weight = weight
         }
     }
 
     /// Update the reps of a specific set within an exercise.
     public func updateSetReps(exerciseId: UUID, setId: UUID, reps: Int?) async {
-        guard var workout = currentWorkout else { return }
-
-        guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
-              let setIndex = workout.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setId }) else {
-            return
-        }
-
-        workout.exercises[exerciseIndex].sets[setIndex].reps = reps
-        do {
-            currentWorkout = try await workoutRepository.save(workout)
-        } catch {
-            currentWorkout = workout
+        await mutateSet(exerciseId: exerciseId, setId: setId) { set in
+            guard set.dropSets.isEmpty else { return }
+            set.reps = reps
         }
     }
 
     /// Update the RPE of a specific set within an exercise.
     public func updateSetRPE(exerciseId: UUID, setId: UUID, rpe: Double?) async {
-        guard var workout = currentWorkout else { return }
+        await updateSetIntensity(exerciseId: exerciseId, setId: setId, value: rpe, metric: .rpe)
+    }
 
-        guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
-              let setIndex = workout.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setId }) else {
-            return
-        }
+    /// Update the intensity of a set in the given metric — stores the entered value
+    /// and its derived counterpart (RPE↔RIR) together.
+    public func updateSetIntensity(exerciseId: UUID, setId: UUID, value: Double?, metric: IntensityMetric) async {
+        await mutateSet(exerciseId: exerciseId, setId: setId) { $0.applyIntensity(value, metric: metric) }
+    }
 
-        workout.exercises[exerciseIndex].sets[setIndex].rpe = rpe
-        do {
-            currentWorkout = try await workoutRepository.save(workout)
-        } catch {
-            currentWorkout = workout
+    /// Toggle the per-set failure flag. One-way defaults: turning ON backfills RIR 0 /
+    /// RPE 10 when no intensity was recorded; turning OFF never clears intensity.
+    /// Legacy `.failure`-typed rows normalize to `.normal` + flag on first touch.
+    public func toggleSetFailure(exerciseId: UUID, setId: UUID) async {
+        await mutateSet(exerciseId: exerciseId, setId: setId) { set in
+            let effective = set.isFailure || set.setType == .failure
+            if set.setType == .failure { set.setType = .normal }
+            set.setFailureFlag(!effective)
         }
     }
 
-    /// Update the type of a specific set (normal, warmup, dropset, etc.).
+    /// Update the type of a specific set (normal, warmup, rest-pause).
     public func updateSetType(exerciseId: UUID, setId: UUID, setType: SetType) async {
-        guard var workout = currentWorkout else { return }
-
-        guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
-              let setIndex = workout.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setId }) else {
-            return
+        await mutateSet(exerciseId: exerciseId, setId: setId) { set in
+            // A grouped drop set's type is managed by applyDropSets — never silently
+            // destroy its segments by retyping it.
+            guard set.dropSets.isEmpty else { return }
+            set.setType = setType
         }
+    }
 
-        workout.exercises[exerciseIndex].sets[setIndex].setType = setType
-        do {
-            currentWorkout = try await workoutRepository.save(workout)
-        } catch {
-            currentWorkout = workout
+    // MARK: - Drop Set Editing
+
+    /// Convert a set into a grouped drop set (its current values become segment "a"
+    /// plus an empty segment to fill in), or append one more empty segment if it
+    /// already is one.
+    public func addDropEntry(exerciseId: UUID, setId: UUID) async {
+        await mutateSet(exerciseId: exerciseId, setId: setId) { set in
+            if set.dropSets.isEmpty {
+                let top = DropSetEntry(weight: set.weight, reps: set.reps, rpe: set.rpe, rir: set.rir, isFailure: set.isFailure)
+                set.applyDropSets([top, DropSetEntry()])
+            } else {
+                set.applyDropSets(set.dropSets + [DropSetEntry()])
+            }
+        }
+    }
+
+    /// Remove one drop segment; when a single segment remains the set collapses back
+    /// to a plain set carrying the survivor's values.
+    public func removeDropEntry(exerciseId: UUID, setId: UUID, entryId: UUID) async {
+        await mutateSet(exerciseId: exerciseId, setId: setId) { set in
+            var entries = set.dropSets
+            entries.removeAll { $0.id == entryId }
+            if entries.count == 1, let survivor = entries.first {
+                set.applyDropSets([survivor])
+                set.applyDropSets([])
+            } else {
+                set.applyDropSets(entries)
+            }
+        }
+    }
+
+    public func updateDropEntryWeight(exerciseId: UUID, setId: UUID, entryId: UUID, weight: Double?) async {
+        await mutateDropEntry(exerciseId: exerciseId, setId: setId, entryId: entryId) { $0.weight = weight }
+    }
+
+    public func updateDropEntryReps(exerciseId: UUID, setId: UUID, entryId: UUID, reps: Int?) async {
+        await mutateDropEntry(exerciseId: exerciseId, setId: setId, entryId: entryId) { $0.reps = reps }
+    }
+
+    public func updateDropEntryIntensity(exerciseId: UUID, setId: UUID, entryId: UUID, value: Double?, metric: IntensityMetric) async {
+        await mutateDropEntry(exerciseId: exerciseId, setId: setId, entryId: entryId) { $0.applyIntensity(value, metric: metric) }
+    }
+
+    public func toggleDropEntryFailure(exerciseId: UUID, setId: UUID, entryId: UUID) async {
+        await mutateDropEntry(exerciseId: exerciseId, setId: setId, entryId: entryId) { $0.setFailureFlag(!$0.isFailure) }
+    }
+
+    private func mutateDropEntry(exerciseId: UUID, setId: UUID, entryId: UUID, _ mutate: (inout DropSetEntry) -> Void) async {
+        await mutateSet(exerciseId: exerciseId, setId: setId) { set in
+            guard let entryIndex = set.dropSets.firstIndex(where: { $0.id == entryId }) else { return }
+            var entries = set.dropSets
+            mutate(&entries[entryIndex])
+            set.applyDropSets(entries)
         }
     }
 

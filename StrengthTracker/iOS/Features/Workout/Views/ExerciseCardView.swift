@@ -8,16 +8,26 @@ struct ExerciseCardView: View {
     let previousSetData: [Int: String]
     let onWeightChange: (UUID, Double?) -> Void
     let onRepsChange: (UUID, Int?) -> Void
-    let onRPEChange: ((UUID, Double?) -> Void)?
+    /// (setId, value in the selected metric's scale)
+    let onIntensityChange: ((UUID, Double?) -> Void)?
     let onToggleComplete: (UUID) -> Void
     let onAddSet: () -> Void
     let onRemoveSet: ((UUID) -> Void)?
     let onRemoveExercise: (() -> Void)?
     let onSetTypeChange: (UUID, SetType) -> Void
+    let onAddDropEntry: ((UUID) -> Void)?
+    let onToggleFailure: ((UUID) -> Void)?
+    let onDropEntryWeightChange: ((UUID, UUID, Double?) -> Void)?
+    let onDropEntryRepsChange: ((UUID, UUID, Int?) -> Void)?
+    let onDropEntryIntensityChange: ((UUID, UUID, Double?) -> Void)?
+    let onDropEntryToggleFailure: ((UUID, UUID) -> Void)?
+    let onRemoveDropEntry: ((UUID, UUID) -> Void)?
     let onNoteChange: ((String) -> Void)?
     let onMoveSet: ((Int, Int) -> Void)?
     let coachingData: ExerciseCoachingData?
+    /// "Always show intensity" — kept under the historical name (backed by the same setting).
     let alwaysShowRPE: Bool
+    let intensityMetric: IntensityMetric
     let weightUnit: WeightUnit
 
     @State private var isReorderingSets: Bool = false
@@ -32,16 +42,24 @@ struct ExerciseCardView: View {
         previousSetData: [Int: String] = [:],
         onWeightChange: @escaping (UUID, Double?) -> Void,
         onRepsChange: @escaping (UUID, Int?) -> Void,
-        onRPEChange: ((UUID, Double?) -> Void)? = nil,
+        onIntensityChange: ((UUID, Double?) -> Void)? = nil,
         onToggleComplete: @escaping (UUID) -> Void,
         onAddSet: @escaping () -> Void,
         onRemoveSet: ((UUID) -> Void)? = nil,
         onRemoveExercise: (() -> Void)? = nil,
         onSetTypeChange: @escaping (UUID, SetType) -> Void = { _, _ in },
+        onAddDropEntry: ((UUID) -> Void)? = nil,
+        onToggleFailure: ((UUID) -> Void)? = nil,
+        onDropEntryWeightChange: ((UUID, UUID, Double?) -> Void)? = nil,
+        onDropEntryRepsChange: ((UUID, UUID, Int?) -> Void)? = nil,
+        onDropEntryIntensityChange: ((UUID, UUID, Double?) -> Void)? = nil,
+        onDropEntryToggleFailure: ((UUID, UUID) -> Void)? = nil,
+        onRemoveDropEntry: ((UUID, UUID) -> Void)? = nil,
         onNoteChange: ((String) -> Void)? = nil,
         onMoveSet: ((Int, Int) -> Void)? = nil,
         coachingData: ExerciseCoachingData? = nil,
         alwaysShowRPE: Bool = false,
+        intensityMetric: IntensityMetric = .rpe,
         weightUnit: WeightUnit = .kg
     ) {
         self.workoutExercise = workoutExercise
@@ -49,21 +67,31 @@ struct ExerciseCardView: View {
         self.previousSetData = previousSetData
         self.onWeightChange = onWeightChange
         self.onRepsChange = onRepsChange
-        self.onRPEChange = onRPEChange
+        self.onIntensityChange = onIntensityChange
         self.onToggleComplete = onToggleComplete
         self.onAddSet = onAddSet
         self.onRemoveSet = onRemoveSet
         self.onRemoveExercise = onRemoveExercise
         self.onSetTypeChange = onSetTypeChange
+        self.onAddDropEntry = onAddDropEntry
+        self.onToggleFailure = onToggleFailure
+        self.onDropEntryWeightChange = onDropEntryWeightChange
+        self.onDropEntryRepsChange = onDropEntryRepsChange
+        self.onDropEntryIntensityChange = onDropEntryIntensityChange
+        self.onDropEntryToggleFailure = onDropEntryToggleFailure
+        self.onRemoveDropEntry = onRemoveDropEntry
         self.onNoteChange = onNoteChange
         self.onMoveSet = onMoveSet
         self.coachingData = coachingData
         self.alwaysShowRPE = alwaysShowRPE
+        self.intensityMetric = intensityMetric
         self.weightUnit = weightUnit
         self._noteText = State(initialValue: workoutExercise.notes ?? "")
         self._isEditingNote = State(initialValue: workoutExercise.notes != nil && !workoutExercise.notes!.isEmpty)
-        // Show RPE column if setting is on or any set already has RPE data
-        self._showRPE = State(initialValue: alwaysShowRPE || workoutExercise.sets.contains { $0.rpe != nil })
+        // Show intensity column if the setting is on or any set/segment already has data
+        self._showRPE = State(initialValue: alwaysShowRPE || workoutExercise.sets.contains { set in
+            set.rpe != nil || set.rir != nil || set.dropSets.contains { $0.rpe != nil || $0.rir != nil }
+        })
     }
 
     var body: some View {
@@ -116,12 +144,13 @@ struct ExerciseCardView: View {
 
                 // Sets
                 ForEach(Array(workoutExercise.sets.enumerated()), id: \.element.id) { index, exerciseSet in
-                    SetRowGridView(
+                    SetRowGroupView(
                         setNumber: index + 1,
                         exerciseSet: exerciseSet,
                         previousText: previousSetData[index],
                         weightSuggestion: coachingData?.suggestions[index],
-                        showRPE: showRPE,
+                        showIntensity: showRPE,
+                        intensityMetric: intensityMetric,
                         weightUnit: weightUnit,
                         onWeightChange: { weight in
                             onWeightChange(exerciseSet.id, weight)
@@ -129,15 +158,36 @@ struct ExerciseCardView: View {
                         onRepsChange: { reps in
                             onRepsChange(exerciseSet.id, reps)
                         },
-                        onRPEChange: onRPEChange != nil ? { rpe in
-                            onRPEChange?(exerciseSet.id, rpe)
+                        onIntensityChange: onIntensityChange != nil ? { value in
+                            onIntensityChange?(exerciseSet.id, value)
                         } : nil,
                         onToggleComplete: {
                             onToggleComplete(exerciseSet.id)
                         },
                         onSetTypeChange: { setType in
                             onSetTypeChange(exerciseSet.id, setType)
-                        }
+                        },
+                        onAddDropEntry: onAddDropEntry != nil ? {
+                            onAddDropEntry?(exerciseSet.id)
+                        } : nil,
+                        onToggleFailure: onToggleFailure != nil ? {
+                            onToggleFailure?(exerciseSet.id)
+                        } : nil,
+                        onDropEntryWeightChange: onDropEntryWeightChange != nil ? { entryId, weight in
+                            onDropEntryWeightChange?(exerciseSet.id, entryId, weight)
+                        } : nil,
+                        onDropEntryRepsChange: onDropEntryRepsChange != nil ? { entryId, reps in
+                            onDropEntryRepsChange?(exerciseSet.id, entryId, reps)
+                        } : nil,
+                        onDropEntryIntensityChange: onDropEntryIntensityChange != nil ? { entryId, value in
+                            onDropEntryIntensityChange?(exerciseSet.id, entryId, value)
+                        } : nil,
+                        onDropEntryToggleFailure: onDropEntryToggleFailure != nil ? { entryId in
+                            onDropEntryToggleFailure?(exerciseSet.id, entryId)
+                        } : nil,
+                        onRemoveDropEntry: onRemoveDropEntry != nil ? { entryId in
+                            onRemoveDropEntry?(exerciseSet.id, entryId)
+                        } : nil
                     )
 
                     if index < workoutExercise.sets.count - 1 {
@@ -194,7 +244,7 @@ struct ExerciseCardView: View {
                         isReorderingSets = true
                     }
                     .disabled(workoutExercise.sets.count < 2)
-                    Button(showRPE ? "Hide RPE" : "Show RPE", systemImage: "gauge.with.needle") {
+                    Button(showRPE ? "Hide \(intensityMetric.displayName)" : "Show \(intensityMetric.displayName)", systemImage: "gauge.with.needle") {
                         showRPE.toggle()
                     }
                     Button(
@@ -240,7 +290,7 @@ struct ExerciseCardView: View {
                 .frame(width: 60)
 
             if showRPE {
-                STColumnHeader(title: "RPE")
+                STColumnHeader(title: intensityMetric.displayName)
                     .frame(width: 44)
             }
 
@@ -368,6 +418,9 @@ struct ExerciseCardView: View {
     }
 
     private func setSummary(_ set: ExerciseSet) -> String {
+        if !set.dropSets.isEmpty {
+            return "\(set.dropSets.count) drops · \(set.totalReps) reps"
+        }
         let weight = set.weight.map { weightUnit.format($0) } ?? "–"
         let reps = set.reps.map { "\($0) reps" } ?? "–"
         return "\(weight) × \(reps)"
