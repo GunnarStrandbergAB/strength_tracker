@@ -7,9 +7,6 @@ public protocol HealthKitServiceProtocol: Sendable {
     /// Request authorization to read and write health data
     func requestAuthorization() async throws
 
-    /// Check if the user has authorized health data access
-    func isAuthorized() -> Bool
-
     /// Save a completed workout to HealthKit
     /// - Parameter workout: The workout to save
     func saveWorkout(_ workout: Workout) async throws
@@ -22,11 +19,6 @@ public protocol HealthKitServiceProtocol: Sendable {
 
     /// Fetch the user's latest body weight from HealthKit
     func fetchBodyWeightKg() async -> Double?
-
-    /// Fetch recent workouts from HealthKit
-    /// - Parameter limit: Maximum number of workouts to fetch
-    /// - Returns: Array of workout summaries
-    func fetchRecentWorkouts(limit: Int) async -> [HealthKitWorkoutSummary]
 
     /// Start an active workout session (used on watchOS)
     func startWorkoutSession() async throws
@@ -54,25 +46,6 @@ public protocol WatchWorkoutSessionManager: AnyObject {
     func discardWorkoutSession() async
 }
 
-// MARK: - Data Models
-
-/// Summary of a HealthKit workout
-public struct HealthKitWorkoutSummary: Sendable, Identifiable {
-    public let id: UUID
-    public let startDate: Date
-    public let endDate: Date
-    public let totalEnergyBurned: Double? // kcal
-    public let duration: TimeInterval
-
-    public init(id: UUID, startDate: Date, endDate: Date, totalEnergyBurned: Double?, duration: TimeInterval) {
-        self.id = id
-        self.startDate = startDate
-        self.endDate = endDate
-        self.totalEnergyBurned = totalEnergyBurned
-        self.duration = duration
-    }
-}
-
 // MARK: - Platform-Specific Implementation
 
 #if canImport(HealthKit)
@@ -98,11 +71,6 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked
         ]
 
         try await healthStore.requestAuthorization(toShare: typesToShare, read: typesToRead)
-    }
-
-    public func isAuthorized() -> Bool {
-        let status = healthStore.authorizationStatus(for: HKObjectType.workoutType())
-        return status == .sharingAuthorized
     }
 
     public func saveWorkout(_ workout: Workout) async throws {
@@ -185,33 +153,6 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked
         #endif
     }
 
-    public func fetchRecentWorkouts(limit: Int) async -> [HealthKitWorkoutSummary] {
-        await withCheckedContinuation { continuation in
-            let workoutType = HKObjectType.workoutType()
-            let predicate = HKQuery.predicateForWorkouts(with: .traditionalStrengthTraining)
-            let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
-
-            let query = HKSampleQuery(
-                sampleType: workoutType,
-                predicate: predicate,
-                limit: limit,
-                sortDescriptors: [sortDescriptor]
-            ) { _, samples, _ in
-                let summaries = (samples as? [HKWorkout])?.map { workout in
-                    HealthKitWorkoutSummary(
-                        id: workout.uuid,
-                        startDate: workout.startDate,
-                        endDate: workout.endDate,
-                        totalEnergyBurned: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
-                        duration: workout.duration
-                    )
-                } ?? []
-                continuation.resume(returning: summaries)
-            }
-
-            healthStore.execute(query)
-        }
-    }
 }
 #endif
 
@@ -223,13 +164,11 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol {
     public init() {}
 
     public func requestAuthorization() async throws {}
-    public func isAuthorized() -> Bool { false }
     public func saveWorkout(_ workout: Workout) async throws {}
     public func saveWorkout(_ workout: Workout, calories: Double) async throws {}
     public func fetchBodyWeightKg() async -> Double? { nil }
     public func startWorkoutSession() async throws {}
     public func endWorkoutSession(_ workout: Workout) async throws {}
-    public func fetchRecentWorkouts(limit: Int) async -> [HealthKitWorkoutSummary] { [] }
 }
 #endif
 
@@ -240,11 +179,9 @@ public final class NoOpHealthKitService: HealthKitServiceProtocol {
     public init() {}
 
     public func requestAuthorization() async throws {}
-    public func isAuthorized() -> Bool { false }
     public func saveWorkout(_ workout: Workout) async throws {}
     public func saveWorkout(_ workout: Workout, calories: Double) async throws {}
     public func fetchBodyWeightKg() async -> Double? { nil }
     public func startWorkoutSession() async throws {}
     public func endWorkoutSession(_ workout: Workout) async throws {}
-    public func fetchRecentWorkouts(limit: Int) async -> [HealthKitWorkoutSummary] { [] }
 }
