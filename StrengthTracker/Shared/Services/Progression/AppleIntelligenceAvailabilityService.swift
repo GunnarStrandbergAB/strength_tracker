@@ -17,14 +17,4 @@ public struct AppleIntelligenceAvailabilityService: Sendable {
         return false
         #endif
     }
-
-    /// Recommended coaching provider based on runtime availability.
-    public var recommendedProvider: CoachingProviderType {
-        isAvailable ? .foundationModels : .staticTemplates
-    }
-
-    public enum CoachingProviderType: String, Sendable {
-        case foundationModels    // On-device Apple Intelligence
-        case staticTemplates     // Pre-written template strings
-    }
 }
