@@ -96,7 +96,7 @@ Repeat for all 4 targets. The targets are:
 ## Step 8: Select scheme and destination
 
 1. In the toolbar, select scheme: **StrengthTracker**
-2. Select destination: **iPhone 15 Pro** (or any iOS 17+ simulator)
+2. Select destination: **iPhone 17 Pro** (or any iOS 17+ simulator)
 
 ## Step 9: Build and run
 
@@ -106,7 +106,7 @@ The first build will take a minute or two as it resolves the Swift Package and c
 
 ## Running on Apple Watch Simulator
 
-1. In Xcode, select destination: **Apple Watch Series 9 (45mm)** paired with your iPhone simulator
+1. In Xcode, select destination: **Apple Watch Series 10 (46mm)** paired with your iPhone simulator
 2. Or: Run the iOS app first, then separately build the Watch target
 3. The Watch app appears in the Watch simulator automatically when paired
 
