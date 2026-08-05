@@ -228,15 +228,6 @@ public final class WorkoutAnalyticsViewModel {
         isFeatureUnlocked(.advancedInsights) && insights.workoutCount >= 19
     }
 
-    public var loadZoneColor: String {
-        switch insights.trainingLoad?.loadZone {
-        case .underTraining: return "blue"
-        case .optimal: return "green"
-        case .caution: return "orange"
-        case .danger: return "red"
-        case nil: return "gray"
-        }
-    }
 
     public var readyMuscleCount: Int {
         insights.recoveryPatterns.filter { $0.recoveryStatus == .ready }.count

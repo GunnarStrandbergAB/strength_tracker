@@ -128,14 +128,4 @@ public final class ExerciseRecommendationService: Sendable {
         )
     }
 
-    // MARK: - Private
-
-    private func calculateEstimatedVolume(for exercise: Exercise, in workouts: [Workout]) -> Double {
-        let historicalVolumes = workouts.flatMap { workout in
-            workout.exercises.filter { $0.exercise.id == exercise.id }.map { $0.exerciseVolume }
-        }
-
-        guard !historicalVolumes.isEmpty else { return 0 }
-        return historicalVolumes.reduce(0, +) / Double(historicalVolumes.count)
-    }
 }

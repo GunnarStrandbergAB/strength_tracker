@@ -81,17 +81,6 @@ public enum VolumeBin: String, CaseIterable, Sendable, Equatable {
     }
 
     public var label: String { rawValue }
-
-    public var midpoint: Double {
-        switch self {
-        case .zeroToFour: return 2
-        case .fiveToEight: return 6.5
-        case .nineToTwelve: return 10.5
-        case .thirteenToSixteen: return 14.5
-        case .seventeenToTwenty: return 18.5
-        case .twentyOnePlus: return 23
-        }
-    }
 }
 
 public enum BestRangeStatus: Sendable, Equatable {

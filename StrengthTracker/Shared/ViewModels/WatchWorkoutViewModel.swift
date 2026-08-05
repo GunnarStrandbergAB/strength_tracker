@@ -42,7 +42,6 @@ public final class WatchWorkoutViewModel {
     public var heartRate: Double { watchSessionManager?.heartRate ?? 0 }
     public var activeCalories: Double { watchSessionManager?.activeCalories ?? 0 }
     public var healthKitElapsedTime: TimeInterval { watchSessionManager?.elapsedTime ?? 0 }
-    public var isHealthKitSessionActive: Bool { watchSessionManager?.isSessionActive ?? false }
 
     private let workoutRepository: any WorkoutRepository
     private let healthKitService: any HealthKitServiceProtocol

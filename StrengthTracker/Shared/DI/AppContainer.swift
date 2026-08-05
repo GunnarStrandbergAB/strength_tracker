@@ -294,22 +294,6 @@ public final class AppContainer: Sendable {
         )
     }
 
-    public func makeWatchWorkoutViewModel() -> WatchWorkoutViewModel {
-        watchWorkoutViewModel
-    }
-
-    public func makeWatchWorkoutListViewModel() -> WatchWorkoutListViewModel {
-        watchWorkoutListViewModel
-    }
-
-    public func makePersonalRecordService() -> PersonalRecordService {
-        personalRecordService
-    }
-
-    public func makeRestTimerService() -> RestTimerService {
-        restTimerService
-    }
-
     public func makeWorkoutAnalyticsViewModel() -> WorkoutAnalyticsViewModel {
         workoutAnalyticsViewModel
     }

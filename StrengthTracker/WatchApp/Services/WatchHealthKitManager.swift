@@ -96,14 +96,6 @@ public final class WatchHealthKitManager: NSObject, WatchWorkoutSessionManager, 
         print("[HealthKit] Workout session discarded (not saved to Apple Health)")
     }
 
-    public func pauseWorkout() {
-        workoutSession?.pause()
-    }
-
-    public func resumeWorkout() {
-        workoutSession?.resume()
-    }
-
     /// Recover an orphaned HealthKit workout session (e.g. after crash or app termination)
     public func recoverOrphanedSession() async {
         do {

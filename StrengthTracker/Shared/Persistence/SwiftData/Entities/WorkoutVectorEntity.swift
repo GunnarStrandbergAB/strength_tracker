@@ -42,12 +42,5 @@ public final class WorkoutVectorEntity {
         self.workoutDate = workoutDate
         self.primaryMuscleGroups = primaryMuscleGroups
     }
-
-    /// Convert Data back to [Float]
-    public func getVector() -> [Float] {
-        vectorData.withUnsafeBytes { buffer in
-            Array(buffer.bindMemory(to: Float.self))
-        }
-    }
 }
 #endif

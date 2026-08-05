@@ -188,18 +188,6 @@ public final class DashboardViewModel {
         return scores.reduce(0, +) / Double(scores.count)
     }
 
-    private func countPRsInWorkouts(_ workouts: [Workout]) -> Int {
-        var count = 0
-        for workout in workouts {
-            for exercise in workout.exercises {
-                for set in exercise.sets where set.isPersonalRecord {
-                    count += 1
-                }
-            }
-        }
-        return count
-    }
-
     // MARK: - Formatting Helpers
 
     public func formattedVolume() -> String {
