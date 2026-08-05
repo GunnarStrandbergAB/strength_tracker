@@ -32,6 +32,24 @@ public enum SetType: String, Codable, CaseIterable, Sendable {
     case restPause
 }
 
+/// The user's preferred way to log set intensity. RPE (rate of perceived exertion,
+/// 1–10) and RIR (reps in reserve, 0–9) are two views of the same scale:
+/// RIR 4↔RPE 6, 3↔7, 2↔8, 1↔9, 0↔10.
+public enum IntensityMetric: String, Codable, CaseIterable, Sendable {
+    case rpe
+    case rir
+
+    public static func rpe(fromRIR rir: Double) -> Double { min(10, max(0, 10 - rir)) }
+    public static func rir(fromRPE rpe: Double) -> Double { max(0, 10 - rpe) }
+
+    public var displayName: String {
+        switch self {
+        case .rpe: return "RPE"
+        case .rir: return "RIR"
+        }
+    }
+}
+
 public enum MeasurementType: String, Codable, CaseIterable, Sendable {
     case bodyWeight, bodyFat
     case chest, leftArm, rightArm, leftForearm, rightForearm

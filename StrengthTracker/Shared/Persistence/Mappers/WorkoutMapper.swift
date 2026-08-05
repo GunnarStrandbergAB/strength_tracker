@@ -182,9 +182,13 @@ public enum ExerciseSetMapper {
             durationSeconds: entity.durationSeconds,
             distanceMeters: entity.distanceMeters,
             rpe: entity.rpe,
+            rir: entity.rir,
             isCompleted: entity.isCompleted,
             isPersonalRecord: entity.isPersonalRecord,
-            completedAt: entity.completedAt
+            // Legacy rows marked failure via the set type carry the per-set flag.
+            isFailure: entity.isFailure || entity.setType == SetType.failure.rawValue,
+            completedAt: entity.completedAt,
+            dropSets: decodeDropSets(entity.dropSetsJSON)
         )
     }
 
@@ -199,9 +203,12 @@ public enum ExerciseSetMapper {
             durationSeconds: domain.durationSeconds,
             distanceMeters: domain.distanceMeters,
             rpe: domain.rpe,
+            rir: domain.rir,
             isCompleted: domain.isCompleted,
             isPersonalRecord: domain.isPersonalRecord,
-            completedAt: domain.completedAt
+            isFailure: domain.isFailure,
+            completedAt: domain.completedAt,
+            dropSetsJSON: encodeDropSets(domain.dropSets)
         )
     }
 
@@ -214,9 +221,23 @@ public enum ExerciseSetMapper {
         entity.durationSeconds = domain.durationSeconds
         entity.distanceMeters = domain.distanceMeters
         entity.rpe = domain.rpe
+        entity.rir = domain.rir
         entity.isCompleted = domain.isCompleted
         entity.isPersonalRecord = domain.isPersonalRecord
+        entity.isFailure = domain.isFailure
         entity.completedAt = domain.completedAt
+        entity.dropSetsJSON = encodeDropSets(domain.dropSets)
+    }
+
+    private static func encodeDropSets(_ entries: [DropSetEntry]) -> String? {
+        guard !entries.isEmpty else { return nil }
+        guard let data = try? JSONEncoder().encode(entries) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private static func decodeDropSets(_ json: String?) -> [DropSetEntry] {
+        guard let json, let data = json.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([DropSetEntry].self, from: data)) ?? []
     }
 }
 #endif

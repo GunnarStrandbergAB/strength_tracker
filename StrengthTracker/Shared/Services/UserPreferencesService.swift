@@ -75,9 +75,15 @@ public final class UserPreferencesService {
         didSet { UserDefaults.standard.set(vectorVersion, forKey: "vectorVersion") }
     }
 
-    /// Whether to always show the RPE column in workout exercises
+    /// Whether to always show the intensity (RPE/RIR) column in workout exercises.
+    /// Kept under the historical name/key so existing users' setting survives.
     public var alwaysShowRPE: Bool {
         didSet { UserDefaults.standard.set(alwaysShowRPE, forKey: "alwaysShowRPE") }
+    }
+
+    /// The user's preferred intensity metric for set logging (RPE or RIR)
+    public var intensityMetric: IntensityMetric {
+        didSet { UserDefaults.standard.set(intensityMetric.rawValue, forKey: "intensityMetric") }
     }
 
     /// Deload weight as a percentage of normal weight (e.g. 50 = use 50% of normal)
@@ -129,6 +135,9 @@ public final class UserPreferencesService {
 
         self.alwaysShowRPE = defaults.bool(forKey: "alwaysShowRPE")
 
+        let metricRaw = defaults.string(forKey: "intensityMetric") ?? IntensityMetric.rpe.rawValue
+        self.intensityMetric = IntensityMetric(rawValue: metricRaw) ?? .rpe
+
         self.webhookURL = defaults.string(forKey: "webhookURL") ?? ""
         self.webhookBearerToken = defaults.string(forKey: "webhookBearerToken") ?? ""
 
@@ -152,6 +161,7 @@ public final class UserPreferencesService {
         defaultReps = Self.defaultRepsValue
         autoStartRestTimer = true
         alwaysShowRPE = false
+        intensityMetric = .rpe
         deloadWeightPercentage = 50
         deloadRestPercentage = 75
         // Note: Don't reset onboarding, seeding, or HealthKit auth flags

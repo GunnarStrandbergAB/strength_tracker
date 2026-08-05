@@ -37,8 +37,11 @@ enum AnalyticsTestHelpers {
         weight: Double = 80.0,
         reps: Int = 10,
         rpe: Double? = nil,
+        rir: Double? = nil,
         isPersonalRecord: Bool = false,
-        setType: SetType = .normal
+        setType: SetType = .normal,
+        isFailure: Bool = false,
+        dropSets: [DropSetEntry] = []
     ) -> ExerciseSet {
         ExerciseSet(
             id: id,
@@ -49,10 +52,29 @@ enum AnalyticsTestHelpers {
             durationSeconds: nil,
             distanceMeters: nil,
             rpe: rpe,
+            rir: rir,
             isCompleted: true,
             isPersonalRecord: isPersonalRecord,
-            completedAt: Date()
+            isFailure: isFailure,
+            completedAt: Date(),
+            dropSets: dropSets
         )
+    }
+
+    /// A completed grouped drop set built from (weight, reps) parts. Goes through
+    /// `applyDropSets` so the parent mirrors the first part per the model invariant.
+    static func makeDropSet(
+        id: UUID = UUID(),
+        order: Int = 1,
+        parts: [(weight: Double?, reps: Int?)],
+        rpes: [Double?]? = nil
+    ) -> ExerciseSet {
+        var set = makeCompletedSet(id: id, order: order, weight: 0, reps: 0)
+        let entries = parts.enumerated().map { index, part in
+            DropSetEntry(weight: part.weight, reps: part.reps, rpe: rpes?[index] ?? nil)
+        }
+        set.applyDropSets(entries)
+        return set
     }
 
     static func makeIncompleteSet(

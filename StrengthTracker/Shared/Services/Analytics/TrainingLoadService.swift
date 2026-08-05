@@ -80,22 +80,13 @@ public enum TrainingLoadService {
         return dailyLoads
     }
 
-    /// Session load = sum of IWV per working set, optionally RPE-modulated.
+    /// Session load = sum of IWV per working set (drop-set segments included),
+    /// optionally RPE-modulated.
     private static func computeSessionLoad(workout: Workout, bestE1RM: [UUID: Double]) -> Double {
         var load = 0.0
         for we in workout.exercises {
             for set in we.sets {
-                guard set.isCompleted, set.setType != .warmup,
-                      let weight = set.weight, weight > 0,
-                      let reps = set.reps, reps > 0 else { continue }
-
-                let pct1RM: Double
-                if let best = bestE1RM[we.exercise.id], best > 0 {
-                    pct1RM = min(weight / best, 1.5)
-                } else {
-                    pct1RM = 0.75
-                }
-                load += AnalyticsCalculations.setIWV(reps: reps, pct1RM: pct1RM, rpe: set.rpe)
+                load += AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id])
             }
         }
         return load
@@ -123,17 +114,7 @@ public enum TrainingLoadService {
             for we in workout.exercises {
                 var muscleLoad = 0.0
                 for set in we.sets {
-                    guard set.isCompleted, set.setType != .warmup,
-                          let weight = set.weight, weight > 0,
-                          let reps = set.reps, reps > 0 else { continue }
-
-                    let pct1RM: Double
-                    if let best = bestE1RM[we.exercise.id], best > 0 {
-                        pct1RM = min(weight / best, 1.5)
-                    } else {
-                        pct1RM = 0.75
-                    }
-                    muscleLoad += AnalyticsCalculations.setIWV(reps: reps, pct1RM: pct1RM, rpe: set.rpe)
+                    muscleLoad += AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id])
                 }
 
                 let muscle = we.exercise.primaryMuscleGroup.rawValue

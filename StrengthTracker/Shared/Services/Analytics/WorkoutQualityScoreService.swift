@@ -184,18 +184,8 @@ public final class WorkoutQualityScoreService: Sendable {
         for workout in workouts {
             for we in workout.exercises {
                 for set in we.sets {
-                    guard set.isCompleted,
-                          set.setType != .warmup,
-                          let weight = set.weight, weight > 0,
-                          let reps = set.reps, reps > 0 else { continue }
-
-                    let pct1RM: Double
-                    if let best = bestE1RM[we.exercise.id], best > 0 {
-                        pct1RM = min(weight / best, 1.5)
-                    } else {
-                        pct1RM = 0.75
-                    }
-                    let setIWV = AnalyticsCalculations.setIWV(reps: reps, pct1RM: pct1RM, rpe: set.rpe)
+                    let setIWV = AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id])
+                    guard setIWV > 0 else { continue }
 
                     let attributed = AnalyticsCalculations.attributeVolume(
                         volume: setIWV,
@@ -233,8 +223,7 @@ public final class WorkoutQualityScoreService: Sendable {
         for we in workout.exercises {
             for set in we.sets {
                 guard set.isCompleted, set.setType != .warmup else { continue }
-                let w = set.weight ?? (we.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : 0)
-                let vol = w * Double(set.reps ?? 0)
+                let vol = set.setVolume(weightSubstitute: we.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : nil)
 
                 currentMuscleVol[we.exercise.primaryMuscleGroup, default: 0] += vol * 0.7
                 let secondaries = we.exercise.secondaryMuscleGroups
@@ -258,8 +247,7 @@ public final class WorkoutQualityScoreService: Sendable {
             for we in past.exercises {
                 for set in we.sets {
                     guard set.isCompleted, set.setType != .warmup else { continue }
-                    let w = set.weight ?? (we.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : 0)
-                    let vol = w * Double(set.reps ?? 0)
+                    let vol = set.setVolume(weightSubstitute: we.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : nil)
 
                     historyMuscleVol[we.exercise.primaryMuscleGroup, default: 0] += vol * 0.7
                     musclesInWorkout.insert(we.exercise.primaryMuscleGroup)

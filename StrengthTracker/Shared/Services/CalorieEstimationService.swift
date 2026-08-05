@@ -73,10 +73,9 @@ public struct CalorieEstimationService: Sendable {
             totalSessionCal += exerciseCal
             perExercise[exercise.order] = exerciseCal
 
-            // Accumulate volume (kg)
+            // Accumulate volume (kg) — drop-set segments included
             let exerciseVolumeKg = completedSets.reduce(0.0) { sum, set in
-                let w = set.weight ?? (exercise.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : 0)
-                return sum + w * Double(set.reps ?? 0)
+                sum + set.setVolume(weightSubstitute: exercise.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : nil)
             }
             totalVolumeKg += exerciseVolumeKg
 

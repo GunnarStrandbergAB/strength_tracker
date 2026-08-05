@@ -65,8 +65,12 @@ public final class ProgressViewModel {
                 for workoutExercise in workout.exercises {
                     if workoutExercise.exercise.id == exerciseId {
                         for set in workoutExercise.sets where set.isCompleted {
-                            if let weight = set.weight, let reps = set.reps {
-                                results.append((date: workout.startedAt, weight: weight, reps: reps))
+                            // One point per performed segment so drop-set parts feed
+                            // best-weight/best-reps/e1RM/volume like any other effort.
+                            for part in set.effectiveParts {
+                                if let weight = part.weight, let reps = part.reps {
+                                    results.append((date: workout.startedAt, weight: weight, reps: reps))
+                                }
                             }
                         }
                     }

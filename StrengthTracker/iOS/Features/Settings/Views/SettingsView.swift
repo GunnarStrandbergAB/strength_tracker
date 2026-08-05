@@ -128,7 +128,7 @@ struct SettingsView: View {
                 }
 
                 // Workout Settings Section
-                Section("Workout") {
+                Section {
                     Stepper(
                         value: $preferencesService.defaultRestSeconds,
                         in: 30...300,
@@ -144,7 +144,12 @@ struct SettingsView: View {
 
                     Toggle("Auto-start Rest Timer", isOn: $preferencesService.autoStartRestTimer)
 
-                    Toggle("Always Show RPE", isOn: $preferencesService.alwaysShowRPE)
+                    Picker("Intensity Metric", selection: $preferencesService.intensityMetric) {
+                        Text("RPE").tag(IntensityMetric.rpe)
+                        Text("RIR").tag(IntensityMetric.rir)
+                    }
+
+                    Toggle("Always Show Intensity", isOn: $preferencesService.alwaysShowRPE)
 
                     Stepper(
                         value: $preferencesService.defaultReps,
@@ -158,6 +163,10 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                } header: {
+                    Text("Workout")
+                } footer: {
+                    Text("RPE = Rate of Perceived Exertion (1–10). RIR = Reps In Reserve (0–9). Existing logs convert automatically.")
                 }
 
                 // Deload Section
@@ -307,6 +316,7 @@ struct SettingsView: View {
             .onChange(of: preferencesService.defaultReps) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.distanceUnit) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.alwaysShowRPE) { _, _ in syncSettingsToWatch() }
+            .onChange(of: preferencesService.intensityMetric) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.deloadWeightPercentage) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.deloadRestPercentage) { _, _ in syncSettingsToWatch() }
     }
@@ -326,7 +336,8 @@ struct SettingsView: View {
             "defaultReps": preferencesService.defaultReps,
             "weightUnit": preferencesService.weightUnit.rawValue,
             "autoStartRestTimer": preferencesService.autoStartRestTimer,
-            "distanceUnit": preferencesService.distanceUnit.rawValue
+            "distanceUnit": preferencesService.distanceUnit.rawValue,
+            "intensityMetric": preferencesService.intensityMetric.rawValue
         ])
     }
 

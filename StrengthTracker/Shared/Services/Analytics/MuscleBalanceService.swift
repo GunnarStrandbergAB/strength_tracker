@@ -43,13 +43,7 @@ public final class MuscleBalanceService: Sendable {
 
         for workout in recentWorkouts {
             for exercise in workout.exercises {
-                let volume = exercise.sets
-                    .filter(\.isCompleted)
-                    .filter { $0.setType != .warmup }
-                    .reduce(0.0) { sum, set in
-                        let w = set.weight ?? (exercise.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : 0)
-                        return sum + w * Double(set.reps ?? 0)
-                    }
+                let volume = exercise.exerciseVolume(bodyWeightKg: bodyWeightKg)
 
                 let attributed = AnalyticsCalculations.attributeVolume(
                     volume: volume,

@@ -109,16 +109,7 @@ public enum DeloadDetectionService {
             var sessionLoad = 0.0
             for we in workout.exercises {
                 for set in we.sets {
-                    guard set.isCompleted, set.setType != .warmup,
-                          let weight = set.weight, weight > 0,
-                          let reps = set.reps, reps > 0 else { continue }
-                    let pct1RM: Double
-                    if let best = bestE1RM[we.exercise.id], best > 0 {
-                        pct1RM = min(weight / best, 1.5)
-                    } else {
-                        pct1RM = 0.75
-                    }
-                    sessionLoad += AnalyticsCalculations.setIWV(reps: reps, pct1RM: pct1RM, rpe: set.rpe)
+                    sessionLoad += AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id])
                 }
             }
 

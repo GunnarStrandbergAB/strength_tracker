@@ -136,22 +136,14 @@ public final class WorkoutVectorizer: Sendable {
 
     /// Compute total volume with body-weight fallback for pure bodyweight exercises.
     func calculateTotalVolume(_ workout: Workout, bodyWeightKg: Double) -> Double {
-        workout.exercises.reduce(0) { total, exercise in
-            total + exercise.sets.filter(\.isCompleted).filter { $0.setType != .warmup }.reduce(0) { setTotal, set in
-                let weight = set.weight ?? (exercise.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : 0.0)
-                return setTotal + weight * Double(set.reps ?? 0)
-            }
-        }
+        workout.totalVolume(bodyWeightKg: bodyWeightKg)
     }
 
     private func calculateMuscleGroupVolumes(_ workout: Workout, bodyWeightKg: Double) -> [MuscleGroup: Double] {
         var volumes: [MuscleGroup: Double] = [:]
 
         for exercise in workout.exercises {
-            let exerciseVolume = exercise.sets.filter(\.isCompleted).filter { $0.setType != .warmup }.reduce(0.0) { sum, set in
-                let weight = set.weight ?? (exercise.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : 0.0)
-                return sum + weight * Double(set.reps ?? 0)
-            }
+            let exerciseVolume = exercise.exerciseVolume(bodyWeightKg: bodyWeightKg)
 
             let attributed = AnalyticsCalculations.attributeVolume(
                 volume: exerciseVolume,
