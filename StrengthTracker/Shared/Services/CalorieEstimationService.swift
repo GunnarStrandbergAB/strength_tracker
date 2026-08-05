@@ -200,13 +200,11 @@ public struct CalorieEstimationService: Sendable {
 
     // MARK: - EPOC Factor
 
-    /// Calculate the EPOC multiplier (0.06–0.15) based on workout intensity.
+    /// Calculate the EPOC multiplier (0.06–0.10) based on workout intensity.
     ///
     /// Higher intensity (higher RPE, more compound movements) → higher EPOC.
     func calculateEpocFactor(averageRPE: Double?, compoundRatio: Double) -> Double {
         let minEpoc = 0.06
-        let maxEpoc = 0.15
-
         let maxEpocCapped = 0.10 // Cap EPOC at 10% (literature upper bound for resistance training)
 
         // If RPE is available, use it as primary signal (scale 1-10 → 0-1)
