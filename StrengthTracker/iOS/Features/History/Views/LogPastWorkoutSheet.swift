@@ -36,8 +36,18 @@ struct LogPastWorkoutSheet: View {
                     if !templates.isEmpty {
                         Picker("Start from template", selection: $selectedTemplateId) {
                             Text("Empty").tag(UUID?.none)
-                            ForEach(templates) { template in
-                                Text(template.name).tag(Optional(template.id))
+                            let userTemplates = templates.filter(\.isCustom)
+                            if !userTemplates.isEmpty {
+                                Section("My Templates") {
+                                    ForEach(userTemplates) { template in
+                                        Text(template.name).tag(Optional(template.id))
+                                    }
+                                }
+                            }
+                            Section("Library") {
+                                ForEach(templates.filter { !$0.isCustom }) { template in
+                                    Text(template.name).tag(Optional(template.id))
+                                }
                             }
                         }
                     }

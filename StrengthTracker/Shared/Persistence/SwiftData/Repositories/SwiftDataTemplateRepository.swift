@@ -32,6 +32,7 @@ public final class SwiftDataTemplateRepository: TemplateRepository, Sendable {
             existingEntity.sortOrder = template.sortOrder
             existingEntity.lastUsedAt = template.lastUsedAt
             existingEntity.timesUsed = template.timesUsed
+            existingEntity.isCustom = template.isCustom
 
             // Build lookup of existing exercise entities by ID
             let existingExercises = Dictionary(

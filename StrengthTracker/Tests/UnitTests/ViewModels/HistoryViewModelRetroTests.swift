@@ -305,6 +305,32 @@ struct HistoryViewModelRetroTests {
         #expect(stored.timesUsed == 4)
     }
 
+    @Test("loadTemplates lists user templates before library templates")
+    func testLoadTemplatesUserFirst() async throws {
+        let templateRepo = InMemoryTemplateRepository()
+        let vm = HistoryViewModel(
+            workoutRepository: InMemoryWorkoutRepository(),
+            templateRepository: templateRepo
+        )
+
+        func makeTemplate(name: String, sortOrder: Int, isCustom: Bool) -> WorkoutTemplate {
+            WorkoutTemplate(
+                id: UUID(), name: name, notes: nil, sortOrder: sortOrder,
+                lastUsedAt: nil, timesUsed: 0, exercises: [], isCustom: isCustom
+            )
+        }
+        // User templates carry the high sortOrders older builds assigned (9+),
+        // which used to bury them below the library set in a flat sort.
+        _ = try await templateRepo.save(makeTemplate(name: "Library A", sortOrder: 0, isCustom: false))
+        _ = try await templateRepo.save(makeTemplate(name: "Library B", sortOrder: 1, isCustom: false))
+        _ = try await templateRepo.save(makeTemplate(name: "Mine Late", sortOrder: 10, isCustom: true))
+        _ = try await templateRepo.save(makeTemplate(name: "Mine Early", sortOrder: 9, isCustom: true))
+
+        let templates = await vm.loadTemplates()
+
+        #expect(templates.map(\.name) == ["Mine Early", "Mine Late", "Library A", "Library B"])
+    }
+
     @Test("manually entered PRs survive recalculateAllPRs")
     func testManualPRSurvivesRecalc() async throws {
         let (vm, _, prRepo, _, _) = makeStack()

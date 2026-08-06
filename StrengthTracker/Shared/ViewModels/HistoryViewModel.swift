@@ -165,12 +165,16 @@ public final class HistoryViewModel {
     /// duration, never "now") so the active-workout machinery — `fetchActive()`,
     /// `deleteAllIncomplete()`, the 12-hour stale reaper — can never touch it.
     /// Selects it and enters edit mode for composition.
-    /// Templates available for pre-filling a retro workout, sorted like the
-    /// Templates tab (by sortOrder).
+    /// Templates available for pre-filling a retro workout: the user's own
+    /// templates first, then the library set, each sorted by sortOrder.
+    /// User templates are numbered after the 9 library seeds in older stores,
+    /// so a flat sortOrder sort would bury them below the fold of the picker.
     public func loadTemplates() async -> [WorkoutTemplate] {
         guard let templateRepository else { return [] }
         let all = (try? await templateRepository.fetchAll()) ?? []
-        return all.sorted { $0.sortOrder < $1.sortOrder }
+        let user = all.filter(\.isCustom).sorted { $0.sortOrder < $1.sortOrder }
+        let library = all.filter { !$0.isCustom }.sorted { $0.sortOrder < $1.sortOrder }
+        return user + library
     }
 
     @discardableResult

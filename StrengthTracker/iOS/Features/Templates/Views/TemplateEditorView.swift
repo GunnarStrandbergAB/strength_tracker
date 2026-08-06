@@ -184,7 +184,7 @@ struct TemplateEditorView: View {
             id: template?.id ?? UUID(),
             name: name,
             notes: notes.isEmpty ? nil : notes,
-            sortOrder: template?.sortOrder ?? viewModel.templates.count,
+            sortOrder: template?.sortOrder ?? viewModel.userTemplates.count,
             lastUsedAt: template?.lastUsedAt,
             timesUsed: template?.timesUsed ?? 0,
             exercises: exercises
