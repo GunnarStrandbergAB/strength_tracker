@@ -128,7 +128,10 @@ public final class WorkoutVectorizer: Sendable {
             workoutId: workout.id,
             dimensions: normalized,
             magnitude: magnitude,
-            createdAt: Date()
+            // The vector's date IS the training date — drift/block/archetype/phase/
+            // anomaly services window on it. Wall-clock vectorization time would
+            // misplace retro-logged workouts and collapse after migrations.
+            createdAt: workout.startedAt
         )
     }
 

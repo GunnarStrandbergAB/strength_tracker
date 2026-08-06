@@ -69,14 +69,28 @@ public struct Workout: Identifiable, Hashable, Sendable, Codable {
 extension Workout {
     /// Toggles a set's completion state in place — the single implementation shared by
     /// the active-workout and history editing flows.
+    /// - Parameter date: the timestamp to stamp on completion. Active workouts use the
+    ///   default "now"; history/retro edits pass the workout's own window so backdated
+    ///   sets carry backdated timestamps (PR dates and analytics derive from them).
     /// - Returns: the new completion state, or nil if the exercise/set was not found.
     @discardableResult
-    public mutating func toggleSetCompletion(exerciseId: UUID, setId: UUID) -> Bool? {
+    public mutating func toggleSetCompletion(exerciseId: UUID, setId: UUID, at date: Date = Date()) -> Bool? {
         guard let ei = exercises.firstIndex(where: { $0.id == exerciseId }),
               let si = exercises[ei].sets.firstIndex(where: { $0.id == setId }) else { return nil }
         let wasCompleted = exercises[ei].sets[si].isCompleted
         exercises[ei].sets[si].isCompleted = !wasCompleted
-        exercises[ei].sets[si].completedAt = wasCompleted ? nil : Date()
+        exercises[ei].sets[si].completedAt = wasCompleted ? nil : date
         return !wasCompleted
+    }
+
+    /// Completes every incomplete set, stamping the given date — used by retro logging
+    /// where all sets happened inside the workout's historical window.
+    public mutating func completeAllSets(at date: Date) {
+        for ei in exercises.indices {
+            for si in exercises[ei].sets.indices where !exercises[ei].sets[si].isCompleted {
+                exercises[ei].sets[si].isCompleted = true
+                exercises[ei].sets[si].completedAt = date
+            }
+        }
     }
 }

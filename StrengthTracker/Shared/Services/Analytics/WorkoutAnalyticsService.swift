@@ -19,7 +19,10 @@ public final class WorkoutAnalyticsService: Sendable {
     private let userPreferencesService: UserPreferencesService?
 
     /// Current vector schema version — bump when normalization constants change
-    private static let currentVectorVersion = 2
+    // v3: WorkoutVector.createdAt now carries the training date (workout.startedAt)
+    // instead of vectorization wall-clock time — re-vectorize once so historical
+    // vectors get correct dates.
+    private static let currentVectorVersion = 3
 
     // Advanced Insights services
     private let volumeLandmarkService: VolumeLandmarkService?

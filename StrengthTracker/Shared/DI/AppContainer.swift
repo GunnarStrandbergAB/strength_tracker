@@ -54,6 +54,8 @@ public final class AppContainer: Sendable {
     public let planAnalyticsService: PlanAnalyticsService
 
     // Cached ViewModels (shared across multiple views)
+    public let widgetRefreshService: WidgetRefreshService
+
     public let workoutViewModel: WorkoutViewModel
     public let templateViewModel: TemplateViewModel
     public let exerciseListViewModel: ExerciseListViewModel
@@ -231,6 +233,17 @@ public final class AppContainer: Sendable {
             coachingInsightService: coachingInsightService,
             userPreferencesService: userPreferencesService
         )
+        widgetRefreshService = WidgetRefreshService(
+            workoutRepository: workoutRepository,
+            progressionPlanRepository: progressionPlanRepository,
+            healthKitService: healthKitService,
+            userPreferencesService: userPreferencesService,
+            analyticsService: analyticsService,
+            qualityScoreService: qualityScoreService,
+            workoutAnalyticsViewModel: workoutAnalyticsViewModel,
+            workoutViewModel: workoutViewModel,
+            restTimerService: restTimerService
+        )
         progressionPlanViewModel = ProgressionPlanViewModel(
             progressionPlanRepository: progressionPlanRepository,
             trainingStatusDetector: trainingStatusDetector,
@@ -268,7 +281,13 @@ public final class AppContainer: Sendable {
     public func makeHistoryViewModel() -> HistoryViewModel {
         HistoryViewModel(
             workoutRepository: workoutRepository,
-            userPreferencesService: userPreferencesService
+            userPreferencesService: userPreferencesService,
+            analyticsService: analyticsService,
+            personalRecordService: personalRecordService,
+            healthKitService: healthKitService,
+            calorieEstimationService: calorieEstimationService,
+            webhookService: webhookService,
+            widgetRefreshService: widgetRefreshService
         )
     }
 

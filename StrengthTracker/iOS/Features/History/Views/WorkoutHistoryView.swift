@@ -4,16 +4,24 @@ import StrengthTrackerShared
 struct WorkoutHistoryView: View {
     @State private var viewModel: HistoryViewModel
     var analyticsViewModel: WorkoutAnalyticsViewModel? = nil
+    var exerciseListViewModel: ExerciseListViewModel? = nil
 
-    init(viewModel: HistoryViewModel, analyticsViewModel: WorkoutAnalyticsViewModel? = nil) {
+    init(
+        viewModel: HistoryViewModel,
+        analyticsViewModel: WorkoutAnalyticsViewModel? = nil,
+        exerciseListViewModel: ExerciseListViewModel? = nil
+    ) {
         self._viewModel = State(initialValue: viewModel)
         self.analyticsViewModel = analyticsViewModel
+        self.exerciseListViewModel = exerciseListViewModel
     }
 
     @State private var workoutToDelete: Workout? = nil
+    @State private var showLogPastWorkout = false
+    @State private var navigationPath: [Workout] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             List {
                 ForEach(viewModel.workouts) { workout in
                     NavigationLink(value: workout) {
@@ -32,11 +40,26 @@ struct WorkoutHistoryView: View {
                 }
             }
             .navigationTitle("History")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showLogPastWorkout = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(isPresented: $showLogPastWorkout) {
+                LogPastWorkoutSheet(viewModel: viewModel) { workout in
+                    navigationPath.append(workout)
+                }
+            }
             .navigationDestination(for: Workout.self) { workout in
                 WorkoutDetailView(
                     workout: workout,
                     historyViewModel: viewModel,
-                    analyticsViewModel: analyticsViewModel
+                    analyticsViewModel: analyticsViewModel,
+                    exerciseListViewModel: exerciseListViewModel
                 )
             }
             .overlay {

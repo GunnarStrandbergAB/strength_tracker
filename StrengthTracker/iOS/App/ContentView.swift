@@ -112,7 +112,7 @@ struct ContentView: View {
                 }
                 .tag(3)
 
-            WorkoutHistoryView(viewModel: historyViewModel, analyticsViewModel: analyticsViewModel)
+            WorkoutHistoryView(viewModel: historyViewModel, analyticsViewModel: analyticsViewModel, exerciseListViewModel: exerciseListViewModel)
                 .tint(STColors.textSecondary)
                 .tabItem {
                     Label("History", systemImage: "clock.arrow.circlepath")

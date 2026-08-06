@@ -5,8 +5,11 @@ struct WorkoutDetailView: View {
     let workout: Workout
     var historyViewModel: HistoryViewModel? = nil
     var analyticsViewModel: WorkoutAnalyticsViewModel? = nil
+    var exerciseListViewModel: ExerciseListViewModel? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var showingDeleteConfirmation = false
+    @State private var showingExercisePicker = false
+    @State private var exerciseToRemove: WorkoutExercise? = nil
 
     /// The displayed workout: use historyViewModel's selectedWorkout (live edits) if available.
     private var displayedWorkout: Workout {
@@ -144,6 +147,15 @@ struct WorkoutDetailView: View {
                                         .font(.system(size: 13))
                                 }
                             }
+
+                            Spacer()
+
+                            Button(role: .destructive) {
+                                exerciseToRemove = workoutExercise
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 13))
+                            }
                         }
                     } else {
                         ForEach(Array(workoutExercise.sets.enumerated()), id: \.element.id) { index, exerciseSet in
@@ -160,6 +172,26 @@ struct WorkoutDetailView: View {
                         LabeledContent("Exercise Volume") {
                             Text(weightUnit.format(workoutExercise.exerciseVolume, decimals: 0))
                                 .foregroundStyle(.blue)
+                        }
+                    }
+                }
+            }
+
+            if isEditing, let hvm = historyViewModel {
+                Section {
+                    if exerciseListViewModel != nil {
+                        Button {
+                            showingExercisePicker = true
+                        } label: {
+                            Label("Add Exercise", systemImage: "plus.circle")
+                        }
+                    }
+
+                    if hasIncompleteSets {
+                        Button {
+                            Task { await hvm.markAllSetsComplete() }
+                        } label: {
+                            Label("Mark All Sets Complete", systemImage: "checkmark.circle")
                         }
                     }
                 }
@@ -198,7 +230,11 @@ struct WorkoutDetailView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 12) {
                         Button(hvm.isEditing ? "Done" : "Edit") {
-                            hvm.isEditing.toggle()
+                            if hvm.isEditing {
+                                Task { await hvm.endEditing() }
+                            } else {
+                                hvm.isEditing = true
+                            }
                         }
                         Button {
                             showingDeleteConfirmation = true
@@ -227,12 +263,43 @@ struct WorkoutDetailView: View {
         } message: {
             Text("This will permanently delete the workout and all its data.")
         }
+        .sheet(isPresented: $showingExercisePicker) {
+            if let exerciseListViewModel, let hvm = historyViewModel {
+                ExercisePickerView(viewModel: exerciseListViewModel) { exercise in
+                    Task { await hvm.addExercise(exercise) }
+                }
+            }
+        }
+        .confirmationDialog(
+            "Remove Exercise",
+            isPresented: .init(
+                get: { exerciseToRemove != nil },
+                set: { if !$0 { exerciseToRemove = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Remove \(exerciseToRemove?.exercise.name ?? "Exercise")", role: .destructive) {
+                if let target = exerciseToRemove, let hvm = historyViewModel {
+                    Task { await hvm.removeExercise(exerciseId: target.id) }
+                }
+                exerciseToRemove = nil
+            }
+            Button("Cancel", role: .cancel) { exerciseToRemove = nil }
+        } message: {
+            Text("This removes the exercise and all its sets from this workout.")
+        }
         .onAppear {
             historyViewModel?.selectWorkout(workout)
         }
         .onDisappear {
-            historyViewModel?.isEditing = false
+            if let hvm = historyViewModel, hvm.isEditing {
+                Task { await hvm.endEditing() }
+            }
         }
+    }
+
+    private var hasIncompleteSets: Bool {
+        displayedWorkout.exercises.contains { $0.sets.contains { !$0.isCompleted } }
     }
 
     private func formatDuration(_ interval: TimeInterval) -> String {

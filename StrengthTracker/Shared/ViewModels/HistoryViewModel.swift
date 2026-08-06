@@ -12,13 +12,37 @@ public final class HistoryViewModel {
 
     private let workoutRepository: any WorkoutRepository
     public let userPreferencesService: UserPreferencesService?
+    private let analyticsService: WorkoutAnalyticsService?
+    private let personalRecordService: PersonalRecordService?
+    private let healthKitService: (any HealthKitServiceProtocol)?
+    private let calorieEstimationService: CalorieEstimationService?
+    private let webhookService: WebhookService?
+    private let widgetRefreshService: WidgetRefreshService?
+
+    /// Workouts retro-created this session that still owe their one-shot side effects
+    /// (webhook + optional HealthKit save). Keyed by workout id; value = HealthKit opt-in.
+    private var pendingRetroFinalization: [UUID: Bool] = [:]
+    /// Set whenever an edit persists; lets endEditing() skip finalization for no-op sessions.
+    private var hasUnsavedFinalization = false
 
     public init(
         workoutRepository: any WorkoutRepository,
-        userPreferencesService: UserPreferencesService? = nil
+        userPreferencesService: UserPreferencesService? = nil,
+        analyticsService: WorkoutAnalyticsService? = nil,
+        personalRecordService: PersonalRecordService? = nil,
+        healthKitService: (any HealthKitServiceProtocol)? = nil,
+        calorieEstimationService: CalorieEstimationService? = nil,
+        webhookService: WebhookService? = nil,
+        widgetRefreshService: WidgetRefreshService? = nil
     ) {
         self.workoutRepository = workoutRepository
         self.userPreferencesService = userPreferencesService
+        self.analyticsService = analyticsService
+        self.personalRecordService = personalRecordService
+        self.healthKitService = healthKitService
+        self.calorieEstimationService = calorieEstimationService
+        self.webhookService = webhookService
+        self.widgetRefreshService = widgetRefreshService
     }
 
     public func loadHistory() async {
@@ -93,8 +117,11 @@ public final class HistoryViewModel {
     }
 
     public func toggleSetCompletion(exerciseId: UUID, setId: UUID) async {
-        guard var workout = selectedWorkout,
-              workout.toggleSetCompletion(exerciseId: exerciseId, setId: setId) != nil else { return }
+        guard var workout = selectedWorkout else { return }
+        // Stamp the workout's own window, not "now" — history/retro sets must carry
+        // backdated timestamps (PR achievedAt and analytics derive from them).
+        let stamp = workout.completedAt ?? Date()
+        guard workout.toggleSetCompletion(exerciseId: exerciseId, setId: setId, at: stamp) != nil else { return }
         await saveAndSync(workout)
     }
 
@@ -125,6 +152,129 @@ public final class HistoryViewModel {
               !workout.exercises[ei].sets.isEmpty else { return }
         workout.exercises[ei].sets.removeLast()
         await saveAndSync(workout)
+    }
+
+    // MARK: - Retro Logging
+
+    /// Creates a past-dated workout that is BORN COMPLETE (`completedAt` derived from
+    /// duration, never "now") so the active-workout machinery — `fetchActive()`,
+    /// `deleteAllIncomplete()`, the 12-hour stale reaper — can never touch it.
+    /// Selects it and enters edit mode for composition.
+    @discardableResult
+    public func createRetroWorkout(
+        name: String,
+        startedAt: Date,
+        duration: TimeInterval,
+        saveToHealthKit: Bool
+    ) async -> Workout? {
+        guard startedAt < Date() else { return nil }
+        let workout = Workout(
+            id: UUID(),
+            name: name,
+            startedAt: startedAt,
+            completedAt: min(startedAt.addingTimeInterval(duration), Date()),
+            notes: nil,
+            templateId: nil,
+            exercises: []
+        )
+        do {
+            let saved = try await workoutRepository.save(workout)
+            // saveAndSync only replaces existing rows — insert the new one at its
+            // sorted (startedAt-descending) position.
+            let insertIndex = workouts.firstIndex { $0.startedAt < saved.startedAt } ?? workouts.endIndex
+            workouts.insert(saved, at: insertIndex)
+            selectedWorkout = saved
+            isEditing = true
+            pendingRetroFinalization[saved.id] = saveToHealthKit
+            hasUnsavedFinalization = true
+            return saved
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Adds an exercise to the selected workout (mirror of the active-workout flow,
+    /// but persisted immediately).
+    public func addExercise(_ exercise: Exercise) async {
+        guard var workout = selectedWorkout else { return }
+        let workoutExercise = WorkoutExercise(
+            id: UUID(),
+            exercise: exercise,
+            order: workout.exercises.count + 1,
+            supersetGroup: nil,
+            notes: nil,
+            restTimerSeconds: nil,
+            sets: []
+        )
+        workout.exercises.append(workoutExercise)
+        await saveAndSync(workout)
+    }
+
+    public func removeExercise(exerciseId: UUID) async {
+        guard var workout = selectedWorkout else { return }
+        workout.exercises.removeAll { $0.id == exerciseId }
+        for i in workout.exercises.indices {
+            workout.exercises[i].order = i + 1
+        }
+        await saveAndSync(workout)
+    }
+
+    public func updateWorkoutName(_ name: String) async {
+        guard var workout = selectedWorkout, !name.isEmpty, name != workout.name else { return }
+        workout.name = name
+        await saveAndSync(workout)
+    }
+
+    /// Completes every incomplete set, stamped inside the workout's own window.
+    public func markAllSetsComplete() async {
+        guard var workout = selectedWorkout else { return }
+        workout.completeAllSets(at: workout.completedAt ?? Date())
+        await saveAndSync(workout)
+    }
+
+    /// Ends the edit session and runs the deferred side effects exactly once.
+    ///
+    /// Always (retro AND normal history edits): re-vectorize the workout (history
+    /// edits previously never re-vectorized — stale-analytics bug), rebuild PRs
+    /// (order-proof for backdated inserts; preserves manual records), refresh widgets.
+    /// Retro-created workouts additionally get their one-shot effects: webhook export
+    /// and, when opted in, a HealthKit save with the workout's past dates.
+    /// Never: debrief/summary, rest timer, Live Activity, watch sync.
+    public func endEditing() async {
+        isEditing = false
+        guard hasUnsavedFinalization,
+              let workout = selectedWorkout,
+              workout.completedAt != nil else { return }
+        hasUnsavedFinalization = false
+
+        let bodyWeightKg = await resolveBodyWeightKg()
+        try? await analyticsService?.vectorizeWorkout(
+            workout,
+            bodyWeightKg: bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+        )
+        try? await personalRecordService?.recalculateAllPRs()
+
+        if let healthKitOptIn = pendingRetroFinalization.removeValue(forKey: workout.id) {
+            if healthKitOptIn, let healthKitService {
+                if let bw = bodyWeightKg, let calorieEstimationService {
+                    let result = calorieEstimationService.estimateCalories(workout: workout, bodyWeightKg: bw)
+                    try? await healthKitService.saveWorkout(workout, calories: result.totalCalories)
+                } else {
+                    try? await healthKitService.saveWorkout(workout)
+                }
+            }
+            await webhookService?.send(workout)
+        }
+
+        await widgetRefreshService?.refresh()
+    }
+
+    private func resolveBodyWeightKg() async -> Double? {
+        if let hkWeight = await healthKitService?.fetchBodyWeightKg() {
+            return hkWeight
+        }
+        return userPreferencesService?.bodyWeightKg
     }
 
     // MARK: - Delete Workout
@@ -235,6 +385,7 @@ public final class HistoryViewModel {
         do {
             let saved = try await workoutRepository.save(workout)
             selectedWorkout = saved
+            hasUnsavedFinalization = true
             // Update the workouts array so the list reflects changes
             if let index = workouts.firstIndex(where: { $0.id == saved.id }) {
                 workouts[index] = saved

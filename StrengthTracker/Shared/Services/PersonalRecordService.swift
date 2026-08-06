@@ -142,8 +142,17 @@ public final class PersonalRecordService {
 
         // For each exercise, recalculate PRs
         for (exerciseId, sets) in setsByExercise {
+            // Preserve manually entered records (setId == nil) — they have no backing
+            // set to rebuild from and must survive the wipe.
+            let manualRecords = try await personalRecordRepository.fetchForExercise(exerciseId)
+                .filter { $0.setId == nil }
+
             // Delete existing records
             try await personalRecordRepository.deleteForExercise(exerciseId)
+
+            for manual in manualRecords {
+                _ = try await personalRecordRepository.save(manual)
+            }
 
             guard let firstSet = sets.first else { continue }
             _ = firstSet.exercise

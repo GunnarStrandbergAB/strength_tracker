@@ -41,7 +41,8 @@ enum AnalyticsTestHelpers {
         isPersonalRecord: Bool = false,
         setType: SetType = .normal,
         isFailure: Bool = false,
-        dropSets: [DropSetEntry] = []
+        dropSets: [DropSetEntry] = [],
+        completedAt: Date = Date()
     ) -> ExerciseSet {
         ExerciseSet(
             id: id,
@@ -56,7 +57,7 @@ enum AnalyticsTestHelpers {
             isCompleted: true,
             isPersonalRecord: isPersonalRecord,
             isFailure: isFailure,
-            completedAt: Date(),
+            completedAt: completedAt,
             dropSets: dropSets
         )
     }
