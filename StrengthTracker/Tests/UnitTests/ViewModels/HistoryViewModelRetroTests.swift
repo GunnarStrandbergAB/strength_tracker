@@ -260,6 +260,51 @@ struct HistoryViewModelRetroTests {
         #expect(maxWeights == [110])
     }
 
+    @Test("template pre-fills exercises and target sets, all incomplete")
+    func testTemplatePreFill() async throws {
+        let workoutRepo = InMemoryWorkoutRepository()
+        let templateRepo = InMemoryTemplateRepository()
+        let vm = HistoryViewModel(workoutRepository: workoutRepo, templateRepository: templateRepo)
+
+        let ringDip = makeExercise(name: "Ring Dip")
+        let ringRow = makeExercise(name: "Ring Row")
+        let template = WorkoutTemplate(
+            id: UUID(), name: "Rings Day", notes: nil, sortOrder: 0,
+            lastUsedAt: nil, timesUsed: 3,
+            exercises: [
+                TemplateExercise(
+                    id: UUID(), exercise: ringDip, order: 1, supersetGroup: nil,
+                    notes: nil, restTimerSeconds: 90, targetSets: 3,
+                    targetReps: 8, targetWeight: nil,
+                    targetDurationSeconds: nil, targetDistanceMeters: nil
+                ),
+                TemplateExercise(
+                    id: UUID(), exercise: ringRow, order: 2, supersetGroup: nil,
+                    notes: nil, restTimerSeconds: nil, targetSets: 2,
+                    targetReps: 12, targetWeight: nil,
+                    targetDurationSeconds: nil, targetDistanceMeters: nil
+                ),
+            ]
+        )
+        _ = try await templateRepo.save(template)
+
+        let created = try #require(await vm.createRetroWorkout(
+            name: "Rings Day", startedAt: twoWeeksAgo, duration: 3600,
+            saveToHealthKit: false, template: template
+        ))
+
+        #expect(created.templateId == template.id)
+        #expect(created.exercises.map(\.exercise.name) == ["Ring Dip", "Ring Row"])
+        #expect(created.exercises.map(\.sets.count) == [3, 2])
+        #expect(created.exercises.flatMap(\.sets).allSatisfy { !$0.isCompleted })
+        #expect(created.exercises[0].sets.first?.reps == 8)
+        #expect(created.exercises[1].sets.first?.reps == 12)
+
+        // Template usage is credited like a live start.
+        let stored = try #require(try await templateRepo.fetchAll().first { $0.id == template.id })
+        #expect(stored.timesUsed == 4)
+    }
+
     @Test("manually entered PRs survive recalculateAllPRs")
     func testManualPRSurvivesRecalc() async throws {
         let (vm, _, prRepo, _, _) = makeStack()

@@ -12,6 +12,7 @@ public final class HistoryViewModel {
 
     private let workoutRepository: any WorkoutRepository
     public let userPreferencesService: UserPreferencesService?
+    private let templateRepository: (any TemplateRepository)?
     private let analyticsService: WorkoutAnalyticsService?
     private let personalRecordService: PersonalRecordService?
     private let healthKitService: (any HealthKitServiceProtocol)?
@@ -28,6 +29,7 @@ public final class HistoryViewModel {
     public init(
         workoutRepository: any WorkoutRepository,
         userPreferencesService: UserPreferencesService? = nil,
+        templateRepository: (any TemplateRepository)? = nil,
         analyticsService: WorkoutAnalyticsService? = nil,
         personalRecordService: PersonalRecordService? = nil,
         healthKitService: (any HealthKitServiceProtocol)? = nil,
@@ -37,6 +39,7 @@ public final class HistoryViewModel {
     ) {
         self.workoutRepository = workoutRepository
         self.userPreferencesService = userPreferencesService
+        self.templateRepository = templateRepository
         self.analyticsService = analyticsService
         self.personalRecordService = personalRecordService
         self.healthKitService = healthKitService
@@ -160,12 +163,21 @@ public final class HistoryViewModel {
     /// duration, never "now") so the active-workout machinery — `fetchActive()`,
     /// `deleteAllIncomplete()`, the 12-hour stale reaper — can never touch it.
     /// Selects it and enters edit mode for composition.
+    /// Templates available for pre-filling a retro workout, sorted like the
+    /// Templates tab (by sortOrder).
+    public func loadTemplates() async -> [WorkoutTemplate] {
+        guard let templateRepository else { return [] }
+        let all = (try? await templateRepository.fetchAll()) ?? []
+        return all.sorted { $0.sortOrder < $1.sortOrder }
+    }
+
     @discardableResult
     public func createRetroWorkout(
         name: String,
         startedAt: Date,
         duration: TimeInterval,
-        saveToHealthKit: Bool
+        saveToHealthKit: Bool,
+        template: WorkoutTemplate? = nil
     ) async -> Workout? {
         guard startedAt < Date() else { return nil }
         let workout = Workout(
@@ -174,8 +186,8 @@ public final class HistoryViewModel {
             startedAt: startedAt,
             completedAt: min(startedAt.addingTimeInterval(duration), Date()),
             notes: nil,
-            templateId: nil,
-            exercises: []
+            templateId: template?.id,
+            exercises: template?.instantiateExercises() ?? []
         )
         do {
             let saved = try await workoutRepository.save(workout)
@@ -187,6 +199,9 @@ public final class HistoryViewModel {
             isEditing = true
             pendingRetroFinalization[saved.id] = saveToHealthKit
             hasUnsavedFinalization = true
+            if let template {
+                try? await templateRepository?.incrementUsage(template.id)
+            }
             return saved
         } catch {
             errorMessage = error.localizedDescription

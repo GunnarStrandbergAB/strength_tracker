@@ -16,9 +16,15 @@ struct LogPastWorkoutSheet: View {
     @State private var durationMinutes: Int = 60
     @State private var saveToHealthKit = false
     @State private var isCreating = false
+    @State private var templates: [WorkoutTemplate] = []
+    @State private var selectedTemplateId: UUID? = nil
+
+    private var selectedTemplate: WorkoutTemplate? {
+        templates.first { $0.id == selectedTemplateId }
+    }
 
     private var suggestedName: String {
-        "Workout – \(date.formatted(.dateTime.month(.abbreviated).day()))"
+        selectedTemplate?.name ?? "Workout – \(date.formatted(.dateTime.month(.abbreviated).day()))"
     }
 
     var body: some View {
@@ -26,6 +32,15 @@ struct LogPastWorkoutSheet: View {
             Form {
                 Section("Workout") {
                     TextField(suggestedName, text: $name)
+
+                    if !templates.isEmpty {
+                        Picker("Start from template", selection: $selectedTemplateId) {
+                            Text("Empty").tag(UUID?.none)
+                            ForEach(templates) { template in
+                                Text(template.name).tag(Optional(template.id))
+                            }
+                        }
+                    }
                 }
 
                 Section("When") {
@@ -85,6 +100,9 @@ struct LogPastWorkoutSheet: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+            .task {
+                templates = await viewModel.loadTemplates()
+            }
         }
     }
 
@@ -97,7 +115,8 @@ struct LogPastWorkoutSheet: View {
                 name: finalName,
                 startedAt: min(date, Date()),
                 duration: TimeInterval(durationMinutes * 60),
-                saveToHealthKit: saveToHealthKit
+                saveToHealthKit: saveToHealthKit,
+                template: selectedTemplate
             ) {
                 dismiss()
                 onCreated(workout)

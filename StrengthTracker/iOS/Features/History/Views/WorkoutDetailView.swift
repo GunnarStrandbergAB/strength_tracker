@@ -131,6 +131,9 @@ struct WorkoutDetailView: View {
                     if isEditing, let hvm = historyViewModel {
                         editableSetRows(for: workoutExercise, hvm: hvm)
 
+                        // Multiple buttons in one List row need explicit .borderless
+                        // styles — otherwise the row is one tap target and a tap on
+                        // "Add Set" also fires the destructive trash action.
                         HStack(spacing: 12) {
                             Button {
                                 Task { await hvm.addEmptySet(exerciseId: workoutExercise.id) }
@@ -138,6 +141,7 @@ struct WorkoutDetailView: View {
                                 Label("Add Set", systemImage: "plus.circle")
                                     .font(.system(size: 13))
                             }
+                            .buttonStyle(.borderless)
 
                             if !workoutExercise.sets.isEmpty {
                                 Button(role: .destructive) {
@@ -146,6 +150,7 @@ struct WorkoutDetailView: View {
                                     Label("Remove Last", systemImage: "minus.circle")
                                         .font(.system(size: 13))
                                 }
+                                .buttonStyle(.borderless)
                             }
 
                             Spacer()
@@ -156,6 +161,7 @@ struct WorkoutDetailView: View {
                                 Image(systemName: "trash")
                                     .font(.system(size: 13))
                             }
+                            .buttonStyle(.borderless)
                         }
                     } else {
                         ForEach(Array(workoutExercise.sets.enumerated()), id: \.element.id) { index, exerciseSet in

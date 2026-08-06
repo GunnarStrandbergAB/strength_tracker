@@ -127,41 +127,7 @@ public final class WorkoutViewModel {
     public func startWorkout(name: String, from template: WorkoutTemplate? = nil, isDeload: Bool = false) async {
         try? await workoutRepository.deleteAllIncomplete()
 
-        var exercises: [WorkoutExercise] = []
-
-        if let template = template {
-            exercises = template.exercises.sorted(by: { $0.order < $1.order }).enumerated().map { index, te in
-                let sets = (0..<te.targetSets).map { setIndex in
-                    let target = te.setTargets.indices.contains(setIndex) ? te.setTargets[setIndex] : nil
-                    let resolvedSetType: SetType = {
-                        if let t = target, t.setType != .normal { return t.setType }
-                        return te.isWarmUp ? .warmup : .normal
-                    }()
-                    return ExerciseSet(
-                        id: UUID(),
-                        order: setIndex + 1,
-                        setType: resolvedSetType,
-                        weight: target?.targetWeight ?? te.targetWeight,
-                        reps: target?.targetReps ?? te.targetReps,
-                        durationSeconds: target?.targetDurationSeconds ?? te.targetDurationSeconds,
-                        distanceMeters: target?.targetDistanceMeters ?? te.targetDistanceMeters,
-                        rpe: nil,
-                        isCompleted: false,
-                        isPersonalRecord: false,
-                        completedAt: nil
-                    )
-                }
-                return WorkoutExercise(
-                    id: UUID(),
-                    exercise: te.exercise,
-                    order: index + 1,
-                    supersetGroup: te.supersetGroup,
-                    notes: te.notes,
-                    restTimerSeconds: te.restTimerSeconds,
-                    sets: sets
-                )
-            }
-        }
+        let exercises: [WorkoutExercise] = template?.instantiateExercises() ?? []
 
         var workout = Workout(
             id: UUID(),

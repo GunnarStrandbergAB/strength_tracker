@@ -20,6 +20,42 @@ public struct WorkoutTemplate: Identifiable, Hashable, Sendable, Codable {
         self.exercises = exercises
         self.isCustom = isCustom
     }
+
+    /// Builds fresh workout exercises + sets from this template's targets — the
+    /// single instantiation shared by live workout starts and retro logging.
+    public func instantiateExercises() -> [WorkoutExercise] {
+        exercises.sorted(by: { $0.order < $1.order }).enumerated().map { index, te in
+            let sets = (0..<te.targetSets).map { setIndex in
+                let target = te.setTargets.indices.contains(setIndex) ? te.setTargets[setIndex] : nil
+                let resolvedSetType: SetType = {
+                    if let t = target, t.setType != .normal { return t.setType }
+                    return te.isWarmUp ? .warmup : .normal
+                }()
+                return ExerciseSet(
+                    id: UUID(),
+                    order: setIndex + 1,
+                    setType: resolvedSetType,
+                    weight: target?.targetWeight ?? te.targetWeight,
+                    reps: target?.targetReps ?? te.targetReps,
+                    durationSeconds: target?.targetDurationSeconds ?? te.targetDurationSeconds,
+                    distanceMeters: target?.targetDistanceMeters ?? te.targetDistanceMeters,
+                    rpe: nil,
+                    isCompleted: false,
+                    isPersonalRecord: false,
+                    completedAt: nil
+                )
+            }
+            return WorkoutExercise(
+                id: UUID(),
+                exercise: te.exercise,
+                order: index + 1,
+                supersetGroup: te.supersetGroup,
+                notes: te.notes,
+                restTimerSeconds: te.restTimerSeconds,
+                sets: sets
+            )
+        }
+    }
 }
 
 public struct TemplateSetTarget: Identifiable, Hashable, Sendable, Codable {

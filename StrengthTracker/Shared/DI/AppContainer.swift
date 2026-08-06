@@ -282,6 +282,7 @@ public final class AppContainer: Sendable {
         HistoryViewModel(
             workoutRepository: workoutRepository,
             userPreferencesService: userPreferencesService,
+            templateRepository: templateRepository,
             analyticsService: analyticsService,
             personalRecordService: personalRecordService,
             healthKitService: healthKitService,
