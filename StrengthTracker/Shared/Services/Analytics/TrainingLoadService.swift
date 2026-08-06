@@ -10,6 +10,7 @@ public enum TrainingLoadService {
     ///   - bestE1RM: Per-exercise best estimated 1RM
     /// - Returns: Training load with ACWR, or nil if insufficient data
     public static func computeTrainingLoad(
+        bodyWeightKg: Double,
         workouts: [Workout],
         bestE1RM: [UUID: Double]
     ) -> TrainingLoad? {
@@ -26,7 +27,7 @@ public enum TrainingLoadService {
 
         // Compute session loads
         let workoutLoads: [(workout: Workout, load: Double)] = completed.map { workout in
-            (workout, computeSessionLoad(workout: workout, bestE1RM: bestE1RM))
+            (workout, computeSessionLoad(workout: workout, bestE1RM: bestE1RM, bodyWeightKg: bodyWeightKg))
         }
 
         // Build daily load array (rest days = 0)
@@ -45,7 +46,7 @@ public enum TrainingLoadService {
         let loadZone = LoadZone.from(acwr: acwr)
 
         // Per-muscle-group ACWR (rolling sum method for sparse per-muscle data)
-        let perMuscle = computePerMuscleGroupACWR(workouts: completed, bestE1RM: bestE1RM)
+        let perMuscle = computePerMuscleGroupACWR(workouts: completed, bestE1RM: bestE1RM, bodyWeightKg: bodyWeightKg)
 
         return TrainingLoad(
             acuteLoad: acuteLoad,
@@ -82,11 +83,12 @@ public enum TrainingLoadService {
 
     /// Session load = sum of IWV per working set (drop-set segments included),
     /// optionally RPE-modulated.
-    private static func computeSessionLoad(workout: Workout, bestE1RM: [UUID: Double]) -> Double {
+    private static func computeSessionLoad(workout: Workout, bestE1RM: [UUID: Double], bodyWeightKg: Double) -> Double {
         var load = 0.0
         for we in workout.exercises {
+            let base = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
             for set in we.sets {
-                load += AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id])
+                load += AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id], baseLoadPerRep: base)
             }
         }
         return load
@@ -96,7 +98,8 @@ public enum TrainingLoadService {
     /// Rolling sum is more appropriate than EWMA for muscles trained 1-2x/week.
     private static func computePerMuscleGroupACWR(
         workouts: [Workout],
-        bestE1RM: [UUID: Double]
+        bestE1RM: [UUID: Double],
+        bodyWeightKg: Double
     ) -> [String: Double] {
         let now = Date()
         let calendar = Calendar.current
@@ -113,8 +116,9 @@ public enum TrainingLoadService {
 
             for we in workout.exercises {
                 var muscleLoad = 0.0
+                let base = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
                 for set in we.sets {
-                    muscleLoad += AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id])
+                    muscleLoad += AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id], baseLoadPerRep: base)
                 }
 
                 let muscle = we.exercise.primaryMuscleGroup.rawValue

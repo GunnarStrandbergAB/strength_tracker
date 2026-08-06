@@ -19,6 +19,7 @@ public final class HistoryViewModel {
     private let calorieEstimationService: CalorieEstimationService?
     private let webhookService: WebhookService?
     private let widgetRefreshService: WidgetRefreshService?
+    private let qualityScoreService: WorkoutQualityScoreService?
 
     /// Workouts retro-created this session that still owe their one-shot side effects
     /// (webhook + optional HealthKit save). Keyed by workout id; value = HealthKit opt-in.
@@ -35,7 +36,8 @@ public final class HistoryViewModel {
         healthKitService: (any HealthKitServiceProtocol)? = nil,
         calorieEstimationService: CalorieEstimationService? = nil,
         webhookService: WebhookService? = nil,
-        widgetRefreshService: WidgetRefreshService? = nil
+        widgetRefreshService: WidgetRefreshService? = nil,
+        qualityScoreService: WorkoutQualityScoreService? = nil
     ) {
         self.workoutRepository = workoutRepository
         self.userPreferencesService = userPreferencesService
@@ -46,6 +48,7 @@ public final class HistoryViewModel {
         self.calorieEstimationService = calorieEstimationService
         self.webhookService = webhookService
         self.widgetRefreshService = widgetRefreshService
+        self.qualityScoreService = qualityScoreService
     }
 
     public func loadHistory() async {
@@ -71,13 +74,12 @@ public final class HistoryViewModel {
         for workout in workouts {
             for workoutExercise in workout.exercises {
                 if workoutExercise.exercise.id == exerciseId {
+                    let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: displayBodyWeightKg)
                     for set in workoutExercise.sets where set.isCompleted {
                         // One point per performed segment so drop-set parts feed the
                         // charts like any other effort.
-                        for part in set.effectiveParts {
-                            if let weight = part.weight, let reps = part.reps {
-                                results.append((date: workout.startedAt, weight: weight, reps: reps))
-                            }
+                        for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
+                            results.append((date: workout.startedAt, weight: part.load, reps: part.reps))
                         }
                     }
                 }
@@ -274,7 +276,7 @@ public final class HistoryViewModel {
             if healthKitOptIn, let healthKitService {
                 if let bw = bodyWeightKg, let calorieEstimationService {
                     let result = calorieEstimationService.estimateCalories(workout: workout, bodyWeightKg: bw)
-                    try? await healthKitService.saveWorkout(workout, calories: result.totalCalories)
+                    try? await healthKitService.saveWorkout(workout, calories: result.totalCalories, bodyWeightKg: bw)
                 } else {
                     try? await healthKitService.saveWorkout(workout)
                 }
@@ -282,7 +284,16 @@ public final class HistoryViewModel {
             await webhookService?.send(workout)
         }
 
+        // Quality scores are history-relative and memoized — drop them before the
+        // widget refresh republishes the aggregate.
+        qualityScoreService?.invalidateAll()
         await widgetRefreshService?.refresh()
+    }
+
+    /// Synchronous body-weight resolution for display sites (prefs → default);
+    /// the async HealthKit chain is only used for finalization side effects.
+    public var displayBodyWeightKg: Double {
+        userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
 
     private func resolveBodyWeightKg() async -> Double? {
@@ -301,6 +312,9 @@ public final class HistoryViewModel {
             if selectedWorkout?.id == workout.id {
                 selectedWorkout = nil
             }
+            // A deleted workout changes every history-relative metric.
+            qualityScoreService?.invalidateAll()
+            await widgetRefreshService?.refresh()
         } catch {
             errorMessage = error.localizedDescription
         }

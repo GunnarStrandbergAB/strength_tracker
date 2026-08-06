@@ -16,8 +16,8 @@ public struct WorkoutHistory: Identifiable, Hashable, Sendable, Codable {
         completedWorkouts.count
     }
 
-    public var totalVolume: Double {
-        completedWorkouts.reduce(0) { $0 + $1.totalVolume }
+    public func totalVolume(bodyWeightKg: Double) -> Double {
+        completedWorkouts.reduce(0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) }
     }
 
     public var averageDuration: TimeInterval? {

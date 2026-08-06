@@ -34,9 +34,10 @@ public final class WorkoutVectorizer: Sendable {
 
         // 1: Average weight across all sets (bodyweight fallback for bodyweightReps)
         let allSets = workout.exercises.flatMap { $0.sets.filter(\.isCompleted) }
-        let weights = zip(workout.exercises, workout.exercises.map { ex in
-            ex.sets.filter(\.isCompleted).map { s in
-                s.weight ?? (ex.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : 0.0)
+        let weights = zip(workout.exercises, workout.exercises.map { ex -> [Double] in
+            let baseLoad = ex.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
+            return ex.sets.filter(\.isCompleted).map { s in
+                s.effectiveParts.first?.effectiveLoad(baseLoadPerRep: baseLoad) ?? 0.0
             }
         }).flatMap(\.1)
         let avgWeight = weights.isEmpty ? 0.0 : weights.reduce(0, +) / Double(weights.count)

@@ -7,6 +7,7 @@ public enum DeloadDetectionService {
     /// Detect whether a deload is recommended.
     /// Returns nil if urgency < 0.15 (no actionable fatigue).
     public static func detectDeload(
+        bodyWeightKg: Double,
         workouts: [Workout],
         overloadTrends: [OverloadTrend],
         trainingLoad: TrainingLoad?,
@@ -32,7 +33,7 @@ public enum DeloadDetectionService {
         }
 
         // 2. Intensity creep: effort ratios increasing over last 3 sessions
-        if detectIntensityCreep(workouts: Array(completed.suffix(5)), bestE1RM: bestE1RM) {
+        if detectIntensityCreep(workouts: Array(completed.suffix(5)), bestE1RM: bestE1RM, bodyWeightKg: bodyWeightKg) {
             triggers.append(.intensityCreep)
             urgencyWeights.append(0.2)
         }
@@ -44,7 +45,7 @@ public enum DeloadDetectionService {
         }
 
         // 4. Overdue: >6 weeks since volume dropped <60% of average
-        let weeksSinceDeload = detectWeeksSinceDeload(workouts: completed, bestE1RM: bestE1RM)
+        let weeksSinceDeload = detectWeeksSinceDeload(workouts: completed, bestE1RM: bestE1RM, bodyWeightKg: bodyWeightKg)
         if weeksSinceDeload > 6 {
             triggers.append(.overdue)
             urgencyWeights.append(0.2 * min(Double(weeksSinceDeload - 6) / 4.0, 1.0))
@@ -72,19 +73,20 @@ public enum DeloadDetectionService {
     // MARK: - Private
 
     /// Detect if mean effort ratio is consistently increasing over last 3+ sessions.
-    private static func detectIntensityCreep(workouts: [Workout], bestE1RM: [UUID: Double]) -> Bool {
+    private static func detectIntensityCreep(workouts: [Workout], bestE1RM: [UUID: Double], bodyWeightKg: Double) -> Bool {
         guard workouts.count >= 3 else { return false }
 
         let recentMeanEfforts = workouts.suffix(3).map { workout -> Double in
             var ratios: [Double] = []
             for we in workout.exercises {
+                let baseLoad = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
                 for set in we.sets {
                     guard set.isCompleted, set.setType != .warmup,
-                          let weight = set.weight, weight > 0,
-                          let reps = set.reps, reps > 0,
                           let best = bestE1RM[we.exercise.id], best > 0 else { continue }
-                    let e1rm = AnalyticsCalculations.calculateOneRM(weight: weight, reps: min(reps, 15))
-                    ratios.append(e1rm / best)
+                    for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
+                        let e1rm = AnalyticsCalculations.calculateOneRM(weight: part.load, reps: min(part.reps, 15))
+                        ratios.append(e1rm / best)
+                    }
                 }
             }
             return ratios.isEmpty ? 0 : ratios.reduce(0, +) / Double(ratios.count)
@@ -97,7 +99,7 @@ public enum DeloadDetectionService {
 
     /// Count weeks since the last deload-like volume drop (<60% of 4-week average)
     /// or any week containing an `isDeload`-tagged workout.
-    private static func detectWeeksSinceDeload(workouts: [Workout], bestE1RM: [UUID: Double]) -> Int {
+    private static func detectWeeksSinceDeload(workouts: [Workout], bestE1RM: [UUID: Double], bodyWeightKg: Double) -> Int {
         let calendar = Calendar.current
         var weeklyLoads: [(weekStart: Date, load: Double)] = []
         var weeksWithTaggedDeload: Set<Int> = []
@@ -108,8 +110,9 @@ public enum DeloadDetectionService {
 
             var sessionLoad = 0.0
             for we in workout.exercises {
+                let base = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
                 for set in we.sets {
-                    sessionLoad += AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id])
+                    sessionLoad += AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id], baseLoadPerRep: base)
                 }
             }
 

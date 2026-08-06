@@ -233,6 +233,6 @@ struct WorkoutViewModelTests {
         try await vm.logSet(exerciseId: exercise.id, weight: 100, reps: 10) // 1000
         try await vm.logSet(exerciseId: exercise.id, weight: 100, reps: 8)  // 800
 
-        #expect(vm.currentWorkout?.totalVolume == 1800)
+        #expect(vm.currentWorkout?.totalVolume(bodyWeightKg: 70) == 1800)
     }
 }

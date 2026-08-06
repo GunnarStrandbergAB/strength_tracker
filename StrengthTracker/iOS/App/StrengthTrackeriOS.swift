@@ -59,6 +59,12 @@ struct StrengthTrackeriOSApp: App {
             container.exerciseSeeder.startSeeding()
             container.templateSeedService.startSeeding()
 
+            // One-time effective-load migration once the library carries factors
+            Task { [container] in
+                await container.exerciseSeeder.ensureSeeded()
+                await container.effectiveLoadMigrationService.migrateIfNeeded()
+            }
+
             // Request notification permission for rest timer background alerts
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .timeSensitive]) { _, _ in }
 
@@ -268,7 +274,8 @@ struct ContentViewWrapper: View {
                         "defaultRestSeconds": prefs.defaultRestSeconds,
                         "weightUnit": prefs.weightUnit.rawValue,
                         "autoStartRestTimer": prefs.autoStartRestTimer,
-                        "distanceUnit": prefs.distanceUnit.rawValue
+                        "distanceUnit": prefs.distanceUnit.rawValue,
+                        "bodyWeightKg": prefs.bodyWeightKg ?? 0
                     ])
                 }
             }

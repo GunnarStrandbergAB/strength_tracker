@@ -44,7 +44,7 @@ struct ExerciseSetTests {
             completedAt: Date()
         )
 
-        #expect(set.setVolume == 1000.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 1000.0)
     }
 
     @Test("setVolume returns 0 for warmup set")
@@ -63,7 +63,7 @@ struct ExerciseSetTests {
             completedAt: Date()
         )
 
-        #expect(set.setVolume == 0.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 0.0)
     }
 
     @Test("setVolume returns 0 when isCompleted is false")
@@ -82,7 +82,7 @@ struct ExerciseSetTests {
             completedAt: nil
         )
 
-        #expect(set.setVolume == 0.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 0.0)
     }
 
     @Test("setVolume returns 0 when weight is zero")
@@ -93,7 +93,7 @@ struct ExerciseSetTests {
             durationSeconds: nil, distanceMeters: nil, rpe: nil,
             isCompleted: true, isPersonalRecord: false, completedAt: Date()
         )
-        #expect(set.setVolume == 0.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 0.0)
     }
 
     @Test("setVolume returns 0 when reps is zero")
@@ -104,7 +104,7 @@ struct ExerciseSetTests {
             durationSeconds: nil, distanceMeters: nil, rpe: nil,
             isCompleted: true, isPersonalRecord: false, completedAt: Date()
         )
-        #expect(set.setVolume == 0.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 0.0)
     }
 
     @Test("setVolume returns 0 when both weight and reps are nil")
@@ -115,7 +115,7 @@ struct ExerciseSetTests {
             durationSeconds: nil, distanceMeters: nil, rpe: nil,
             isCompleted: true, isPersonalRecord: false, completedAt: Date()
         )
-        #expect(set.setVolume == 0.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 0.0)
     }
 
     @Test("setVolume returns 0 when weight is nil but reps is valid")
@@ -126,7 +126,7 @@ struct ExerciseSetTests {
             durationSeconds: nil, distanceMeters: nil, rpe: nil,
             isCompleted: true, isPersonalRecord: false, completedAt: Date()
         )
-        #expect(set.setVolume == 0.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 0.0)
     }
 
     @Test("setVolume counts dropset type")
@@ -137,7 +137,7 @@ struct ExerciseSetTests {
             durationSeconds: nil, distanceMeters: nil, rpe: nil,
             isCompleted: true, isPersonalRecord: false, completedAt: Date()
         )
-        #expect(set.setVolume == 960.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 960.0)
     }
 
     @Test("setVolume counts failure type")
@@ -148,7 +148,7 @@ struct ExerciseSetTests {
             durationSeconds: nil, distanceMeters: nil, rpe: nil,
             isCompleted: true, isPersonalRecord: false, completedAt: Date()
         )
-        #expect(set.setVolume == 450.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 450.0)
     }
 
     @Test("setVolume counts restPause type")
@@ -159,7 +159,7 @@ struct ExerciseSetTests {
             durationSeconds: nil, distanceMeters: nil, rpe: nil,
             isCompleted: true, isPersonalRecord: false, completedAt: Date()
         )
-        #expect(set.setVolume == 560.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 560.0)
     }
 }
 
@@ -208,7 +208,7 @@ struct WorkoutExerciseTests {
         )
 
         // warmup: 0, set1: 800, set2: 800, set3: 0 (not completed)
-        #expect(workoutExercise.exerciseVolume == 1600.0)
+        #expect(workoutExercise.exerciseVolume(bodyWeightKg: 70) == 1600.0)
     }
 
     @Test("exerciseVolume returns 0 for empty sets array")
@@ -222,7 +222,7 @@ struct WorkoutExerciseTests {
             restTimerSeconds: nil,
             sets: []
         )
-        #expect(workoutExercise.exerciseVolume == 0.0)
+        #expect(workoutExercise.exerciseVolume(bodyWeightKg: 70) == 0.0)
     }
 }
 
@@ -304,7 +304,7 @@ struct WorkoutTests {
             exercises: [ex1, ex2]
         )
 
-        #expect(workout.totalVolume == 3120.0)
+        #expect(workout.totalVolume(bodyWeightKg: 70) == 3120.0)
     }
 
     @Test("duration returns completedAt minus startedAt")
@@ -381,7 +381,7 @@ struct WorkoutTests {
             templateId: nil,
             exercises: []
         )
-        #expect(workout.totalVolume == 0.0)
+        #expect(workout.totalVolume(bodyWeightKg: 70) == 0.0)
     }
 
     @Test("Workout Codable roundtrip preserves all fields")

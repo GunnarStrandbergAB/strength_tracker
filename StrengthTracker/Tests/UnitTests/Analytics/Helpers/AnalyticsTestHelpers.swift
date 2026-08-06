@@ -14,7 +14,8 @@ enum AnalyticsTestHelpers {
         primaryMuscleGroup: MuscleGroup = .chest,
         secondaryMuscleGroups: [MuscleGroup] = [.triceps, .shoulders],
         category: ExerciseCategory = .barbell,
-        exerciseType: ExerciseType = .weightedReps
+        exerciseType: ExerciseType = .weightedReps,
+        bodyweightFactor: Double? = nil
     ) -> Exercise {
         Exercise(
             id: id,
@@ -25,7 +26,8 @@ enum AnalyticsTestHelpers {
             exerciseType: exerciseType,
             instructions: nil,
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: bodyweightFactor
         )
     }
 

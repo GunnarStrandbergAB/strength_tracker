@@ -763,7 +763,8 @@ public final class ProgressionPlanViewModel {
             let result = sessionExecutionService.completeSession(
                 plan.blocks[bi].weeks[wi].sessions[si],
                 workout: workout,
-                planExercises: plan.exercises
+                planExercises: plan.exercises,
+                bodyWeightKg: userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
             )
             plan.blocks[bi].weeks[wi].sessions[si] = result.updatedSession
             // Completion wins over a prior skip.

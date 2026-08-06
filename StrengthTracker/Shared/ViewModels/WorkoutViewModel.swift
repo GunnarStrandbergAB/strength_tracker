@@ -291,7 +291,7 @@ public final class WorkoutViewModel {
             let bodyWeightKg = await resolveBodyWeightKg()
             if let bw = bodyWeightKg {
                 let result = calorieEstimationService.estimateCalories(workout: saved, bodyWeightKg: bw)
-                try? await healthKitService.saveWorkout(saved, calories: result.totalCalories)
+                try? await healthKitService.saveWorkout(saved, calories: result.totalCalories, bodyWeightKg: bw)
             } else {
                 try? await healthKitService.saveWorkout(saved)
             }
@@ -411,6 +411,7 @@ public final class WorkoutViewModel {
     /// Load coaching data (weight suggestions, effort creep) for all exercises.
     public func loadCoachingData() async {
         guard let workout = currentWorkout, let wss = weightSuggestionService else { return }
+        let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
         do {
             let allWorkouts = try await workoutRepository.fetchAll()
             let recentCompleted = allWorkouts
@@ -431,7 +432,8 @@ public final class WorkoutViewModel {
                         overloadTrend: nil,
                         recoveryStatus: nil,
                         trainingLoad: nil,
-                        isDeload: workout.isDeload
+                        isDeload: workout.isDeload,
+                        bodyWeightKg: bodyWeightKg
                     ) {
                         suggestions[setIndex] = suggestion
                     }
@@ -440,7 +442,8 @@ public final class WorkoutViewModel {
                 let effortCreep = wss.checkEffortCreep(
                     exerciseId: exerciseId,
                     exerciseName: we.exercise.name,
-                    recentWorkouts: recentCompleted
+                    recentWorkouts: recentCompleted,
+                    bodyWeightKg: bodyWeightKg
                 )
 
                 if !suggestions.isEmpty || effortCreep != nil {

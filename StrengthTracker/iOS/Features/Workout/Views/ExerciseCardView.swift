@@ -273,8 +273,12 @@ struct ExerciseCardView: View {
             STColumnHeader(title: "PREVIOUS", alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            STColumnHeader(title: weightUnit.symbol.uppercased())
-                .frame(width: 72)
+            STColumnHeader(
+                title: workoutExercise.exercise.exerciseType == .bodyweightReps
+                    ? "+\(weightUnit.symbol.uppercased())"
+                    : weightUnit.symbol.uppercased()
+            )
+            .frame(width: 72)
 
             STColumnHeader(title: "REPS")
                 .frame(width: 60)

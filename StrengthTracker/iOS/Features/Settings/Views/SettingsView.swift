@@ -319,6 +319,7 @@ struct SettingsView: View {
             .onChange(of: preferencesService.intensityMetric) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.deloadWeightPercentage) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.deloadRestPercentage) { _, _ in syncSettingsToWatch() }
+            .onChange(of: preferencesService.bodyWeightKg) { _, _ in syncSettingsToWatch() }
     }
 
     private func updateBodyWeightText() {
@@ -337,7 +338,8 @@ struct SettingsView: View {
             "weightUnit": preferencesService.weightUnit.rawValue,
             "autoStartRestTimer": preferencesService.autoStartRestTimer,
             "distanceUnit": preferencesService.distanceUnit.rawValue,
-            "intensityMetric": preferencesService.intensityMetric.rawValue
+            "intensityMetric": preferencesService.intensityMetric.rawValue,
+            "bodyWeightKg": preferencesService.bodyWeightKg ?? 0
         ])
     }
 

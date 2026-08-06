@@ -72,6 +72,11 @@ public final class UserPreferencesService {
         didSet { UserDefaults.standard.set(vectorVersion, forKey: "vectorVersion") }
     }
 
+    /// Tracks the one-time effective-load migration (factor backfill + PR recalc)
+    public var effectiveLoadModelVersion: Int {
+        didSet { UserDefaults.standard.set(effectiveLoadModelVersion, forKey: "effectiveLoadModelVersion") }
+    }
+
     /// Whether to always show the intensity (RPE/RIR) column in workout exercises.
     /// Kept under the historical name/key so existing users' setting survives.
     public var alwaysShowRPE: Bool {
@@ -148,6 +153,7 @@ public final class UserPreferencesService {
         self.bodyWeightKg = weight > 0 ? weight : nil
 
         self.vectorVersion = defaults.integer(forKey: "vectorVersion")
+        self.effectiveLoadModelVersion = defaults.integer(forKey: "effectiveLoadModelVersion")
     }
 
     /// Reset all preferences to defaults

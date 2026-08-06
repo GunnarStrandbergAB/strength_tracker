@@ -34,7 +34,7 @@ struct DropSetModelTests {
     @Test("grouped drop set volume sums every segment (spec example: 290 kg)")
     func testDropSetVolumeSpecExample() {
         let set = makeDropSet(parts: [(14, 12), (10, 8), (7, 6)])
-        #expect(set.setVolume == 290.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 290.0)
     }
 
     @Test("drop set volume never double-counts the mirrored parent fields")
@@ -44,7 +44,7 @@ struct DropSetModelTests {
         #expect(set.weight == 100.0)
         #expect(set.reps == 8)
         // ...but volume is the segment sum only: 800 + 480 + 300.
-        #expect(set.setVolume == 1580.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 1580.0)
     }
 
     @Test("drop set volume ignores stale parent fields when constructed directly")
@@ -57,13 +57,13 @@ struct DropSetModelTests {
             isCompleted: true, isPersonalRecord: false, completedAt: Date(),
             dropSets: [DropSetEntry(weight: 50, reps: 10), DropSetEntry(weight: 40, reps: 8)]
         )
-        #expect(set.setVolume == 820.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 820.0)
     }
 
     @Test("incomplete drop set volume is 0")
     func testIncompleteDropSetVolume() {
         let set = makeDropSet(parts: [(100, 8), (80, 6)], isCompleted: false)
-        #expect(set.setVolume == 0.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 0.0)
     }
 
     @Test("warmup-typed set with drop entries has 0 volume (defense-in-depth)")
@@ -75,7 +75,7 @@ struct DropSetModelTests {
             isCompleted: true, isPersonalRecord: false, completedAt: Date(),
             dropSets: [DropSetEntry(weight: 100, reps: 8)]
         )
-        #expect(set.setVolume == 0.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 0.0)
     }
 
     @Test("legacy single-row dropset keeps weight × reps")
@@ -88,16 +88,16 @@ struct DropSetModelTests {
         )
         #expect(set.dropSets.isEmpty)
         #expect(set.isDropSet)
-        #expect(set.setVolume == 960.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 960.0)
     }
 
-    @Test("weightSubstitute fills nil-weight segments only")
-    func testWeightSubstitutePerSegment() {
+    @Test("baseLoadPerRep adds body-weight base to every segment; extra kg stacks on top")
+    func testBaseLoadPerRepPerSegment() {
         let set = makeDropSet(parts: [(nil, 12), (20, 10)])
-        // 70×12 + 20×10
-        #expect(set.setVolume(weightSubstitute: 70) == 1040.0)
-        // Without a substitute, the nil-weight segment contributes 0.
-        #expect(set.setVolume == 200.0)
+        // 70×12 + (70+20)×10
+        #expect(set.setVolume(baseLoadPerRep: 70) == 1740.0)
+        // Without a base, the nil-weight segment contributes 0.
+        #expect(set.setVolume(baseLoadPerRep: nil) == 200.0)
     }
 
     // MARK: - Parts & Reps
@@ -182,7 +182,7 @@ struct DropSetModelTests {
         )
         set.applyDropSets([DropSetEntry(weight: 40, reps: 12)])
         #expect(set.setType == .dropset)
-        #expect(set.setVolume == 480.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 480.0)
     }
 
     // MARK: - Exercise / Workout Aggregation
@@ -208,16 +208,16 @@ struct DropSetModelTests {
             sets: [normal, drop, warmup]
         )
         // 800 + 290 + 0 (warmup)
-        #expect(we.exerciseVolume == 1090.0)
+        #expect(we.exerciseVolume(bodyWeightKg: 70) == 1090.0)
 
         let workout = Workout(
             id: UUID(), name: "Mixed", startedAt: Date(), completedAt: Date(),
             notes: nil, templateId: nil, exercises: [we]
         )
-        #expect(workout.totalVolume == 1090.0)
+        #expect(workout.totalVolume(bodyWeightKg: 70) == 1090.0)
     }
 
-    @Test("totalVolume(bodyWeightKg:) substitutes body weight for nil-weight drop segments of bodyweight exercises")
+    @Test("totalVolume(bodyWeightKg:) applies effective load to drop segments of bodyweight exercises")
     func testBodyweightSubstitutionForDropSegments() {
         let drop = makeDropSet(parts: [(nil, 12), (20, 8)])
         let we = WorkoutExercise(
@@ -229,10 +229,15 @@ struct DropSetModelTests {
             id: UUID(), name: "BW", startedAt: Date(), completedAt: Date(),
             notes: nil, templateId: nil, exercises: [we]
         )
-        // 70×12 + 20×8 = 840 + 160
-        #expect(workout.totalVolume(bodyWeightKg: 70) == 1000.0)
-        // Non-bodyweight exercise gets no substitution for the same sets.
-        #expect(we.exerciseVolume == 160.0)
+        // 70×12 + (70+20)×8 = 840 + 720
+        #expect(workout.totalVolume(bodyWeightKg: 70) == 1560.0)
+        // Non-bodyweight sets ignore body weight: only the +20 kg segment counts.
+        let barbell = WorkoutExercise(
+            id: UUID(), exercise: makeExercise(), order: 1,
+            supersetGroup: nil, notes: nil, restTimerSeconds: nil,
+            sets: we.sets
+        )
+        #expect(barbell.exerciseVolume(bodyWeightKg: 70) == 160.0)
     }
 }
 
@@ -257,7 +262,7 @@ struct ExerciseSetCodableTests {
         #expect(set.rir == nil)
         #expect(set.isFailure == false)
         #expect(set.dropSets.isEmpty)
-        #expect(set.setVolume == 640.0)
+        #expect(set.setVolume(baseLoadPerRep: nil) == 640.0)
     }
 
     @Test("legacy failure-typed JSON carries the per-set flag")
@@ -315,6 +320,6 @@ struct ExerciseSetCodableTests {
         #expect(decoded.dropSets.count == 2)
         #expect(decoded.dropSets[0].isFailure == true)
         #expect(decoded.dropSets[0].rir == 0)
-        #expect(decoded.setVolume == 248.0)
+        #expect(decoded.setVolume(baseLoadPerRep: nil) == 248.0)
     }
 }

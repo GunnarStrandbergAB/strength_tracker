@@ -38,6 +38,12 @@ struct StrengthTrackerWatchApp: App {
             // Seed exercises on Watch (same as iOS)
             container.exerciseSeeder.startSeeding()
 
+            // One-time effective-load migration once the library carries factors
+            Task { [container] in
+                await container.exerciseSeeder.ensureSeeded()
+                await container.effectiveLoadMigrationService.migrateIfNeeded()
+            }
+
             // Request HealthKit authorization early so prompt appears on iPhone
             // Then recover orphaned HealthKit workout session on launch (Fix 7)
             #if canImport(HealthKit) && os(watchOS)
@@ -121,6 +127,10 @@ struct StrengthTrackerWatchApp: App {
                     if let distanceRaw = settings["distanceUnit"] as? String,
                        let unit = DistanceUnit(rawValue: distanceRaw) {
                         prefs.distanceUnit = unit
+                    }
+                    if let bw = settings["bodyWeightKg"] as? Double {
+                        // 0 means the iPhone cleared the value
+                        prefs.bodyWeightKg = bw > 0 ? bw : nil
                     }
                 }
             }

@@ -165,7 +165,8 @@ public final class WatchWorkoutViewModel {
     }
 
     public var currentExerciseVolume: Double {
-        currentExercise?.exerciseVolume ?? 0
+        let bw = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+        return currentExercise?.exerciseVolume(bodyWeightKg: bw) ?? 0
     }
 
     public var totalSetsCompleted: Int {

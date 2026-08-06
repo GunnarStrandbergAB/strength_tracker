@@ -24,6 +24,7 @@ public final class AppContainer: Sendable {
     public let userPreferencesService: UserPreferencesService
     public let exerciseSeeder: ExerciseSeeder
     public let templateSeedService: TemplateSeedService
+    public let effectiveLoadMigrationService: EffectiveLoadMigrationService
     public let healthKitService: any HealthKitServiceProtocol
     public let connectivityManager: ConnectivityManager
     public let calorieEstimationService: CalorieEstimationService
@@ -92,14 +93,22 @@ public final class AppContainer: Sendable {
         proFeatureGate = ProFeatureGate(storeService: storeService)
 
         // Wire up services
+        userPreferencesService = UserPreferencesService()
         personalRecordService = PersonalRecordService(
             personalRecordRepository: personalRecordRepository,
-            workoutRepository: workoutRepository
+            workoutRepository: workoutRepository,
+            userPreferencesService: userPreferencesService
         )
         restTimerService = RestTimerService()
-        userPreferencesService = UserPreferencesService()
         exerciseSeeder = ExerciseSeeder(exerciseRepository: exerciseRepository)
         templateSeedService = TemplateSeedService(templateRepository: templateRepository, exerciseSeeder: exerciseSeeder)
+        effectiveLoadMigrationService = EffectiveLoadMigrationService(
+            workoutRepository: workoutRepository,
+            templateRepository: templateRepository,
+            exerciseRepository: exerciseRepository,
+            personalRecordService: personalRecordService,
+            userPreferencesService: userPreferencesService
+        )
 
         // Platform-specific services
         #if canImport(HealthKit)
@@ -115,7 +124,7 @@ public final class AppContainer: Sendable {
         analyticsRepository = SwiftDataAnalyticsRepository(modelContext: modelContext)
 
         // Progression: TrainingStatusDetector needed by VolumeLandmarkService
-        trainingStatusDetector = TrainingStatusDetector(workoutRepository: workoutRepository)
+        trainingStatusDetector = TrainingStatusDetector(workoutRepository: workoutRepository, userPreferencesService: userPreferencesService)
 
         // Analytics services (stateless -- ADR-012)
         vectorizer = WorkoutVectorizer()
@@ -187,8 +196,8 @@ public final class AppContainer: Sendable {
         // Remaining progression services (stateless -- ADR-014)
         programDesignService = ProgramDesignService()
         sessionExecutionService = SessionExecutionService()
-        adaptiveAdjustmentService = AdaptiveAdjustmentService(workoutRepository: workoutRepository)
-        planAnalyticsService = PlanAnalyticsService(workoutRepository: workoutRepository)
+        adaptiveAdjustmentService = AdaptiveAdjustmentService(workoutRepository: workoutRepository, userPreferencesService: userPreferencesService)
+        planAnalyticsService = PlanAnalyticsService(workoutRepository: workoutRepository, userPreferencesService: userPreferencesService)
         coachingCommunicationService = CoachingCommunicationService()
 
         // Initialize cached ViewModels
@@ -288,7 +297,8 @@ public final class AppContainer: Sendable {
             healthKitService: healthKitService,
             calorieEstimationService: calorieEstimationService,
             webhookService: webhookService,
-            widgetRefreshService: widgetRefreshService
+            widgetRefreshService: widgetRefreshService,
+            qualityScoreService: qualityScoreService
         )
     }
 

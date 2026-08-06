@@ -24,6 +24,10 @@ struct WorkoutDetailView: View {
         historyViewModel?.userPreferencesService?.intensityMetric ?? .rpe
     }
 
+    private var bodyWeightKg: Double {
+        historyViewModel?.displayBodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+    }
+
     // Extracted from `body` — the callback bundle is too much for the SwiftUI
     // type-checker inline.
     @ViewBuilder
@@ -115,7 +119,7 @@ struct WorkoutDetailView: View {
                 if let duration = displayedWorkout.duration {
                     LabeledContent("Duration", value: formatDuration(duration))
                 }
-                LabeledContent("Total Volume", value: weightUnit.format(displayedWorkout.totalVolume, decimals: 0))
+                LabeledContent("Total Volume", value: weightUnit.format(displayedWorkout.totalVolume(bodyWeightKg: bodyWeightKg), decimals: 0))
                 LabeledContent("Exercises", value: "\(displayedWorkout.exercises.count)")
             }
 
@@ -174,9 +178,9 @@ struct WorkoutDetailView: View {
                         }
                     }
 
-                    if workoutExercise.exerciseVolume > 0 {
+                    if workoutExercise.exerciseVolume(bodyWeightKg: bodyWeightKg) > 0 {
                         LabeledContent("Exercise Volume") {
-                            Text(weightUnit.format(workoutExercise.exerciseVolume, decimals: 0))
+                            Text(weightUnit.format(workoutExercise.exerciseVolume(bodyWeightKg: bodyWeightKg), decimals: 0))
                                 .foregroundStyle(.blue)
                         }
                     }
@@ -237,7 +241,15 @@ struct WorkoutDetailView: View {
                     HStack(spacing: 12) {
                         Button(hvm.isEditing ? "Done" : "Edit") {
                             if hvm.isEditing {
-                                Task { await hvm.endEditing() }
+                                Task {
+                                    await hvm.endEditing()
+                                    // The edit invalidated the score caches — refresh
+                                    // the VM state the quality section renders from.
+                                    analyticsViewModel?.invalidateQualityState()
+                                    if let workout = hvm.selectedWorkout {
+                                        await analyticsViewModel?.loadQualityScore(for: workout)
+                                    }
+                                }
                             } else {
                                 hvm.isEditing = true
                             }
@@ -299,7 +311,10 @@ struct WorkoutDetailView: View {
         }
         .onDisappear {
             if let hvm = historyViewModel, hvm.isEditing {
-                Task { await hvm.endEditing() }
+                Task {
+                    await hvm.endEditing()
+                    analyticsViewModel?.invalidateQualityState()
+                }
             }
         }
     }

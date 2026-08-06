@@ -12,7 +12,7 @@ final class PlateauDetectionServiceTests: XCTestCase {
     @MainActor
     func test_analyzePlateaus_emptyWorkouts_returnsEmpty() async {
         let service = PlateauDetectionService()
-        let result = service.analyzePlateaus(workouts: [])
+        let result = service.analyzePlateaus(bodyWeightKg: 70, workouts: [])
         XCTAssertTrue(result.isEmpty)
     }
 
@@ -24,7 +24,7 @@ final class PlateauDetectionServiceTests: XCTestCase {
             weekCount: 2,
             volumePerWeek: [1000, 1000]
         )
-        let result = service.analyzePlateaus(workouts: workouts)
+        let result = service.analyzePlateaus(bodyWeightKg: 70, workouts: workouts)
         XCTAssertTrue(result.isEmpty)
     }
 
@@ -36,7 +36,7 @@ final class PlateauDetectionServiceTests: XCTestCase {
             startedAt: Date(),
             completedAt: nil
         )
-        let result = service.analyzePlateaus(workouts: [workout])
+        let result = service.analyzePlateaus(bodyWeightKg: 70, workouts: [workout])
         XCTAssertTrue(result.isEmpty)
     }
 
@@ -51,7 +51,7 @@ final class PlateauDetectionServiceTests: XCTestCase {
             weekCount: 6,
             volumePerWeek: [1000, 1000, 1000, 1000, 1000, 1000]
         )
-        let result = service.analyzePlateaus(workouts: workouts)
+        let result = service.analyzePlateaus(bodyWeightKg: 70, workouts: workouts)
 
         XCTAssertFalse(result.isEmpty, "Flat volume should produce a plateau analysis")
         if let benchPlateau = result.first(where: { $0.exerciseName == "Bench Press" }) {
@@ -69,7 +69,7 @@ final class PlateauDetectionServiceTests: XCTestCase {
             weekCount: 6,
             volumePerWeek: [1000, 1100, 1210, 1331, 1464, 1610]
         )
-        let result = service.analyzePlateaus(workouts: workouts)
+        let result = service.analyzePlateaus(bodyWeightKg: 70, workouts: workouts)
 
         if let squat = result.first(where: { $0.exerciseName == "Squat" }) {
             // The CV-based detector may still detect some stall weeks even with increasing volume
@@ -93,7 +93,7 @@ final class PlateauDetectionServiceTests: XCTestCase {
             exerciseId: UUID(), exerciseName: "Growing Squat",
             weekCount: 6, volumePerWeek: [1000, 1100, 1210, 1331, 1464, 1610]
         )
-        let result = service.analyzePlateaus(workouts: flatWorkouts + growingWorkouts)
+        let result = service.analyzePlateaus(bodyWeightKg: 70, workouts: flatWorkouts + growingWorkouts)
 
         for i in 0..<max(0, result.count - 1) {
             XCTAssertGreaterThanOrEqual(
@@ -117,7 +117,7 @@ final class PlateauDetectionServiceTests: XCTestCase {
             exerciseId: UUID(), exerciseName: "Squat",
             weekCount: 5, volumePerWeek: [1000, 1000, 1000, 1000, 1000]
         )
-        let result = service.analyzePlateaus(workouts: benchWorkouts + squatWorkouts)
+        let result = service.analyzePlateaus(bodyWeightKg: 70, workouts: benchWorkouts + squatWorkouts)
 
         let exerciseNames = Set(result.map(\.exerciseName))
         XCTAssertTrue(exerciseNames.contains("Bench Press") || exerciseNames.contains("Squat"),
@@ -137,7 +137,7 @@ final class PlateauDetectionServiceTests: XCTestCase {
             exerciseId: UUID(), exerciseName: "Common Exercise",
             weekCount: 5, volumePerWeek: [1000, 1000, 1000, 1000, 1000]
         )
-        let result = service.analyzePlateaus(workouts: rareWorkouts + paddingWorkouts)
+        let result = service.analyzePlateaus(bodyWeightKg: 70, workouts: rareWorkouts + paddingWorkouts)
 
         let rare = result.filter { $0.exerciseName == "Rare Exercise" }
         XCTAssertTrue(rare.isEmpty,

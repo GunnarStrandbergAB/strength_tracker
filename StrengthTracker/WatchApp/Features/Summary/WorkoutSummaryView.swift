@@ -20,6 +20,9 @@ struct WorkoutSummaryView: View {
     private let secondaryText = Color.white.opacity(0.6)
     // Watch prefs sync from the phone into UserDefaults
     private let weightUnit = UserPreferencesService().weightUnit
+    private let bodyWeightKg = UserPreferencesService().bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+
+    private var totalVolume: Double { workout.totalVolume(bodyWeightKg: bodyWeightKg) }
 
     var body: some View {
         ScrollView {
@@ -71,11 +74,11 @@ struct WorkoutSummaryView: View {
                     )
 
                     // Volume
-                    if workout.totalVolume > 0 {
+                    if totalVolume > 0 {
                         statRow(
                             icon: "scalemass.fill",
                             label: "Volume",
-                            value: weightUnit.format(workout.totalVolume, decimals: 0)
+                            value: weightUnit.format(totalVolume, decimals: 0)
                         )
                     }
                 }

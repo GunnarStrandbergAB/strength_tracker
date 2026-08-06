@@ -4,13 +4,20 @@ import Foundation
 public final class PersonalRecordService {
     private let personalRecordRepository: any PersonalRecordRepository
     private let workoutRepository: any WorkoutRepository
+    private let userPreferencesService: UserPreferencesService?
 
     public init(
         personalRecordRepository: any PersonalRecordRepository,
-        workoutRepository: any WorkoutRepository
+        workoutRepository: any WorkoutRepository,
+        userPreferencesService: UserPreferencesService? = nil
     ) {
         self.personalRecordRepository = personalRecordRepository
         self.workoutRepository = workoutRepository
+        self.userPreferencesService = userPreferencesService
+    }
+
+    private var bodyWeightKg: Double {
+        userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
 
     /// Check if a completed set is a new personal record
@@ -25,12 +32,15 @@ public final class PersonalRecordService {
 
         // Every performed segment is a candidate — for a grouped drop set that means
         // each drop entry; a plain set contributes its single mirrored part.
+        // Loads are EFFECTIVE: bodyweight exercises count bw × factor + extra kg.
+        let base = exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
+        let loadParts = set.effectiveLoadParts(baseLoadPerRep: base)
         let parts = set.effectiveParts
 
         var newRecords: [PersonalRecord] = []
 
-        // Check max weight PR
-        if let weight = parts.compactMap(\.weight).filter({ $0 > 0 }).max() {
+        // Check max weight PR (effective load)
+        if let weight = loadParts.map(\.load).max() {
             // Compare against the best existing record — multiple records of the same
             // type can accumulate, and `.first` would pick an arbitrary (possibly
             // stale, lower) one, flagging false PRs.
@@ -63,10 +73,7 @@ public final class PersonalRecordService {
         }
 
         // Check estimated 1RM PR (shared hybrid Epley/Brzycki — must match analytics e1RM)
-        let partE1RMs = parts.compactMap { part -> Double? in
-            guard let weight = part.weight, let reps = part.reps, weight > 0, reps > 0 else { return nil }
-            return AnalyticsCalculations.calculateOneRM(weight: weight, reps: reps)
-        }
+        let partE1RMs = loadParts.map { AnalyticsCalculations.calculateOneRM(weight: $0.load, reps: $0.reps) }
         if let estimated1RM = partE1RMs.max() {
             let bestE1RM = existingRecords.filter { $0.recordType == .estimatedOneRepMax }.map(\.value).max() ?? 0
             if estimated1RM > bestE1RM {
@@ -81,15 +88,16 @@ public final class PersonalRecordService {
             }
         }
 
-        // Check max volume PR (whole-set total — includes all drop segments)
-        if set.setVolume > 0 {
+        // Check max volume PR (whole-set effective total — includes all drop segments)
+        let setVolume = set.setVolume(baseLoadPerRep: base)
+        if setVolume > 0 {
             let bestVolume = existingRecords.filter { $0.recordType == .maxVolume }.map(\.value).max() ?? 0
-            if set.setVolume > bestVolume {
+            if setVolume > bestVolume {
                 newRecords.append(PersonalRecord(
                     id: UUID(),
                     exerciseId: exercise.id,
                     recordType: .maxVolume,
-                    value: set.setVolume,
+                    value: setVolume,
                     setId: set.id,
                     achievedAt: set.completedAt ?? Date()
                 ))
@@ -155,23 +163,25 @@ public final class PersonalRecordService {
             }
 
             guard let firstSet = sets.first else { continue }
-            _ = firstSet.exercise
+            let base = firstSet.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
 
             // Every performed segment (drop-set parts included) is a PR candidate;
             // records keep pointing at the owning set (segments aren't fetchable rows).
-            let parts: [(set: ExerciseSet, part: DropSetEntry)] = sets.flatMap { item in
+            // Loads are EFFECTIVE (bodyweight = bw × factor + extra kg).
+            let loadParts: [(set: ExerciseSet, load: Double, reps: Int)] = sets.flatMap { item in
+                item.set.effectiveLoadParts(baseLoadPerRep: base).map { (item.set, $0.load, $0.reps) }
+            }
+            let repsParts: [(set: ExerciseSet, part: DropSetEntry)] = sets.flatMap { item in
                 item.set.effectiveParts.map { (item.set, $0) }
             }
 
-            // Find max weight
-            if let best = parts.filter({ ($0.part.weight ?? 0) > 0 })
-                .max(by: { ($0.part.weight ?? 0) < ($1.part.weight ?? 0) }),
-               let weight = best.part.weight {
+            // Find max weight (effective load)
+            if let best = loadParts.max(by: { $0.load < $1.load }) {
                 let record = PersonalRecord(
                     id: UUID(),
                     exerciseId: exerciseId,
                     recordType: .maxWeight,
-                    value: weight,
+                    value: best.load,
                     setId: best.set.id,
                     achievedAt: best.set.completedAt ?? Date()
                 )
@@ -179,7 +189,7 @@ public final class PersonalRecordService {
             }
 
             // Find max reps (best single segment)
-            if let best = parts.filter({ ($0.part.reps ?? 0) > 0 })
+            if let best = repsParts.filter({ ($0.part.reps ?? 0) > 0 })
                 .max(by: { ($0.part.reps ?? 0) < ($1.part.reps ?? 0) }),
                let reps = best.part.reps {
                 let record = PersonalRecord(
@@ -193,12 +203,9 @@ public final class PersonalRecordService {
                 _ = try await personalRecordRepository.save(record)
             }
 
-            // Find max estimated 1RM
-            let setsWithE1RM = parts.compactMap { item -> (set: ExerciseSet, e1RM: Double)? in
-                guard let weight = item.part.weight, let reps = item.part.reps,
-                      weight > 0, reps > 0 else { return nil }
-                let e1RM = AnalyticsCalculations.calculateOneRM(weight: weight, reps: reps)
-                return (item.set, e1RM)
+            // Find max estimated 1RM (from effective loads)
+            let setsWithE1RM = loadParts.map { item -> (set: ExerciseSet, e1RM: Double) in
+                (item.set, AnalyticsCalculations.calculateOneRM(weight: item.load, reps: item.reps))
             }
 
             if let maxE1RM = setsWithE1RM.max(by: { $0.e1RM < $1.e1RM }) {
@@ -213,14 +220,14 @@ public final class PersonalRecordService {
                 _ = try await personalRecordRepository.save(record)
             }
 
-            // Find max volume (single set)
-            if let maxVolumeSet = sets.max(by: { $0.set.setVolume < $1.set.setVolume }),
-               maxVolumeSet.set.setVolume > 0 {
+            // Find max volume (single set, effective total)
+            if let maxVolumeSet = sets.max(by: { $0.set.setVolume(baseLoadPerRep: base) < $1.set.setVolume(baseLoadPerRep: base) }),
+               maxVolumeSet.set.setVolume(baseLoadPerRep: base) > 0 {
                 let record = PersonalRecord(
                     id: UUID(),
                     exerciseId: exerciseId,
                     recordType: .maxVolume,
-                    value: maxVolumeSet.set.setVolume,
+                    value: maxVolumeSet.set.setVolume(baseLoadPerRep: base),
                     setId: maxVolumeSet.set.id,
                     achievedAt: maxVolumeSet.set.completedAt ?? Date()
                 )

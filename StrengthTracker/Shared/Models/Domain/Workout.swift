@@ -20,11 +20,8 @@ public struct Workout: Identifiable, Hashable, Sendable, Codable {
         return end.timeIntervalSince(startedAt)
     }
 
-    public var totalVolume: Double {
-        exercises.reduce(0) { $0 + $1.exerciseVolume }
-    }
-
-    /// Body-weight-aware volume: substitutes `bodyWeightKg` for bodyweight exercises with nil weight.
+    /// Effective-load volume across all exercises. Body weight is required —
+    /// bodyweight-rep exercises count bw × factor + extra kg per rep.
     public func totalVolume(bodyWeightKg: Double) -> Double {
         exercises.reduce(0) { $0 + $1.exerciseVolume(bodyWeightKg: bodyWeightKg) }
     }

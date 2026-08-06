@@ -17,10 +17,9 @@ public final class ProgressViewModel {
         progressionData.map(\.reps).max()
     }
 
-    /// Epley formula: 1RM = weight * (1 + reps / 30)
     public var estimated1RM: Double? {
         progressionData
-            .map { $0.weight * (1.0 + Double($0.reps) / 30.0) }
+            .map { AnalyticsCalculations.calculateOneRM(weight: $0.weight, reps: min($0.reps, 15)) }
             .max()
     }
 
@@ -61,16 +60,16 @@ public final class ProgressViewModel {
             let completed = allWorkouts.filter { $0.completedAt != nil }
             var results: [(date: Date, weight: Double, reps: Int)] = []
 
+            let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
             for workout in completed {
                 for workoutExercise in workout.exercises {
                     if workoutExercise.exercise.id == exerciseId {
+                        let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
                         for set in workoutExercise.sets where set.isCompleted {
                             // One point per performed segment so drop-set parts feed
                             // best-weight/best-reps/e1RM/volume like any other effort.
-                            for part in set.effectiveParts {
-                                if let weight = part.weight, let reps = part.reps {
-                                    results.append((date: workout.startedAt, weight: weight, reps: reps))
-                                }
+                            for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
+                                results.append((date: workout.startedAt, weight: part.load, reps: part.reps))
                             }
                         }
                     }

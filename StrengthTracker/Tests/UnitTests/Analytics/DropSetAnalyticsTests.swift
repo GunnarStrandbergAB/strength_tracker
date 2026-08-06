@@ -15,7 +15,7 @@ struct DropSetAnalyticsTests {
             parts: [(100, 8), (80, 6)],
             rpes: [8, 9]
         )
-        let iwv = AnalyticsCalculations.setIWV(for: set, bestE1RM: 120)
+        let iwv = AnalyticsCalculations.setIWV(for: set, bestE1RM: 120, baseLoadPerRep: nil)
         // part 1: 8 × (100/120) × 0.8 = 5.3333; part 2: 6 × (80/120) × 0.9 = 3.6
         #expect(abs(iwv - (8.0 * (100.0 / 120.0) * 0.8 + 6.0 * (80.0 / 120.0) * 0.9)) < 0.0001)
     }
@@ -23,18 +23,18 @@ struct DropSetAnalyticsTests {
     @Test("setIWV(for:) falls back to pct1RM 0.75 without a best e1RM")
     func testSetIWVFallbackPct() {
         let set = AnalyticsTestHelpers.makeDropSet(parts: [(100, 8)])
-        #expect(AnalyticsCalculations.setIWV(for: set, bestE1RM: nil) == 8.0 * 0.75)
+        #expect(AnalyticsCalculations.setIWV(for: set, bestE1RM: nil, baseLoadPerRep: nil) == 8.0 * 0.75)
     }
 
     @Test("setIWV(for:) is 0 for warmup and incomplete sets")
     func testSetIWVGuards() {
         var warmup = AnalyticsTestHelpers.makeDropSet(parts: [(100, 8)])
         warmup.setType = .warmup
-        #expect(AnalyticsCalculations.setIWV(for: warmup, bestE1RM: 100) == 0)
+        #expect(AnalyticsCalculations.setIWV(for: warmup, bestE1RM: 100, baseLoadPerRep: nil) == 0)
 
         var incomplete = AnalyticsTestHelpers.makeDropSet(parts: [(100, 8)])
         incomplete.isCompleted = false
-        #expect(AnalyticsCalculations.setIWV(for: incomplete, bestE1RM: 100) == 0)
+        #expect(AnalyticsCalculations.setIWV(for: incomplete, bestE1RM: 100, baseLoadPerRep: nil) == 0)
     }
 
     // MARK: - Best e1RM Map
@@ -48,7 +48,7 @@ struct DropSetAnalyticsTests {
         let we = AnalyticsTestHelpers.makeWorkoutExercise(exercise: exercise, sets: [drop, single])
         let workout = AnalyticsTestHelpers.makeWorkout(exercises: [we])
 
-        let map = AnalyticsCalculations.buildBestE1RMMap(from: [workout])
+        let map = AnalyticsCalculations.buildBestE1RMMap(from: [workout], bodyWeightKg: 70)
         #expect(abs((map[exercise.id] ?? 0) - 120.0) < 0.01)
     }
 
@@ -106,6 +106,6 @@ struct DropSetAnalyticsTests {
         let workingSets = [drop].filter { $0.isCompleted && $0.setType != .warmup }.count
         #expect(workingSets == 1)
         #expect(drop.totalReps == 26)
-        #expect(drop.setVolume == 290.0)
+        #expect(drop.setVolume(baseLoadPerRep: nil) == 290.0)
     }
 }

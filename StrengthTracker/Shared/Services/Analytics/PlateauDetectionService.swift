@@ -32,6 +32,7 @@ public final class PlateauDetectionService: Sendable {
     ///   - stallThreshold: CV threshold below which a plateau is detected (default 0.05)
     /// - Returns: Array of plateau analyses sorted by weeks stalled descending
     public func analyzePlateaus(
+        bodyWeightKg: Double,
         workouts: [Workout],
         trainingStatus: TrainingStatus = .intermediate,
         windowWeeks: Int = 4,
@@ -61,6 +62,7 @@ public final class PlateauDetectionService: Sendable {
             guard workoutExercises.count >= minWeeksForAnalysis else { continue }
 
             let analysis = analyzeExercisePlateau(
+                bodyWeightKg: bodyWeightKg,
                 exerciseId: exerciseId,
                 exerciseName: workoutExercises[0].1.exercise.name,
                 workoutExercises: workoutExercises,
@@ -78,6 +80,7 @@ public final class PlateauDetectionService: Sendable {
     // MARK: - Private
 
     private func analyzeExercisePlateau(
+        bodyWeightKg: Double,
         exerciseId: UUID,
         exerciseName: String,
         workoutExercises: [(Workout, WorkoutExercise)],
@@ -91,13 +94,12 @@ public final class PlateauDetectionService: Sendable {
         let weeklySeries: [(weekStart: Date, bestE1RM: Double)] = grouped(sorted, byWeeks: 1)
             .map { weekStart, group in
                 let best = group.compactMap { (_, workoutExercise) -> Double? in
-                    workoutExercise.sets
+                    let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
+                    return workoutExercise.sets
                         .filter { $0.isCompleted && $0.setType != .warmup }
-                        .compactMap { set -> Double? in
-                            guard let weight = set.weight, weight > 0,
-                                  let reps = set.reps, reps > 0, reps <= 15 else { return nil }
-                            return AnalyticsCalculations.calculateOneRM(weight: weight, reps: reps)
-                        }
+                        .flatMap { $0.effectiveLoadParts(baseLoadPerRep: baseLoad) }
+                        .filter { $0.reps <= 15 }
+                        .map { AnalyticsCalculations.calculateOneRM(weight: $0.load, reps: $0.reps) }
                         .max()
                 }.max() ?? 0.0
                 return (weekStart, best)

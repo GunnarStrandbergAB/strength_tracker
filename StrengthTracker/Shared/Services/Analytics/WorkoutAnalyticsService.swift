@@ -22,7 +22,8 @@ public final class WorkoutAnalyticsService: Sendable {
     // v3: WorkoutVector.createdAt now carries the training date (workout.startedAt)
     // instead of vectorization wall-clock time — re-vectorize once so historical
     // vectors get correct dates.
-    private static let currentVectorVersion = 3
+    // v4: vectors are computed from effective load (bodyweight base + extra kg)
+    private static let currentVectorVersion = 4
 
     // Advanced Insights services
     private let volumeLandmarkService: VolumeLandmarkService?
@@ -125,6 +126,7 @@ public final class WorkoutAnalyticsService: Sendable {
         // Fetch corresponding workouts
         let allWorkouts = try await workoutRepository.fetchAll()
         let workoutMap = Dictionary(uniqueKeysWithValues: allWorkouts.map { ($0.id, $0) })
+        let displayBodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
 
         return topResults.compactMap { result in
             guard result.index < vectors.count else { return nil }
@@ -142,7 +144,7 @@ public final class WorkoutAnalyticsService: Sendable {
                 workoutId: matchedWorkout.id,
                 workoutName: matchedWorkout.name,
                 workoutDate: matchedWorkout.startedAt,
-                totalVolume: matchedWorkout.totalVolume,
+                totalVolume: matchedWorkout.totalVolume(bodyWeightKg: displayBodyWeightKg),
                 similarityScore: result.similarity,
                 matchedFeatures: matchedFeatures
             )
@@ -165,7 +167,7 @@ public final class WorkoutAnalyticsService: Sendable {
             .last?.isDeload ?? false
 
         let trainingStatus = try await trainingStatusDetector?.detect() ?? .intermediate
-        let plateausResult = plateauService.analyzePlateaus(workouts: nonDeloadWorkouts, trainingStatus: trainingStatus)
+        let plateausResult = plateauService.analyzePlateaus(bodyWeightKg: bodyWeightKg, workouts: nonDeloadWorkouts, trainingStatus: trainingStatus)
         let muscleBalanceResult = muscleBalanceService.analyze(workouts: nonDeloadWorkouts, timeWindow: timeWindow)
 
         // Generate recommendations using plateau and balance data
@@ -179,7 +181,7 @@ public final class WorkoutAnalyticsService: Sendable {
         )
 
         // Recovery patterns (Phase 3) — include deloads (affects recovery timelines)
-        let recoveryPatterns = try await recoveryEstimationService?.computeRecoveryPatterns(workouts: completedWorkouts) ?? []
+        let recoveryPatterns = try await recoveryEstimationService?.computeRecoveryPatterns(workouts: completedWorkouts, bodyWeightKg: bodyWeightKg) ?? []
 
         // Volume landmarks (Phase 4) — exclude deloads (don't lower averages)
         let optimalVolumes = try await volumeLandmarkService?.computeVolumeLandmarks(workouts: nonDeloadWorkouts) ?? []
@@ -198,14 +200,15 @@ public final class WorkoutAnalyticsService: Sendable {
         var timeOfDayAnalysis: TimeOfDayAnalysis?
 
         if completedWorkouts.count >= 19 {
-            let bestE1RM = AnalyticsCalculations.buildBestE1RMMap(from: nonDeloadWorkouts)
+            let bestE1RM = AnalyticsCalculations.buildBestE1RMMap(from: nonDeloadWorkouts, bodyWeightKg: bodyWeightKg)
 
             // Core services: ACWR needs all workouts (must see load drop), others exclude deloads
             trainingLoad = TrainingLoadService.computeTrainingLoad(
-                workouts: completedWorkouts, bestE1RM: bestE1RM
+                bodyWeightKg: bodyWeightKg, workouts: completedWorkouts, bestE1RM: bestE1RM
             )
-            overloadTrends = OverloadTrackingService.computeOverloadTrends(workouts: nonDeloadWorkouts)
+            overloadTrends = OverloadTrackingService.computeOverloadTrends(workouts: nonDeloadWorkouts, bodyWeightKg: bodyWeightKg)
             deloadRecommendation = DeloadDetectionService.detectDeload(
+                bodyWeightKg: bodyWeightKg,
                 workouts: completedWorkouts,
                 overloadTrends: overloadTrends,
                 trainingLoad: trainingLoad,
@@ -228,7 +231,7 @@ public final class WorkoutAnalyticsService: Sendable {
             if let archetypeService {
                 if nonDeloadVectors.count != archetypeCacheVectorCount {
                     cachedArchetypes = archetypeService.cluster(
-                        vectors: nonDeloadVectors, workouts: nonDeloadWorkouts
+                        vectors: nonDeloadVectors, workouts: nonDeloadWorkouts, bodyWeightKg: bodyWeightKg
                     )
                     archetypeCacheVectorCount = nonDeloadVectors.count
                 }
@@ -341,6 +344,9 @@ public final class WorkoutAnalyticsService: Sendable {
             primaryMuscleGroups: primaryMuscleGroups
         )
         cachedVectors[workout.id] = vector
+        // Re-vectorization implies the workout changed — memoized quality scores are
+        // history-relative, so drop them all (cheap; recomputed lazily).
+        cachedQualityScores.removeAll()
     }
 
     /// Batch vectorize all workouts missing vectors

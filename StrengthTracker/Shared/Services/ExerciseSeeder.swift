@@ -50,7 +50,8 @@ public final class ExerciseSeeder {
         current.secondaryMuscleGroups != seed.secondaryMuscleGroups ||
         current.category != seed.category ||
         current.exerciseType != seed.exerciseType ||
-        current.instructions != seed.instructions
+        current.instructions != seed.instructions ||
+        current.bodyweightFactor != seed.bodyweightFactor
     }
 }
 #endif

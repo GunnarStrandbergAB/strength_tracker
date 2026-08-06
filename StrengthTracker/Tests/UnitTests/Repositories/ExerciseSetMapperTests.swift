@@ -78,7 +78,7 @@ struct ExerciseSetMapperTests {
         #expect(restored.dropSets == domain.dropSets)
         #expect(restored.isFailure == domain.isFailure)
         #expect(restored.rir == domain.rir)
-        #expect(restored.setVolume == 1280.0)
+        #expect(restored.setVolume(baseLoadPerRep: nil) == 1280.0)
     }
 
     @Test("corrupt dropSetsJSON decodes to an empty array without crashing")
@@ -87,7 +87,7 @@ struct ExerciseSetMapperTests {
         let domain = ExerciseSetMapper.toDomain(entity)
         #expect(domain.dropSets.isEmpty)
         // Falls back to legacy single-row volume.
-        #expect(domain.setVolume == 640.0)
+        #expect(domain.setVolume(baseLoadPerRep: nil) == 640.0)
     }
 
     @Test("updateEntity writes the new fields onto an existing entity")

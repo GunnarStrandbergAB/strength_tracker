@@ -46,10 +46,10 @@ struct WorkoutQualityScoreView: View {
                 }
             }
         }
-        .task {
-            if viewModel.qualityScore == nil || viewModel.qualityScore?.workoutId != workout.id {
-                await viewModel.loadQualityScore(for: workout)
-            }
+        // Keyed on the workout VALUE so edits to its sets re-trigger the load
+        // (the service cache keeps unchanged reloads cheap).
+        .task(id: workout) {
+            await viewModel.loadQualityScore(for: workout)
         }
     }
 
