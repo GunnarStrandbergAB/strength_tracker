@@ -84,8 +84,4 @@ public final class ProgressViewModel {
         isLoading = false
     }
 
-    public func selectExercise(_ exercise: Exercise) async {
-        selectedExercise = exercise
-        await loadProgression(for: exercise.id)
-    }
 }

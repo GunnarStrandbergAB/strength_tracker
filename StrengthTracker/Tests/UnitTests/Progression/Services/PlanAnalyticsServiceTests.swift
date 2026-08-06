@@ -83,10 +83,6 @@ final class PlanAnalyticsServiceTests: XCTestCase {
 
     func testGenerateProgress_calculatesAdherence() async throws {
         // 3 out of 6 sessions completed -> 0.5 adherence
-        let workoutId1 = UUID()
-        let workoutId2 = UUID()
-        let workoutId3 = UUID()
-
         let sessions: [PlannedSession] = [
             ProgressionTestHelpers.makeCompletedSession(label: "S1"),
             ProgressionTestHelpers.makeCompletedSession(label: "S2"),

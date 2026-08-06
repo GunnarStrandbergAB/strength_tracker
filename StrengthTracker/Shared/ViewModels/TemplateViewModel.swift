@@ -5,7 +5,6 @@ import Observation
 @Observable
 public final class TemplateViewModel {
     public var templates: [WorkoutTemplate] = []
-    public var selectedTemplate: WorkoutTemplate? = nil
     public var isLoading = false
     public var errorMessage: String? = nil
 
@@ -66,19 +65,6 @@ public final class TemplateViewModel {
         } catch {
             errorMessage = error.localizedDescription
         }
-    }
-
-    public func createTemplate(name: String, exercises: [TemplateExercise]) async {
-        let template = WorkoutTemplate(
-            id: UUID(),
-            name: name,
-            notes: nil,
-            sortOrder: templates.count,
-            lastUsedAt: nil,
-            timesUsed: 0,
-            exercises: exercises
-        )
-        await saveTemplate(template)
     }
 
     /// Copies a library template as a new user-owned template

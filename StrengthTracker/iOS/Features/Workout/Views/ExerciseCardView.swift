@@ -224,16 +224,6 @@ struct ExerciseCardView: View {
                 Text(muscleGroupText)
                     .font(.system(size: 12))
                     .foregroundStyle(STColors.textSecondary)
-
-                if let hint = coachingData?.hint {
-                    HStack(spacing: 4) {
-                        Image(systemName: hint.icon)
-                            .font(.system(size: 10))
-                        Text(hint.text)
-                            .font(.system(size: 11))
-                    }
-                    .foregroundStyle(STColors.textSecondary)
-                }
             }
 
             Spacer()

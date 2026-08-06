@@ -42,31 +42,16 @@ public enum CoachingColor: String, Sendable {
 public struct ExerciseCoachingData: Sendable {
     public let suggestions: [Int: WeightSuggestion]  // setIndex → suggestion
     public let effortCreepWarning: EffortCreepWarning?
-    public let hint: ExerciseHint?
 
     public init(
         suggestions: [Int: WeightSuggestion] = [:],
-        effortCreepWarning: EffortCreepWarning? = nil,
-        hint: ExerciseHint? = nil
+        effortCreepWarning: EffortCreepWarning? = nil
     ) {
         self.suggestions = suggestions
         self.effortCreepWarning = effortCreepWarning
-        self.hint = hint
     }
 }
 
-/// A single micro-insight shown inline on an exercise card.
-public struct ExerciseHint: Identifiable, Sendable {
-    public let id: UUID
-    public let text: String
-    public let icon: String
-
-    public init(id: UUID = UUID(), text: String, icon: String) {
-        self.id = id
-        self.text = text
-        self.icon = icon
-    }
-}
 
 /// Where this coaching insight was derived from.
 public enum InsightSource: String, Sendable {

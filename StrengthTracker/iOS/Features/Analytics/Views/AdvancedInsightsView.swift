@@ -544,15 +544,6 @@ struct AdvancedInsightsView: View {
         }
     }
 
-    private func zoneDisplayName(_ zone: LoadZone) -> String {
-        switch zone {
-        case .underTraining: return "Under Training"
-        case .optimal: return "Optimal"
-        case .caution: return "Caution"
-        case .danger: return "Danger"
-        }
-    }
-
     private func zoneExplanation(_ zone: LoadZone, acwr: Double, isDeload: Bool) -> String {
         if isDeload {
             return "Deload phase — reduced training load is intentional for recovery"

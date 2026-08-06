@@ -6,7 +6,6 @@ import Foundation
 /// Two implementations: FoundationModels (Apple Intelligence) and Static (template-based).
 public protocol CoachingExplanationProvider: Sendable {
     func explain(adjustment: PlanAdjustment, trainingStatus: TrainingStatus) async -> CoachingExplanation
-    func summarizeWorkout(exercises: [WorkoutExercise], trainingStatus: TrainingStatus) async -> PostWorkoutSummary
 }
 
 // MARK: - Static Provider (always available)
@@ -48,18 +47,6 @@ public struct StaticCoachingProvider: CoachingExplanationProvider, Sendable {
 
         return CoachingExplanation(title: title, body: body, tone: tone, suggestedAction: suggestedAction)
     }
-
-    public func summarizeWorkout(exercises: [WorkoutExercise], trainingStatus: TrainingStatus) async -> PostWorkoutSummary {
-        let totalSets = exercises.flatMap(\.sets).filter(\.isCompleted).count
-        let exerciseNames = exercises.map(\.exercise.name)
-
-        return PostWorkoutSummary(
-            performanceSummary: "Completed \(totalSets) sets across \(exercises.count) exercises.",
-            keyHighlights: exerciseNames.prefix(3).map { "Completed \($0)" },
-            areasForImprovement: [],
-            motivationalNote: "Great work showing up today. Consistency is the key to progress."
-        )
-    }
 }
 
 // MARK: - FoundationModels Provider (iOS 26+)
@@ -77,10 +64,6 @@ public struct FoundationModelsCoachingProvider: CoachingExplanationProvider, Sen
         // Future: Use LanguageModelSession to generate context-aware explanations.
         // For now, delegate to static provider as FoundationModels API stabilizes.
         await StaticCoachingProvider().explain(adjustment: adjustment, trainingStatus: trainingStatus)
-    }
-
-    public func summarizeWorkout(exercises: [WorkoutExercise], trainingStatus: TrainingStatus) async -> PostWorkoutSummary {
-        await StaticCoachingProvider().summarizeWorkout(exercises: exercises, trainingStatus: trainingStatus)
     }
 }
 #endif

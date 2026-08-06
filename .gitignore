@@ -73,5 +73,5 @@ fastlane/test_output
 .swarm/
 .claude-flow/
 
-# Local guides
-APP_STORE_RELEASE_GUIDE.md
+# Local guides (root-level only — docs/APP_STORE_RELEASE_GUIDE.md is tracked)
+/APP_STORE_RELEASE_GUIDE.md

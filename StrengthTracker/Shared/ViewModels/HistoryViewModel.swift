@@ -143,10 +143,6 @@ public final class HistoryViewModel {
 
     // MARK: - Intensity & Failure Editing
 
-    public func updateSetRPE(exerciseId: UUID, setId: UUID, rpe: Double?) async {
-        await updateSetIntensity(exerciseId: exerciseId, setId: setId, value: rpe, metric: .rpe)
-    }
-
     public func updateSetIntensity(exerciseId: UUID, setId: UUID, value: Double?, metric: IntensityMetric) async {
         guard var workout = selectedWorkout,
               let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }),

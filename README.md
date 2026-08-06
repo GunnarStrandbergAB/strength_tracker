@@ -448,7 +448,7 @@ StrengthTracker/
 ## Requirements
 
 - iOS 17.0+
-- watchOS 10.0+
+- watchOS 11.0+
 - Xcode 15.0+
 - Swift 6.0
 

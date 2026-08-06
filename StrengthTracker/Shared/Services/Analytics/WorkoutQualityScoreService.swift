@@ -72,11 +72,6 @@ public final class WorkoutQualityScoreService: Sendable {
         return score
     }
 
-    /// Alias matching architecture doc naming
-    public func scoreWorkout(_ workout: Workout) async throws -> WorkoutQualityScore {
-        try await computeScore(for: workout)
-    }
-
     // MARK: - Aggregate Quality
 
     /// Compute EWMA-smoothed aggregate quality across all completed workouts.

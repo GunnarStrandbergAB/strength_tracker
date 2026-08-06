@@ -2,7 +2,7 @@
 
 **Project:** StrengthTracker iOS App
 **Domain:** Vector-Based Workout Analytics
-**Last Updated:** 2026-02-17
+**Last Updated:** 2026-08-05
 
 ---
 
@@ -23,6 +23,12 @@
 | [ADR-011](ADR-011-repository-single-responsibility.md) | Accepted | Domain Modeling | AnalyticsRepository for vector CRUD only; workout queries stay on WorkoutRepository |
 | [ADR-012](ADR-012-stateless-services-context-injection.md) | Accepted | Services | Analytics services hold no mutable state; historical context passed as parameters from orchestrator |
 | [ADR-013](ADR-013-computed-domain-recommendations.md) | Accepted | Domain Modeling | Recommendation text as computed properties on domain models (PlateauAnalysis, MuscleImbalance) |
+| [ADR-014](ADR-014-progression-domain-models.md) | Accepted | Progression | Progression domain models & enums |
+| [ADR-015](ADR-015-progression-repository-persistence.md) | Accepted | Progression | Progression repository & SwiftData persistence |
+| [ADR-016](ADR-016-training-status-detection.md) | Accepted | Progression | Training status detection & 1RM estimation |
+| [ADR-017](ADR-017-program-design-engine.md) | Accepted | Progression | Program design engine (periodization) |
+| [ADR-018](ADR-018-session-execution-apre.md) | Accepted | Progression | Session execution & APRE load adjustment |
+| [ADR-019](ADR-019-adaptive-adjustment-analytics.md) | Accepted | Progression | Plan analytics & adaptive adjustment |
 
 ---
 
@@ -51,10 +57,18 @@
 - ADR-005: Background Vectorization
 - ADR-012: Stateless Services with Context Injection
 
+### Progression
+- ADR-014: Progression Domain Models & Enums
+- ADR-015: Progression Repository & SwiftData Persistence
+- ADR-016: Training Status Detection & 1RM Estimation
+- ADR-017: Program Design Engine (Periodization)
+- ADR-018: Session Execution & APRE Load Adjustment
+- ADR-019: Plan Analytics & Adaptive Adjustment
+
 ---
 
 ## Source Documents
 
-These ADRs were extracted from:
-1. `/workspaces/strength_tracker/docs/architecture/vector-analytics-architecture.md` -- Main architecture specification (ADR-001 through ADR-007 defined explicitly; ADR-009 through ADR-013 extracted from embedded design decisions)
-2. `/workspaces/strength_tracker/docs/architecture/analytics-ux-user-journeys.md` -- UX design specification (ADR-008 derived from navigation strategy)
+ADR-001 through ADR-013 were extracted from:
+1. [`../architecture/vector-analytics-architecture.md`](../architecture/vector-analytics-architecture.md) -- Main architecture specification (ADR-001 through ADR-007 defined explicitly; ADR-009 through ADR-013 extracted from embedded design decisions)
+2. [`../architecture/analytics-ux-user-journeys.md`](../architecture/analytics-ux-user-journeys.md) -- UX design specification (ADR-008 derived from navigation strategy)

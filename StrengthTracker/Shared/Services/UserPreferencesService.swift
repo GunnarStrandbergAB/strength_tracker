@@ -67,9 +67,6 @@ public final class UserPreferencesService {
         didSet { UserDefaults.standard.set(webhookBearerToken, forKey: "webhookBearerToken") }
     }
 
-    /// Whether the webhook is configured (non-empty URL)
-    public var isWebhookEnabled: Bool { !webhookURL.isEmpty }
-
     /// Vector schema version — bump when normalization constants change to trigger recomputation
     public var vectorVersion: Int {
         didSet { UserDefaults.standard.set(vectorVersion, forKey: "vectorVersion") }

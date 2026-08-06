@@ -19,7 +19,6 @@ targets:
     sources:
       - path: iOS
         excludes:
-          - "**/.placeholder.swift"
           - "WidgetExtension/**"
     dependencies:
       - package: StrengthTrackerPackage
@@ -76,7 +75,6 @@ targets:
     sources:
       - path: WatchApp
         excludes:
-          - "**/.placeholder.swift"
           - "WidgetExtension/**"
     dependencies:
       - package: StrengthTrackerPackage
@@ -174,8 +172,6 @@ targets:
     platform: iOS
     sources:
       - path: Tests
-        excludes:
-          - "**/.placeholder.swift"
     dependencies:
       - package: StrengthTrackerPackage
         product: StrengthTrackerShared

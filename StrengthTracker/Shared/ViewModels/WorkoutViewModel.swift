@@ -571,11 +571,6 @@ public final class WorkoutViewModel {
         }
     }
 
-    /// Update the RPE of a specific set within an exercise.
-    public func updateSetRPE(exerciseId: UUID, setId: UUID, rpe: Double?) async {
-        await updateSetIntensity(exerciseId: exerciseId, setId: setId, value: rpe, metric: .rpe)
-    }
-
     /// Update the intensity of a set in the given metric — stores the entered value
     /// and its derived counterpart (RPE↔RIR) together.
     public func updateSetIntensity(exerciseId: UUID, setId: UUID, value: Double?, metric: IntensityMetric) async {
