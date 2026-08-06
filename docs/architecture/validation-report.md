@@ -1,5 +1,9 @@
 # Architecture Validation Report -- Strength Tracker
 
+> **⚠️ Historical snapshot (January 2026).** One-off validation of the initial
+> architecture against the research documents. The implementation has evolved
+> since; see `docs/adrs/ADR-INDEX.md` for current decisions.
+
 **Date:** January 2026
 **Validated Against:** Research documents in `docs/research/`
 **Architecture Document:** `docs/architecture/system-architecture.md`

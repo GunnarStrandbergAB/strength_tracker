@@ -14,7 +14,7 @@ Built for lifters who want to log their workouts quickly and get back to the bar
 - **Quick Start** — no template? Start an empty workout and add exercises as you go. The full exercise library is always one tap away.
 - **Active Workout** — log sets with weight/reps, RPE tracking, automatic rest timer, exercise navigation. Tap set number to change type — warm-up, drop set, failure, or rest-pause.
 - **Set Types** — five set types (normal, warm-up, drop set, failure, rest-pause). Configure per-set in templates or toggle during workout. Warm-up sets are automatically excluded from personal records, volume totals, and calorie estimates.
-- **Exercise Library** — 326 built-in exercises covering barbell, dumbbell, kettlebell, cable, machine, bodyweight, calisthenics, and more. Custom exercise support included.
+- **Exercise Library** — 344 built-in exercises covering barbell, dumbbell, kettlebell, cable, machine, bodyweight, calisthenics, gymnastic rings, and more. Custom exercise support included.
 - **Workout History** — review past workouts with full exercise and set detail
 - **Progress Tracking** — automatic personal record detection. Hit a new PR and you'll know it.
 - **Workout Analytics** — on-device vector analytics with EWMA-smoothed quality scoring, plateau detection, muscle balance tracking, and exercise recommendations. No cloud, no AI API calls — pure math on your device.
@@ -333,15 +333,17 @@ After every completed workout (both iPhone and Watch-originated), the app can PO
 
 ---
 
-## Exercise Library — 326 Exercises
+## Exercise Library — 344 Exercises
 
 The built-in library covers 15 equipment categories and 17 muscle groups. Every exercise includes instructions. Custom exercises can be added on top.
+
+The complete, always-current listing lives in [`docs/exercise-library.md`](docs/exercise-library.md) — generated from the seed data with `python3 scripts/generate_exercise_doc.py` (regenerate after any seed change).
 
 ### By Equipment (15 categories)
 
 | Category | Count | Examples |
 |---|---|---|
-| **Bodyweight** | 77 | Pull-Up, Dips, Pistol Squat, Muscle-Up, Planche, Front Lever |
+| **Bodyweight** | 95 | Pull-Up, Dips, Pistol Squat, Muscle-Up, Planche, Ring Dip, Ring Row |
 | **Barbell** | 54 | Bench Press, Squat, Deadlift, Overhead Press, Clean and Press |
 | **Dumbbell** | 54 | Arnold Press, Bulgarian Split Squat, Hammer Curl, Incline Press |
 | **Cable** | 39 | Face Pull, Lat Pulldown, Cable Crossover, Tricep Pushdown |
@@ -361,17 +363,17 @@ The built-in library covers 15 equipment categories and 17 muscle groups. Every 
 
 | Muscle Group | Count |
 |---|---|
-| Chest | 39 |
-| Shoulders | 34 |
-| Core | 34 |
+| Chest | 43 |
+| Shoulders | 38 |
+| Core | 36 |
 | Full Body | 28 |
-| Quadriceps | 27 |
-| Triceps | 24 |
-| Back | 24 |
-| Biceps | 22 |
-| Lats | 17 |
+| Quadriceps | 28 |
+| Back | 26 |
+| Triceps | 25 |
+| Biceps | 24 |
+| Lats | 18 |
 | Glutes | 15 |
-| Hamstrings | 13 |
+| Hamstrings | 14 |
 | Calves | 11 |
 | Forearms | 10 |
 | Traps | 9 |
@@ -379,7 +381,7 @@ The built-in library covers 15 equipment categories and 17 muscle groups. Every 
 | Hip Flexors | 6 |
 | Abductors | 6 |
 
-### Calisthenics & Bodyweight (77 exercises)
+### Calisthenics & Bodyweight (95 exercises)
 
 Full calisthenics progression support from beginner to advanced:
 
@@ -398,6 +400,8 @@ Full calisthenics progression support from beginner to advanced:
 **Core** — Plank, Side Plank, Bicycle Crunch, Dead Bug, Bird Dog, Mountain Climber, V-Up, Hanging Knee Raise, Hanging Leg Raise, Hanging Windshield Wiper, Toes-to-Bar, Superman, Decline Sit-Up, Captain's Chair Knee Raise, Body Saw, Copenhagen Plank, Copenhagen Adductor Exercise, Side-Lying Adductor Raise, Side-Lying Hip Abduction
 
 **Full Body** — Burpee, Bear Crawl
+
+**Rings** — Ring Row, Ring Archer Row, Ring Pull-Up, Ring Chin-Up, Ring Push-Up, Ring Archer Push-Up, Ring Fly, Ring Pike Push-Up, Ring Face Pull, Ring Rear Delt Fly, Ring Bicep Curl, Ring Tricep Extension, Ring Support Hold, Ring L-Sit, Ring Rollout, Ring Hamstring Curl, Ring-Assisted Pistol Squat, Bulgarian Ring Dip — plus Ring Dip, Ring Muscle-Up, Skin the Cat, and Iron Cross listed above. Search "ring" in the library to see them all.
 
 ---
 

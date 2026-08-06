@@ -3688,5 +3688,205 @@ public enum ExerciseSeedData {
             isCustom: false,
             isArchived: false
         ),
+
+        // Ring training (gymnastic rings)
+        Exercise(
+            id: deterministicUUID(for: "Ring Row"),
+            name: "Ring Row",
+            primaryMuscleGroup: .back,
+            secondaryMuscleGroups: [.biceps, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Hang under rings with body straight, pull chest to the rings, lower with control. Walk feet forward to increase difficulty.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring Archer Row"),
+            name: "Ring Archer Row",
+            primaryMuscleGroup: .back,
+            secondaryMuscleGroups: [.biceps, .core, .obliques],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Ring row pulling toward one ring while the other arm extends straight to the side. Alternate sides to build single-arm pulling strength.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring Pull-Up"),
+            name: "Ring Pull-Up",
+            primaryMuscleGroup: .lats,
+            secondaryMuscleGroups: [.biceps, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Pull-up on rings with a neutral-to-supinated rotating grip. The free rotation is easier on the shoulders and demands more stabilization.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring Chin-Up"),
+            name: "Ring Chin-Up",
+            primaryMuscleGroup: .biceps,
+            secondaryMuscleGroups: [.lats, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Chin-up on rings with palms rotating toward you at the top. Emphasizes the biceps through the natural rotation of the rings.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring Push-Up"),
+            name: "Ring Push-Up",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.triceps, .shoulders, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Push-up with hands on rings, turning rings out at lockout. The instability heavily recruits the chest and stabilizers.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring Archer Push-Up"),
+            name: "Ring Archer Push-Up",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.triceps, .core, .obliques],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Ring push-up lowering toward one ring while the other arm extends out to the side. Press back up and alternate sides.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring Fly"),
+            name: "Ring Fly",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.shoulders, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "From a push-up position on rings, spread the arms out and down, then squeeze the chest to bring the rings back together. Keep a slight elbow bend and the body rigid.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring Pike Push-Up"),
+            name: "Ring Pike Push-Up",
+            primaryMuscleGroup: .shoulders,
+            secondaryMuscleGroups: [.triceps, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Pike push-up with hands in rings and hips high, lowering the head between the rings. Vertical-press pattern with added instability.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring Face Pull"),
+            name: "Ring Face Pull",
+            primaryMuscleGroup: .shoulders,
+            secondaryMuscleGroups: [.traps, .biceps],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Lean back under rings and pull the rings to the sides of your face, elbows high, squeezing the rear delts. Great for shoulder health.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring Rear Delt Fly"),
+            name: "Ring Rear Delt Fly",
+            primaryMuscleGroup: .shoulders,
+            secondaryMuscleGroups: [.traps],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Lean back holding the rings with straight arms, then open the arms wide to raise the body using the rear delts. Keep the body rigid.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring Bicep Curl"),
+            name: "Ring Bicep Curl",
+            primaryMuscleGroup: .biceps,
+            secondaryMuscleGroups: [.forearms, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Lean back under rings with palms up and curl your body toward the rings using only the elbows. Step feet forward to add resistance.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring Tricep Extension"),
+            name: "Ring Tricep Extension",
+            primaryMuscleGroup: .triceps,
+            secondaryMuscleGroups: [.shoulders, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Lean into the rings with arms overhead and lower the head between the rings by bending the elbows, then press back out. A bodyweight skull crusher.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring Support Hold"),
+            name: "Ring Support Hold",
+            primaryMuscleGroup: .shoulders,
+            secondaryMuscleGroups: [.triceps, .chest, .core],
+            category: .bodyweight,
+            exerciseType: .duration,
+            instructions: "Hold yourself on top of the rings with arms locked and rings turned slightly out. The foundational ring position — build to 60 seconds before dips.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring L-Sit"),
+            name: "Ring L-Sit",
+            primaryMuscleGroup: .core,
+            secondaryMuscleGroups: [.hipFlexors, .triceps],
+            category: .bodyweight,
+            exerciseType: .duration,
+            instructions: "From a ring support hold, raise both legs straight in front to horizontal and hold. Harder than the parallettes version due to instability.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring Rollout"),
+            name: "Ring Rollout",
+            primaryMuscleGroup: .core,
+            secondaryMuscleGroups: [.lats, .shoulders],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "From a standing or kneeling position holding low rings, roll the arms overhead keeping the body straight, then pull back using the core and lats.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring Hamstring Curl"),
+            name: "Ring Hamstring Curl",
+            primaryMuscleGroup: .hamstrings,
+            secondaryMuscleGroups: [.glutes, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Lie on your back with heels in low rings, bridge the hips up, and curl the heels toward the glutes. Keep hips extended throughout.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Ring-Assisted Pistol Squat"),
+            name: "Ring-Assisted Pistol Squat",
+            primaryMuscleGroup: .quadriceps,
+            secondaryMuscleGroups: [.glutes, .hamstrings, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Single-leg squat holding the rings lightly for balance and assistance. Use as little arm help as possible on the way up.",
+            isCustom: false,
+            isArchived: false
+        ),
+        Exercise(
+            id: deterministicUUID(for: "Bulgarian Ring Dip"),
+            name: "Bulgarian Ring Dip",
+            primaryMuscleGroup: .chest,
+            secondaryMuscleGroups: [.triceps, .shoulders, .core],
+            category: .bodyweight,
+            exerciseType: .bodyweightReps,
+            instructions: "Ring dip performed with the rings held wide and elbows flaring out, increasing chest and shoulder demand. Advanced — master regular ring dips first.",
+            isCustom: false,
+            isArchived: false
+        ),
     ]
 }

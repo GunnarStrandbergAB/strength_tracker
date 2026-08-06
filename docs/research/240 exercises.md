@@ -1,5 +1,11 @@
 # The definitive strength training exercise database: 240 exercises
 
+> **⚠️ Historical research input — not the current library.** This document was the
+> candidate list for the 2024 library expansion (commit `771b8ef`; 235 of these 240
+> landed). It predates the original 62 core exercises, the 29 calisthenics additions,
+> and the 18 ring exercises. For the complete, current library see
+> [`docs/exercise-library.md`](../exercise-library.md) (generated from the seed data).
+
 This database contains **240 unique exercises** spanning every major muscle group, all 11 equipment categories, and five exercise types — designed to expand a 59-exercise app into a truly comprehensive training platform. Each exercise includes the exact data model attributes (Name, Category, Type, Primary Muscle Group, Secondary Muscle Groups, Instructions) ready for direct import. Exercises are organized by primary muscle group, and the user's existing ~59 exercises have been excluded.
 
 Every exercise was verified against authoritative sources including ExRx.net, ACE Fitness, Muscle &amp; Strength, BarBend, StrengthLog, and NSCA protocols.
