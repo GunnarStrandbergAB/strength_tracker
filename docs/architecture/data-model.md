@@ -1,5 +1,12 @@
 # Data Model Design -- Strength Tracker (iOS + Apple Watch)
 
+> **⚠️ Historical design (January 2026, pre-implementation).** This document
+> describes the original **Core Data + CloudKit** design. The shipped app uses
+> **SwiftData** with different entity definitions (no `sortOrder`/`isDeleted`/
+> `createdAt` fields, no `CDExercise+Extensions.swift`, no CloudKit sync). For
+> the entities as actually implemented, see
+> `StrengthTracker/Shared/Persistence/SwiftData/Entities/`.
+
 **Version:** 1.0
 **Date:** January 2026
 **Status:** Approved for implementation

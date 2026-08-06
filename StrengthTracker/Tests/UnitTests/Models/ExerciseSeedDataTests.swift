@@ -7,7 +7,7 @@ struct ExerciseSeedDataTests {
 
     @Test("Has expected total exercise count")
     func totalCount() {
-        #expect(ExerciseSeedData.allExercises.count == 326)
+        #expect(ExerciseSeedData.allExercises.count == 344)
     }
 
     @Test("No duplicate names")
