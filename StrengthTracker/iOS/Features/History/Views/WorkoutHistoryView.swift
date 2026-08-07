@@ -4,22 +4,31 @@ import StrengthTrackerShared
 struct WorkoutHistoryView: View {
     @State private var viewModel: HistoryViewModel
     var analyticsViewModel: WorkoutAnalyticsViewModel? = nil
+    var exerciseListViewModel: ExerciseListViewModel? = nil
 
-    init(viewModel: HistoryViewModel, analyticsViewModel: WorkoutAnalyticsViewModel? = nil) {
+    init(
+        viewModel: HistoryViewModel,
+        analyticsViewModel: WorkoutAnalyticsViewModel? = nil,
+        exerciseListViewModel: ExerciseListViewModel? = nil
+    ) {
         self._viewModel = State(initialValue: viewModel)
         self.analyticsViewModel = analyticsViewModel
+        self.exerciseListViewModel = exerciseListViewModel
     }
 
     @State private var workoutToDelete: Workout? = nil
+    @State private var showLogPastWorkout = false
+    @State private var navigationPath: [Workout] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             List {
                 ForEach(viewModel.workouts) { workout in
                     NavigationLink(value: workout) {
                         WorkoutHistoryRow(
                             workout: workout,
-                            weightUnit: viewModel.userPreferencesService?.weightUnit ?? .kg
+                            weightUnit: viewModel.userPreferencesService?.weightUnit ?? .kg,
+                            bodyWeightKg: viewModel.displayBodyWeightKg
                         )
                     }
                     .swipeActions(edge: .trailing) {
@@ -32,11 +41,26 @@ struct WorkoutHistoryView: View {
                 }
             }
             .navigationTitle("History")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showLogPastWorkout = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(isPresented: $showLogPastWorkout) {
+                LogPastWorkoutSheet(viewModel: viewModel) { workout in
+                    navigationPath.append(workout)
+                }
+            }
             .navigationDestination(for: Workout.self) { workout in
                 WorkoutDetailView(
                     workout: workout,
                     historyViewModel: viewModel,
-                    analyticsViewModel: analyticsViewModel
+                    analyticsViewModel: analyticsViewModel,
+                    exerciseListViewModel: exerciseListViewModel
                 )
             }
             .overlay {
@@ -88,6 +112,9 @@ struct WorkoutHistoryView: View {
 private struct WorkoutHistoryRow: View {
     let workout: Workout
     var weightUnit: WeightUnit = .kg
+    var bodyWeightKg: Double = UserPreferencesService.defaultBodyWeightKg
+
+    private var totalVolume: Double { workout.totalVolume(bodyWeightKg: bodyWeightKg) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -107,8 +134,8 @@ private struct WorkoutHistoryRow: View {
             .font(.caption)
             .foregroundStyle(.secondary)
 
-            if workout.totalVolume > 0 {
-                Text("Volume: \(weightUnit.format(workout.totalVolume, decimals: 0))")
+            if totalVolume > 0 {
+                Text("Volume: \(weightUnit.format(totalVolume, decimals: 0))")
                     .font(.caption)
                     .foregroundStyle(.blue)
             }

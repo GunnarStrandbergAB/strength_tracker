@@ -5,8 +5,11 @@ struct WorkoutDetailView: View {
     let workout: Workout
     var historyViewModel: HistoryViewModel? = nil
     var analyticsViewModel: WorkoutAnalyticsViewModel? = nil
+    var exerciseListViewModel: ExerciseListViewModel? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var showingDeleteConfirmation = false
+    @State private var showingExercisePicker = false
+    @State private var exerciseToRemove: WorkoutExercise? = nil
 
     /// The displayed workout: use historyViewModel's selectedWorkout (live edits) if available.
     private var displayedWorkout: Workout {
@@ -19,6 +22,10 @@ struct WorkoutDetailView: View {
 
     private var intensityMetric: IntensityMetric {
         historyViewModel?.userPreferencesService?.intensityMetric ?? .rpe
+    }
+
+    private var bodyWeightKg: Double {
+        historyViewModel?.displayBodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
 
     // Extracted from `body` — the callback bundle is too much for the SwiftUI
@@ -112,7 +119,7 @@ struct WorkoutDetailView: View {
                 if let duration = displayedWorkout.duration {
                     LabeledContent("Duration", value: formatDuration(duration))
                 }
-                LabeledContent("Total Volume", value: weightUnit.format(displayedWorkout.totalVolume, decimals: 0))
+                LabeledContent("Total Volume", value: weightUnit.format(displayedWorkout.totalVolume(bodyWeightKg: bodyWeightKg), decimals: 0))
                 LabeledContent("Exercises", value: "\(displayedWorkout.exercises.count)")
             }
 
@@ -128,6 +135,9 @@ struct WorkoutDetailView: View {
                     if isEditing, let hvm = historyViewModel {
                         editableSetRows(for: workoutExercise, hvm: hvm)
 
+                        // Multiple buttons in one List row need explicit .borderless
+                        // styles — otherwise the row is one tap target and a tap on
+                        // "Add Set" also fires the destructive trash action.
                         HStack(spacing: 12) {
                             Button {
                                 Task { await hvm.addEmptySet(exerciseId: workoutExercise.id) }
@@ -135,6 +145,7 @@ struct WorkoutDetailView: View {
                                 Label("Add Set", systemImage: "plus.circle")
                                     .font(.system(size: 13))
                             }
+                            .buttonStyle(.borderless)
 
                             if !workoutExercise.sets.isEmpty {
                                 Button(role: .destructive) {
@@ -143,7 +154,18 @@ struct WorkoutDetailView: View {
                                     Label("Remove Last", systemImage: "minus.circle")
                                         .font(.system(size: 13))
                                 }
+                                .buttonStyle(.borderless)
                             }
+
+                            Spacer()
+
+                            Button(role: .destructive) {
+                                exerciseToRemove = workoutExercise
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 13))
+                            }
+                            .buttonStyle(.borderless)
                         }
                     } else {
                         ForEach(Array(workoutExercise.sets.enumerated()), id: \.element.id) { index, exerciseSet in
@@ -156,10 +178,30 @@ struct WorkoutDetailView: View {
                         }
                     }
 
-                    if workoutExercise.exerciseVolume > 0 {
+                    if workoutExercise.exerciseVolume(bodyWeightKg: bodyWeightKg) > 0 {
                         LabeledContent("Exercise Volume") {
-                            Text(weightUnit.format(workoutExercise.exerciseVolume, decimals: 0))
+                            Text(weightUnit.format(workoutExercise.exerciseVolume(bodyWeightKg: bodyWeightKg), decimals: 0))
                                 .foregroundStyle(.blue)
+                        }
+                    }
+                }
+            }
+
+            if isEditing, let hvm = historyViewModel {
+                Section {
+                    if exerciseListViewModel != nil {
+                        Button {
+                            showingExercisePicker = true
+                        } label: {
+                            Label("Add Exercise", systemImage: "plus.circle")
+                        }
+                    }
+
+                    if hasIncompleteSets {
+                        Button {
+                            Task { await hvm.markAllSetsComplete() }
+                        } label: {
+                            Label("Mark All Sets Complete", systemImage: "checkmark.circle")
                         }
                     }
                 }
@@ -198,7 +240,19 @@ struct WorkoutDetailView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 12) {
                         Button(hvm.isEditing ? "Done" : "Edit") {
-                            hvm.isEditing.toggle()
+                            if hvm.isEditing {
+                                Task {
+                                    await hvm.endEditing()
+                                    // The edit invalidated the score caches — refresh
+                                    // the VM state the quality section renders from.
+                                    analyticsViewModel?.invalidateQualityState()
+                                    if let workout = hvm.selectedWorkout {
+                                        await analyticsViewModel?.loadQualityScore(for: workout)
+                                    }
+                                }
+                            } else {
+                                hvm.isEditing = true
+                            }
                         }
                         Button {
                             showingDeleteConfirmation = true
@@ -227,12 +281,46 @@ struct WorkoutDetailView: View {
         } message: {
             Text("This will permanently delete the workout and all its data.")
         }
+        .sheet(isPresented: $showingExercisePicker) {
+            if let exerciseListViewModel, let hvm = historyViewModel {
+                ExercisePickerView(viewModel: exerciseListViewModel) { exercise in
+                    Task { await hvm.addExercise(exercise) }
+                }
+            }
+        }
+        .confirmationDialog(
+            "Remove Exercise",
+            isPresented: .init(
+                get: { exerciseToRemove != nil },
+                set: { if !$0 { exerciseToRemove = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Remove \(exerciseToRemove?.exercise.name ?? "Exercise")", role: .destructive) {
+                if let target = exerciseToRemove, let hvm = historyViewModel {
+                    Task { await hvm.removeExercise(exerciseId: target.id) }
+                }
+                exerciseToRemove = nil
+            }
+            Button("Cancel", role: .cancel) { exerciseToRemove = nil }
+        } message: {
+            Text("This removes the exercise and all its sets from this workout.")
+        }
         .onAppear {
             historyViewModel?.selectWorkout(workout)
         }
         .onDisappear {
-            historyViewModel?.isEditing = false
+            if let hvm = historyViewModel, hvm.isEditing {
+                Task {
+                    await hvm.endEditing()
+                    analyticsViewModel?.invalidateQualityState()
+                }
+            }
         }
+    }
+
+    private var hasIncompleteSets: Bool {
+        displayedWorkout.exercises.contains { $0.sets.contains { !$0.isCompleted } }
     }
 
     private func formatDuration(_ interval: TimeInterval) -> String {

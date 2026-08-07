@@ -70,7 +70,7 @@ struct WorkoutHistoryTests {
         #expect(history.completedWorkouts.isEmpty)
         #expect(history.sortedByDate.isEmpty)
         #expect(history.totalWorkouts == 0)
-        #expect(history.totalVolume == 0)
+        #expect(history.totalVolume(bodyWeightKg: 70) == 0)
         #expect(history.averageDuration == nil)
     }
 
@@ -111,7 +111,7 @@ struct WorkoutHistoryTests {
 
         let history = WorkoutHistory(id: UUID(), workouts: [completed, inProgress])
 
-        #expect(history.totalVolume == 1000.0)
+        #expect(history.totalVolume(bodyWeightKg: 70) == 1000.0)
     }
 
     // MARK: - Average duration

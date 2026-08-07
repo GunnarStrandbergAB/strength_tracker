@@ -13,7 +13,7 @@ public final class RecoveryEstimationService: Sendable {
 
     /// Compute recovery patterns for all recently trained muscle groups.
     /// Pass pre-fetched `workouts` to include deload data; omit to self-fetch.
-    public func computeRecoveryPatterns(workouts: [Workout]? = nil) async throws -> [RecoveryPattern] {
+    public func computeRecoveryPatterns(workouts: [Workout]? = nil, bodyWeightKg: Double) async throws -> [RecoveryPattern] {
         let allWorkouts: [Workout]
         if let workouts {
             allWorkouts = workouts
@@ -24,7 +24,7 @@ public final class RecoveryEstimationService: Sendable {
 
         guard !completedWorkouts.isEmpty else { return [] }
 
-        let muscleLastTrained = findLastTrainedDates(workouts: completedWorkouts)
+        let muscleLastTrained = findLastTrainedDates(workouts: completedWorkouts, bodyWeightKg: bodyWeightKg)
 
         return muscleLastTrained.compactMap { entry in
             let muscleGroup = entry.key
@@ -74,9 +74,10 @@ public final class RecoveryEstimationService: Sendable {
 
     /// Find last trained date, set count, effort ratios, and average RPE for each muscle group.
     private func findLastTrainedDates(
-        workouts: [Workout]
+        workouts: [Workout],
+        bodyWeightKg: Double
     ) -> [String: (lastDate: Date, sets: Int, effortRatios: [Double], avgRPE: Double?)] {
-        let bestE1RM = AnalyticsCalculations.buildBestE1RMMap(from: workouts)
+        let bestE1RM = AnalyticsCalculations.buildBestE1RMMap(from: workouts, bodyWeightKg: bodyWeightKg)
         let twoWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -AnalyticsCalculations.Windows.recoveryLookbackWeeks, to: Date())!
 
         var result: [String: (lastDate: Date, sets: Int, effortRatios: [Double], avgRPE: Double?)] = [:]
@@ -94,14 +95,15 @@ public final class RecoveryEstimationService: Sendable {
 
                 let primary = we.exercise.primaryMuscleGroup.rawValue
 
-                // Calculate effort ratios for this exercise
+                // Calculate effort ratios for this exercise (effective loads)
+                let baseLoad = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
                 var effortRatios: [Double] = []
-                for set in hardSets {
-                    if let weight = set.weight, weight > 0,
-                       let reps = set.reps, reps > 0,
-                       let best = bestE1RM[we.exercise.id], best > 0 {
-                        let e1rm = AnalyticsCalculations.calculateOneRM(weight: weight, reps: min(reps, 15))
-                        effortRatios.append(e1rm / best)
+                if let best = bestE1RM[we.exercise.id], best > 0 {
+                    for set in hardSets {
+                        for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
+                            let e1rm = AnalyticsCalculations.calculateOneRM(weight: part.load, reps: min(part.reps, 15))
+                            effortRatios.append(e1rm / best)
+                        }
                     }
                 }
 

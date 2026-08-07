@@ -25,6 +25,18 @@ public final class WorkoutQualityScoreService: Sendable {
         self.userPreferencesService = userPreferencesService
     }
 
+    /// Drop one workout's cached score (e.g. after that workout was edited).
+    public func invalidate(workoutId: UUID) {
+        cache.removeValue(forKey: workoutId)
+    }
+
+    /// Drop every cached score. Use after any history edit: scores are computed
+    /// against 12-week history baselines, so editing one workout stales its
+    /// neighbors' cached scores too.
+    public func invalidateAll() {
+        cache.removeAll()
+    }
+
     /// Compute quality score for a completed workout (fetches history internally)
     public func computeScore(for workout: Workout) async throws -> WorkoutQualityScore {
         if let cached = cache[workout.id] { return cached }
@@ -166,8 +178,12 @@ public final class WorkoutQualityScoreService: Sendable {
     // MARK: - Shared Helpers
 
     /// Build per-exercise best e1RM map from history, excluding a specific workout.
+    private var resolvedBodyWeightKg: Double {
+        userPreferencesService.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+    }
+
     private func buildBestE1RMMap(excluding workoutId: UUID, from history: [Workout]) -> [UUID: Double] {
-        AnalyticsCalculations.buildBestE1RMMap(excluding: workoutId, from: history)
+        AnalyticsCalculations.buildBestE1RMMap(excluding: workoutId, from: history, bodyWeightKg: resolvedBodyWeightKg)
     }
 
     /// Compute Intensity-Weighted Volume per muscle group for a set of workouts.
@@ -178,8 +194,9 @@ public final class WorkoutQualityScoreService: Sendable {
         var iwv: [MuscleGroup: Double] = [:]
         for workout in workouts {
             for we in workout.exercises {
+                let baseLoad = we.exercise.baseLoadPerRep(bodyWeightKg: resolvedBodyWeightKg)
                 for set in we.sets {
-                    let setIWV = AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id])
+                    let setIWV = AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id], baseLoadPerRep: baseLoad)
                     guard setIWV > 0 else { continue }
 
                     let attributed = AnalyticsCalculations.attributeVolume(
@@ -218,7 +235,7 @@ public final class WorkoutQualityScoreService: Sendable {
         for we in workout.exercises {
             for set in we.sets {
                 guard set.isCompleted, set.setType != .warmup else { continue }
-                let vol = set.setVolume(weightSubstitute: we.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : nil)
+                let vol = set.setVolume(baseLoadPerRep: we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg))
 
                 currentMuscleVol[we.exercise.primaryMuscleGroup, default: 0] += vol * 0.7
                 let secondaries = we.exercise.secondaryMuscleGroups
@@ -242,7 +259,7 @@ public final class WorkoutQualityScoreService: Sendable {
             for we in past.exercises {
                 for set in we.sets {
                     guard set.isCompleted, set.setType != .warmup else { continue }
-                    let vol = set.setVolume(weightSubstitute: we.exercise.exerciseType == .bodyweightReps ? bodyWeightKg : nil)
+                    let vol = set.setVolume(baseLoadPerRep: we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg))
 
                     historyMuscleVol[we.exercise.primaryMuscleGroup, default: 0] += vol * 0.7
                     musclesInWorkout.insert(we.exercise.primaryMuscleGroup)
@@ -297,14 +314,14 @@ public final class WorkoutQualityScoreService: Sendable {
 
         var ratios: [Double] = []
         for we in workout.exercises {
+            let baseLoad = we.exercise.baseLoadPerRep(bodyWeightKg: resolvedBodyWeightKg)
             for set in we.sets {
-                guard set.isCompleted,
-                      set.setType != .warmup,
-                      let weight = set.weight, weight > 0,
-                      let reps = set.reps, reps > 0 else { continue }
+                guard set.isCompleted, set.setType != .warmup else { continue }
                 guard let historicalBest = bestE1RM[we.exercise.id], historicalBest > 0 else { continue }
-                let setE1RM = TrainingStatusDetector.calculateOneRM(weight: weight, reps: min(reps, 15))
-                ratios.append(setE1RM / historicalBest)
+                for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
+                    let setE1RM = TrainingStatusDetector.calculateOneRM(weight: part.load, reps: min(part.reps, 15))
+                    ratios.append(setE1RM / historicalBest)
+                }
             }
         }
 
@@ -426,13 +443,14 @@ public final class WorkoutQualityScoreService: Sendable {
 
         var ratios: [Double] = []
         for we in workout.exercises {
+            let baseLoad = we.exercise.baseLoadPerRep(bodyWeightKg: resolvedBodyWeightKg)
             for set in we.sets {
-                guard set.isCompleted, set.setType != .warmup,
-                      let weight = set.weight, weight > 0,
-                      let reps = set.reps, reps > 0 else { continue }
+                guard set.isCompleted, set.setType != .warmup else { continue }
                 guard let historicalBest = bestE1RM[we.exercise.id], historicalBest > 0 else { continue }
-                let setE1RM = TrainingStatusDetector.calculateOneRM(weight: weight, reps: min(reps, 15))
-                ratios.append(setE1RM / historicalBest)
+                for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
+                    let setE1RM = TrainingStatusDetector.calculateOneRM(weight: part.load, reps: min(part.reps, 15))
+                    ratios.append(setE1RM / historicalBest)
+                }
             }
         }
 

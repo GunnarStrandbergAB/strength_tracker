@@ -31,6 +31,25 @@ struct ExerciseSeedDataTests {
         }
     }
 
+    @Test("Every bodyweight-reps exercise has a researched bodyweight factor in 0.2...1.5")
+    func bodyweightFactorsPresent() {
+        for exercise in ExerciseSeedData.allExercises where exercise.exerciseType == .bodyweightReps {
+            let factor = exercise.bodyweightFactor
+            #expect(factor != nil, "\(exercise.name) is bodyweightReps but has no bodyweightFactor")
+            if let factor {
+                #expect((0.2...1.5).contains(factor), "\(exercise.name) factor \(factor) outside 0.2...1.5")
+            }
+        }
+    }
+
+    @Test("Non-bodyweight exercises carry no bodyweight factor")
+    func noFactorOnNonBodyweight() {
+        for exercise in ExerciseSeedData.allExercises where exercise.exerciseType != .bodyweightReps {
+            #expect(exercise.bodyweightFactor == nil,
+                    "\(exercise.name) is \(exercise.exerciseType) but has bodyweightFactor")
+        }
+    }
+
     @Test("Every exercise has instructions")
     func hasInstructions() {
         for exercise in ExerciseSeedData.allExercises {

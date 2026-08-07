@@ -138,15 +138,18 @@ public struct ExerciseSet: Identifiable, Hashable, Sendable, Codable, IntensityR
         effectiveParts.reduce(0) { $0 + ($1.reps ?? 0) }
     }
 
-    public var setVolume: Double { setVolume(weightSubstitute: nil) }
-
-    /// Drop-aware volume: sums weight×reps across `effectiveParts` (sub-entries ONLY
-    /// for grouped drop sets — the parent mirrors the top segment and must not be
-    /// added). `weightSubstitute` fills nil-weight parts (bodyweight exercises).
-    /// Returns 0 unless the set is completed and non-warmup.
-    public func setVolume(weightSubstitute: Double?) -> Double {
+    /// Drop-aware volume under the effective-load model: sums load×reps across
+    /// `effectiveParts` (sub-entries ONLY for grouped drop sets — the parent mirrors
+    /// the top segment and must not be added). `baseLoadPerRep` is the bodyweight
+    /// base (`Exercise.baseLoadPerRep(bodyWeightKg:)`) or nil for external-load
+    /// exercises. Returns 0 unless the set is completed and non-warmup.
+    /// There is deliberately NO body-weight-blind variant — volume cannot be computed
+    /// without knowing the base load.
+    public func setVolume(baseLoadPerRep: Double?) -> Double {
         guard isCompleted, setType != .warmup else { return 0 }
-        return effectiveParts.reduce(0) { $0 + ($1.weight ?? weightSubstitute ?? 0) * Double($1.reps ?? 0) }
+        return effectiveParts.reduce(0) {
+            $0 + ($1.effectiveLoad(baseLoadPerRep: baseLoadPerRep) ?? 0) * Double($1.reps ?? 0)
+        }
     }
 
     /// The single mutation path for drop-set segments, maintaining the invariants:
@@ -238,15 +241,11 @@ public struct WorkoutExercise: Identifiable, Hashable, Sendable, Codable {
     public var restTimerSeconds: Int?
     public var sets: [ExerciseSet]
 
-    public var exerciseVolume: Double {
-        sets.reduce(0) { $0 + $1.setVolume }
-    }
-
-    /// Body-weight-aware volume: substitutes `bodyWeightKg` for nil-weight parts of
-    /// bodyweight-rep exercises (including individual drop-set segments).
+    /// Effective-load volume: bodyweight-rep exercises count bw × factor + extra kg
+    /// per rep (drop-set segments individually); external-load exercises are unchanged.
     public func exerciseVolume(bodyWeightKg: Double) -> Double {
-        let substitute = exercise.exerciseType == .bodyweightReps ? bodyWeightKg : nil
-        return sets.reduce(0) { $0 + $1.setVolume(weightSubstitute: substitute) }
+        let base = exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
+        return sets.reduce(0) { $0 + $1.setVolume(baseLoadPerRep: base) }
     }
 
     public init(id: UUID, exercise: Exercise, order: Int, supersetGroup: Int?, notes: String?, restTimerSeconds: Int?, sets: [ExerciseSet]) {

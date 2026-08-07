@@ -13,7 +13,8 @@ public enum ExerciseMapper {
             exerciseType: ExerciseType(rawValue: entity.exerciseType) ?? .weightedReps,
             instructions: entity.instructions,
             isCustom: entity.isCustom,
-            isArchived: entity.isArchived
+            isArchived: entity.isArchived,
+            bodyweightFactor: entity.bodyweightFactor
         )
     }
 
@@ -28,7 +29,8 @@ public enum ExerciseMapper {
             exerciseType: domain.exerciseType.rawValue,
             instructions: domain.instructions,
             isCustom: domain.isCustom,
-            isArchived: domain.isArchived
+            isArchived: domain.isArchived,
+            bodyweightFactor: domain.bodyweightFactor
         )
     }
 
@@ -42,6 +44,7 @@ public enum ExerciseMapper {
         entity.instructions = domain.instructions
         entity.isCustom = domain.isCustom
         entity.isArchived = domain.isArchived
+        entity.bodyweightFactor = domain.bodyweightFactor
     }
 
     // MARK: - Private Helpers

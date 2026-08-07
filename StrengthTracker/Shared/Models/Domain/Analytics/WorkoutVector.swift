@@ -8,6 +8,8 @@ public struct WorkoutVector: Identifiable, Hashable, Sendable, Codable {
     public let workoutId: UUID
     public let dimensions: [Double]
     public let magnitude: Double?     // L2 magnitude before normalization
+    /// The workout's training date (== workout.startedAt), NOT the wall-clock time of
+    /// vectorization — recency-windowed analytics sort and filter on this.
     public let createdAt: Date
 
     /// Human-readable feature names for debugging and display.

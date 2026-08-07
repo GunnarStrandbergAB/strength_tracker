@@ -16,6 +16,7 @@ struct AddExerciseView: View {
     @State private var secondaryMuscleGroups: Set<MuscleGroup> = []
     @State private var instructions = ""
     @State private var known1RM = ""
+    @State private var bodyweightPercent = ""
 
     var body: some View {
         NavigationStack {
@@ -74,6 +75,21 @@ struct AddExerciseView: View {
                         .lineLimit(3...6)
                 }
 
+                if exerciseType == .bodyweightReps {
+                    Section {
+                        HStack {
+                            TextField("e.g. 65", text: $bodyweightPercent)
+                                .keyboardType(.decimalPad)
+                            Text("%")
+                                .foregroundStyle(.secondary)
+                        }
+                    } header: {
+                        Text("% of Body Weight Lifted (optional)")
+                    } footer: {
+                        Text("How much of your body weight this movement loads — e.g. push-ups ≈ 65%, pull-ups = 100%. Used for volume and strength estimates. Defaults to 100%.")
+                    }
+                }
+
                 if personalRecordService != nil {
                     Section("Known 1RM (optional)") {
                         HStack {
@@ -105,7 +121,8 @@ struct AddExerciseView: View {
                             exerciseType: exerciseType,
                             instructions: instructions.isEmpty ? nil : instructions,
                             isCustom: true,
-                            isArchived: false
+                            isArchived: false,
+                            bodyweightFactor: resolvedBodyweightFactor
                         )
                         Task {
                             await viewModel.saveExercise(exercise)
@@ -138,6 +155,12 @@ struct AddExerciseView: View {
                 }
             }
         }
+    }
+
+    private var resolvedBodyweightFactor: Double? {
+        guard exerciseType == .bodyweightReps else { return nil }
+        guard let pct = Double(bodyweightPercent), pct > 0 else { return nil }
+        return min(max(pct / 100.0, 0.1), 1.5)
     }
 }
 #endif

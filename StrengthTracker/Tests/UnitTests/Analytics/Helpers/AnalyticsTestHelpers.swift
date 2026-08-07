@@ -14,7 +14,8 @@ enum AnalyticsTestHelpers {
         primaryMuscleGroup: MuscleGroup = .chest,
         secondaryMuscleGroups: [MuscleGroup] = [.triceps, .shoulders],
         category: ExerciseCategory = .barbell,
-        exerciseType: ExerciseType = .weightedReps
+        exerciseType: ExerciseType = .weightedReps,
+        bodyweightFactor: Double? = nil
     ) -> Exercise {
         Exercise(
             id: id,
@@ -25,7 +26,8 @@ enum AnalyticsTestHelpers {
             exerciseType: exerciseType,
             instructions: nil,
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: bodyweightFactor
         )
     }
 
@@ -41,7 +43,8 @@ enum AnalyticsTestHelpers {
         isPersonalRecord: Bool = false,
         setType: SetType = .normal,
         isFailure: Bool = false,
-        dropSets: [DropSetEntry] = []
+        dropSets: [DropSetEntry] = [],
+        completedAt: Date = Date()
     ) -> ExerciseSet {
         ExerciseSet(
             id: id,
@@ -56,7 +59,7 @@ enum AnalyticsTestHelpers {
             isCompleted: true,
             isPersonalRecord: isPersonalRecord,
             isFailure: isFailure,
-            completedAt: Date(),
+            completedAt: completedAt,
             dropSets: dropSets
         )
     }

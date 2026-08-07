@@ -5,7 +5,7 @@ import Foundation
 public enum OverloadTrackingService {
 
     /// Compute overload trends for all exercises with sufficient history (4+ weeks).
-    public static func computeOverloadTrends(workouts: [Workout]) -> [OverloadTrend] {
+    public static func computeOverloadTrends(workouts: [Workout], bodyWeightKg: Double) -> [OverloadTrend] {
         let completed = workouts.filter { $0.completedAt != nil }
         guard !completed.isEmpty else { return [] }
 
@@ -20,13 +20,14 @@ public enum OverloadTrackingService {
 
             for we in workout.exercises {
                 exerciseNames[we.exercise.id] = we.exercise.name
+                let baseLoad = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
                 var bestE1RM = 0.0
                 for set in we.sets {
-                    guard set.isCompleted, set.setType != .warmup,
-                          let weight = set.weight, weight > 0,
-                          let reps = set.reps, reps > 0 else { continue }
-                    let e1rm = AnalyticsCalculations.calculateOneRM(weight: weight, reps: min(reps, 15))
-                    bestE1RM = max(bestE1RM, e1rm)
+                    guard set.isCompleted, set.setType != .warmup else { continue }
+                    for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
+                        let e1rm = AnalyticsCalculations.calculateOneRM(weight: part.load, reps: min(part.reps, 15))
+                        bestE1RM = max(bestE1RM, e1rm)
+                    }
                 }
                 guard bestE1RM > 0 else { continue }
 

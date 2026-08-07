@@ -18,7 +18,8 @@ public enum AnalyticsCalculations {
     public static func buildBestE1RMMap(
         excluding excludingWorkoutId: UUID? = nil,
         from workouts: [Workout],
-        windowMonths: Int = 6
+        windowMonths: Int = 6,
+        bodyWeightKg: Double
     ) -> [UUID: Double] {
         let cutoff = Calendar.mondayStart.date(byAdding: .month, value: -windowMonths, to: Date())!
         var bestE1RM: [UUID: Double] = [:]
@@ -27,12 +28,11 @@ public enum AnalyticsCalculations {
                   past.completedAt != nil,
                   (past.completedAt ?? past.startedAt) >= cutoff else { continue }
             for we in past.exercises {
+                let base = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
                 for set in we.sets {
                     guard set.isCompleted, set.setType != .warmup else { continue }
-                    for part in set.effectiveParts {
-                        guard let weight = part.weight, weight > 0,
-                              let reps = part.reps, reps > 0 else { continue }
-                        let e1rm = calculateOneRM(weight: weight, reps: min(reps, 15))
+                    for part in set.effectiveLoadParts(baseLoadPerRep: base) {
+                        let e1rm = calculateOneRM(weight: part.load, reps: min(part.reps, 15))
                         bestE1RM[we.exercise.id] = max(bestE1RM[we.exercise.id] ?? 0, e1rm)
                     }
                 }
@@ -54,19 +54,20 @@ public enum AnalyticsCalculations {
         return base
     }
 
-    /// Drop-aware IWV for a whole set: sums part-level IWV across `effectiveParts`
-    /// (a plain set has one part; a grouped drop set contributes every segment).
-    /// pct1RM = min(weight / bestE1RM, 1.5), falling back to 0.75 when no e1RM is
+    /// Drop-aware IWV for a whole set: sums part-level IWV across effective-load
+    /// parts (a plain set has one part; a grouped drop set contributes every
+    /// segment; bodyweight parts count bw × factor + extra kg).
+    /// pct1RM = min(load / bestE1RM, 1.5), falling back to 0.75 when no e1RM is
     /// known — identical to the historical per-set loops this replaces.
     /// Returns 0 for incomplete or warmup sets.
-    public static func setIWV(for set: ExerciseSet, bestE1RM: Double?) -> Double {
+    public static func setIWV(for set: ExerciseSet, bestE1RM: Double?, baseLoadPerRep: Double?) -> Double {
         guard set.isCompleted, set.setType != .warmup else { return 0 }
         return set.effectiveParts.reduce(0) { sum, part in
-            guard let weight = part.weight, weight > 0,
+            guard let load = part.effectiveLoad(baseLoadPerRep: baseLoadPerRep), load > 0,
                   let reps = part.reps, reps > 0 else { return sum }
             let pct1RM: Double
             if let best = bestE1RM, best > 0 {
-                pct1RM = min(weight / best, 1.5)
+                pct1RM = min(load / best, 1.5)
             } else {
                 pct1RM = 0.75
             }

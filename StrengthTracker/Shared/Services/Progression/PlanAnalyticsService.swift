@@ -5,9 +5,15 @@ import Foundation
 @MainActor
 public final class PlanAnalyticsService: Sendable {
     private let workoutRepository: any WorkoutRepository
+    private let userPreferencesService: UserPreferencesService?
 
-    public init(workoutRepository: any WorkoutRepository) {
+    public init(workoutRepository: any WorkoutRepository, userPreferencesService: UserPreferencesService? = nil) {
         self.workoutRepository = workoutRepository
+        self.userPreferencesService = userPreferencesService
+    }
+
+    private var bodyWeightKg: Double {
+        userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
 
     // MARK: - Public API
@@ -176,7 +182,7 @@ public final class PlanAnalyticsService: Sendable {
                         // include every segment.
                         totalSets += 1
                         totalReps += set.totalReps
-                        totalVolume += set.setVolume
+                        totalVolume += set.setVolume(baseLoadPerRep: workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg))
                         if set.isPersonalRecord { prCount += 1 }  // m4
                     }
                     if let completedAt = workout.completedAt {
@@ -225,7 +231,7 @@ public final class PlanAnalyticsService: Sendable {
             let weekVolumes = block.weeks.map { week -> Double in
                 week.sessions.compactMap { session -> Double? in
                     guard let workout = resolvedWorkouts[session.id] else { return nil }
-                    return workout.totalVolume
+                    return workout.totalVolume(bodyWeightKg: bodyWeightKg)
                 }.reduce(0, +)
             }
 
@@ -282,7 +288,7 @@ public final class PlanAnalyticsService: Sendable {
             for session in week.sessions {
                 guard let workout = resolvedWorkouts[session.id] else { continue }
                 sessionCount += 1
-                totalVolume += workout.totalVolume
+                totalVolume += workout.totalVolume(bodyWeightKg: bodyWeightKg)
 
                 // Average intensity from RPE values across sets
                 for workoutExercise in workout.exercises {

@@ -92,7 +92,8 @@ public enum WorkoutExerciseMapper {
             exerciseType: ExerciseType(rawValue: entity.exerciseType) ?? .weightedReps,
             instructions: entity.instructions,
             isCustom: entity.isCustom,
-            isArchived: entity.isArchived
+            isArchived: entity.isArchived,
+            bodyweightFactor: entity.bodyweightFactor
         )
 
         return WorkoutExercise(
@@ -119,6 +120,7 @@ public enum WorkoutExerciseMapper {
             instructions: domain.exercise.instructions,
             isCustom: domain.exercise.isCustom,
             isArchived: domain.exercise.isArchived,
+            bodyweightFactor: domain.exercise.bodyweightFactor,
             order: domain.order,
             supersetGroup: domain.supersetGroup,
             notes: domain.notes,
@@ -140,6 +142,7 @@ public enum WorkoutExerciseMapper {
         entity.instructions = domain.exercise.instructions
         entity.isCustom = domain.exercise.isCustom
         entity.isArchived = domain.exercise.isArchived
+        entity.bodyweightFactor = domain.exercise.bodyweightFactor
         entity.order = domain.order
         entity.supersetGroup = domain.supersetGroup
         entity.notes = domain.notes

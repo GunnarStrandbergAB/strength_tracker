@@ -129,8 +129,15 @@ public struct InsightReport: Sendable {
 public final class AdaptiveAdjustmentService: Sendable {
     private let workoutRepository: any WorkoutRepository
 
-    public init(workoutRepository: any WorkoutRepository) {
+    private let userPreferencesService: UserPreferencesService?
+
+    public init(workoutRepository: any WorkoutRepository, userPreferencesService: UserPreferencesService? = nil) {
         self.workoutRepository = workoutRepository
+        self.userPreferencesService = userPreferencesService
+    }
+
+    private var bodyWeightKg: Double {
+        userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
 
     // MARK: - Public API
@@ -332,11 +339,12 @@ public final class AdaptiveAdjustmentService: Sendable {
         for workout in workouts {
             for workoutExercise in workout.exercises {
                 guard workoutExercise.exercise.id == exerciseId else { continue }
-                for set in workoutExercise.sets {
-                    guard set.isCompleted,
-                          let weight = set.weight,
-                          let reps = set.reps,
-                          weight > 0, reps > 0, reps <= 15 else { continue }
+                let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
+                for set in workoutExercise.sets where set.isCompleted {
+                    guard let first = set.effectiveLoadParts(baseLoadPerRep: baseLoad).first,
+                          first.reps <= 15 else { continue }
+                    let weight = first.load
+                    let reps = first.reps
 
                     let estimate: Double
                     if reps == 1 {

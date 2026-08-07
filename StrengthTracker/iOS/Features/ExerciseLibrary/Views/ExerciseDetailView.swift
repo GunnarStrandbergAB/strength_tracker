@@ -94,19 +94,9 @@ struct ExerciseDetailView: View {
         records = (try? await service.getRecords(for: exercise.id)) ?? []
     }
 
-    /// Returns the best (most recent) record per type for display.
+    /// Returns the best record per type for display (highest value; date breaks ties).
     private var bestByType: [PersonalRecord] {
-        var best: [RecordType: PersonalRecord] = [:]
-        for record in records {
-            if let existing = best[record.recordType] {
-                if record.achievedAt > existing.achievedAt {
-                    best[record.recordType] = record
-                }
-            } else {
-                best[record.recordType] = record
-            }
-        }
-        return best.values.sorted { $0.recordType.sortOrder < $1.recordType.sortOrder }
+        records.bestPerType().sorted { $0.recordType.sortOrder < $1.recordType.sortOrder }
     }
 }
 

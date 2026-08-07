@@ -15,12 +15,13 @@ public final class WeightSuggestionService: Sendable {
         overloadTrend: OverloadTrend?,
         recoveryStatus: RecoveryStatus?,
         trainingLoad: TrainingLoad?,
-        isDeload: Bool
+        isDeload: Bool,
+        bodyWeightKg: Double
     ) -> WeightSuggestion? {
         guard targetReps > 0 else { return nil }
 
-        // Find best recent e1RM for this exercise
-        let bestE1RM = bestRecentE1RM(exerciseId: exerciseId, workouts: recentWorkouts)
+        // Find best recent e1RM (effective load) for this exercise
+        let bestE1RM = bestRecentE1RM(exerciseId: exerciseId, workouts: recentWorkouts, bodyWeightKg: bodyWeightKg)
         guard let e1rm = bestE1RM, e1rm > 0 else { return nil }
 
         var modifiers: [String] = []
@@ -69,8 +70,17 @@ public final class WeightSuggestionService: Sendable {
             }
         }
 
-        // Convert e1RM to weight at target reps via inverse Brzycki
-        let targetWeight = e1rmToWeight(e1rm: adjustedE1RM, reps: targetReps)
+        // Convert e1RM to weight at target reps via inverse Brzycki. For bodyweight
+        // exercises the e1RM is EFFECTIVE load, but the suggestion is shown in the
+        // set's weight field, which means EXTRA kg — subtract the bodyweight base
+        // and suppress the hint when bodyweight alone covers the target.
+        var targetWeight = e1rmToWeight(e1rm: adjustedE1RM, reps: targetReps)
+        let exercise = recentWorkouts
+            .flatMap(\.exercises)
+            .first { $0.exercise.id == exerciseId }?.exercise
+        if let base = exercise?.baseLoadPerRep(bodyWeightKg: bodyWeightKg) {
+            targetWeight -= base
+        }
         let rounded = roundToNearest2_5(targetWeight)
         guard rounded > 0 else { return nil }
 
@@ -90,7 +100,8 @@ public final class WeightSuggestionService: Sendable {
     public func checkEffortCreep(
         exerciseId: UUID,
         exerciseName: String,
-        recentWorkouts: [Workout]
+        recentWorkouts: [Workout],
+        bodyWeightKg: Double
     ) -> EffortCreepWarning? {
         // Collect RPE and e1RM per session for this exercise (last 5 sessions max)
         let sessions = recentWorkouts
@@ -103,9 +114,11 @@ public final class WeightSuggestionService: Sendable {
                 guard !rpes.isEmpty else { return nil }
                 let avgRPE = rpes.reduce(0, +) / Double(rpes.count)
 
-                let e1rms = completedSets.compactMap { set -> Double? in
-                    guard let w = set.weight, w > 0, let r = set.reps, r > 0 else { return nil }
-                    return AnalyticsCalculations.calculateOneRM(weight: w, reps: min(r, 15))
+                let base = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
+                let e1rms = completedSets.flatMap { set in
+                    set.effectiveLoadParts(baseLoadPerRep: base).map {
+                        AnalyticsCalculations.calculateOneRM(weight: $0.load, reps: min($0.reps, 15))
+                    }
                 }
                 guard let best = e1rms.max() else { return nil }
                 return (avgRPE, best)
@@ -136,8 +149,8 @@ public final class WeightSuggestionService: Sendable {
 
     // MARK: - Private Helpers
 
-    private func bestRecentE1RM(exerciseId: UUID, workouts: [Workout]) -> Double? {
-        let e1rmMap = AnalyticsCalculations.buildBestE1RMMap(from: workouts, windowMonths: 3)
+    private func bestRecentE1RM(exerciseId: UUID, workouts: [Workout], bodyWeightKg: Double) -> Double? {
+        let e1rmMap = AnalyticsCalculations.buildBestE1RMMap(from: workouts, windowMonths: 3, bodyWeightKg: bodyWeightKg)
         return e1rmMap[exerciseId]
     }
 

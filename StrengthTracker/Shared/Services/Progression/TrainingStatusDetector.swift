@@ -29,8 +29,15 @@ public struct OneRMEstimate: Sendable, Equatable {
 public final class TrainingStatusDetector: Sendable {
     private let workoutRepository: any WorkoutRepository
 
-    public init(workoutRepository: any WorkoutRepository) {
+    private let userPreferencesService: UserPreferencesService?
+
+    public init(workoutRepository: any WorkoutRepository, userPreferencesService: UserPreferencesService? = nil) {
         self.workoutRepository = workoutRepository
+        self.userPreferencesService = userPreferencesService
+    }
+
+    private var bodyWeightKg: Double {
+        userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
 
     // MARK: - Training Status Detection
@@ -119,28 +126,25 @@ public final class TrainingStatusDetector: Sendable {
 
             for workoutExercise in workout.exercises {
                 guard workoutExercise.exercise.id == exerciseId else { continue }
+                let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
 
                 for set in workoutExercise.sets {
-                    guard set.isCompleted,
-                          let weight = set.weight,
-                          let reps = set.reps,
-                          weight > 0,
-                          reps > 0,
-                          reps <= 15 else { continue }
+                    guard set.isCompleted else { continue }
+                    for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) where part.reps <= 15 {
+                        let estimate = TrainingStatusDetector.calculateOneRM(weight: part.load, reps: part.reps)
 
-                    let estimate = TrainingStatusDetector.calculateOneRM(weight: weight, reps: reps)
-
-                    if isRecent {
-                        if let current = bestRecentEstimate {
-                            bestRecentEstimate = max(current, estimate)
+                        if isRecent {
+                            if let current = bestRecentEstimate {
+                                bestRecentEstimate = max(current, estimate)
+                            } else {
+                                bestRecentEstimate = estimate
+                            }
                         } else {
-                            bestRecentEstimate = estimate
-                        }
-                    } else {
-                        if let current = bestExtendedEstimate {
-                            bestExtendedEstimate = max(current, estimate)
-                        } else {
-                            bestExtendedEstimate = estimate
+                            if let current = bestExtendedEstimate {
+                                bestExtendedEstimate = max(current, estimate)
+                            } else {
+                                bestExtendedEstimate = estimate
+                            }
                         }
                     }
                 }

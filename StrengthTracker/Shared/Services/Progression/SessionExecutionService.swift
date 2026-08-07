@@ -36,7 +36,8 @@ public struct SessionExecutionService: Sendable {
     public func completeSession(
         _ session: PlannedSession,
         workout: Workout,
-        planExercises: [PlanExercise]
+        planExercises: [PlanExercise],
+        bodyWeightKg: Double
     ) -> (updatedSession: PlannedSession, adjustments: [PlanAdjustment], updatedExercises: [PlanExercise]) {
         var updatedSession = session
         updatedSession.completedWorkoutId = workout.id
@@ -63,7 +64,7 @@ public struct SessionExecutionService: Sendable {
             guard !session.isDeload && !workout.isDeload else { continue }
 
             // Estimate 1RM from completed sets
-            if let estimated1RM = estimateCurrent1RM(from: workoutExercise.sets) {
+            if let estimated1RM = estimateCurrent1RM(from: workoutExercise.sets, baseLoadPerRep: workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)) {
                 let current = planExercise.current1RM
 
                 // M17: When current1RM is 0 (first use), direct assign without EWMA
@@ -162,35 +163,27 @@ public struct SessionExecutionService: Sendable {
     /// Uses Epley formula for low reps (2-5), Brzycki for moderate reps (6-15),
     /// and direct weight for singles. Ignores sets with reps > 15, warmups,
     /// and incomplete sets. Returns the highest estimate rounded to nearest 2.5.
-    public func estimateCurrent1RM(from sets: [ExerciseSet]) -> Double? {
-        let validSets = sets.filter { set in
-            set.isCompleted
-            && set.setType != .warmup
-            && set.reps != nil && set.reps! > 0
-            && set.weight != nil && set.weight! > 0
-            && set.reps! <= 15
-        }
-
-        guard !validSets.isEmpty else { return nil }
-
+    public func estimateCurrent1RM(from sets: [ExerciseSet], baseLoadPerRep: Double? = nil) -> Double? {
         var bestEstimate: Double = 0
 
-        for set in validSets {
-            let weight = set.weight!
-            let reps = set.reps!
-            let estimate: Double
+        for set in sets where set.isCompleted && set.setType != .warmup {
+            for part in set.effectiveLoadParts(baseLoadPerRep: baseLoadPerRep) where part.reps <= 15 {
+                let weight = part.load
+                let reps = part.reps
+                let estimate: Double
 
-            if reps == 1 {
-                estimate = weight
-            } else if reps <= 5 {
-                // Epley formula
-                estimate = weight * (1.0 + Double(reps) / 30.0)
-            } else {
-                // Brzycki formula (6-15 reps)
-                estimate = weight * 36.0 / (37.0 - Double(reps))
+                if reps == 1 {
+                    estimate = weight
+                } else if reps <= 5 {
+                    // Epley formula
+                    estimate = weight * (1.0 + Double(reps) / 30.0)
+                } else {
+                    // Brzycki formula (6-15 reps)
+                    estimate = weight * 36.0 / (37.0 - Double(reps))
+                }
+
+                bestEstimate = max(bestEstimate, estimate)
             }
-
-            bestEstimate = max(bestEstimate, estimate)
         }
 
         return bestEstimate > 0 ? bestEstimate.rounded(toNearest: 2.5) : nil

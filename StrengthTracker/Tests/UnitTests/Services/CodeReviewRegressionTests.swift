@@ -72,7 +72,7 @@ struct PlateauGapWeekTests {
             weekOffsetsAndWeights: [(7, 100), (6, 99), (2, 98), (1, 97), (0, 96)],
             exerciseId: exerciseId
         )
-        let result = service.analyzePlateaus(workouts: workouts, windowWeeks: 10)
+        let result = service.analyzePlateaus(bodyWeightKg: 70, workouts: workouts, windowWeeks: 10)
 
         let analysis = result.first { $0.exerciseId == exerciseId }
         #expect(analysis != nil, "Declining e1RM should be reported as a plateau")
@@ -90,7 +90,7 @@ struct PlateauGapWeekTests {
             weekOffsetsAndWeights: [(4, 100), (3, 98), (2, 96), (1, 94), (0, 110)],
             exerciseId: exerciseId
         )
-        let result = service.analyzePlateaus(workouts: workouts, windowWeeks: 10)
+        let result = service.analyzePlateaus(bodyWeightKg: 70, workouts: workouts, windowWeeks: 10)
         let analysis = result.first { $0.exerciseId == exerciseId }
         #expect(analysis == nil || analysis?.consecutiveWeeksStalled == 0,
                 "A clear improvement in the latest week should reset the stall")

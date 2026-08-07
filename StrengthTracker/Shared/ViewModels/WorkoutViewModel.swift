@@ -127,41 +127,7 @@ public final class WorkoutViewModel {
     public func startWorkout(name: String, from template: WorkoutTemplate? = nil, isDeload: Bool = false) async {
         try? await workoutRepository.deleteAllIncomplete()
 
-        var exercises: [WorkoutExercise] = []
-
-        if let template = template {
-            exercises = template.exercises.sorted(by: { $0.order < $1.order }).enumerated().map { index, te in
-                let sets = (0..<te.targetSets).map { setIndex in
-                    let target = te.setTargets.indices.contains(setIndex) ? te.setTargets[setIndex] : nil
-                    let resolvedSetType: SetType = {
-                        if let t = target, t.setType != .normal { return t.setType }
-                        return te.isWarmUp ? .warmup : .normal
-                    }()
-                    return ExerciseSet(
-                        id: UUID(),
-                        order: setIndex + 1,
-                        setType: resolvedSetType,
-                        weight: target?.targetWeight ?? te.targetWeight,
-                        reps: target?.targetReps ?? te.targetReps,
-                        durationSeconds: target?.targetDurationSeconds ?? te.targetDurationSeconds,
-                        distanceMeters: target?.targetDistanceMeters ?? te.targetDistanceMeters,
-                        rpe: nil,
-                        isCompleted: false,
-                        isPersonalRecord: false,
-                        completedAt: nil
-                    )
-                }
-                return WorkoutExercise(
-                    id: UUID(),
-                    exercise: te.exercise,
-                    order: index + 1,
-                    supersetGroup: te.supersetGroup,
-                    notes: te.notes,
-                    restTimerSeconds: te.restTimerSeconds,
-                    sets: sets
-                )
-            }
-        }
+        let exercises: [WorkoutExercise] = template?.instantiateExercises() ?? []
 
         var workout = Workout(
             id: UUID(),
@@ -325,7 +291,7 @@ public final class WorkoutViewModel {
             let bodyWeightKg = await resolveBodyWeightKg()
             if let bw = bodyWeightKg {
                 let result = calorieEstimationService.estimateCalories(workout: saved, bodyWeightKg: bw)
-                try? await healthKitService.saveWorkout(saved, calories: result.totalCalories)
+                try? await healthKitService.saveWorkout(saved, calories: result.totalCalories, bodyWeightKg: bw)
             } else {
                 try? await healthKitService.saveWorkout(saved)
             }
@@ -445,6 +411,7 @@ public final class WorkoutViewModel {
     /// Load coaching data (weight suggestions, effort creep) for all exercises.
     public func loadCoachingData() async {
         guard let workout = currentWorkout, let wss = weightSuggestionService else { return }
+        let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
         do {
             let allWorkouts = try await workoutRepository.fetchAll()
             let recentCompleted = allWorkouts
@@ -465,7 +432,8 @@ public final class WorkoutViewModel {
                         overloadTrend: nil,
                         recoveryStatus: nil,
                         trainingLoad: nil,
-                        isDeload: workout.isDeload
+                        isDeload: workout.isDeload,
+                        bodyWeightKg: bodyWeightKg
                     ) {
                         suggestions[setIndex] = suggestion
                     }
@@ -474,7 +442,8 @@ public final class WorkoutViewModel {
                 let effortCreep = wss.checkEffortCreep(
                     exerciseId: exerciseId,
                     exerciseName: we.exercise.name,
-                    recentWorkouts: recentCompleted
+                    recentWorkouts: recentCompleted,
+                    bodyWeightKg: bodyWeightKg
                 )
 
                 if !suggestions.isEmpty || effortCreep != nil {

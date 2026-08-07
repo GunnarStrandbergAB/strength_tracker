@@ -35,7 +35,7 @@ final class MockHealthKitService: HealthKitServiceProtocol, @unchecked Sendable 
         }
     }
 
-    func saveWorkout(_ workout: Workout, calories: Double) async throws {
+    func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws {
         saveWorkoutCalled = true
         savedWorkout = workout
         savedCalories = calories

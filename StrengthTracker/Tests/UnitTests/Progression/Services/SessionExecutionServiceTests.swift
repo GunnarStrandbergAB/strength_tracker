@@ -22,7 +22,7 @@ struct SessionExecutionServiceTests {
         let completionDate = Date()
         let workout = makeWorkout(completedAt: completionDate, exercises: [])
 
-        let result = sut.completeSession(session, workout: workout, planExercises: [])
+        let result = sut.completeSession(session, workout: workout, planExercises: [], bodyWeightKg: 70)
 
         #expect(result.updatedSession.completedWorkoutId == workout.id)
         #expect(result.updatedSession.completedAt == completionDate)
@@ -33,7 +33,7 @@ struct SessionExecutionServiceTests {
         let session = ProgressionTestHelpers.makeTestPlannedSession(label: "Day A")
         let workout = makeWorkout(notes: "Felt strong today", exercises: [])
 
-        let result = sut.completeSession(session, workout: workout, planExercises: [])
+        let result = sut.completeSession(session, workout: workout, planExercises: [], bodyWeightKg: 70)
 
         #expect(result.updatedSession.userWorkoutNotes == "Felt strong today")
     }
@@ -72,7 +72,7 @@ struct SessionExecutionServiceTests {
             makeWorkoutExercise(exerciseId: benchId, name: "Bench Press", sets: sets)
         ])
 
-        let result = sut.completeSession(session, workout: workout, planExercises: [planEx])
+        let result = sut.completeSession(session, workout: workout, planExercises: [planEx], bodyWeightKg: 70)
 
         // The estimated 1RM from best set: 90*(1+5/30)=105
         // Deviation: |105-100|/100 = 0.05 <= 0.15 (not outlier)
@@ -110,7 +110,7 @@ struct SessionExecutionServiceTests {
             makeWorkoutExercise(exerciseId: benchId, name: "Bench Press", sets: sets)
         ])
 
-        let result = sut.completeSession(session, workout: workout, planExercises: [planEx])
+        let result = sut.completeSession(session, workout: workout, planExercises: [planEx], bodyWeightKg: 70)
 
         // 1RM should NOT be updated
         #expect(result.updatedExercises[0].current1RM == 100.0)
@@ -148,7 +148,7 @@ struct SessionExecutionServiceTests {
             makeWorkoutExercise(exerciseId: benchId, name: "Bench Press", sets: sets)
         ])
 
-        let result = sut.completeSession(session, workout: workout, planExercises: [planEx])
+        let result = sut.completeSession(session, workout: workout, planExercises: [planEx], bodyWeightKg: 70)
 
         // Should remain at 100 due to regression guard or rounding
         #expect(result.updatedExercises[0].current1RM == 100.0)
@@ -184,7 +184,7 @@ struct SessionExecutionServiceTests {
             makeWorkoutExercise(exerciseId: benchId, name: "Bench Press", sets: sets)
         ])
 
-        let result = sut.completeSession(session, workout: workout, planExercises: [planEx])
+        let result = sut.completeSession(session, workout: workout, planExercises: [planEx], bodyWeightKg: 70)
 
         #expect(result.updatedExercises[0].current1RM == 97.5)
         let oneRMAdjustment = result.adjustments.first(where: { $0.trigger == .oneRMUpdate })
@@ -221,7 +221,7 @@ struct SessionExecutionServiceTests {
             makeWorkoutExercise(exerciseId: benchId, name: "Bench Press", sets: sets)
         ])
 
-        let result = sut.completeSession(session, workout: workout, planExercises: [planEx])
+        let result = sut.completeSession(session, workout: workout, planExercises: [planEx], bodyWeightKg: 70)
 
         let adj = result.adjustments.first(where: { $0.trigger == .oneRMUpdate })
         #expect(adj != nil)
@@ -334,7 +334,7 @@ struct SessionExecutionServiceTests {
             makeWorkoutExercise(exerciseId: benchId, name: "Bench Press", sets: sets)
         ])
 
-        let result = sut.completeSession(session, workout: workout, planExercises: [planEx])
+        let result = sut.completeSession(session, workout: workout, planExercises: [planEx], bodyWeightKg: 70)
 
         // Should be updated (deviation exactly 0.15 is accepted)
         #expect(result.updatedExercises[0].current1RM == 115.0)
@@ -370,7 +370,7 @@ struct SessionExecutionServiceTests {
             makeWorkoutExercise(exerciseId: benchId, name: "Bench Press", sets: sets)
         ])
 
-        let result = sut.completeSession(session, workout: workout, planExercises: [planEx])
+        let result = sut.completeSession(session, workout: workout, planExercises: [planEx], bodyWeightKg: 70)
 
         // 1RM should NOT be updated (deviation just over threshold)
         #expect(result.updatedExercises[0].current1RM == 100.0)
@@ -394,7 +394,7 @@ struct SessionExecutionServiceTests {
         let workout = makeWorkout(exercises: [
             makeWorkoutExercise(exerciseId: benchId, name: "Bench Press", sets: sets)
         ])
-        let result = sut.completeSession(session, workout: workout, planExercises: [planEx])
+        let result = sut.completeSession(session, workout: workout, planExercises: [planEx], bodyWeightKg: 70)
         // Direct assign (no EWMA): 92.5
         #expect(result.updatedExercises[0].current1RM == 92.5)
     }

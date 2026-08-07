@@ -11,7 +11,7 @@ public final class WorkoutArchetypeService: Sendable {
 
     // MARK: - Archetype Clustering (A1)
 
-    public func cluster(vectors: [WorkoutVector], workouts: [Workout]) -> [WorkoutArchetype] {
+    public func cluster(vectors: [WorkoutVector], workouts: [Workout], bodyWeightKg: Double) -> [WorkoutArchetype] {
         guard vectors.count >= 10 else { return [] }
 
         // L2 normalize vectors for cosine distance
@@ -55,7 +55,7 @@ public final class WorkoutArchetypeService: Sendable {
             let label = labelFromCentroid(centroid)
 
             let avgVolume = memberWorkouts.isEmpty ? 0 :
-                memberWorkouts.reduce(0.0) { $0 + $1.totalVolume } / Double(memberWorkouts.count)
+                memberWorkouts.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) } / Double(memberWorkouts.count)
             let durations = memberWorkouts.compactMap(\.duration)
             let avgDuration = durations.isEmpty ? 0 :
                 durations.reduce(0, +) / Double(durations.count)

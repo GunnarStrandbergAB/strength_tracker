@@ -59,6 +59,12 @@ struct StrengthTrackeriOSApp: App {
             container.exerciseSeeder.startSeeding()
             container.templateSeedService.startSeeding()
 
+            // One-time effective-load migration once the library carries factors
+            Task { [container] in
+                await container.exerciseSeeder.ensureSeeded()
+                await container.effectiveLoadMigrationService.migrateIfNeeded()
+            }
+
             // Request notification permission for rest timer background alerts
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .timeSensitive]) { _, _ in }
 
@@ -268,7 +274,8 @@ struct ContentViewWrapper: View {
                         "defaultRestSeconds": prefs.defaultRestSeconds,
                         "weightUnit": prefs.weightUnit.rawValue,
                         "autoStartRestTimer": prefs.autoStartRestTimer,
-                        "distanceUnit": prefs.distanceUnit.rawValue
+                        "distanceUnit": prefs.distanceUnit.rawValue,
+                        "bodyWeightKg": prefs.bodyWeightKg ?? 0
                     ])
                 }
             }
@@ -290,7 +297,8 @@ struct ContentViewWrapper: View {
     private func refreshWidgetData() async {
         let widgetService = WidgetDataService()
 
-        // Process any pending set completions from widget intents
+        // Process any pending set completions from widget intents — stays in the app
+        // layer because it mutates the live workout singleton.
         let pending = widgetService.readPendingCompletions()
         if !pending.isEmpty {
             let workoutVM = container.workoutViewModel
@@ -307,110 +315,7 @@ struct ContentViewWrapper: View {
             widgetService.clearPendingCompletions()
         }
 
-        do {
-            let workouts = try await container.workoutRepository.fetchAll()
-
-            // Resolve bodyweight for volume calculations
-            let bw = await container.healthKitService.fetchBodyWeightKg()
-                ?? container.userPreferencesService.bodyWeightKg
-                ?? UserPreferencesService.defaultBodyWeightKg
-
-            // Get analytics highlights
-            var highlights: [AnalyticsHighlight] = []
-            let analyticsVM = container.workoutAnalyticsViewModel
-            if !analyticsVM.insights.highlights.isEmpty {
-                highlights = analyticsVM.insights.highlights
-            } else {
-                // Try a lightweight generation
-                highlights = (try? await container.analyticsService.generateInsights().highlights) ?? []
-            }
-
-            // Fetch active plan once — reused for next session + weekly goal
-            let activePlan = try await container.progressionPlanRepository.fetchActive()
-
-            // Build next planned session (first open session across the whole plan)
-            var nextPlanned: WidgetPlannedSession? = nil
-            if let plan = activePlan,
-               let nextSession = plan.nextPlannedSession {
-                nextPlanned = WidgetPlannedSession(
-                    sessionName: nextSession.sessionLabel,
-                    exerciseNames: Array(nextSession.plannedExercises.prefix(4).map(\.exerciseName)),
-                    planName: plan.name
-                )
-            }
-
-            // Supplement with volume trend if room remains (calendar-week, bodyweight-aware).
-            // Uses the same week-split as the widget payload so the numbers always agree.
-            if highlights.count < 3 {
-                let completedWorkouts = workouts.filter { $0.completedAt != nil }
-                let (thisWeekWorkouts, lastWeekWorkouts) = widgetService.weeklyWorkoutSplit(from: completedWorkouts)
-
-                let thisWeekVol = thisWeekWorkouts.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
-                let lastWeekVol = lastWeekWorkouts.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
-
-                // Compare per-session averages to avoid misleading partial-week comparisons
-                if !thisWeekWorkouts.isEmpty && !lastWeekWorkouts.isEmpty {
-                    let thisAvg = thisWeekVol / Double(thisWeekWorkouts.count)
-                    let lastAvg = lastWeekVol / Double(lastWeekWorkouts.count)
-                    let pct = ((thisAvg - lastAvg) / lastAvg) * 100
-                    if pct > 0 {
-                        highlights.append(AnalyticsHighlight(
-                            type: .improvement,
-                            title: "Volume Up",
-                            detail: "+\(Int(pct))% avg/session vs last week"
-                        ))
-                    } else if pct < -5 {
-                        highlights.append(AnalyticsHighlight(
-                            type: .warning,
-                            title: "Volume Down",
-                            detail: "\(Int(pct))% avg/session vs last week"
-                        ))
-                    }
-                }
-            }
-
-            // Compute aggregate quality for widget
-            let qualityScore: Double?
-            let qualityTrend: Double?
-            if let agg = analyticsVM.aggregateQuality, agg.workoutsIncluded > 0 {
-                qualityScore = agg.ewmaOverall
-                qualityTrend = agg.trendVsPrior
-            } else {
-                let agg = container.qualityScoreService.computeAggregateScore(workouts: workouts)
-                qualityScore = agg.workoutsIncluded > 0 ? agg.ewmaOverall : nil
-                qualityTrend = agg.workoutsIncluded > 0 ? agg.trendVsPrior : nil
-            }
-
-            // Supplement with quality score highlight if room remains
-            if highlights.count < 3, let qs = qualityScore {
-                highlights.append(AnalyticsHighlight(
-                    type: .improvement,
-                    title: "Quality",
-                    detail: "\(Int(qs))/100"
-                ))
-            }
-
-            // Weekly goal from plan's frequency (0 = no active plan)
-            let weeklyGoal = activePlan?.weeklyFrequency ?? 0
-
-            let workoutVM = container.workoutViewModel
-            let restTimer = container.restTimerService
-            let data = widgetService.buildWidgetData(
-                workouts: workouts,
-                highlights: highlights,
-                activeWorkout: workoutVM.isActive ? workoutVM.currentWorkout : nil,
-                isResting: restTimer.isRunning,
-                restEndDate: restTimer.endDate,
-                nextPlannedSession: nextPlanned,
-                weeklyGoal: weeklyGoal,
-                bodyWeightKg: bw,
-                weeklyQualityScore: qualityScore,
-                qualityTrend: qualityTrend
-            )
-            widgetService.updateWidgetData(data)
-        } catch {
-            print("[Widget] Failed to refresh widget data: \(error)")
-        }
+        await container.widgetRefreshService.refresh()
     }
 
 }

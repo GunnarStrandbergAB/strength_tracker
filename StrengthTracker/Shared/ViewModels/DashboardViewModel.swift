@@ -26,6 +26,9 @@ public final class DashboardViewModel {
     private let userPreferencesService: UserPreferencesService
 
     public var weightUnit: WeightUnit { userPreferencesService.weightUnit }
+    /// Body weight resolved during load() (HealthKit → prefs → default); used by
+    /// per-row volume formatting so it matches the aggregate numbers.
+    private var resolvedBodyWeightKg: Double = UserPreferencesService.defaultBodyWeightKg
 
     // MARK: - Init
 
@@ -57,6 +60,7 @@ public final class DashboardViewModel {
             let bw = await healthKitService.fetchBodyWeightKg()
                 ?? userPreferencesService.bodyWeightKg
                 ?? UserPreferencesService.defaultBodyWeightKg
+            resolvedBodyWeightKg = bw
 
             let calendar = Calendar.current
             let now = Date()
@@ -281,6 +285,7 @@ public final class DashboardViewModel {
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 0
         formatter.groupingSeparator = ","
-        return formatter.string(from: NSNumber(value: weightUnit.fromKg(workout.totalVolume))) ?? "0"
+        let volume = workout.totalVolume(bodyWeightKg: resolvedBodyWeightKg)
+        return formatter.string(from: NSNumber(value: weightUnit.fromKg(volume))) ?? "0"
     }
 }

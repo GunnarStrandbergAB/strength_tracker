@@ -94,7 +94,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Lower body until chest nearly touches ground, push back up",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.64
         ),
         Exercise(
             id: deterministicUUID(for: "Cable Crossover"),
@@ -140,7 +141,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Pull body up until chin clears bar, lower with control",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
         Exercise(
             id: deterministicUUID(for: "Lat Pulldown"),
@@ -355,7 +357,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Lower body by bending elbows, push back up to full extension",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
         Exercise(
             id: deterministicUUID(for: "Close-Grip Bench Press"),
@@ -502,7 +505,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Lower body forward with knees anchored, use hamstrings to control descent",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.4
         ),
 
         // MARK: - Glute Exercises
@@ -594,7 +598,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Raise legs to parallel or higher while hanging, control descent",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.35
         ),
         Exercise(
             id: deterministicUUID(for: "Russian Twist"),
@@ -616,7 +621,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Alternate extending opposite arm and leg while maintaining flat back",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.25
         ),
 
         // MARK: - Calves Exercises
@@ -710,7 +716,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Drop to push-up, perform push-up, jump feet to hands, jump up",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
         Exercise(
             id: deterministicUUID(for: "Kettlebell Swing"),
@@ -1000,7 +1007,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Push-up with feet elevated on a bench, placing greater emphasis on the upper chest and shoulders.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.75
         ),
 
         // MARK: - Back (new)
@@ -1134,7 +1142,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Hang under a barbell set at waist height, body straight, and row your chest to the bar.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.6
         ),
         Exercise(
             id: deterministicUUID(for: "Renegade Row"),
@@ -1523,7 +1532,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "From a push-up position, walk feet toward hands forming an inverted V, then lower your head toward the floor and press back up.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.75
         ),
         Exercise(
             id: deterministicUUID(for: "Handstand Push-Up"),
@@ -1534,7 +1544,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "In a handstand against a wall, lower your head toward the ground by bending elbows, then press to full arm extension.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
 
         // MARK: - Traps (new)
@@ -1936,7 +1947,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Push-up with hands close together forming a diamond shape, elbows tucked to your sides.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.65
         ),
         Exercise(
             id: deterministicUUID(for: "Bench Dip"),
@@ -1947,7 +1959,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Hands gripping a bench edge behind you, lower body by bending elbows to ~90°, then press back up.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.6
         ),
         Exercise(
             id: deterministicUUID(for: "Bodyweight Tricep Extension"),
@@ -1958,7 +1971,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Hands on a bar at waist height, lean forward and lower your forehead toward the bar bending only at the elbows, then extend.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.6
         ),
         Exercise(
             id: deterministicUUID(for: "Machine Tricep Extension"),
@@ -2248,7 +2262,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Stand on the balls of your feet, lean torso back while bending knees forward with hips fully extended, then use quads to return.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.6
         ),
         Exercise(
             id: deterministicUUID(for: "Poliquin Step-Up"),
@@ -2259,7 +2274,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "On a slant board on an elevated surface, slowly step down by bending the working knee forward, tap opposite heel to floor, then extend.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.85
         ),
         Exercise(
             id: deterministicUUID(for: "Peterson Step-Up"),
@@ -2270,7 +2286,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "On an elevated surface, rise onto the ball of your working foot, step down bending the knee forward past the toes, then return.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.85
         ),
         Exercise(
             id: deterministicUUID(for: "Reverse Nordic Curl"),
@@ -2281,7 +2298,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Kneel upright with hips locked forward, lean back by bending only at the knees, then use quad strength to pull back up.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.5
         ),
         Exercise(
             id: deterministicUUID(for: "Wall Sit"),
@@ -2349,7 +2367,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "On a GHD, lower your torso by extending at the knees, then powerfully curl back up using hamstring contraction with hips extended.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.5
         ),
         Exercise(
             id: deterministicUUID(for: "Nordic Hamstring Curl"),
@@ -2360,7 +2379,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Ankles secured, slowly lower your torso toward the ground resisting with hamstrings, then pull back up or push off to return.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.4
         ),
         Exercise(
             id: deterministicUUID(for: "Sliding Leg Curl"),
@@ -2371,7 +2391,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "On your back with heels on sliders, bridge hips up, slide heels away to extend legs, then curl back in while staying elevated.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.4
         ),
         Exercise(
             id: deterministicUUID(for: "Trap Bar Romanian Deadlift"),
@@ -2450,7 +2471,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "On a 45° hyperextension bench, lower torso toward the floor, then squeeze glutes to drive back to a straight body position.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.6
         ),
         Exercise(
             id: deterministicUUID(for: "Kettlebell Sumo Squat"),
@@ -2472,7 +2494,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "One foot planted, other leg raised — drive through the planted heel to lift hips, squeeze the glute, then lower.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.5
         ),
         Exercise(
             id: deterministicUUID(for: "Frog Pump"),
@@ -2483,7 +2506,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "On your back, soles of feet together, knees flared — squeeze glutes to raise hips, then lower with control.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.5
         ),
         Exercise(
             id: deterministicUUID(for: "Donkey Kick"),
@@ -2494,7 +2518,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "From hands and knees, drive one foot toward the ceiling with knee bent at 90°, squeeze glute at the top, lower with control.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.3
         ),
         Exercise(
             id: deterministicUUID(for: "Banded Fire Hydrant"),
@@ -2584,7 +2609,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Back against a wall, heels 12 inches from the base — raise toes and forefoot as high as possible by dorsiflexing ankles. Targets the tibialis anterior.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.2
         ),
 
         // MARK: - Hip Flexors (new)
@@ -2597,7 +2623,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Hang from a bar, raise knees toward chest by flexing hips, pause, then lower with control.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.3
         ),
         Exercise(
             id: deterministicUUID(for: "Captain's Chair Knee Raise"),
@@ -2608,7 +2635,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Support yourself on a captain's chair, raise knees toward chest contracting abs, then lower with control.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.3
         ),
         Exercise(
             id: deterministicUUID(for: "Cable Hip Flexion"),
@@ -2630,7 +2658,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Feet secured on a decline bench, lower torso back, then sit up by flexing at the hips until upright.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.45
         ),
         Exercise(
             id: deterministicUUID(for: "Weighted Standing Knee Raise"),
@@ -2687,7 +2716,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Side-plank position with top foot on a bench — lift hips and drive bottom leg up to meet the bench using adductor strength.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.4
         ),
         Exercise(
             id: deterministicUUID(for: "Dumbbell Lateral Lunge"),
@@ -2720,7 +2750,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "On your side, top leg crossed over in front, lift the bottom leg using inner thigh muscles, hold briefly, then lower.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.2
         ),
         Exercise(
             id: deterministicUUID(for: "Banded Adduction"),
@@ -2799,7 +2830,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "On your side, legs straight and stacked — lift the top leg upward keeping toes forward, hold briefly, then lower.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.25
         ),
 
         // MARK: - Core (new)
@@ -2823,7 +2855,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Grip behind your head on a bench, raise your entire body in a rigid line until only upper back contacts the bench, then lower under control.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.7
         ),
         Exercise(
             id: deterministicUUID(for: "Body Saw"),
@@ -2834,7 +2867,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Forearm plank with feet on sliders — push body backward by extending through shoulders while maintaining rigid core, then pull back.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.6
         ),
         Exercise(
             id: deterministicUUID(for: "Stability Ball Stir-the-Pot"),
@@ -2911,7 +2945,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Face-up, hands behind head — bring opposite elbow to opposite knee while extending the other leg, alternating in a pedaling motion.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.35
         ),
         Exercise(
             id: deterministicUUID(for: "V-Up"),
@@ -2922,7 +2957,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Arms overhead, simultaneously lift legs and torso to form a V reaching hands toward toes, then lower.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.45
         ),
         Exercise(
             id: deterministicUUID(for: "GHD Sit-Up"),
@@ -2933,7 +2969,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Feet secured on a GHD, lean back to full extension then sit up through a large range of motion.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.5
         ),
         Exercise(
             id: deterministicUUID(for: "Weighted Decline Sit-Up"),
@@ -2955,7 +2992,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Hang from a bar and use core and hip flexors to raise feet all the way up to touch the bar, then lower with control.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.35
         ),
         Exercise(
             id: deterministicUUID(for: "L-Sit"),
@@ -3010,7 +3048,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Hang from a bar, raise legs to horizontal, then rotate both legs side to side like windshield wipers.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.5
         ),
         Exercise(
             id: deterministicUUID(for: "Medicine Ball Rotational Slam"),
@@ -3032,7 +3071,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Face-down on a 45° hyperextension bench, lower torso then extend back to a straight line squeezing lower back and glutes.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.6
         ),
         Exercise(
             id: deterministicUUID(for: "Bird Dog"),
@@ -3043,7 +3083,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "On all fours, extend opposite arm and leg simultaneously while keeping hips level and core braced, then alternate.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.25
         ),
         Exercise(
             id: deterministicUUID(for: "Superman"),
@@ -3054,7 +3095,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Lie face-down, simultaneously lift arms, chest, and legs off the ground, hold briefly, then lower.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.3
         ),
         Exercise(
             id: deterministicUUID(for: "Dumbbell Side Bend"),
@@ -3087,7 +3129,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "High plank position, drive one knee toward your chest then rapidly switch legs in an alternating running motion.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.6
         ),
         Exercise(
             id: deterministicUUID(for: "Seated Band Hip Flexion"),
@@ -3368,7 +3411,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Push-up with hands placed wider than shoulder width, emphasizing chest stretch.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.64
         ),
         Exercise(
             id: deterministicUUID(for: "Archer Push-Up"),
@@ -3379,7 +3423,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Wide hand placement, lower toward one hand while the other arm extends straight, alternate.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.7
         ),
         Exercise(
             id: deterministicUUID(for: "Pseudo-Planche Push-Up"),
@@ -3390,7 +3435,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Hands by hips with fingers pointing to sides, lean forward and perform push-ups.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.75
         ),
         Exercise(
             id: deterministicUUID(for: "Hindu Push-Up"),
@@ -3401,7 +3447,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "From downward dog, swoop chest toward the floor and through to upward dog, reverse.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.65
         ),
         Exercise(
             id: deterministicUUID(for: "Explosive Push-Up"),
@@ -3412,7 +3459,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Push-up with max force launching hands off the ground at the top. Builds power.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.65
         ),
         Exercise(
             id: deterministicUUID(for: "One-Arm Push-Up"),
@@ -3423,7 +3471,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Feet wide, one hand behind back, lower chest to floor on one arm and press up.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.7
         ),
 
         // Dip variations
@@ -3436,7 +3485,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "On parallel bars, lower until elbows at 90 degrees, press back up. Lean forward for chest.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
         Exercise(
             id: deterministicUUID(for: "Ring Dip"),
@@ -3447,7 +3497,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Dips on gymnastic rings requiring extra stabilization. Turn rings out at top for full lockout.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
 
         // Pull variations
@@ -3460,7 +3511,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Supinated grip (palms facing you), pull chin above bar and lower with control.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
         Exercise(
             id: deterministicUUID(for: "Wide Grip Pull-Up"),
@@ -3471,7 +3523,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Grip wider than shoulder width, pull up emphasizing lat width and upper back.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
         Exercise(
             id: deterministicUUID(for: "Commando Pull-Up"),
@@ -3482,7 +3535,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Hands facing opposite directions on bar, pull head to one side, alternate.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
         Exercise(
             id: deterministicUUID(for: "Archer Pull-Up"),
@@ -3493,7 +3547,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Wide grip, pull toward one hand while the other arm extends straight, alternate.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
         Exercise(
             id: deterministicUUID(for: "L-Sit Pull-Up"),
@@ -3504,7 +3559,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Hold legs in L-sit position while performing pull-ups.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
         Exercise(
             id: deterministicUUID(for: "Muscle-Up (Bar)"),
@@ -3515,7 +3571,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Explosive pull-up transitioning over the bar into a dip position.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
         Exercise(
             id: deterministicUUID(for: "Ring Muscle-Up"),
@@ -3526,7 +3583,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Muscle-up on rings using false grip, requiring more stability and strength.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
         Exercise(
             id: deterministicUUID(for: "Towel Pull-Up"),
@@ -3537,7 +3595,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Drape a towel over the bar and grip both ends, pull up for grip and forearm work.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
 
         // Skill / static holds
@@ -3550,7 +3609,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Hang from bar/rings, tuck legs through arms to German hang and return. Shoulder mobility.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.5
         ),
         Exercise(
             id: deterministicUUID(for: "Freestanding Handstand"),
@@ -3640,7 +3700,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Feet shoulder-width, squat until thighs parallel or below, stand back up.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.85
         ),
         Exercise(
             id: deterministicUUID(for: "Pistol Squat"),
@@ -3651,7 +3712,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Single-leg squat with non-working leg extended forward. Demands strength and balance.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.85
         ),
         Exercise(
             id: deterministicUUID(for: "Cossack Squat"),
@@ -3662,7 +3724,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Wide stance, shift weight to one leg squatting deep while other stays straight.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.85
         ),
         Exercise(
             id: deterministicUUID(for: "Jump Squat"),
@@ -3673,7 +3736,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Squat down then explode upward into a jump, land softly and repeat.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.85
         ),
 
         // Lower body isolation
@@ -3686,7 +3750,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Rise onto toes on one leg, squeeze calf at top, lower slowly. Use wall for balance.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
 
         // Ring training (gymnastic rings)
@@ -3699,7 +3764,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Hang under rings with body straight, pull chest to the rings, lower with control. Walk feet forward to increase difficulty.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.6
         ),
         Exercise(
             id: deterministicUUID(for: "Ring Archer Row"),
@@ -3710,7 +3776,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Ring row pulling toward one ring while the other arm extends straight to the side. Alternate sides to build single-arm pulling strength.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.65
         ),
         Exercise(
             id: deterministicUUID(for: "Ring Pull-Up"),
@@ -3721,7 +3788,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Pull-up on rings with a neutral-to-supinated rotating grip. The free rotation is easier on the shoulders and demands more stabilization.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
         Exercise(
             id: deterministicUUID(for: "Ring Chin-Up"),
@@ -3732,7 +3800,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Chin-up on rings with palms rotating toward you at the top. Emphasizes the biceps through the natural rotation of the rings.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
         Exercise(
             id: deterministicUUID(for: "Ring Push-Up"),
@@ -3743,7 +3812,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Push-up with hands on rings, turning rings out at lockout. The instability heavily recruits the chest and stabilizers.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.65
         ),
         Exercise(
             id: deterministicUUID(for: "Ring Archer Push-Up"),
@@ -3754,7 +3824,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Ring push-up lowering toward one ring while the other arm extends out to the side. Press back up and alternate sides.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.7
         ),
         Exercise(
             id: deterministicUUID(for: "Ring Fly"),
@@ -3765,7 +3836,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "From a push-up position on rings, spread the arms out and down, then squeeze the chest to bring the rings back together. Keep a slight elbow bend and the body rigid.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.6
         ),
         Exercise(
             id: deterministicUUID(for: "Ring Pike Push-Up"),
@@ -3776,7 +3848,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Pike push-up with hands in rings and hips high, lowering the head between the rings. Vertical-press pattern with added instability.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.75
         ),
         Exercise(
             id: deterministicUUID(for: "Ring Face Pull"),
@@ -3787,7 +3860,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Lean back under rings and pull the rings to the sides of your face, elbows high, squeezing the rear delts. Great for shoulder health.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.4
         ),
         Exercise(
             id: deterministicUUID(for: "Ring Rear Delt Fly"),
@@ -3798,7 +3872,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Lean back holding the rings with straight arms, then open the arms wide to raise the body using the rear delts. Keep the body rigid.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.4
         ),
         Exercise(
             id: deterministicUUID(for: "Ring Bicep Curl"),
@@ -3809,7 +3884,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Lean back under rings with palms up and curl your body toward the rings using only the elbows. Step feet forward to add resistance.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.45
         ),
         Exercise(
             id: deterministicUUID(for: "Ring Tricep Extension"),
@@ -3820,7 +3896,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Lean into the rings with arms overhead and lower the head between the rings by bending the elbows, then press back out. A bodyweight skull crusher.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.5
         ),
         Exercise(
             id: deterministicUUID(for: "Ring Support Hold"),
@@ -3853,7 +3930,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "From a standing or kneeling position holding low rings, roll the arms overhead keeping the body straight, then pull back using the core and lats.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.6
         ),
         Exercise(
             id: deterministicUUID(for: "Ring Hamstring Curl"),
@@ -3864,7 +3942,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Lie on your back with heels in low rings, bridge the hips up, and curl the heels toward the glutes. Keep hips extended throughout.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.4
         ),
         Exercise(
             id: deterministicUUID(for: "Ring-Assisted Pistol Squat"),
@@ -3875,7 +3954,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Single-leg squat holding the rings lightly for balance and assistance. Use as little arm help as possible on the way up.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 0.7
         ),
         Exercise(
             id: deterministicUUID(for: "Bulgarian Ring Dip"),
@@ -3886,7 +3966,8 @@ public enum ExerciseSeedData {
             exerciseType: .bodyweightReps,
             instructions: "Ring dip performed with the rings held wide and elbows flaring out, increasing chest and shoulder demand. Advanced — master regular ring dips first.",
             isCustom: false,
-            isArchived: false
+            isArchived: false,
+            bodyweightFactor: 1
         ),
     ]
 }

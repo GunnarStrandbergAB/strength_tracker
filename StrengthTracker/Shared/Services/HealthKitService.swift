@@ -15,7 +15,8 @@ public protocol HealthKitServiceProtocol: Sendable {
     /// - Parameters:
     ///   - workout: The workout to save
     ///   - calories: Estimated total calories burned
-    func saveWorkout(_ workout: Workout, calories: Double) async throws
+    ///   - bodyWeightKg: Body weight for effective-load volume metadata
+    func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws
 
     /// Fetch the user's latest body weight from HealthKit
     func fetchBodyWeightKg() async -> Double?
@@ -74,10 +75,10 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked
     }
 
     public func saveWorkout(_ workout: Workout) async throws {
-        try await saveWorkout(workout, calories: 0)
+        try await saveWorkout(workout, calories: 0, bodyWeightKg: UserPreferencesService.defaultBodyWeightKg)
     }
 
-    public func saveWorkout(_ workout: Workout, calories: Double) async throws {
+    public func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws {
         guard let endDate = workout.completedAt else { return }
         let startDate = workout.startedAt
         let totalDuration = endDate.timeIntervalSince(startDate)
@@ -85,7 +86,7 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked
         var metadata: [String: Any] = [
             "StrengthTrackerWorkoutId": workout.id.uuidString,
             "WorkoutName": workout.name,
-            "TotalVolume": workout.totalVolume,
+            "TotalVolume": workout.totalVolume(bodyWeightKg: bodyWeightKg),
             "ExerciseCount": workout.exercises.count,
             "CalorieMethod": "StrengthTracker-v1"
         ]
@@ -165,7 +166,7 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol {
 
     public func requestAuthorization() async throws {}
     public func saveWorkout(_ workout: Workout) async throws {}
-    public func saveWorkout(_ workout: Workout, calories: Double) async throws {}
+    public func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws {}
     public func fetchBodyWeightKg() async -> Double? { nil }
     public func startWorkoutSession() async throws {}
     public func endWorkoutSession(_ workout: Workout) async throws {}
@@ -180,7 +181,7 @@ public final class NoOpHealthKitService: HealthKitServiceProtocol {
 
     public func requestAuthorization() async throws {}
     public func saveWorkout(_ workout: Workout) async throws {}
-    public func saveWorkout(_ workout: Workout, calories: Double) async throws {}
+    public func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws {}
     public func fetchBodyWeightKg() async -> Double? { nil }
     public func startWorkoutSession() async throws {}
     public func endWorkoutSession(_ workout: Workout) async throws {}
