@@ -297,8 +297,8 @@ struct WorkoutViewModelTests {
         #expect(vm.activeExercise?.exercise.name == "Squat")
     }
 
-    @Test("activeExercise advances once the preferred exercise is fully complete")
-    func activeExerciseAdvances() async throws {
+    @Test("activeExercise stays on the preferred exercise after its last set completes")
+    func activeExerciseStaysWhenComplete() async throws {
         let (vm, _, _) = makeViewModel()
         await vm.startWorkout(name: "Push Day")
         vm.addExercise(makeExercise(name: "Bench"))
@@ -306,12 +306,23 @@ struct WorkoutViewModelTests {
         await vm.addEmptySet(exerciseId: vm.currentWorkout!.exercises[0].id)
         await vm.addEmptySet(exerciseId: vm.currentWorkout!.exercises[1].id)
 
-        // Complete the second exercise's only set — active resolves to the first
+        // Complete the second exercise's only set — focus stays there (resting from it)
         let squatWE = vm.currentWorkout!.exercises[1]
         await vm.toggleSetCompletion(exerciseId: squatWE.id, setId: squatWE.sets[0].id)
 
         #expect(vm.activeExerciseId == squatWE.id)
-        #expect(vm.activeExercise?.exercise.name == "Bench")
+        #expect(vm.activeExercise?.exercise.name == "Squat")
+    }
+
+    @Test("addExercise makes the new exercise active")
+    func addExerciseBecomesActive() async {
+        let (vm, _, _) = makeViewModel()
+        await vm.startWorkout(name: "Push Day")
+        vm.addExercise(makeExercise(name: "Bench"))
+        vm.addExercise(makeExercise(name: "Squat"))
+
+        #expect(vm.activeExerciseId == vm.currentWorkout?.exercises.last?.id)
+        #expect(vm.activeExercise?.exercise.name == "Squat")
     }
 
     @Test("restoreActiveWorkout derives active exercise from completedAt")

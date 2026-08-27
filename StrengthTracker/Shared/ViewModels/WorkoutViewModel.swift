@@ -26,8 +26,8 @@ public final class WorkoutViewModel {
     /// Not persisted — restored from set `completedAt` timestamps on relaunch.
     public var activeExerciseId: UUID? = nil
 
-    /// The resolved active exercise — the preferred one while it has work left,
-    /// advancing to the next incomplete exercise once it's done.
+    /// The resolved active exercise — the last-interacted one for as long as it
+    /// exists in the workout, with a first-incomplete fallback.
     public var activeExercise: WorkoutExercise? {
         currentWorkout?.activeExercise(preferredId: activeExerciseId)
     }
@@ -184,6 +184,7 @@ public final class WorkoutViewModel {
         )
         workout.exercises.append(workoutExercise)
         currentWorkout = workout  // Immediate UI update (optimistic)
+        activeExerciseId = workoutExercise.id
 
         Task { [workout] in
             // Persist right away — without this the new exercise lives only in memory
@@ -273,6 +274,7 @@ public final class WorkoutViewModel {
 
     public func removeExercise(exerciseId: UUID) async {
         guard var workout = currentWorkout else { return }
+        if activeExerciseId == exerciseId { activeExerciseId = nil }
         workout.exercises.removeAll { $0.id == exerciseId }
         // Re-number orders
         for i in workout.exercises.indices {

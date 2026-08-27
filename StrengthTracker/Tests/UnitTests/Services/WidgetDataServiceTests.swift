@@ -115,8 +115,8 @@ struct WidgetDataServiceTests {
         #expect(state.totalPlannedSets == 2)
     }
 
-    @Test("Fully completed active exercise advances the widget to the next incomplete")
-    func completedActiveAdvances() {
+    @Test("Fully completed active exercise stays current in the widget")
+    func completedActiveStaysCurrent() {
         let a = makeWorkoutExercise(name: "Bench", order: 1, sets: [
             makeSet(order: 1, weight: 80, reps: 8, completed: false)
         ])
@@ -130,8 +130,13 @@ struct WidgetDataServiceTests {
             activeExerciseId: b.id
         )
 
-        #expect(state.currentExerciseName == "Bench")
-        #expect(state.currentExerciseId == a.id.uuidString)
+        // The exercise you're resting from stays current...
+        #expect(state.currentExerciseName == "Squat")
+        #expect(state.currentExerciseId == b.id.uuidString)
+        #expect(state.nextSetIndex == nil)
+        #expect(state.nextSetWeight == nil)
+        // ...while the "next" line still advances to the incomplete exercise
+        #expect(state.nextExerciseName == "Bench")
     }
 
     // MARK: - Codable backward compatibility

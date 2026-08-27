@@ -76,26 +76,36 @@ struct WorkoutActiveExerciseTests {
         #expect(active?.id == b.id)
     }
 
-    @Test("Fully complete preferred exercise advances to next incomplete")
-    func preferredCompleteAdvances() {
+    @Test("Fully complete preferred exercise stays active")
+    func preferredCompleteStays() {
         let a = makeWorkoutExercise(name: "A", order: 1, setStates: [false])
         let b = makeWorkoutExercise(name: "B", order: 2, setStates: [true, true])
         let c = makeWorkoutExercise(name: "C", order: 3, setStates: [false])
         let workout = makeWorkout(exercises: [a, b, c])
 
         let active = workout.activeExercise(preferredId: b.id)
-        #expect(active?.id == c.id)
+        #expect(active?.id == b.id)
     }
 
-    @Test("Advance wraps past the end back to the first incomplete")
-    func preferredCompleteWraps() {
+    @Test("Preferred stays active even when an earlier exercise is incomplete")
+    func preferredStaysDespiteEarlierIncomplete() {
         let a = makeWorkoutExercise(name: "A", order: 1, setStates: [false])
         let b = makeWorkoutExercise(name: "B", order: 2, setStates: [true])
         let c = makeWorkoutExercise(name: "C", order: 3, setStates: [true])
         let workout = makeWorkout(exercises: [a, b, c])
 
         let active = workout.activeExercise(preferredId: c.id)
-        #expect(active?.id == a.id)
+        #expect(active?.id == c.id)
+    }
+
+    @Test("A zero-set (freshly added) exercise can hold focus")
+    func zeroSetExerciseCanHoldFocus() {
+        let a = makeWorkoutExercise(name: "A", order: 1, setStates: [false])
+        let b = makeWorkoutExercise(name: "B", order: 2, setStates: [])
+        let workout = makeWorkout(exercises: [a, b])
+
+        let active = workout.activeExercise(preferredId: b.id)
+        #expect(active?.id == b.id)
     }
 
     @Test("All exercises complete — stays on preferred")

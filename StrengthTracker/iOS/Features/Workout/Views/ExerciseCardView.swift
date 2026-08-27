@@ -278,26 +278,20 @@ struct ExerciseCardView: View {
         .padding(STSpacing.cardPadding)
     }
 
-    /// Grip handle for drag-to-reorder. A short press-then-drag sequence is what
-    /// reliably wins vertical drags from the enclosing ScrollView's pan recognizer;
-    /// a bare high-priority DragGesture would also swallow scrolls starting here.
+    /// Grip handle for drag-to-reorder. highPriorityGesture + minimumDistance 0
+    /// claims the touch from the enclosing ScrollView's pan on touch-down, so the
+    /// card picks up instantly with no hold delay. Scrolls that start on the handle
+    /// are intentionally eaten — it's a dedicated grip.
     private var dragHandle: some View {
         Image(systemName: "line.3.horizontal")
             .font(.system(size: 16, weight: .semibold))
             .foregroundStyle(STColors.textTertiary)
             .frame(width: 36, height: 36)
             .contentShape(Rectangle())
-            .gesture(
-                LongPressGesture(minimumDuration: 0.15)
-                    .sequenced(before: DragGesture(minimumDistance: 0))
-                    .onChanged { value in
-                        if case .second(true, let drag) = value {
-                            onDragChanged?(drag?.translation.height ?? 0)
-                        }
-                    }
-                    .onEnded { _ in
-                        onDragEnded?()
-                    }
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { onDragChanged?($0.translation.height) }
+                    .onEnded { _ in onDragEnded?() }
             )
             .accessibilityLabel("Reorder exercise")
     }
