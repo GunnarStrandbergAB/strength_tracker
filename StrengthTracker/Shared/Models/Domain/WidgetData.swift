@@ -30,12 +30,16 @@ public struct WidgetActiveWorkout: Codable, Sendable {
     public let nextSetWeight: Double?
     public let nextSetReps: Int?
     public let nextExerciseName: String?
+    // Optional so old App-Group JSON without them still decodes (decodeIfPresent)
+    public let nextSetIndex: Int?      // first incomplete set index WITHIN the current exercise
+    public let nextExerciseId: String? // UUID string of nextExerciseName's exercise
 
     public init(
         workoutName: String, currentExerciseName: String, currentExerciseId: String,
         completedSets: Int, totalPlannedSets: Int, startedAt: Date,
         isResting: Bool, restEndDate: Date?,
-        nextSetWeight: Double?, nextSetReps: Int?, nextExerciseName: String?
+        nextSetWeight: Double?, nextSetReps: Int?, nextExerciseName: String?,
+        nextSetIndex: Int? = nil, nextExerciseId: String? = nil
     ) {
         self.workoutName = workoutName
         self.currentExerciseName = currentExerciseName
@@ -48,6 +52,8 @@ public struct WidgetActiveWorkout: Codable, Sendable {
         self.nextSetWeight = nextSetWeight
         self.nextSetReps = nextSetReps
         self.nextExerciseName = nextExerciseName
+        self.nextSetIndex = nextSetIndex
+        self.nextExerciseId = nextExerciseId
     }
 }
 

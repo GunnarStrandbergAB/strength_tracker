@@ -77,7 +77,8 @@ public final class WidgetDataService: Sendable {
         weeklyGoal: Int,
         bodyWeightKg: Double = 70.0,
         weeklyQualityScore: Double? = nil,
-        qualityTrend: Double? = nil
+        qualityTrend: Double? = nil,
+        activeExerciseId: UUID? = nil
     ) -> WidgetData {
         let now = Date()
         let calendar = Calendar.mondayStart
@@ -110,7 +111,8 @@ public final class WidgetDataService: Sendable {
         let widgetActiveWorkout: WidgetActiveWorkout?
         if let workout = activeWorkout, workout.completedAt == nil {
             widgetActiveWorkout = buildActiveWorkoutState(
-                workout: workout, isResting: isResting, restEndDate: restEndDate
+                workout: workout, isResting: isResting, restEndDate: restEndDate,
+                activeExerciseId: activeExerciseId
             )
         } else {
             widgetActiveWorkout = nil
@@ -233,28 +235,19 @@ public final class WidgetDataService: Sendable {
         return WidgetHighlight(icon: icon, title: highlight.title, detail: highlight.detail, color: color)
     }
 
-    private func buildActiveWorkoutState(
-        workout: Workout, isResting: Bool, restEndDate: Date?
+    public func buildActiveWorkoutState(
+        workout: Workout, isResting: Bool, restEndDate: Date?, activeExerciseId: UUID? = nil
     ) -> WidgetActiveWorkout {
-        // Find current exercise (first with incomplete sets, or last)
-        let currentExercise = workout.exercises.first { ex in
-            ex.sets.contains { !$0.isCompleted }
-        } ?? workout.exercises.last
+        let currentExercise = workout.activeExercise(preferredId: activeExerciseId)
 
         let completedSets = workout.exercises.reduce(0) { $0 + $1.sets.filter(\.isCompleted).count }
         let totalSets = workout.exercises.reduce(0) { $0 + $1.sets.count }
 
         // Find next incomplete set for targets
         let nextSet = currentExercise?.sets.first { !$0.isCompleted }
+        let nextSetIndex = currentExercise?.sets.firstIndex { !$0.isCompleted }
 
-        // Find next exercise after current
-        let currentIndex = workout.exercises.firstIndex { $0.id == currentExercise?.id }
-        let nextExercise: WorkoutExercise?
-        if let idx = currentIndex, idx + 1 < workout.exercises.count {
-            nextExercise = workout.exercises[idx + 1]
-        } else {
-            nextExercise = nil
-        }
+        let nextExercise = workout.nextIncompleteExercise(afterId: currentExercise?.id)
 
         return WidgetActiveWorkout(
             workoutName: workout.name,
@@ -267,7 +260,9 @@ public final class WidgetDataService: Sendable {
             restEndDate: restEndDate,
             nextSetWeight: nextSet?.weight,
             nextSetReps: nextSet?.reps,
-            nextExerciseName: nextExercise?.exercise.name
+            nextExerciseName: nextExercise?.exercise.name,
+            nextSetIndex: nextSetIndex,
+            nextExerciseId: nextExercise?.id.uuidString
         )
     }
 

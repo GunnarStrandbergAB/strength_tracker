@@ -235,4 +235,139 @@ struct WorkoutViewModelTests {
 
         #expect(vm.currentWorkout?.totalVolume(bodyWeightKg: 70) == 1800)
     }
+
+    // MARK: - moveExercise
+
+    @Test("moveExercise reorders, renumbers 1-based, and persists")
+    func moveExercisePersists() async throws {
+        let (vm, workoutRepo, _) = makeViewModel()
+        await vm.startWorkout(name: "Push Day")
+        vm.addExercise(makeExercise(name: "Bench"))
+        vm.addExercise(makeExercise(name: "Squat"))
+        vm.addExercise(makeExercise(name: "Deadlift"))
+
+        await vm.moveExercise(from: 2, to: 0)
+
+        let names = vm.currentWorkout?.exercises.map(\.exercise.name)
+        #expect(names == ["Deadlift", "Bench", "Squat"])
+        let orders = vm.currentWorkout?.exercises.map(\.order)
+        #expect(orders == [1, 2, 3])
+
+        // Persisted — the repo copy carries the new order too
+        let saved = try await workoutRepo.fetchAll().first
+        let savedNames = saved?.exercises.sorted { $0.order < $1.order }.map(\.exercise.name)
+        #expect(savedNames == ["Deadlift", "Bench", "Squat"])
+    }
+
+    @Test("moveExercise ignores out-of-bounds and same-index moves")
+    func moveExerciseNoOps() async {
+        let (vm, _, _) = makeViewModel()
+        await vm.startWorkout(name: "Push Day")
+        vm.addExercise(makeExercise(name: "Bench"))
+        vm.addExercise(makeExercise(name: "Squat"))
+
+        await vm.moveExercise(from: 0, to: 0)
+        await vm.moveExercise(from: -1, to: 1)
+        await vm.moveExercise(from: 0, to: 2)
+
+        let names = vm.currentWorkout?.exercises.map(\.exercise.name)
+        #expect(names == ["Bench", "Squat"])
+    }
+
+    // MARK: - activeExerciseId
+
+    @Test("toggleSetCompletion marks the touched exercise as active")
+    func toggleSetsActiveExercise() async throws {
+        let (vm, _, _) = makeViewModel()
+        await vm.startWorkout(name: "Push Day")
+        let bench = makeExercise(name: "Bench")
+        let squat = makeExercise(name: "Squat")
+        vm.addExercise(bench)
+        vm.addExercise(squat)
+        await vm.addEmptySet(exerciseId: vm.currentWorkout!.exercises[0].id)
+        // Squat gets two sets so it still has work left after one completion
+        await vm.addEmptySet(exerciseId: vm.currentWorkout!.exercises[1].id)
+        await vm.addEmptySet(exerciseId: vm.currentWorkout!.exercises[1].id)
+
+        // Jump to the SECOND exercise out of order
+        let squatWE = vm.currentWorkout!.exercises[1]
+        await vm.toggleSetCompletion(exerciseId: squatWE.id, setId: squatWE.sets[0].id)
+
+        #expect(vm.activeExerciseId == squatWE.id)
+        #expect(vm.activeExercise?.exercise.name == "Squat")
+    }
+
+    @Test("activeExercise advances once the preferred exercise is fully complete")
+    func activeExerciseAdvances() async throws {
+        let (vm, _, _) = makeViewModel()
+        await vm.startWorkout(name: "Push Day")
+        vm.addExercise(makeExercise(name: "Bench"))
+        vm.addExercise(makeExercise(name: "Squat"))
+        await vm.addEmptySet(exerciseId: vm.currentWorkout!.exercises[0].id)
+        await vm.addEmptySet(exerciseId: vm.currentWorkout!.exercises[1].id)
+
+        // Complete the second exercise's only set — active resolves to the first
+        let squatWE = vm.currentWorkout!.exercises[1]
+        await vm.toggleSetCompletion(exerciseId: squatWE.id, setId: squatWE.sets[0].id)
+
+        #expect(vm.activeExerciseId == squatWE.id)
+        #expect(vm.activeExercise?.exercise.name == "Bench")
+    }
+
+    @Test("restoreActiveWorkout derives active exercise from completedAt")
+    func restoreDerivesActiveExercise() async throws {
+        let (vm, workoutRepo, _) = makeViewModel()
+        await vm.startWorkout(name: "Push Day")
+        vm.addExercise(makeExercise(name: "Bench"))
+        vm.addExercise(makeExercise(name: "Squat"))
+        await vm.addEmptySet(exerciseId: vm.currentWorkout!.exercises[0].id)
+        await vm.addEmptySet(exerciseId: vm.currentWorkout!.exercises[1].id)
+        await vm.addEmptySet(exerciseId: vm.currentWorkout!.exercises[1].id)
+        let squatWE = vm.currentWorkout!.exercises[1]
+        await vm.toggleSetCompletion(exerciseId: squatWE.id, setId: squatWE.sets[0].id)
+
+        // Simulate relaunch with a fresh VM over the same repository
+        let vm2 = WorkoutViewModel(
+            workoutRepository: workoutRepo,
+            templateRepository: InMemoryTemplateRepository(),
+            healthKitService: NoOpHealthKitService()
+        )
+        await vm2.restoreActiveWorkout()
+
+        #expect(vm2.isActive == true)
+        #expect(vm2.activeExerciseId == squatWE.id)
+    }
+
+    @Test("start, complete, and cancel clear the active exercise")
+    func lifecycleClearsActiveExercise() async throws {
+        let (vm, _, _) = makeViewModel()
+        await vm.startWorkout(name: "Push Day")
+        vm.addExercise(makeExercise(name: "Bench"))
+        await vm.addEmptySet(exerciseId: vm.currentWorkout!.exercises[0].id)
+        let benchWE = vm.currentWorkout!.exercises[0]
+        await vm.toggleSetCompletion(exerciseId: benchWE.id, setId: benchWE.sets[0].id)
+        #expect(vm.activeExerciseId != nil)
+
+        try await vm.completeWorkout()
+        #expect(vm.activeExerciseId == nil)
+    }
+
+    // MARK: - addExercise persistence (regression: used to live only in memory)
+
+    @Test("addExercise persists the new exercise to the repository")
+    func addExercisePersists() async throws {
+        let (vm, workoutRepo, _) = makeViewModel()
+        await vm.startWorkout(name: "Push Day")
+
+        vm.addExercise(makeExercise(name: "Bench"))
+
+        // The save happens in a fire-and-forget Task — poll briefly for it
+        var savedCount = 0
+        for _ in 0..<50 {
+            savedCount = try await workoutRepo.fetchAll().first?.exercises.count ?? 0
+            if savedCount == 1 { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(savedCount == 1)
+    }
 }

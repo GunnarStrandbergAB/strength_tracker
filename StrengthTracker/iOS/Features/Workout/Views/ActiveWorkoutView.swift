@@ -16,6 +16,12 @@ struct ActiveWorkoutView: View {
     @State private var showingRestTimer = false
     @State private var notesText = ""
 
+    // Drag-to-reorder state (grip handle in each card header)
+    @State private var draggedExerciseId: UUID?
+    @State private var dragTranslation: CGFloat = 0      // follows the finger, never animated
+    @State private var dragTargetIndex: Int?             // proposed drop slot, animated
+    @State private var cardHeights: [UUID: CGFloat] = [:]
+
     init(viewModel: WorkoutViewModel, exerciseListViewModel: ExerciseListViewModel, restTimerService: RestTimerService, analyticsViewModel: WorkoutAnalyticsViewModel? = nil) {
         self._viewModel = State(initialValue: viewModel)
         self._exerciseListViewModel = State(initialValue: exerciseListViewModel)
@@ -91,9 +97,7 @@ struct ActiveWorkoutView: View {
                     .font(.title3.bold())
                     .foregroundStyle(STColors.textPrimary)
 
-                if let currentExercise = workout.exercises.first(where: { ex in
-                    ex.sets.contains { !$0.isCompleted }
-                }) ?? workout.exercises.last {
+                if let currentExercise = workout.activeExercise(preferredId: nil) {
                     Text(currentExercise.exercise.name)
                         .font(.subheadline)
                         .foregroundStyle(STColors.textSecondary)
@@ -230,11 +234,29 @@ struct ActiveWorkoutView: View {
     }
 
     private func workoutScrollView(workout: Workout, proxy: ScrollViewProxy) -> some View {
-        ScrollView {
+        let activeId = viewModel.activeExercise?.id
+        let canReorder = workout.exercises.count > 1
+        return ScrollView {
             VStack(spacing: STSpacing.cardGap) {
                 ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, workoutExercise in
-                    exerciseCard(for: workoutExercise, isActive: index == 0)
-                        .id(workoutExercise.id)
+                    exerciseCard(
+                        for: workoutExercise,
+                        isActive: workoutExercise.id == activeId,
+                        reorderable: canReorder
+                    )
+                    .id(workoutExercise.id)
+                    .onGeometryChange(for: CGFloat.self) { geometry in
+                        geometry.size.height
+                    } action: { height in
+                        cardHeights[workoutExercise.id] = height
+                    }
+                    .offset(y: dragOffset(index: index, id: workoutExercise.id, in: workout))
+                    .zIndex(workoutExercise.id == draggedExerciseId ? 1 : 0)
+                    .scaleEffect(workoutExercise.id == draggedExerciseId ? 1.02 : 1)
+                    .shadow(
+                        color: .black.opacity(workoutExercise.id == draggedExerciseId ? 0.25 : 0),
+                        radius: 8, y: 4
+                    )
                 }
                 notesCard
                 deloadToggle
@@ -245,7 +267,12 @@ struct ActiveWorkoutView: View {
             .padding(.horizontal, 16)
             .padding(.top, 16)
         }
+        .scrollDisabled(draggedExerciseId != nil)
         .onChange(of: workout.exercises.count) { oldCount, newCount in
+            // Add/remove/watch-sync mid-drag would leave stale offsets — reset first
+            draggedExerciseId = nil
+            dragTranslation = 0
+            dragTargetIndex = nil
             guard newCount > oldCount else { return }  // Only scroll on addition
             if let lastExercise = workout.exercises.last {
                 withAnimation(.easeInOut(duration: 0.3)) {
@@ -257,7 +284,73 @@ struct ActiveWorkoutView: View {
         .scrollDismissesKeyboard(.immediately)
     }
 
-    private func exerciseCard(for workoutExercise: WorkoutExercise, isActive: Bool) -> some View {
+    // MARK: - Drag to Reorder
+
+    /// Dragged card follows the finger; siblings between source and target shift by
+    /// the dragged card's height (plus gap) to open a slot.
+    private func dragOffset(index: Int, id: UUID, in workout: Workout) -> CGFloat {
+        guard let draggedId = draggedExerciseId,
+              let source = workout.exercises.firstIndex(where: { $0.id == draggedId }) else { return 0 }
+        if id == draggedId { return dragTranslation }
+        guard let target = dragTargetIndex else { return 0 }
+        let draggedHeight = (cardHeights[draggedId] ?? 0) + STSpacing.cardGap
+        if source < target, index > source, index <= target { return -draggedHeight }
+        if target < source, index >= target, index < source { return draggedHeight }
+        return 0
+    }
+
+    private func handleExerciseDragChanged(id: UUID, translation: CGFloat, workout: Workout) {
+        if draggedExerciseId == nil {
+            draggedExerciseId = id
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        }
+        dragTranslation = translation
+        let ids = workout.exercises.map(\.id)
+        guard let source = ids.firstIndex(of: id) else { return }
+        let proposed = proposedIndex(translation: translation, source: source, ids: ids)
+        if proposed != dragTargetIndex {
+            withAnimation(.spring(duration: 0.25)) { dragTargetIndex = proposed }
+            UISelectionFeedbackGenerator().selectionChanged()
+        }
+    }
+
+    /// Walk cumulative card heights (+ gap) in the drag direction, crossing into the
+    /// next slot once the drag passes a card's midpoint — handles variable heights.
+    private func proposedIndex(translation: CGFloat, source: Int, ids: [UUID]) -> Int {
+        var index = source
+        var remaining = translation
+        if translation > 0 {
+            for i in (source + 1)..<ids.count {
+                let height = (cardHeights[ids[i]] ?? 0) + STSpacing.cardGap
+                guard remaining > height / 2 else { break }
+                index = i
+                remaining -= height
+            }
+        } else {
+            for i in stride(from: source - 1, through: 0, by: -1) {
+                let height = (cardHeights[ids[i]] ?? 0) + STSpacing.cardGap
+                guard remaining < -height / 2 else { break }
+                index = i
+                remaining += height
+            }
+        }
+        return index
+    }
+
+    private func handleExerciseDragEnded(workout: Workout) {
+        let source = draggedExerciseId.flatMap { id in workout.exercises.firstIndex { $0.id == id } }
+        let destination = dragTargetIndex
+        withAnimation(.spring(duration: 0.3)) {
+            draggedExerciseId = nil
+            dragTranslation = 0
+            dragTargetIndex = nil
+        }
+        if let source, let destination, source != destination {
+            Task { await viewModel.moveExercise(from: source, to: destination) }
+        }
+    }
+
+    private func exerciseCard(for workoutExercise: WorkoutExercise, isActive: Bool, reorderable: Bool) -> some View {
         ExerciseCardView(
             workoutExercise: workoutExercise,
             isActiveExercise: isActive,
@@ -382,6 +475,14 @@ struct ActiveWorkoutView: View {
                     )
                 }
             },
+            onDragChanged: reorderable ? { translation in
+                guard let workout = viewModel.currentWorkout else { return }
+                handleExerciseDragChanged(id: workoutExercise.id, translation: translation, workout: workout)
+            } : nil,
+            onDragEnded: reorderable ? {
+                guard let workout = viewModel.currentWorkout else { return }
+                handleExerciseDragEnded(workout: workout)
+            } : nil,
             coachingData: viewModel.exerciseCoachingCache[workoutExercise.id],
             alwaysShowRPE: viewModel.userPreferencesService?.alwaysShowRPE ?? false,
             intensityMetric: intensityMetric,
@@ -658,42 +759,17 @@ struct ActiveWorkoutView: View {
     // MARK: - Widget Data Updates
 
     private func updateWidgetWorkoutState() {
+        let service = WidgetDataService()
         guard let workout = viewModel.currentWorkout, viewModel.isActive else {
-            WidgetDataService().updateActiveWorkoutState(nil)
+            service.updateActiveWorkoutState(nil)
             return
         }
-        let state = WidgetActiveWorkout(
-            workoutName: workout.name,
-            currentExerciseName: {
-                let current = workout.exercises.first { ex in ex.sets.contains { !$0.isCompleted } } ?? workout.exercises.last
-                return current?.exercise.name ?? "Exercise"
-            }(),
-            currentExerciseId: {
-                let current = workout.exercises.first { ex in ex.sets.contains { !$0.isCompleted } } ?? workout.exercises.last
-                return current?.id.uuidString ?? ""
-            }(),
-            completedSets: workout.exercises.reduce(0) { $0 + $1.sets.filter(\.isCompleted).count },
-            totalPlannedSets: workout.exercises.reduce(0) { $0 + $1.sets.count },
-            startedAt: workout.startedAt,
+        service.updateActiveWorkoutState(service.buildActiveWorkoutState(
+            workout: workout,
             isResting: restTimerService.isRunning,
             restEndDate: restTimerService.isRunning ? restTimerService.endDate : nil,
-            nextSetWeight: {
-                let current = workout.exercises.first { ex in ex.sets.contains { !$0.isCompleted } }
-                return current?.sets.first { !$0.isCompleted }?.weight
-            }(),
-            nextSetReps: {
-                let current = workout.exercises.first { ex in ex.sets.contains { !$0.isCompleted } }
-                return current?.sets.first { !$0.isCompleted }?.reps
-            }(),
-            nextExerciseName: {
-                let currentIdx = workout.exercises.firstIndex { ex in ex.sets.contains { !$0.isCompleted } }
-                if let idx = currentIdx, idx + 1 < workout.exercises.count {
-                    return workout.exercises[idx + 1].exercise.name
-                }
-                return nil
-            }()
-        )
-        WidgetDataService().updateActiveWorkoutState(state)
+            activeExerciseId: viewModel.activeExerciseId
+        ))
     }
 
     private func previousDataForExercise(_ exerciseId: UUID) -> [Int: String] {

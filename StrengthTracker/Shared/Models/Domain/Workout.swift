@@ -91,3 +91,46 @@ extension Workout {
         }
     }
 }
+
+// MARK: - Active Exercise
+
+extension Workout {
+    /// The exercise currently "in focus" — the single source of truth shared by the
+    /// in-app card highlight, the widget, and the rest-timer context.
+    ///
+    /// `preferredId` is the exercise the user last interacted with (jumping around the
+    /// list out of order is allowed): it stays active while it has incomplete sets;
+    /// once fully complete, focus advances to the next incomplete exercise after it in
+    /// order, wrapping to the top. Without a preference, falls back to the first
+    /// incomplete exercise, or the last exercise when everything is done.
+    public func activeExercise(preferredId: UUID?) -> WorkoutExercise? {
+        guard !exercises.isEmpty else { return nil }
+        func hasIncomplete(_ ex: WorkoutExercise) -> Bool { ex.sets.contains { !$0.isCompleted } }
+        if let preferredId, let idx = exercises.firstIndex(where: { $0.id == preferredId }) {
+            if hasIncomplete(exercises[idx]) { return exercises[idx] }
+            if let next = exercises[(idx + 1)...].first(where: hasIncomplete)
+                       ?? exercises[..<idx].first(where: hasIncomplete) {
+                return next
+            }
+            return exercises[idx]  // everything complete — stay put
+        }
+        return exercises.first(where: hasIncomplete) ?? exercises.last
+    }
+
+    /// Next incomplete exercise strictly after the given one in order (wrapping,
+    /// excluding it). Nil when the id is unknown or no other exercise has work left.
+    public func nextIncompleteExercise(afterId id: UUID?) -> WorkoutExercise? {
+        guard let id, let idx = exercises.firstIndex(where: { $0.id == id }) else { return nil }
+        func hasIncomplete(_ ex: WorkoutExercise) -> Bool { ex.sets.contains { !$0.isCompleted } }
+        return exercises[(idx + 1)...].first(where: hasIncomplete)
+            ?? exercises[..<idx].first(where: hasIncomplete)
+    }
+
+    /// Exercise holding the most recently completed set — restores the active
+    /// exercise after an app relaunch without any extra persistence.
+    public var lastInteractedExerciseId: UUID? {
+        exercises
+            .compactMap { ex in ex.sets.compactMap(\.completedAt).max().map { (ex.id, $0) } }
+            .max { $0.1 < $1.1 }?.0
+    }
+}

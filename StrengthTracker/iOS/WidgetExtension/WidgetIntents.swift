@@ -22,10 +22,12 @@ struct CompleteSetIntent: AppIntent {
             return .result()
         }
 
-        // Record pending completion for the app to persist
+        // Record pending completion for the app to persist.
+        // nextSetIndex is the first incomplete set WITHIN the current exercise —
+        // the workout-wide completedSets count is only a legacy fallback.
         let completion = WidgetPendingCompletion(
             exerciseId: active.currentExerciseId,
-            setIndex: active.completedSets,
+            setIndex: active.nextSetIndex ?? active.completedSets,
             completedAt: Date()
         )
         service.appendPendingCompletion(completion)
@@ -43,7 +45,9 @@ struct CompleteSetIntent: AppIntent {
             restEndDate: Date().addingTimeInterval(90), // default 90s rest
             nextSetWeight: active.nextSetWeight,
             nextSetReps: active.nextSetReps,
-            nextExerciseName: active.nextExerciseName
+            nextExerciseName: active.nextExerciseName,
+            nextSetIndex: active.nextSetIndex.map { $0 + 1 },
+            nextExerciseId: active.nextExerciseId
         )
         service.updateActiveWorkoutState(updated)
 
@@ -65,11 +69,11 @@ struct SkipExerciseIntent: AppIntent {
             return .result()
         }
 
-        // Update widget to show next exercise
+        // Update widget to show next exercise (id must advance with the name)
         let updated = WidgetActiveWorkout(
             workoutName: active.workoutName,
             currentExerciseName: nextName,
-            currentExerciseId: active.currentExerciseId,
+            currentExerciseId: active.nextExerciseId ?? active.currentExerciseId,
             completedSets: active.completedSets,
             totalPlannedSets: active.totalPlannedSets,
             startedAt: active.startedAt,
@@ -125,7 +129,9 @@ struct SkipRestTimerIntent: AppIntent {
             restEndDate: nil,
             nextSetWeight: active.nextSetWeight,
             nextSetReps: active.nextSetReps,
-            nextExerciseName: active.nextExerciseName
+            nextExerciseName: active.nextExerciseName,
+            nextSetIndex: active.nextSetIndex,
+            nextExerciseId: active.nextExerciseId
         )
         service.updateActiveWorkoutState(updated)
 
@@ -178,7 +184,9 @@ struct AddRestTimeIntent: AppIntent {
             restEndDate: endDate.addingTimeInterval(15),
             nextSetWeight: active.nextSetWeight,
             nextSetReps: active.nextSetReps,
-            nextExerciseName: active.nextExerciseName
+            nextExerciseName: active.nextExerciseName,
+            nextSetIndex: active.nextSetIndex,
+            nextExerciseId: active.nextExerciseId
         )
         service.updateActiveWorkoutState(updated)
 

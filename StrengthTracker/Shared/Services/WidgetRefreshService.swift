@@ -138,7 +138,8 @@ public final class WidgetRefreshService {
                 weeklyGoal: weeklyGoal,
                 bodyWeightKg: bw,
                 weeklyQualityScore: qualityScore,
-                qualityTrend: qualityTrend
+                qualityTrend: qualityTrend,
+                activeExerciseId: workoutViewModel.activeExerciseId
             )
             widgetService.updateWidgetData(data)
         } catch {
