@@ -55,7 +55,9 @@ struct ActiveWorkoutView: View {
                     restTimerService.stop()
                     Task {
                         await viewModel.cancelWorkout()
-                        WidgetDataService().updateActiveWorkoutState(nil)
+                        Task.detached(priority: .utility) {
+                            WidgetDataService().updateActiveWorkoutState(nil)
+                        }
                     }
                 }
                 Button("Keep Going", role: .cancel) {}
@@ -232,22 +234,21 @@ struct ActiveWorkoutView: View {
     }
 
     private func workoutScrollView(workout: Workout, proxy: ScrollViewProxy) -> some View {
-        let activeId = viewModel.activeExercise?.id
         let canReorder = workout.exercises.count > 1
         return ScrollView {
             VStack(spacing: STSpacing.cardGap) {
                 ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, workoutExercise in
-                    exerciseCard(
-                        for: workoutExercise,
-                        isActive: workoutExercise.id == activeId,
-                        reorderable: canReorder
-                    )
+                    exerciseCard(for: workoutExercise, reorderable: canReorder)
                     .id(workoutExercise.id)
                     .onGeometryChange(for: CGFloat.self) { geometry in
                         geometry.size.height
                     } action: { height in
                         dragState.heights[workoutExercise.id] = height
                     }
+                    .modifier(ActiveExerciseHighlight(
+                        exerciseId: workoutExercise.id,
+                        viewModel: viewModel
+                    ))
                     .modifier(ExerciseDragEffect(
                         id: workoutExercise.id,
                         index: index,
@@ -284,10 +285,9 @@ struct ActiveWorkoutView: View {
         .scrollDismissesKeyboard(.immediately)
     }
 
-    private func exerciseCard(for workoutExercise: WorkoutExercise, isActive: Bool, reorderable: Bool) -> some View {
+    private func exerciseCard(for workoutExercise: WorkoutExercise, reorderable: Bool) -> some View {
         ExerciseCardView(
             workoutExercise: workoutExercise,
-            isActiveExercise: isActive,
             previousSetData: previousDataForExercise(workoutExercise.id),
             onWeightChange: { setId, weight in
                 Task {
@@ -502,7 +502,9 @@ struct ActiveWorkoutView: View {
             Task {
                 do {
                     try await viewModel.completeWorkout()
-                    WidgetDataService().updateActiveWorkoutState(nil)
+                    Task.detached(priority: .utility) {
+                        WidgetDataService().updateActiveWorkoutState(nil)
+                    }
                 } catch {
                     finishErrorMessage = error.localizedDescription
                     showingFinishError = true
@@ -699,16 +701,22 @@ struct ActiveWorkoutView: View {
 
     private func updateWidgetWorkoutState() {
         let service = WidgetDataService()
-        guard let workout = viewModel.currentWorkout, viewModel.isActive else {
-            service.updateActiveWorkoutState(nil)
-            return
+        let state: WidgetActiveWorkout?
+        if let workout = viewModel.currentWorkout, viewModel.isActive {
+            state = service.buildActiveWorkoutState(
+                workout: workout,
+                isResting: restTimerService.isRunning,
+                restEndDate: restTimerService.isRunning ? restTimerService.endDate : nil,
+                activeExerciseId: viewModel.activeExerciseId
+            )
+        } else {
+            state = nil
         }
-        service.updateActiveWorkoutState(service.buildActiveWorkoutState(
-            workout: workout,
-            isResting: restTimerService.isRunning,
-            restEndDate: restTimerService.isRunning ? restTimerService.endDate : nil,
-            activeExerciseId: viewModel.activeExerciseId
-        ))
+        // App-Group JSON round-trip + WidgetCenter XPC — keep it off the main thread
+        // so taps and set toggles render without waiting on it.
+        Task.detached(priority: .utility) {
+            service.updateActiveWorkoutState(state)
+        }
     }
 
     private func previousDataForExercise(_ exerciseId: UUID) -> [Int: String] {

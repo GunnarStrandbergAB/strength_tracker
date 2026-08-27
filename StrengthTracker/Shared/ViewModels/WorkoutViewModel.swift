@@ -445,11 +445,40 @@ public final class WorkoutViewModel {
         #endif
     }
 
-    /// Load previous data for all exercises when workout starts
+    /// Load previous data for all exercises when workout starts.
+    /// Fetches the history ONCE — a per-set fetch here used to block the main
+    /// actor for seconds on workout entry, starving the first tap's render.
     public func loadPreviousData() async {
         guard let workout = currentWorkout else { return }
+        guard let allWorkouts = try? await workoutRepository.fetchAll() else { return }
+        let previousCompleted = allWorkouts
+            .filter { $0.completedAt != nil && $0.id != workout.id }
+            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
         for exercise in workout.exercises {
-            await loadPreviousDataForExercise(exercise.id)
+            fillPreviousDataCache(for: exercise, from: previousCompleted)
+            await Task.yield()  // let queued UI updates (e.g. a tap) get a frame
+        }
+    }
+
+    /// Fill missing previous-set cache keys for one exercise from an already
+    /// fetched, completed-and-sorted workout history.
+    private func fillPreviousDataCache(for exercise: WorkoutExercise, from previousCompleted: [Workout]) {
+        let missingIndices = exercise.sets.indices.filter {
+            previousSetDataCache["\(exercise.id)-\($0)"] == nil
+        }
+        guard !missingIndices.isEmpty else { return }
+
+        let targetExerciseId = exercise.exercise.id
+        guard let prevExercise = previousCompleted
+            .first(where: { workout in workout.exercises.contains { $0.exercise.id == targetExerciseId } })?
+            .exercises.first(where: { $0.exercise.id == targetExerciseId }) else { return }
+
+        let unit = userPreferencesService?.weightUnit ?? .kg
+        for index in missingIndices where index < prevExercise.sets.count {
+            let prevSet = prevExercise.sets[index]
+            let weight = prevSet.weight.map { unit.formatValue($0) } ?? "0"
+            let reps = prevSet.reps.map { String($0) } ?? "0"
+            previousSetDataCache["\(exercise.id)-\(index)"] = "\(weight)\(unit.symbol) × \(reps)"
         }
     }
 
@@ -459,12 +488,18 @@ public final class WorkoutViewModel {
         let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
         do {
             let allWorkouts = try await workoutRepository.fetchAll()
-            let recentCompleted = allWorkouts
-                .filter { $0.completedAt != nil && $0.id != workout.id }
-                .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+            // Suggestions scan recentWorkouts per set — cap the window so a long
+            // history doesn't cost seconds of main-actor time on workout entry.
+            let recentCompleted = Array(
+                allWorkouts
+                    .filter { $0.completedAt != nil && $0.id != workout.id }
+                    .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+                    .prefix(20)
+            )
             guard recentCompleted.count >= 3 else { return }
 
             for we in workout.exercises {
+                await Task.yield()  // keep the UI responsive during workout entry
                 let exerciseId = we.exercise.id
                 var suggestions: [Int: WeightSuggestion] = [:]
                 for (setIndex, set) in we.sets.enumerated() {
@@ -507,14 +542,14 @@ public final class WorkoutViewModel {
     public func loadPreviousDataForExercise(_ exerciseId: UUID) async {
         guard let workout = currentWorkout,
               let exercise = workout.exercises.first(where: { $0.id == exerciseId }) else { return }
-        for (index, _) in exercise.sets.enumerated() {
-            let key = "\(exercise.id)-\(index)"
-            if previousSetDataCache[key] == nil {
-                if let data = await previousSetData(for: exercise.id, setIndex: index) {
-                    previousSetDataCache[key] = data
-                }
-            }
+        let hasMissing = exercise.sets.indices.contains {
+            previousSetDataCache["\(exercise.id)-\($0)"] == nil
         }
+        guard hasMissing, let allWorkouts = try? await workoutRepository.fetchAll() else { return }
+        let previousCompleted = allWorkouts
+            .filter { $0.completedAt != nil && $0.id != workout.id }
+            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+        fillPreviousDataCache(for: exercise, from: previousCompleted)
     }
 
     // MARK: - Inline Editing Methods

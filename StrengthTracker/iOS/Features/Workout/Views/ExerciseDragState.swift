@@ -64,27 +64,36 @@ final class ExerciseDragState {
         targetIndex = nil
     }
 
-    /// Walk cumulative card heights (+ gap) in the drag direction, crossing into the
-    /// next slot once the drag passes a card's midpoint — handles variable heights.
+    /// Walk cumulative card heights (+ gap) in the drag direction. The crossing
+    /// threshold is the neighbor's midpoint CAPPED at 90pt — an 8-set card is
+    /// ~620pt tall and its midpoint would demand a physically impossible drag
+    /// (scrolling is disabled mid-drag). The 40pt floor guards an unmeasured
+    /// height (`?? 0`) from making the walk hypersensitive. After a crossing the
+    /// FULL pitch is still subtracted: `remaining` is measured from the new
+    /// slot's origin, which depends on geometry, not on the threshold.
     private func proposedIndex(translation: CGFloat, source: Int, ids: [UUID]) -> Int {
         var index = source
         var remaining = translation
         if translation > 0 {
             for i in (source + 1)..<ids.count {
-                let height = (heights[ids[i]] ?? 0) + STSpacing.cardGap
-                guard remaining > height / 2 else { break }
+                let pitch = (heights[ids[i]] ?? 0) + STSpacing.cardGap
+                guard remaining > Self.crossingThreshold(pitch: pitch) else { break }
                 index = i
-                remaining -= height
+                remaining -= pitch
             }
         } else {
             for i in stride(from: source - 1, through: 0, by: -1) {
-                let height = (heights[ids[i]] ?? 0) + STSpacing.cardGap
-                guard remaining < -height / 2 else { break }
+                let pitch = (heights[ids[i]] ?? 0) + STSpacing.cardGap
+                guard remaining < -Self.crossingThreshold(pitch: pitch) else { break }
                 index = i
-                remaining += height
+                remaining += pitch
             }
         }
         return index
+    }
+
+    private static func crossingThreshold(pitch: CGFloat) -> CGFloat {
+        min(max(pitch / 2, 40), 90)
     }
 }
 
@@ -125,6 +134,25 @@ struct ExerciseDragEffect: ViewModifier {
         if source < target, index > source, index <= target { return -draggedHeight }
         if target < source, index >= target, index < source { return draggedHeight }
         return 0
+    }
+}
+
+/// Accent border for the active exercise. Reads the view model's observable state
+/// in its OWN body, so a tap that changes `activeExerciseId` re-evaluates only
+/// these tiny modifiers — not ActiveWorkoutView's whole body with every card.
+struct ActiveExerciseHighlight: ViewModifier {
+    let exerciseId: UUID
+    let viewModel: WorkoutViewModel
+
+    func body(content: Content) -> some View {
+        let isActive = viewModel.activeExercise?.id == exerciseId
+        return content
+            .overlay(
+                RoundedRectangle(cornerRadius: STRadius.card)
+                    .stroke(STColors.primary, lineWidth: 1.5)
+                    .opacity(isActive ? 1 : 0)
+            )
+            .animation(.easeInOut(duration: 0.2), value: isActive)
     }
 }
 #endif

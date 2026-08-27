@@ -4,7 +4,6 @@ import StrengthTrackerShared
 
 struct ExerciseCardView: View {
     let workoutExercise: WorkoutExercise
-    let isActiveExercise: Bool
     let previousSetData: [Int: String]
     let onWeightChange: (UUID, Double?) -> Void
     let onRepsChange: (UUID, Int?) -> Void
@@ -42,7 +41,6 @@ struct ExerciseCardView: View {
 
     init(
         workoutExercise: WorkoutExercise,
-        isActiveExercise: Bool = false,
         previousSetData: [Int: String] = [:],
         onWeightChange: @escaping (UUID, Double?) -> Void,
         onRepsChange: @escaping (UUID, Int?) -> Void,
@@ -69,7 +67,6 @@ struct ExerciseCardView: View {
         weightUnit: WeightUnit = .kg
     ) {
         self.workoutExercise = workoutExercise
-        self.isActiveExercise = isActiveExercise
         self.previousSetData = previousSetData
         self.onWeightChange = onWeightChange
         self.onRepsChange = onRepsChange
@@ -213,12 +210,8 @@ struct ExerciseCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
         .overlay(
             RoundedRectangle(cornerRadius: STRadius.card)
-                .stroke(
-                    isActiveExercise ? STColors.primary : STColors.border,
-                    lineWidth: isActiveExercise ? 1.5 : 1
-                )
+                .stroke(STColors.border, lineWidth: 1)
         )
-        .animation(.easeInOut(duration: 0.2), value: isActiveExercise)
     }
 
     // MARK: - Card Header
