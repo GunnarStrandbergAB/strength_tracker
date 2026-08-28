@@ -77,6 +77,47 @@ struct ExerciseCategoryTests {
         let decoded = try JSONDecoder().decode(ExerciseCategory.self, from: data)
         #expect(decoded == original)
     }
+
+    @Test("ExerciseCategory displayName reads properly for every case")
+    func displayNames() {
+        let expected: [ExerciseCategory: String] = [
+            .barbell: "Barbell", .dumbbell: "Dumbbell", .machine: "Machine",
+            .cable: "Cable", .bodyweight: "Bodyweight", .smithMachine: "Smith Machine",
+            .kettlebell: "Kettlebell", .resistanceBand: "Resistance Band",
+            .plate: "Plate", .medicineBall: "Medicine Ball", .exerciseBall: "Exercise Ball",
+            .trx: "TRX", .landmine: "Landmine", .trapBar: "Trap Bar",
+            .ezBar: "EZ Bar", .other: "Other"
+        ]
+        for category in ExerciseCategory.allCases {
+            #expect(category.displayName == expected[category])
+        }
+    }
+}
+
+// MARK: - LoadingType Enum Tests
+
+@Suite("LoadingType Enum")
+struct LoadingTypeTests {
+
+    @Test("LoadingType has exactly plate-loaded and weight-stack cases")
+    func allCases() {
+        #expect(LoadingType.allCases == [.plateLoaded, .weightStack])
+        #expect(LoadingType.plateLoaded.rawValue == "plateLoaded")
+        #expect(LoadingType.weightStack.rawValue == "weightStack")
+    }
+
+    @Test("LoadingType display names")
+    func displayNames() {
+        #expect(LoadingType.plateLoaded.displayName == "Plate-loaded")
+        #expect(LoadingType.weightStack.displayName == "Weight stack")
+    }
+
+    @Test("LoadingType is Codable roundtrip")
+    func codableRoundtrip() throws {
+        let data = try JSONEncoder().encode(LoadingType.plateLoaded)
+        let decoded = try JSONDecoder().decode(LoadingType.self, from: data)
+        #expect(decoded == .plateLoaded)
+    }
 }
 
 // MARK: - ExerciseType Enum Tests
@@ -356,6 +397,83 @@ struct ExerciseTests {
         #expect(decoded.instructions == nil)
         #expect(decoded.secondaryMuscleGroups.isEmpty)
         #expect(decoded.isCustom == true)
+    }
+
+    @Test("Legacy JSON without brand/loading keys decodes with nils")
+    func legacyJSONDecodes() throws {
+        // Payload shape from before equipmentBrand/loadingType existed — must
+        // keep decoding (watch sync uses try? decode and would silently drop
+        // the whole library on failure).
+        let legacy = """
+        {
+            "id": "12345678-1234-1234-1234-123456789ABC",
+            "name": "Leg Press",
+            "primaryMuscleGroup": "quadriceps",
+            "secondaryMuscleGroups": ["glutes"],
+            "category": "machine",
+            "exerciseType": "weightedReps",
+            "isCustom": false,
+            "isArchived": false
+        }
+        """
+        let decoded = try JSONDecoder().decode(Exercise.self, from: Data(legacy.utf8))
+        #expect(decoded.name == "Leg Press")
+        #expect(decoded.equipmentBrand == nil)
+        #expect(decoded.loadingType == nil)
+        #expect(decoded.bodyweightFactor == nil)
+    }
+
+    @Test("Codable roundtrip preserves brand and loading type")
+    func codableRoundtripVariantFields() throws {
+        let original = Exercise(
+            id: UUID(),
+            name: "Glute Drive",
+            primaryMuscleGroup: .glutes,
+            secondaryMuscleGroups: [.hamstrings],
+            category: .machine,
+            exerciseType: .weightedReps,
+            instructions: nil,
+            isCustom: true,
+            isArchived: false,
+            equipmentBrand: "Nautilus",
+            loadingType: .plateLoaded
+        )
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(Exercise.self, from: data)
+        #expect(decoded.equipmentBrand == "Nautilus")
+        #expect(decoded.loadingType == .plateLoaded)
+    }
+
+    @Test("duplicatedAsVariant copies fields but mints a new custom identity")
+    func duplicatedAsVariant() {
+        let seed = Exercise(
+            id: UUID(),
+            name: "Leg Press",
+            primaryMuscleGroup: .quadriceps,
+            secondaryMuscleGroups: [.glutes],
+            category: .machine,
+            exerciseType: .weightedReps,
+            instructions: "Push the sled away.",
+            isCustom: false,
+            isArchived: true,
+            bodyweightFactor: nil,
+            equipmentBrand: "Hammer Strength",
+            loadingType: .plateLoaded
+        )
+
+        let variant = seed.duplicatedAsVariant()
+
+        #expect(variant.id != seed.id)
+        #expect(variant.isCustom == true)
+        #expect(variant.isArchived == false)
+        #expect(variant.name == seed.name)
+        #expect(variant.primaryMuscleGroup == seed.primaryMuscleGroup)
+        #expect(variant.secondaryMuscleGroups == seed.secondaryMuscleGroups)
+        #expect(variant.category == seed.category)
+        #expect(variant.exerciseType == seed.exerciseType)
+        #expect(variant.instructions == seed.instructions)
+        #expect(variant.equipmentBrand == seed.equipmentBrand)
+        #expect(variant.loadingType == seed.loadingType)
     }
 
     @Test("Two exercises with different IDs are not equal")

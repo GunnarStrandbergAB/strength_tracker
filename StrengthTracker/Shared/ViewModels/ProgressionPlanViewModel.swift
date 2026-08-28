@@ -1054,9 +1054,17 @@ public final class ProgressionPlanViewModel {
             session.plannedExercises.map { ($0.exerciseId, $0) },
             uniquingKeysWith: { first, _ in first }
         )
+        // Name fallback only for UNIQUELY named planned exercises — two variants
+        // of the same movement (e.g. plate-loaded vs cable machine) share a name
+        // but must never cross-apply each other's targets.
+        var nameCounts: [String: Int] = [:]
+        for planned in session.plannedExercises {
+            nameCounts[planned.exerciseName.lowercased(), default: 0] += 1
+        }
         let plannedByName = Dictionary(
-            session.plannedExercises.map { ($0.exerciseName.lowercased(), $0) },
-            uniquingKeysWith: { first, _ in first }
+            uniqueKeysWithValues: session.plannedExercises
+                .filter { nameCounts[$0.exerciseName.lowercased()] == 1 }
+                .map { ($0.exerciseName.lowercased(), $0) }
         )
 
         var mergedExercises = template.exercises.map { te -> TemplateExercise in

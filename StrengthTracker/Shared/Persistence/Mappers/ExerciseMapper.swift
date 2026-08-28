@@ -14,7 +14,9 @@ public enum ExerciseMapper {
             instructions: entity.instructions,
             isCustom: entity.isCustom,
             isArchived: entity.isArchived,
-            bodyweightFactor: entity.bodyweightFactor
+            bodyweightFactor: entity.bodyweightFactor,
+            equipmentBrand: entity.equipmentBrand,
+            loadingType: entity.loadingType.flatMap { LoadingType(rawValue: $0) }
         )
     }
 
@@ -30,7 +32,9 @@ public enum ExerciseMapper {
             instructions: domain.instructions,
             isCustom: domain.isCustom,
             isArchived: domain.isArchived,
-            bodyweightFactor: domain.bodyweightFactor
+            bodyweightFactor: domain.bodyweightFactor,
+            equipmentBrand: domain.equipmentBrand,
+            loadingType: domain.loadingType?.rawValue
         )
     }
 
@@ -45,6 +49,8 @@ public enum ExerciseMapper {
         entity.isCustom = domain.isCustom
         entity.isArchived = domain.isArchived
         entity.bodyweightFactor = domain.bodyweightFactor
+        entity.equipmentBrand = domain.equipmentBrand
+        entity.loadingType = domain.loadingType?.rawValue
     }
 
     // MARK: - Private Helpers

@@ -7,6 +7,7 @@ struct ExerciseListView: View {
     var analyticsViewModel: WorkoutAnalyticsViewModel? = nil
     var personalRecordService: PersonalRecordService? = nil
     @State private var showAddExercise = false
+    @State private var formPresentation: ExerciseListFormPresentation? = nil
 
     private let filterGroups: [MuscleGroup] = [
         .chest, .back, .shoulders, .biceps, .triceps, .quadriceps, .hamstrings, .glutes, .core
@@ -47,6 +48,16 @@ struct ExerciseListView: View {
                         NavigationLink(value: exercise) {
                             ExerciseRowView(exercise: exercise)
                         }
+                        .contextMenu {
+                            if exercise.isCustom {
+                                Button("Edit", systemImage: "pencil") {
+                                    formPresentation = ExerciseListFormPresentation(mode: .edit(exercise))
+                                }
+                            }
+                            Button("Duplicate as Variant", systemImage: "plus.square.on.square") {
+                                formPresentation = ExerciseListFormPresentation(mode: .duplicate(of: exercise))
+                            }
+                        }
                     }
                 }
             }
@@ -62,7 +73,7 @@ struct ExerciseListView: View {
                             Picker("Category", selection: $viewModel.selectedCategory) {
                                 Text("All Categories").tag(ExerciseCategory?.none)
                                 ForEach(ExerciseCategory.allCases, id: \.self) { category in
-                                    Text(category.rawValue.capitalized)
+                                    Text(category.displayName)
                                         .tag(ExerciseCategory?.some(category))
                                 }
                             }
@@ -79,8 +90,16 @@ struct ExerciseListView: View {
                     weightUnit: progressViewModel.weightUnit
                 )
             }
+            .sheet(item: $formPresentation) { presentation in
+                AddExerciseView(
+                    viewModel: viewModel,
+                    mode: presentation.mode,
+                    personalRecordService: personalRecordService,
+                    weightUnit: progressViewModel.weightUnit
+                )
+            }
             .navigationDestination(for: Exercise.self) { exercise in
-                ExerciseDetailView(exercise: exercise, progressViewModel: progressViewModel, analyticsViewModel: analyticsViewModel, personalRecordService: personalRecordService)
+                ExerciseDetailView(exercise: exercise, progressViewModel: progressViewModel, analyticsViewModel: analyticsViewModel, personalRecordService: personalRecordService, listViewModel: viewModel)
             }
             .overlay {
                 if viewModel.isLoading {
@@ -122,6 +141,11 @@ struct ExerciseListView: View {
     }
 }
 
+private struct ExerciseListFormPresentation: Identifiable {
+    let id = UUID()
+    let mode: ExerciseFormMode
+}
+
 private struct ExerciseRowView: View {
     let exercise: Exercise
 
@@ -135,15 +159,29 @@ private struct ExerciseRowView: View {
                 Text(exercise.primaryMuscleGroup.rawValue.capitalized)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text(exercise.category.rawValue.capitalized)
+                Text(exercise.category.displayName)
                     .font(.caption)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(.quaternary)
                     .clipShape(Capsule())
             }
+            if let equipmentLine = exercise.equipmentLine {
+                Text(equipmentLine)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(.vertical, 2)
+    }
+}
+
+extension Exercise {
+    /// "Hammer Strength · Plate-loaded" — non-nil equipment details joined for
+    /// row captions; nil when there's nothing to show.
+    var equipmentLine: String? {
+        let parts = [equipmentBrand, loadingType?.displayName].compactMap(\.self)
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 

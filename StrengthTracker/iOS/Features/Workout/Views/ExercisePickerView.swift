@@ -7,6 +7,7 @@ struct ExercisePickerView: View {
     let onSelect: (Exercise) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var showingAddExercise = false
+    @State private var duplicateSource: Exercise? = nil
 
     init(viewModel: ExerciseListViewModel, onSelect: @escaping (Exercise) -> Void) {
         self._viewModel = State(initialValue: viewModel)
@@ -72,7 +73,7 @@ struct ExercisePickerView: View {
                             Text("All").tag(nil as ExerciseCategory?)
                             ForEach(ExerciseCategory.allCases, id: \.self) { category in
                                 if category != .other {
-                                    Text(category.rawValue.capitalized).tag(category as ExerciseCategory?)
+                                    Text(category.displayName).tag(category as ExerciseCategory?)
                                 }
                             }
                         }
@@ -83,6 +84,14 @@ struct ExercisePickerView: View {
             }
             .sheet(isPresented: $showingAddExercise) {
                 AddExerciseView(viewModel: viewModel) { exercise in
+                    onSelect(exercise)
+                    dismiss()
+                }
+            }
+            .sheet(item: $duplicateSource) { source in
+                // "My gym's machine is different" — the new variant lands
+                // straight into the flow that opened this picker.
+                AddExerciseView(viewModel: viewModel, mode: .duplicate(of: source)) { exercise in
                     onSelect(exercise)
                     dismiss()
                 }
@@ -125,7 +134,7 @@ struct ExercisePickerView: View {
                         .foregroundStyle(.primary)
 
                     HStack(spacing: 8) {
-                        Text(exercise.category.rawValue.capitalized)
+                        Text(exercise.category.displayName)
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
@@ -136,6 +145,12 @@ struct ExercisePickerView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+
+                    if let equipmentLine = exercise.equipmentLine {
+                        Text(equipmentLine)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
 
                 Spacer()
@@ -145,6 +160,11 @@ struct ExercisePickerView: View {
             }
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button("Duplicate as Variant", systemImage: "plus.square.on.square") {
+                duplicateSource = exercise
+            }
+        }
     }
 
     private var groupedExercises: [(key: MuscleGroup, value: [Exercise])] {
