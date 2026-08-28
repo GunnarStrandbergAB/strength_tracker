@@ -4,7 +4,6 @@ import StrengthTrackerShared
 
 struct ExerciseCardView: View {
     let workoutExercise: WorkoutExercise
-    let isActiveExercise: Bool
     let previousSetData: [Int: String]
     let onWeightChange: (UUID, Double?) -> Void
     let onRepsChange: (UUID, Int?) -> Void
@@ -24,6 +23,10 @@ struct ExerciseCardView: View {
     let onRemoveDropEntry: ((UUID, UUID) -> Void)?
     let onNoteChange: ((String) -> Void)?
     let onMoveSet: ((Int, Int) -> Void)?
+    /// Drag-to-reorder via the grip handle: vertical translation while dragging,
+    /// then end. Nil hides the handle (single-exercise workouts, read-only contexts).
+    let onDragChanged: ((CGFloat) -> Void)?
+    let onDragEnded: (() -> Void)?
     let coachingData: ExerciseCoachingData?
     /// "Always show intensity" — kept under the historical name (backed by the same setting).
     let alwaysShowRPE: Bool
@@ -38,7 +41,6 @@ struct ExerciseCardView: View {
 
     init(
         workoutExercise: WorkoutExercise,
-        isActiveExercise: Bool = true,
         previousSetData: [Int: String] = [:],
         onWeightChange: @escaping (UUID, Double?) -> Void,
         onRepsChange: @escaping (UUID, Int?) -> Void,
@@ -57,13 +59,14 @@ struct ExerciseCardView: View {
         onRemoveDropEntry: ((UUID, UUID) -> Void)? = nil,
         onNoteChange: ((String) -> Void)? = nil,
         onMoveSet: ((Int, Int) -> Void)? = nil,
+        onDragChanged: ((CGFloat) -> Void)? = nil,
+        onDragEnded: (() -> Void)? = nil,
         coachingData: ExerciseCoachingData? = nil,
         alwaysShowRPE: Bool = false,
         intensityMetric: IntensityMetric = .rpe,
         weightUnit: WeightUnit = .kg
     ) {
         self.workoutExercise = workoutExercise
-        self.isActiveExercise = isActiveExercise
         self.previousSetData = previousSetData
         self.onWeightChange = onWeightChange
         self.onRepsChange = onRepsChange
@@ -82,6 +85,8 @@ struct ExerciseCardView: View {
         self.onRemoveDropEntry = onRemoveDropEntry
         self.onNoteChange = onNoteChange
         self.onMoveSet = onMoveSet
+        self.onDragChanged = onDragChanged
+        self.onDragEnded = onDragEnded
         self.coachingData = coachingData
         self.alwaysShowRPE = alwaysShowRPE
         self.intensityMetric = intensityMetric
@@ -207,13 +212,16 @@ struct ExerciseCardView: View {
             RoundedRectangle(cornerRadius: STRadius.card)
                 .stroke(STColors.border, lineWidth: 1)
         )
-        .opacity(1.0)
     }
 
     // MARK: - Card Header
 
     private var cardHeader: some View {
         HStack {
+            if onDragChanged != nil {
+                dragHandle
+            }
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(workoutExercise.exercise.name)
                     .font(.system(size: 18, weight: .bold))
@@ -261,6 +269,24 @@ struct ExerciseCardView: View {
             }
         }
         .padding(STSpacing.cardPadding)
+    }
+
+    /// Grip handle for drag-to-reorder. highPriorityGesture + minimumDistance 0
+    /// claims the touch from the enclosing ScrollView's pan on touch-down, so the
+    /// card picks up instantly with no hold delay. Scrolls that start on the handle
+    /// are intentionally eaten — it's a dedicated grip.
+    private var dragHandle: some View {
+        Image(systemName: "line.3.horizontal")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(STColors.textTertiary)
+            .frame(width: 36, height: 36)
+            .contentShape(Rectangle())
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { onDragChanged?($0.translation.height) }
+                    .onEnded { _ in onDragEnded?() }
+            )
+            .accessibilityLabel("Reorder exercise")
     }
 
     // MARK: - Column Headers

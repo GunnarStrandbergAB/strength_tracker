@@ -16,6 +16,10 @@ struct ActiveWorkoutView: View {
     @State private var showingRestTimer = false
     @State private var notesText = ""
 
+    // Drag-to-reorder state, isolated so per-frame updates only invalidate the
+    // ExerciseDragEffect modifiers — never this whole view's body.
+    @State private var dragState = ExerciseDragState()
+
     init(viewModel: WorkoutViewModel, exerciseListViewModel: ExerciseListViewModel, restTimerService: RestTimerService, analyticsViewModel: WorkoutAnalyticsViewModel? = nil) {
         self._viewModel = State(initialValue: viewModel)
         self._exerciseListViewModel = State(initialValue: exerciseListViewModel)
@@ -51,7 +55,9 @@ struct ActiveWorkoutView: View {
                     restTimerService.stop()
                     Task {
                         await viewModel.cancelWorkout()
-                        WidgetDataService().updateActiveWorkoutState(nil)
+                        Task.detached(priority: .utility) {
+                            WidgetDataService().updateActiveWorkoutState(nil)
+                        }
                     }
                 }
                 Button("Keep Going", role: .cancel) {}
@@ -91,9 +97,7 @@ struct ActiveWorkoutView: View {
                     .font(.title3.bold())
                     .foregroundStyle(STColors.textPrimary)
 
-                if let currentExercise = workout.exercises.first(where: { ex in
-                    ex.sets.contains { !$0.isCompleted }
-                }) ?? workout.exercises.last {
+                if let currentExercise = workout.activeExercise(preferredId: nil) {
                     Text(currentExercise.exercise.name)
                         .font(.subheadline)
                         .foregroundStyle(STColors.textSecondary)
@@ -230,11 +234,32 @@ struct ActiveWorkoutView: View {
     }
 
     private func workoutScrollView(workout: Workout, proxy: ScrollViewProxy) -> some View {
-        ScrollView {
+        let canReorder = workout.exercises.count > 1
+        return ScrollView {
             VStack(spacing: STSpacing.cardGap) {
                 ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, workoutExercise in
-                    exerciseCard(for: workoutExercise, isActive: index == 0)
-                        .id(workoutExercise.id)
+                    exerciseCard(for: workoutExercise, reorderable: canReorder)
+                    .id(workoutExercise.id)
+                    .onGeometryChange(for: CGFloat.self) { geometry in
+                        geometry.size.height
+                    } action: { height in
+                        dragState.heights[workoutExercise.id] = height
+                    }
+                    .modifier(ActiveExerciseHighlight(
+                        exerciseId: workoutExercise.id,
+                        viewModel: viewModel
+                    ))
+                    .modifier(ExerciseDragEffect(
+                        id: workoutExercise.id,
+                        index: index,
+                        dragState: dragState
+                    ))
+                    .simultaneousGesture(TapGesture().onEnded {
+                        // Tapping anywhere on a card makes it the active exercise
+                        guard viewModel.activeExerciseId != workoutExercise.id else { return }
+                        viewModel.activeExerciseId = workoutExercise.id
+                        updateWidgetWorkoutState()
+                    })
                 }
                 notesCard
                 deloadToggle
@@ -245,7 +270,10 @@ struct ActiveWorkoutView: View {
             .padding(.horizontal, 16)
             .padding(.top, 16)
         }
+        .scrollDisabled(dragState.isDragging)
         .onChange(of: workout.exercises.count) { oldCount, newCount in
+            // Add/remove/watch-sync mid-drag would leave stale offsets — reset first
+            dragState.reset()
             guard newCount > oldCount else { return }  // Only scroll on addition
             if let lastExercise = workout.exercises.last {
                 withAnimation(.easeInOut(duration: 0.3)) {
@@ -257,10 +285,9 @@ struct ActiveWorkoutView: View {
         .scrollDismissesKeyboard(.immediately)
     }
 
-    private func exerciseCard(for workoutExercise: WorkoutExercise, isActive: Bool) -> some View {
+    private func exerciseCard(for workoutExercise: WorkoutExercise, reorderable: Bool) -> some View {
         ExerciseCardView(
             workoutExercise: workoutExercise,
-            isActiveExercise: isActive,
             previousSetData: previousDataForExercise(workoutExercise.id),
             onWeightChange: { setId, weight in
                 Task {
@@ -382,6 +409,19 @@ struct ActiveWorkoutView: View {
                     )
                 }
             },
+            onDragChanged: reorderable ? { translation in
+                guard let workout = viewModel.currentWorkout else { return }
+                dragState.dragChanged(
+                    id: workoutExercise.id,
+                    translation: translation,
+                    orderedIds: workout.exercises.map(\.id)
+                )
+            } : nil,
+            onDragEnded: reorderable ? {
+                if let (from, to) = dragState.dragEnded() {
+                    Task { await viewModel.moveExercise(from: from, to: to) }
+                }
+            } : nil,
             coachingData: viewModel.exerciseCoachingCache[workoutExercise.id],
             alwaysShowRPE: viewModel.userPreferencesService?.alwaysShowRPE ?? false,
             intensityMetric: intensityMetric,
@@ -462,7 +502,9 @@ struct ActiveWorkoutView: View {
             Task {
                 do {
                     try await viewModel.completeWorkout()
-                    WidgetDataService().updateActiveWorkoutState(nil)
+                    Task.detached(priority: .utility) {
+                        WidgetDataService().updateActiveWorkoutState(nil)
+                    }
                 } catch {
                     finishErrorMessage = error.localizedDescription
                     showingFinishError = true
@@ -658,42 +700,23 @@ struct ActiveWorkoutView: View {
     // MARK: - Widget Data Updates
 
     private func updateWidgetWorkoutState() {
-        guard let workout = viewModel.currentWorkout, viewModel.isActive else {
-            WidgetDataService().updateActiveWorkoutState(nil)
-            return
+        let service = WidgetDataService()
+        let state: WidgetActiveWorkout?
+        if let workout = viewModel.currentWorkout, viewModel.isActive {
+            state = service.buildActiveWorkoutState(
+                workout: workout,
+                isResting: restTimerService.isRunning,
+                restEndDate: restTimerService.isRunning ? restTimerService.endDate : nil,
+                activeExerciseId: viewModel.activeExerciseId
+            )
+        } else {
+            state = nil
         }
-        let state = WidgetActiveWorkout(
-            workoutName: workout.name,
-            currentExerciseName: {
-                let current = workout.exercises.first { ex in ex.sets.contains { !$0.isCompleted } } ?? workout.exercises.last
-                return current?.exercise.name ?? "Exercise"
-            }(),
-            currentExerciseId: {
-                let current = workout.exercises.first { ex in ex.sets.contains { !$0.isCompleted } } ?? workout.exercises.last
-                return current?.id.uuidString ?? ""
-            }(),
-            completedSets: workout.exercises.reduce(0) { $0 + $1.sets.filter(\.isCompleted).count },
-            totalPlannedSets: workout.exercises.reduce(0) { $0 + $1.sets.count },
-            startedAt: workout.startedAt,
-            isResting: restTimerService.isRunning,
-            restEndDate: restTimerService.isRunning ? restTimerService.endDate : nil,
-            nextSetWeight: {
-                let current = workout.exercises.first { ex in ex.sets.contains { !$0.isCompleted } }
-                return current?.sets.first { !$0.isCompleted }?.weight
-            }(),
-            nextSetReps: {
-                let current = workout.exercises.first { ex in ex.sets.contains { !$0.isCompleted } }
-                return current?.sets.first { !$0.isCompleted }?.reps
-            }(),
-            nextExerciseName: {
-                let currentIdx = workout.exercises.firstIndex { ex in ex.sets.contains { !$0.isCompleted } }
-                if let idx = currentIdx, idx + 1 < workout.exercises.count {
-                    return workout.exercises[idx + 1].exercise.name
-                }
-                return nil
-            }()
-        )
-        WidgetDataService().updateActiveWorkoutState(state)
+        // App-Group JSON round-trip + WidgetCenter XPC — keep it off the main thread
+        // so taps and set toggles render without waiting on it.
+        Task.detached(priority: .utility) {
+            service.updateActiveWorkoutState(state)
+        }
     }
 
     private func previousDataForExercise(_ exerciseId: UUID) -> [Int: String] {

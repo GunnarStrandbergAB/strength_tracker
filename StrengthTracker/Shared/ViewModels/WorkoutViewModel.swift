@@ -20,6 +20,18 @@ public final class WorkoutViewModel {
 
     public var currentWorkout: Workout? = nil
     public var isActive = false
+
+    /// Last exercise the user interacted with (completed or edited a set). Drives the
+    /// in-app card highlight, the widget's "current exercise", and rest-timer context.
+    /// Not persisted — restored from set `completedAt` timestamps on relaunch.
+    public var activeExerciseId: UUID? = nil
+
+    /// The resolved active exercise — the last-interacted one for as long as it
+    /// exists in the workout, with a first-incomplete fallback.
+    public var activeExercise: WorkoutExercise? {
+        currentWorkout?.activeExercise(preferredId: activeExerciseId)
+    }
+
     public var plannedSessionId: UUID? = nil
     public var plannedPlanId: UUID? = nil
     public var errorMessage: String? = nil
@@ -146,6 +158,7 @@ public final class WorkoutViewModel {
             workout = try await workoutRepository.save(workout)
             currentWorkout = workout
             isActive = true
+            activeExerciseId = nil
             Self.hasPendingActiveWorkout = true
 
             // Update template usage stats
@@ -170,10 +183,38 @@ public final class WorkoutViewModel {
             sets: []
         )
         workout.exercises.append(workoutExercise)
-        currentWorkout = workout
+        currentWorkout = workout  // Immediate UI update (optimistic)
+        activeExerciseId = workoutExercise.id
 
-        Task {
+        Task { [workout] in
+            // Persist right away — without this the new exercise lives only in memory
+            // until the next unrelated save and is lost if the app is killed.
+            do {
+                currentWorkout = try await workoutRepository.save(workout)
+            } catch {
+                // Optimistic state already set; retry happens on the next mutation's save
+            }
             await loadPreviousDataForExercise(workoutExercise.id)
+        }
+    }
+
+    /// Move an exercise card to a new position, renumbering the persisted 1-based
+    /// `order` field (SwiftData's relationship is unordered — `order` is the truth).
+    public func moveExercise(from source: Int, to destination: Int) async {
+        guard var workout = currentWorkout,
+              source >= 0, source < workout.exercises.count,
+              destination >= 0, destination < workout.exercises.count,
+              source != destination else { return }
+        let exercise = workout.exercises.remove(at: source)
+        workout.exercises.insert(exercise, at: destination)
+        for i in workout.exercises.indices {
+            workout.exercises[i].order = i + 1
+        }
+        currentWorkout = workout  // Immediate UI update (optimistic)
+        do {
+            currentWorkout = try await workoutRepository.save(workout)
+        } catch {
+            // Already set above; save failed but local state is correct
         }
     }
 
@@ -186,6 +227,7 @@ public final class WorkoutViewModel {
             throw WorkoutError.exerciseNotFound
         }
 
+        activeExerciseId = workout.exercises[exerciseIndex].id
         let setOrder = workout.exercises[exerciseIndex].sets.count + 1
         let newSet = ExerciseSet(
             id: UUID(),
@@ -217,6 +259,7 @@ public final class WorkoutViewModel {
     public func removeSet(exerciseId: UUID, setId: UUID) async {
         guard var workout = currentWorkout else { return }
         guard let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }) else { return }
+        activeExerciseId = exerciseId
         workout.exercises[exerciseIndex].sets.removeAll { $0.id == setId }
         // Re-number set orders
         for i in workout.exercises[exerciseIndex].sets.indices {
@@ -231,6 +274,7 @@ public final class WorkoutViewModel {
 
     public func removeExercise(exerciseId: UUID) async {
         guard var workout = currentWorkout else { return }
+        if activeExerciseId == exerciseId { activeExerciseId = nil }
         workout.exercises.removeAll { $0.id == exerciseId }
         // Re-number orders
         for i in workout.exercises.indices {
@@ -266,6 +310,7 @@ public final class WorkoutViewModel {
         let saved = try await workoutRepository.save(workout)
         currentWorkout = saved
         isActive = false
+        activeExerciseId = nil
         Self.hasPendingActiveWorkout = false
 
         // Mark progression plan session completed.
@@ -400,11 +445,40 @@ public final class WorkoutViewModel {
         #endif
     }
 
-    /// Load previous data for all exercises when workout starts
+    /// Load previous data for all exercises when workout starts.
+    /// Fetches the history ONCE — a per-set fetch here used to block the main
+    /// actor for seconds on workout entry, starving the first tap's render.
     public func loadPreviousData() async {
         guard let workout = currentWorkout else { return }
+        guard let allWorkouts = try? await workoutRepository.fetchAll() else { return }
+        let previousCompleted = allWorkouts
+            .filter { $0.completedAt != nil && $0.id != workout.id }
+            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
         for exercise in workout.exercises {
-            await loadPreviousDataForExercise(exercise.id)
+            fillPreviousDataCache(for: exercise, from: previousCompleted)
+            await Task.yield()  // let queued UI updates (e.g. a tap) get a frame
+        }
+    }
+
+    /// Fill missing previous-set cache keys for one exercise from an already
+    /// fetched, completed-and-sorted workout history.
+    private func fillPreviousDataCache(for exercise: WorkoutExercise, from previousCompleted: [Workout]) {
+        let missingIndices = exercise.sets.indices.filter {
+            previousSetDataCache["\(exercise.id)-\($0)"] == nil
+        }
+        guard !missingIndices.isEmpty else { return }
+
+        let targetExerciseId = exercise.exercise.id
+        guard let prevExercise = previousCompleted
+            .first(where: { workout in workout.exercises.contains { $0.exercise.id == targetExerciseId } })?
+            .exercises.first(where: { $0.exercise.id == targetExerciseId }) else { return }
+
+        let unit = userPreferencesService?.weightUnit ?? .kg
+        for index in missingIndices where index < prevExercise.sets.count {
+            let prevSet = prevExercise.sets[index]
+            let weight = prevSet.weight.map { unit.formatValue($0) } ?? "0"
+            let reps = prevSet.reps.map { String($0) } ?? "0"
+            previousSetDataCache["\(exercise.id)-\(index)"] = "\(weight)\(unit.symbol) × \(reps)"
         }
     }
 
@@ -414,12 +488,18 @@ public final class WorkoutViewModel {
         let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
         do {
             let allWorkouts = try await workoutRepository.fetchAll()
-            let recentCompleted = allWorkouts
-                .filter { $0.completedAt != nil && $0.id != workout.id }
-                .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+            // Suggestions scan recentWorkouts per set — cap the window so a long
+            // history doesn't cost seconds of main-actor time on workout entry.
+            let recentCompleted = Array(
+                allWorkouts
+                    .filter { $0.completedAt != nil && $0.id != workout.id }
+                    .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+                    .prefix(20)
+            )
             guard recentCompleted.count >= 3 else { return }
 
             for we in workout.exercises {
+                await Task.yield()  // keep the UI responsive during workout entry
                 let exerciseId = we.exercise.id
                 var suggestions: [Int: WeightSuggestion] = [:]
                 for (setIndex, set) in we.sets.enumerated() {
@@ -462,14 +542,14 @@ public final class WorkoutViewModel {
     public func loadPreviousDataForExercise(_ exerciseId: UUID) async {
         guard let workout = currentWorkout,
               let exercise = workout.exercises.first(where: { $0.id == exerciseId }) else { return }
-        for (index, _) in exercise.sets.enumerated() {
-            let key = "\(exercise.id)-\(index)"
-            if previousSetDataCache[key] == nil {
-                if let data = await previousSetData(for: exercise.id, setIndex: index) {
-                    previousSetDataCache[key] = data
-                }
-            }
+        let hasMissing = exercise.sets.indices.contains {
+            previousSetDataCache["\(exercise.id)-\($0)"] == nil
         }
+        guard hasMissing, let allWorkouts = try? await workoutRepository.fetchAll() else { return }
+        let previousCompleted = allWorkouts
+            .filter { $0.completedAt != nil && $0.id != workout.id }
+            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+        fillPreviousDataCache(for: exercise, from: previousCompleted)
     }
 
     // MARK: - Inline Editing Methods
@@ -482,6 +562,7 @@ public final class WorkoutViewModel {
             return
         }
 
+        activeExerciseId = exerciseId
         let setOrder = workout.exercises[exerciseIndex].sets.count + 1
         let newSet = ExerciseSet(
             id: UUID(),
@@ -515,6 +596,7 @@ public final class WorkoutViewModel {
             return
         }
 
+        activeExerciseId = exerciseId
         mutate(&workout.exercises[exerciseIndex].sets[setIndex])
         do {
             currentWorkout = try await workoutRepository.save(workout)
@@ -627,6 +709,7 @@ public final class WorkoutViewModel {
     public func toggleSetCompletion(exerciseId: UUID, setId: UUID) async {
         guard var workout = currentWorkout else { return }
         guard workout.toggleSetCompletion(exerciseId: exerciseId, setId: setId) != nil else { return }
+        activeExerciseId = exerciseId
         do {
             currentWorkout = try await workoutRepository.save(workout)
         } catch {
@@ -676,6 +759,7 @@ public final class WorkoutViewModel {
                 }
                 currentWorkout = active
                 isActive = true
+                activeExerciseId = active.lastInteractedExerciseId
                 Self.hasPendingActiveWorkout = true
                 await loadPreviousData()
             } else {
@@ -716,6 +800,7 @@ public final class WorkoutViewModel {
         try? await workoutRepository.deleteAllIncomplete()
         currentWorkout = nil
         isActive = false
+        activeExerciseId = nil
         plannedSessionId = nil
         plannedPlanId = nil
         Self.hasPendingActiveWorkout = false
