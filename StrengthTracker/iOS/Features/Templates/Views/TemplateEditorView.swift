@@ -157,18 +157,10 @@ struct TemplateEditorView: View {
     }
 
     private func addExercise(_ exercise: Exercise) {
-        let templateExercise = TemplateExercise(
-            id: UUID(),
+        let templateExercise = TemplateExerciseFactory.make(
             exercise: exercise,
             order: exercises.count,
-            supersetGroup: nil,
-            notes: nil,
-            restTimerSeconds: nil,
-            targetSets: 3,
-            targetReps: exercise.exerciseType == .weightedReps || exercise.exerciseType == .bodyweightReps ? UserPreferencesService().defaultReps : nil,
-            targetWeight: exercise.exerciseType == .weightedReps ? 0 : nil,
-            targetDurationSeconds: exercise.exerciseType == .duration ? 60 : nil,
-            targetDistanceMeters: exercise.exerciseType == .cardio || exercise.exerciseType == .weightedCardio ? 1000 : nil
+            defaultReps: viewModel.userPreferencesService?.defaultReps ?? UserPreferencesService.defaultRepsValue
         )
         exercises.append(templateExercise)
     }

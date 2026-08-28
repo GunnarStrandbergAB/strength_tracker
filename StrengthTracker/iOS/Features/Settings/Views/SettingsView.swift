@@ -9,18 +9,32 @@ struct SettingsView: View {
     private var connectivityManager: ConnectivityManager?
     var proFeatureGate: ProFeatureGate? = nil
     var storeService: StoreService? = nil
+    var aiCredentialsService: AICredentialsService? = nil
+    var aiChatClient: (any AIChatClient)? = nil
     @State private var showUpgradeSheet = false
+    @State private var connectionTestState: ConnectionTestState = .idle
+
+    private enum ConnectionTestState: Equatable {
+        case idle
+        case testing
+        case success
+        case failure(String)
+    }
 
     init(
         preferencesService: UserPreferencesService,
         connectivityManager: ConnectivityManager? = nil,
         proFeatureGate: ProFeatureGate? = nil,
-        storeService: StoreService? = nil
+        storeService: StoreService? = nil,
+        aiCredentialsService: AICredentialsService? = nil,
+        aiChatClient: (any AIChatClient)? = nil
     ) {
         self.preferencesService = preferencesService
         self.connectivityManager = connectivityManager
         self.proFeatureGate = proFeatureGate
         self.storeService = storeService
+        self.aiCredentialsService = aiCredentialsService
+        self.aiChatClient = aiChatClient
     }
 
     var body: some View {
@@ -235,6 +249,11 @@ struct SettingsView: View {
                     Text("Posts workout JSON to this URL after every completed workout. Use with AI trainers, n8n, Zapier, or any HTTP endpoint.")
                 }
 
+                // AI Assistant Section
+                if let aiCredentialsService {
+                    aiAssistantSection(credentials: aiCredentialsService)
+                }
+
                 // Legal Section
                 Section("Legal") {
                     Link(destination: URL(string: "https://hellbentiron.com/privacy")!) {
@@ -320,6 +339,67 @@ struct SettingsView: View {
             .onChange(of: preferencesService.deloadWeightPercentage) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.deloadRestPercentage) { _, _ in syncSettingsToWatch() }
             .onChange(of: preferencesService.bodyWeightKg) { _, _ in syncSettingsToWatch() }
+    }
+
+    @ViewBuilder
+    private func aiAssistantSection(credentials: AICredentialsService) -> some View {
+        @Bindable var credentials = credentials
+        Section {
+            Toggle("AI Assistant", isOn: $preferencesService.aiChatEnabled)
+
+            SecureField("xAI API key", text: $credentials.xaiAPIKey)
+                .textContentType(.password)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .onChange(of: credentials.xaiAPIKey) { _, _ in
+                    connectionTestState = .idle
+                }
+
+            if let aiChatClient {
+                Button {
+                    connectionTestState = .testing
+                    let client = aiChatClient
+                    Task {
+                        do {
+                            try await client.validateKey()
+                            connectionTestState = .success
+                        } catch let error as AIClientError {
+                            connectionTestState = .failure(error.userMessage)
+                        } catch {
+                            connectionTestState = .failure(error.localizedDescription)
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Text("Test Connection")
+                        Spacer()
+                        switch connectionTestState {
+                        case .idle:
+                            EmptyView()
+                        case .testing:
+                            ProgressView()
+                        case .success:
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(STColors.success)
+                        case .failure:
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(STColors.danger)
+                        }
+                    }
+                }
+                .disabled(!credentials.hasKey || connectionTestState == .testing)
+
+                if case .failure(let message) = connectionTestState {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(STColors.danger)
+                }
+            }
+        } header: {
+            Text("AI Assistant")
+        } footer: {
+            Text("Chat with Grok about your training. Your key is stored in the device keychain and sent only to api.x.ai.")
+        }
     }
 
     private func updateBodyWeightText() {

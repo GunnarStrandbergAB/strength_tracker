@@ -67,6 +67,11 @@ public final class UserPreferencesService {
         didSet { UserDefaults.standard.set(webhookBearerToken, forKey: "webhookBearerToken") }
     }
 
+    /// Whether the AI assistant (Grok chat) is enabled
+    public var aiChatEnabled: Bool {
+        didSet { UserDefaults.standard.set(aiChatEnabled, forKey: "aiChatEnabled") }
+    }
+
     /// Vector schema version — bump when normalization constants change to trigger recomputation
     public var vectorVersion: Int {
         didSet { UserDefaults.standard.set(vectorVersion, forKey: "vectorVersion") }
@@ -154,6 +159,8 @@ public final class UserPreferencesService {
 
         self.vectorVersion = defaults.integer(forKey: "vectorVersion")
         self.effectiveLoadModelVersion = defaults.integer(forKey: "effectiveLoadModelVersion")
+
+        self.aiChatEnabled = defaults.bool(forKey: "aiChatEnabled")
     }
 
     /// Reset all preferences to defaults

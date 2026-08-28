@@ -30,6 +30,14 @@ public final class AppContainer: Sendable {
     public let calorieEstimationService: CalorieEstimationService
     public let webhookService: WebhookService
 
+    // AI assistant
+    public let aiCredentialsService: AICredentialsService
+    public let aiChatClient: any AIChatClient
+    public let chatRepository: any ChatRepository
+    public let aiToolRegistry: AIToolRegistry
+    public let aiAgentService: AIAgentService
+    public let aiChatViewModel: AIChatViewModel
+
     // Analytics
     public let analyticsRepository: any AnalyticsRepository
     public let vectorizer: WorkoutVectorizer
@@ -75,7 +83,9 @@ public final class AppContainer: Sendable {
             TemplateExerciseEntity.self,
             PersonalRecordEntity.self,
             WorkoutVectorEntity.self,
-            ProgressionPlanEntity.self
+            ProgressionPlanEntity.self,
+            ChatConversationEntity.self,
+            ChatMessageEntity.self
         ])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         modelContainer = try ModelContainer(for: schema, configurations: [config])
@@ -119,6 +129,14 @@ public final class AppContainer: Sendable {
         connectivityManager = ConnectivityManager()
         calorieEstimationService = CalorieEstimationService()
         webhookService = WebhookService(preferencesService: userPreferencesService)
+
+        // AI assistant
+        aiCredentialsService = AICredentialsService()
+        let credentials = aiCredentialsService
+        aiChatClient = XAIClient(apiKeyProvider: { @MainActor in
+            credentials.hasKey ? credentials.xaiAPIKey : nil
+        })
+        chatRepository = SwiftDataChatRepository(modelContext: modelContext)
 
         // Analytics repository (vector-only, no workoutRepository dependency -- ADR-011)
         analyticsRepository = SwiftDataAnalyticsRepository(modelContext: modelContext)
@@ -267,6 +285,95 @@ public final class AppContainer: Sendable {
             coachingCommunicationService: coachingCommunicationService
         )
 
+        // AI assistant: tool registry, agent loop, and cached chat ViewModel.
+        aiToolRegistry = AIToolRegistry(tools: [
+            ListExercisesTool(exerciseRepository: exerciseRepository),
+            GetTrainingHistoryTool(
+                workoutRepository: workoutRepository,
+                exerciseRepository: exerciseRepository,
+                userPreferencesService: userPreferencesService
+            ),
+            GetAnalyticsInsightsTool(analyticsService: analyticsService),
+            GetPersonalRecordsTool(
+                personalRecordRepository: personalRecordRepository,
+                exerciseRepository: exerciseRepository
+            ),
+            GetActivePlanTool(
+                progressionPlanRepository: progressionPlanRepository,
+                userPreferencesService: userPreferencesService
+            ),
+            ProposeExerciseTool(exerciseRepository: exerciseRepository),
+            ProposeTemplateTool(
+                exerciseRepository: exerciseRepository,
+                userPreferencesService: userPreferencesService
+            ),
+            ProposeTrainingPlanTool(
+                exerciseRepository: exerciseRepository,
+                personalRecordRepository: personalRecordRepository
+            )
+        ])
+        let prefs = userPreferencesService
+        aiAgentService = AIAgentService(
+            client: aiChatClient,
+            registry: aiToolRegistry,
+            instructionsProvider: { @MainActor in
+                AISystemPrompt.build(weightUnit: prefs.weightUnit)
+            }
+        )
+        aiChatViewModel = AIChatViewModel(
+            agent: aiAgentService,
+            chatRepository: chatRepository,
+            userPreferencesService: userPreferencesService
+        )
+
+        // Accepted AI drafts route through the same seams the UI uses
+        // (saveTemplate includes the Watch sync; createPlan runs the program generator).
+        let exerciseVM = exerciseListViewModel
+        let templateVM = templateViewModel
+        let progressionVM = progressionPlanViewModel
+        let statusDetector = trainingStatusDetector
+        aiChatViewModel.onSaveDraft = { [weak exerciseVM, weak templateVM, weak progressionVM] draft in
+            switch draft {
+            case .exercise(let exercise):
+                await exerciseVM?.saveExercise(exercise)
+
+            case .template(var template):
+                template.sortOrder = templateVM?.userTemplates.count ?? 0
+                await templateVM?.saveTemplate(template)
+
+            case .plan(let parameters):
+                guard let progressionVM else { return }
+                let trainingStatus = (try? await statusDetector.detect()) ?? .beginner
+                // PlanExercise 1RM fields are stored in the user's display unit.
+                let unit = prefs.weightUnit
+                let exercises = parameters.exercises.enumerated().map { index, selection in
+                    let oneRM = selection.estimated1RMKg.map { unit.fromKg($0) } ?? 0
+                    return PlanExercise(
+                        exerciseId: selection.exerciseID,
+                        exerciseName: selection.exerciseName,
+                        primaryMuscleGroup: selection.primaryMuscleGroup,
+                        category: selection.category,
+                        estimated1RM: oneRM,
+                        oneRMSource: .naturalLanguage,
+                        current1RM: oneRM,
+                        isCompound: selection.category == .barbell || selection.category == .dumbbell,
+                        order: index
+                    )
+                }
+                try await progressionVM.createPlan(from: ProgressionPlanViewModel.PlanCreationRequest(
+                    name: parameters.name,
+                    trainingStatus: trainingStatus,
+                    programType: parameters.programType ?? trainingStatus.recommendedProgramType,
+                    primaryGoal: parameters.primaryGoal,
+                    weeklyFrequency: parameters.weeklyFrequency,
+                    trainingDays: Set(parameters.trainingDays ?? []),
+                    startDate: parameters.startDate,
+                    exercises: exercises,
+                    creationSource: .naturalLanguage
+                ))
+            }
+        }
+
         // Route planned-session completions through the adaptive progression
         // pipeline (APRE + 1RM updates + adviser proposals) instead of the
         // plain markSessionCompleted repository call.
@@ -330,6 +437,10 @@ public final class AppContainer: Sendable {
 
     public func makeProgressionPlanViewModel() -> ProgressionPlanViewModel {
         progressionPlanViewModel
+    }
+
+    public func makeAIChatViewModel() -> AIChatViewModel {
+        aiChatViewModel
     }
 }
 #endif

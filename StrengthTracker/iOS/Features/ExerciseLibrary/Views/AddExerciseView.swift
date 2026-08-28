@@ -192,20 +192,19 @@ struct AddExerciseView: View {
                         // Edit keeps the same identity (PRs/history stay attached);
                         // create/duplicate mint a new independent exercise.
                         let existing = mode.isEdit ? mode.sourceExercise : nil
-                        let exercise = Exercise(
+                        guard let exercise = try? ExerciseFactory.makeCustom(
                             id: existing?.id ?? UUID(),
-                            name: name.trimmingCharacters(in: .whitespaces),
+                            name: name,
                             primaryMuscleGroup: primaryMuscleGroup,
                             secondaryMuscleGroups: Array(secondaryMuscleGroups),
                             category: category,
                             exerciseType: exerciseType,
                             instructions: instructions.isEmpty ? nil : instructions,
-                            isCustom: true,
-                            isArchived: existing?.isArchived ?? false,
-                            bodyweightFactor: resolvedBodyweightFactor,
-                            equipmentBrand: resolvedBrand,
-                            loadingType: resolvedLoadingType
-                        )
+                            bodyweightPercent: Double(bodyweightPercent),
+                            equipmentBrand: equipmentBrand,
+                            loadingType: loadingType,
+                            isArchived: existing?.isArchived ?? false
+                        ) else { return }
                         Task {
                             await viewModel.saveExercise(exercise)
                             if !mode.isEdit, let value = Double(known1RM), value > 0, let prService = personalRecordService {
@@ -239,30 +238,12 @@ struct AddExerciseView: View {
         }
     }
 
-    private var resolvedBodyweightFactor: Double? {
-        guard exerciseType == .bodyweightReps else { return nil }
-        guard let pct = Double(bodyweightPercent), pct > 0 else { return nil }
-        return min(max(pct / 100.0, 0.1), 1.5)
-    }
-
     private var showsBrandField: Bool {
-        [.machine, .cable, .smithMachine].contains(category)
+        ExerciseFactory.showsBrandField(for: category)
     }
 
     private var showsLoadingPicker: Bool {
-        category == .machine
-    }
-
-    // Gated on category (like resolvedBodyweightFactor on type) so switching the
-    // category away from machine-like saves nil, not a stale value.
-    private var resolvedBrand: String? {
-        guard showsBrandField else { return nil }
-        let trimmed = equipmentBrand.trimmingCharacters(in: .whitespaces)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private var resolvedLoadingType: LoadingType? {
-        showsLoadingPicker ? loadingType : nil
+        ExerciseFactory.showsLoadingPicker(for: category)
     }
 }
 #endif

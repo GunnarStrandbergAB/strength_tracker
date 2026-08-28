@@ -183,7 +183,10 @@ struct ContentViewWrapper: View {
                 restTimerService: container.restTimerService,
                 personalRecordService: container.personalRecordService,
                 proFeatureGate: container.proFeatureGate,
-                storeService: container.storeService
+                storeService: container.storeService,
+                aiCredentialsService: container.aiCredentialsService,
+                aiChatClient: container.aiChatClient,
+                aiChatViewModel: container.makeAIChatViewModel()
             )
         } else {
             STColors.background.ignoresSafeArea()
