@@ -69,9 +69,5 @@ fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
 
-# Claude Flow runtime state
-.swarm/
-.claude-flow/
-
 # Local guides (root-level only — docs/APP_STORE_RELEASE_GUIDE.md is tracked)
 /APP_STORE_RELEASE_GUIDE.md
