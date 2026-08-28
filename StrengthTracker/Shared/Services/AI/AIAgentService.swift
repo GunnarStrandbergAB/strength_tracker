@@ -83,61 +83,80 @@ public final class AIAgentService: AIAgentRunning {
         var accumulatedText = ""
         var activities: [ToolActivity] = []
         var iteration = 0
+        // Full turn history for stateless replay if the server loses our state
+        // (expired previous_response_id, key rotation, …). Echoed function_call
+        // items must precede their function_call_output with the same call_id.
+        var replayItems = input
+        var usedStatelessFallback = false
 
         while true {
             iteration += 1
             let finalRound = iteration > Self.maxIterations
             if finalRound {
-                input.append(.message(
+                let wrapUp = AIInputItem.message(
                     role: "user",
                     content: "[Tool budget exhausted — answer now with the information you already have.]"
-                ))
+                )
+                input.append(wrapUp)
+                replayItems.append(wrapUp)
             }
-
-            let request = AIRequest(
-                model: model,
-                instructions: instructions,
-                input: input,
-                previousResponseID: previousID,
-                tools: finalRound ? [] : registry.definitions,
-                conversationID: conversationID
-            )
 
             var functionCalls: [AIFunctionCall] = []
             var completedID: String?
             var completedText = ""
 
-            do {
-                for try await event in client.stream(request) {
-                    try Task.checkCancellation()
-                    switch event {
-                    case .textDelta(let delta):
-                        accumulatedText += delta
-                        continuation.yield(.assistantDelta(delta))
-                    case .functionCall(let call):
-                        functionCalls.append(call)
-                    case .completed(let responseID, let fullText, _):
-                        completedID = responseID
-                        completedText = fullText
-                    case .failed(let message):
-                        continuation.yield(.failed(message: message, conversationExpired: false))
-                        return
+            var attemptInput = input
+            var attemptPreviousID = previousID
+            streaming: while true {
+                let request = AIRequest(
+                    model: model,
+                    instructions: instructions,
+                    input: attemptInput,
+                    previousResponseID: attemptPreviousID,
+                    tools: finalRound ? [] : registry.definitions,
+                    conversationID: conversationID
+                )
+                do {
+                    for try await event in client.stream(request) {
+                        try Task.checkCancellation()
+                        switch event {
+                        case .textDelta(let delta):
+                            accumulatedText += delta
+                            continuation.yield(.assistantDelta(delta))
+                        case .functionCall(let call):
+                            functionCalls.append(call)
+                        case .completed(let responseID, let fullText, _):
+                            completedID = responseID
+                            completedText = fullText
+                        case .failed(let message):
+                            continuation.yield(.failed(message: message, conversationExpired: false))
+                            return
+                        }
                     }
+                    break streaming
+                } catch is CancellationError {
+                    return
+                } catch AIClientError.previousResponseNotFound
+                    where attemptPreviousID != nil && !usedStatelessFallback {
+                    // Server-side state is gone — replay the whole turn statelessly.
+                    // The HTTP error arrives before any stream events, so nothing
+                    // was yielded for this attempt yet.
+                    usedStatelessFallback = true
+                    attemptPreviousID = nil
+                    attemptInput = replayItems
+                } catch let error as AIClientError {
+                    continuation.yield(.failed(
+                        message: error.userMessage,
+                        conversationExpired: error == .previousResponseNotFound
+                    ))
+                    return
+                } catch {
+                    continuation.yield(.failed(message: error.localizedDescription, conversationExpired: false))
+                    return
                 }
-            } catch is CancellationError {
-                return
-            } catch let error as AIClientError {
-                continuation.yield(.failed(
-                    message: error.userMessage,
-                    conversationExpired: error == .previousResponseNotFound
-                ))
-                return
-            } catch {
-                continuation.yield(.failed(message: error.localizedDescription, conversationExpired: false))
-                return
             }
 
-            guard let responseID = completedID else {
+            guard let responseID = completedID, !responseID.isEmpty else {
                 continuation.yield(.failed(
                     message: "The stream ended without completing.", conversationExpired: false
                 ))
@@ -172,6 +191,10 @@ public final class AIAgentService: AIAgentRunning {
                 outputs.append(.functionCallOutput(callID: call.callID, output: result.outputForModel))
             }
 
+            replayItems += functionCalls.map {
+                .functionCall(callID: $0.callID, name: $0.name, argumentsJSON: $0.argumentsJSON)
+            }
+            replayItems += outputs
             input = outputs
             previousID = responseID
         }

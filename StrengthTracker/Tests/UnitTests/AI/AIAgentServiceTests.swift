@@ -254,11 +254,109 @@ struct AIAgentServiceTests {
         #expect(text == "capped answer")
     }
 
+    @Test("Expired server state falls back to a stateless retry of the turn")
+    func statelessFallbackOnFirstRound() async {
+        let (service, client) = makeService(script: [
+            .failure(AIClientError.previousResponseNotFound),
+            .events([
+                .textDelta("Fresh start"),
+                .completed(responseID: "resp_new", fullText: "Fresh start", usage: nil)
+            ])
+        ])
+
+        let events = await collect(service.run(
+            userText: "Hi again", contextNotes: [], previousResponseID: "resp_old", conversationID: UUID()
+        ))
+
+        #expect(client.requests.count == 2)
+        #expect(client.requests[0].previousResponseID == "resp_old")
+        #expect(client.requests[1].previousResponseID == nil)
+        #expect(client.requests[1].input == [.message(role: "user", content: "Hi again")])
+        guard case .turnCompleted("resp_new", "Fresh start", _) = events.last else {
+            Issue.record("expected recovered completion, got \(String(describing: events.last))")
+            return
+        }
+    }
+
+    @Test("Stateless fallback on a tool follow-up echoes the function calls and outputs")
+    func statelessFallbackOnFollowUp() async {
+        let tool = StubTool(
+            name: "get_data",
+            result: .success(AIToolResult(outputForModel: "{\"v\":1}", activityLabel: "Read"))
+        )
+        let (service, client) = makeService(
+            script: [
+                .events([
+                    .functionCall(AIFunctionCall(callID: "c1", name: "get_data", argumentsJSON: "{\"n\":2}")),
+                    .completed(responseID: "resp_1", fullText: "", usage: nil)
+                ]),
+                .failure(AIClientError.previousResponseNotFound),
+                .events([.completed(responseID: "resp_2", fullText: "done", usage: nil)])
+            ],
+            tools: [tool]
+        )
+
+        let events = await collect(service.run(
+            userText: "go", contextNotes: [], previousResponseID: nil, conversationID: UUID()
+        ))
+
+        #expect(client.requests.count == 3)
+        // Failed follow-up used the previous id…
+        #expect(client.requests[1].previousResponseID == "resp_1")
+        // …the retry replays the whole turn statelessly with paired call/output items.
+        #expect(client.requests[2].previousResponseID == nil)
+        #expect(client.requests[2].input == [
+            .message(role: "user", content: "go"),
+            .functionCall(callID: "c1", name: "get_data", argumentsJSON: "{\"n\":2}"),
+            .functionCallOutput(callID: "c1", output: "{\"v\":1}")
+        ])
+        guard case .turnCompleted("resp_2", _, _) = events.last else {
+            Issue.record("expected completion after fallback, got \(String(describing: events.last))")
+            return
+        }
+    }
+
+    @Test("The stateless fallback is attempted only once per turn")
+    func fallbackOnlyOnce() async {
+        let (service, _) = makeService(script: [
+            .failure(AIClientError.previousResponseNotFound),
+            .failure(AIClientError.previousResponseNotFound)
+        ])
+
+        let events = await collect(service.run(
+            userText: "Hi", contextNotes: [], previousResponseID: "resp_old", conversationID: UUID()
+        ))
+
+        // Second failure has no previousID to blame — but even a repeat expired
+        // error must not loop; it surfaces as failed.
+        guard case .failed = events.last else {
+            Issue.record("expected failed after exhausted fallback, got \(String(describing: events.last))")
+            return
+        }
+    }
+
+    @Test("An empty completion id is treated as a missing completion")
+    func emptyCompletionID() async {
+        let (service, _) = makeService(script: [
+            .events([.completed(responseID: "", fullText: "text", usage: nil)])
+        ])
+        let events = await collect(service.run(
+            userText: "Hi", contextNotes: [], previousResponseID: nil, conversationID: UUID()
+        ))
+        guard case .failed(let message, _) = events.last else {
+            Issue.record("expected failed")
+            return
+        }
+        #expect(message.contains("without completing"))
+    }
+
     @Test("Client errors surface as failed, flagging expired conversations")
     func clientErrors() async {
+        // Without a previous id there is nothing to fall back from — the expired
+        // error surfaces directly.
         let (service, _) = makeService(script: [.failure(AIClientError.previousResponseNotFound)])
         let events = await collect(service.run(
-            userText: "go", contextNotes: [], previousResponseID: "resp_old", conversationID: UUID()
+            userText: "go", contextNotes: [], previousResponseID: nil, conversationID: UUID()
         ))
 
         guard case .failed(_, let expired) = events.last else {

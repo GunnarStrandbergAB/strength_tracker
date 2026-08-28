@@ -62,6 +62,9 @@ public struct AIToolDefinition: Sendable, Equatable {
 /// An item in the request `input` array.
 public enum AIInputItem: Sendable, Equatable {
     case message(role: String, content: String)
+    /// An assistant tool call echoed back for stateless replay (must precede
+    /// its matching functionCallOutput with the same callID).
+    case functionCall(callID: String, name: String, argumentsJSON: String)
     case functionCallOutput(callID: String, output: String)
 
     public static func user(_ text: String) -> AIInputItem { .message(role: "user", content: text) }

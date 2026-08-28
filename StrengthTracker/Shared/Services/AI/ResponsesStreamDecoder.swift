@@ -51,7 +51,7 @@ public struct ResponsesStreamDecoder: Sendable {
     /// Extracts a function call from an output item object, if it is one.
     public static func functionCall(fromOutputItem item: [String: JSONValue]) -> AIFunctionCall? {
         guard item["type"].flatMap(asString) == "function_call",
-              let callID = item["call_id"].flatMap(asString),
+              let callID = item["call_id"].flatMap(asString) ?? item["id"].flatMap(asString),
               let name = item["name"].flatMap(asString) else {
             return nil
         }

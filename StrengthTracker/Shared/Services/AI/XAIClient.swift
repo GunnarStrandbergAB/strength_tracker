@@ -2,6 +2,9 @@ import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
+#if canImport(os)
+import os
+#endif
 
 /// Supplies the current API key at request time (hops to the main actor where
 /// the credentials service lives).
@@ -14,6 +17,19 @@ public final class XAIClient: AIChatClient, @unchecked Sendable {
     private let session: URLSession
     private let apiKeyProvider: APIKeyProvider
     private let decoder = ResponsesStreamDecoder()
+
+    #if canImport(os)
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "StrengthTracker",
+        category: "XAIClient"
+    )
+    #endif
+
+    private static func logFailure(status: Int, body: String, hadPreviousResponseID: Bool) {
+        #if canImport(os)
+        logger.error("xAI request failed: status=\(status, privacy: .public) previous_response_id=\(hadPreviousResponseID, privacy: .public) body=\(String(body.prefix(500)), privacy: .public)")
+        #endif
+    }
 
     public init(
         baseURL: URL = URL(string: "https://api.x.ai/v1")!,
@@ -65,16 +81,23 @@ public final class XAIClient: AIChatClient, @unchecked Sendable {
                             body += line
                             if body.count > 4096 { break }
                         }
+                        Self.logFailure(
+                            status: http.statusCode, body: body,
+                            hadPreviousResponseID: request.previousResponseID?.isEmpty == false
+                        )
                         throw Self.error(forStatus: http.statusCode, body: body)
                     }
 
+                    // Drain to end of stream — the terminal [DONE] follows
+                    // response.completed and costs only a few bytes.
                     var parser = SSEParser()
                     for try await line in bytes.lines {
                         try Task.checkCancellation()
-                        guard let sseEvent = parser.parse(line: line),
-                              let event = self.decoder.decode(sseEvent) else { continue }
-                        continuation.yield(event)
-                        if case .completed = event { break }
+                        guard let sseEvent = parser.parse(line: line) else { continue }
+                        if sseEvent.data == "[DONE]" { break }
+                        if let event = self.decoder.decode(sseEvent) {
+                            continuation.yield(event)
+                        }
                     }
                     continuation.finish()
                 } catch {
@@ -116,11 +139,14 @@ public final class XAIClient: AIChatClient, @unchecked Sendable {
             "store": .bool(request.store),
             "stream": .bool(stream)
         ]
-        if let instructions = request.instructions {
-            body["instructions"] = .string(instructions)
-        }
-        if let previous = request.previousResponseID {
+        let previous = request.previousResponseID.flatMap { $0.isEmpty ? nil : $0 }
+        if let previous {
+            // xAI rejects instructions alongside previous_response_id
+            // ("Argument not supported: instructions and previous_response_id
+            // together") — the stored turn's system prompt is reused server-side.
             body["previous_response_id"] = .string(previous)
+        } else if let instructions = request.instructions {
+            body["instructions"] = .string(instructions)
         }
         if !request.tools.isEmpty {
             body["tools"] = .array(request.tools.map { tool in
@@ -139,6 +165,13 @@ public final class XAIClient: AIChatClient, @unchecked Sendable {
         switch item {
         case .message(let role, let content):
             return .object(["role": .string(role), "content": .string(content)])
+        case .functionCall(let callID, let name, let argumentsJSON):
+            return .object([
+                "type": .string("function_call"),
+                "call_id": .string(callID),
+                "name": .string(name),
+                "arguments": .string(argumentsJSON)
+            ])
         case .functionCallOutput(let callID, let output):
             return .object([
                 "type": .string("function_call_output"),
@@ -153,7 +186,9 @@ public final class XAIClient: AIChatClient, @unchecked Sendable {
     private static func checkStatus(_ response: URLResponse, data: Data) throws {
         guard let http = response as? HTTPURLResponse else { return }
         guard !(200..<300).contains(http.statusCode) else { return }
-        throw error(forStatus: http.statusCode, body: String(data: data, encoding: .utf8) ?? "")
+        let body = String(data: data, encoding: .utf8) ?? ""
+        logFailure(status: http.statusCode, body: body, hadPreviousResponseID: false)
+        throw error(forStatus: http.statusCode, body: body)
     }
 
     static func error(forStatus status: Int, body: String) -> AIClientError {
@@ -164,7 +199,14 @@ public final class XAIClient: AIChatClient, @unchecked Sendable {
             return .rateLimited
         default:
             let message = errorMessage(fromBody: body)
-            if status >= 400, status < 500, message.lowercased().contains("previous_response") {
+            let lowered = message.lowercased()
+            // Only a genuine lost-state error counts as expired; other
+            // previous_response complaints (e.g. argument conflicts) must
+            // surface their real message.
+            let lostStateSignals = ["not found", "expired", "does not exist", "no longer"]
+            if status >= 400, status < 500,
+               lowered.contains("previous_response"),
+               lostStateSignals.contains(where: lowered.contains) {
                 return .previousResponseNotFound
             }
             return .http(status: status, message: message)
