@@ -51,7 +51,9 @@ public final class ExerciseSeeder {
         current.category != seed.category ||
         current.exerciseType != seed.exerciseType ||
         current.instructions != seed.instructions ||
-        current.bodyweightFactor != seed.bodyweightFactor
+        current.bodyweightFactor != seed.bodyweightFactor ||
+        // equipmentBrand deliberately not compared — gym-specific, never shipped in seeds
+        current.loadingType != seed.loadingType
     }
 }
 #endif

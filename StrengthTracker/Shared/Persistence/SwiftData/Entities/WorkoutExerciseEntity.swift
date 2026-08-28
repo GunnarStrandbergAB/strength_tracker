@@ -15,6 +15,8 @@ public final class WorkoutExerciseEntity {
     public var isCustom: Bool
     public var isArchived: Bool
     public var bodyweightFactor: Double?
+    public var equipmentBrand: String?
+    public var loadingType: String?
     public var order: Int
     public var supersetGroup: Int?
     public var notes: String?
@@ -38,6 +40,8 @@ public final class WorkoutExerciseEntity {
         isCustom: Bool,
         isArchived: Bool,
         bodyweightFactor: Double? = nil,
+        equipmentBrand: String? = nil,
+        loadingType: String? = nil,
         order: Int,
         supersetGroup: Int? = nil,
         notes: String? = nil,
@@ -55,6 +59,8 @@ public final class WorkoutExerciseEntity {
         self.isCustom = isCustom
         self.isArchived = isArchived
         self.bodyweightFactor = bodyweightFactor
+        self.equipmentBrand = equipmentBrand
+        self.loadingType = loadingType
         self.order = order
         self.supersetGroup = supersetGroup
         self.notes = notes

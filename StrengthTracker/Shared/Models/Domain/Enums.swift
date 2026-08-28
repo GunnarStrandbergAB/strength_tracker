@@ -15,6 +15,21 @@ public enum ExerciseCategory: String, Codable, CaseIterable, Sendable {
     case landmine, trapBar, ezBar, other
 }
 
+/// How a machine delivers resistance. Optional on Exercise — nil means
+/// unspecified or not a machine; used to distinguish e.g. a plate-loaded
+/// glute drive from a selectorized hip-thrust machine.
+public enum LoadingType: String, Codable, CaseIterable, Sendable {
+    case plateLoaded
+    case weightStack
+
+    public var displayName: String {
+        switch self {
+        case .plateLoaded: return "Plate-loaded"
+        case .weightStack: return "Weight stack"
+        }
+    }
+}
+
 public enum ExerciseType: String, Codable, CaseIterable, Sendable {
     case weightedReps
     case bodyweightReps
@@ -112,6 +127,33 @@ public enum WeightUnit: String, Codable, Sendable {
 
 public enum DistanceUnit: String, Codable, Sendable {
     case km, miles
+}
+
+// MARK: - ExerciseCategory display
+
+extension ExerciseCategory {
+    /// Human-readable name — raw values like "smithMachine" render badly when
+    /// merely capitalized ("Smithmachine").
+    public var displayName: String {
+        switch self {
+        case .barbell: return "Barbell"
+        case .dumbbell: return "Dumbbell"
+        case .machine: return "Machine"
+        case .cable: return "Cable"
+        case .bodyweight: return "Bodyweight"
+        case .smithMachine: return "Smith Machine"
+        case .kettlebell: return "Kettlebell"
+        case .resistanceBand: return "Resistance Band"
+        case .plate: return "Plate"
+        case .medicineBall: return "Medicine Ball"
+        case .exerciseBall: return "Exercise Ball"
+        case .trx: return "TRX"
+        case .landmine: return "Landmine"
+        case .trapBar: return "Trap Bar"
+        case .ezBar: return "EZ Bar"
+        case .other: return "Other"
+        }
+    }
 }
 
 // MARK: - SetType cycling & display

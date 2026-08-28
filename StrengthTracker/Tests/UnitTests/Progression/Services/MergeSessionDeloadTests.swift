@@ -169,6 +169,74 @@ struct MergeSessionDeloadTests {
         #expect(mergedLateral.setTargets.count == 4, "Per-set targets should be preserved")
     }
 
+    @Test("Ambiguous name fallback is disabled — same-named variants never cross-apply targets")
+    @MainActor
+    func testAmbiguousNameFallbackDisabled() {
+        // Template's "Hip Thrust" (own id) vs TWO planned "Hip Thrust" variants
+        // with different ids — the name fallback must not pick either.
+        let templateHipThrust = makeExercise(name: "Hip Thrust")
+        let template = WorkoutTemplate(
+            id: UUID(), name: "Glutes", notes: nil, sortOrder: 0,
+            lastUsedAt: nil, timesUsed: 0,
+            exercises: [makeTemplateExercise(exercise: templateHipThrust, order: 0, sets: 4, reps: 10, weight: 60)]
+        )
+
+        let session = PlannedSession(
+            sessionLabel: "Monday",
+            plannedExercises: [
+                PlannedExerciseSet(
+                    planExerciseId: UUID(), exerciseId: UUID(), exerciseName: "Hip Thrust",
+                    sets: 5, targetReps: 5, targetWeight: 120, percentageOf1RM: 0.75, restSeconds: 120
+                ),
+                PlannedExerciseSet(
+                    planExerciseId: UUID(), exerciseId: UUID(), exerciseName: "Hip Thrust",
+                    sets: 3, targetReps: 12, targetWeight: 45, percentageOf1RM: 0.75, restSeconds: 90
+                )
+            ],
+            isDeload: false
+        )
+
+        let vm = makeDummyVM()
+        let result = vm.mergeSessionIntoTemplate(session: session, template: template, exercises: [templateHipThrust])
+
+        // Template row keeps its own targets — neither variant's prescription applied
+        let merged = result.exercises.first { $0.exercise.id == templateHipThrust.id }!
+        #expect(merged.targetSets == 4)
+        #expect(merged.targetReps == 10)
+        #expect(merged.targetWeight == 60)
+    }
+
+    @Test("Uniquely named fallback still applies plan targets on id mismatch")
+    @MainActor
+    func testUniqueNameFallbackStillWorks() {
+        let templateSquat = makeExercise(name: "Squat")
+        let template = WorkoutTemplate(
+            id: UUID(), name: "Legs", notes: nil, sortOrder: 0,
+            lastUsedAt: nil, timesUsed: 0,
+            exercises: [makeTemplateExercise(exercise: templateSquat, order: 0, sets: 4, reps: 10, weight: 80)]
+        )
+
+        let session = PlannedSession(
+            sessionLabel: "Monday",
+            plannedExercises: [
+                PlannedExerciseSet(
+                    planExerciseId: UUID(), exerciseId: UUID(),  // id differs from template's
+                    exerciseName: "Squat",
+                    sets: 5, targetReps: 3, targetWeight: 110, percentageOf1RM: 0.75, restSeconds: 180
+                )
+            ],
+            isDeload: false
+        )
+
+        let vm = makeDummyVM()
+        let result = vm.mergeSessionIntoTemplate(session: session, template: template, exercises: [templateSquat])
+
+        let merged = result.exercises.first { $0.exercise.id == templateSquat.id }!
+        #expect(merged.targetSets == 5)
+        #expect(merged.targetReps == 3)
+        #expect(merged.targetWeight == 110)
+    }
+
     @Test("Deload with nil weight keeps nil (bodyweight exercises)")
     @MainActor
     func testDeloadSession_nilWeightStaysNil() {

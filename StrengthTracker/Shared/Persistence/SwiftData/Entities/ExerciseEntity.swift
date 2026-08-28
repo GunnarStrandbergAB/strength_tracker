@@ -14,6 +14,8 @@ public final class ExerciseEntity {
     public var isCustom: Bool
     public var isArchived: Bool
     public var bodyweightFactor: Double?
+    public var equipmentBrand: String?
+    public var loadingType: String?
 
     public init(
         id: UUID,
@@ -25,7 +27,9 @@ public final class ExerciseEntity {
         instructions: String?,
         isCustom: Bool,
         isArchived: Bool,
-        bodyweightFactor: Double? = nil
+        bodyweightFactor: Double? = nil,
+        equipmentBrand: String? = nil,
+        loadingType: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -37,6 +41,8 @@ public final class ExerciseEntity {
         self.isCustom = isCustom
         self.isArchived = isArchived
         self.bodyweightFactor = bodyweightFactor
+        self.equipmentBrand = equipmentBrand
+        self.loadingType = loadingType
     }
 }
 #endif

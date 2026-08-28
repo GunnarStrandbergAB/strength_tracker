@@ -1,14 +1,38 @@
 import SwiftUI
 import StrengthTrackerShared
 
+/// Sheet wrapper so `.sheet(item:)` can present the exercise form in a
+/// specific mode (edit or duplicate-as-variant).
+private struct ExerciseFormPresentation: Identifiable {
+    let id = UUID()
+    let mode: ExerciseFormMode
+}
+
 struct ExerciseDetailView: View {
-    let exercise: Exercise
+    @State private var exercise: Exercise
     var progressViewModel: ProgressViewModel? = nil
     var analyticsViewModel: WorkoutAnalyticsViewModel? = nil
     var personalRecordService: PersonalRecordService? = nil
+    /// Enables the Edit / Duplicate-as-Variant actions when provided.
+    var listViewModel: ExerciseListViewModel? = nil
 
     @State private var records: [PersonalRecord] = []
     @State private var showAddPR = false
+    @State private var formPresentation: ExerciseFormPresentation? = nil
+
+    init(
+        exercise: Exercise,
+        progressViewModel: ProgressViewModel? = nil,
+        analyticsViewModel: WorkoutAnalyticsViewModel? = nil,
+        personalRecordService: PersonalRecordService? = nil,
+        listViewModel: ExerciseListViewModel? = nil
+    ) {
+        self._exercise = State(initialValue: exercise)
+        self.progressViewModel = progressViewModel
+        self.analyticsViewModel = analyticsViewModel
+        self.personalRecordService = personalRecordService
+        self.listViewModel = listViewModel
+    }
 
     private var weightUnit: WeightUnit {
         progressViewModel?.weightUnit ?? analyticsViewModel?.weightUnit ?? .kg
@@ -17,8 +41,14 @@ struct ExerciseDetailView: View {
     var body: some View {
         List {
             Section("Details") {
-                LabeledContent("Category", value: exercise.category.rawValue.capitalized)
+                LabeledContent("Category", value: exercise.category.displayName)
                 LabeledContent("Type", value: exercise.exerciseType.rawValue.capitalized)
+                if let brand = exercise.equipmentBrand {
+                    LabeledContent("Brand", value: brand)
+                }
+                if let loading = exercise.loadingType {
+                    LabeledContent("Loading", value: loading.displayName)
+                }
             }
 
             Section("Muscle Groups") {
@@ -79,12 +109,46 @@ struct ExerciseDetailView: View {
             }
         }
         .navigationTitle(exercise.name)
+        .toolbar {
+            if let listViewModel {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        if exercise.isCustom {
+                            Button("Edit", systemImage: "pencil") {
+                                formPresentation = ExerciseFormPresentation(mode: .edit(exercise))
+                            }
+                        }
+                        Button("Duplicate as Variant", systemImage: "plus.square.on.square") {
+                            formPresentation = ExerciseFormPresentation(mode: .duplicate(of: exercise))
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+            }
+        }
         .task {
             await loadRecords()
         }
         .sheet(isPresented: $showAddPR) {
             AddPRSheet(exercise: exercise, personalRecordService: personalRecordService!, weightUnit: weightUnit) { newRecord in
                 records.append(newRecord)
+            }
+        }
+        .sheet(item: $formPresentation) { presentation in
+            if let listViewModel {
+                AddExerciseView(
+                    viewModel: listViewModel,
+                    mode: presentation.mode,
+                    personalRecordService: personalRecordService,
+                    weightUnit: weightUnit
+                ) { saved in
+                    // An edit refreshes this screen; a duplicate leaves it showing
+                    // the original (the variant lives in the library list).
+                    if presentation.mode.isEdit {
+                        exercise = saved
+                    }
+                }
             }
         }
     }

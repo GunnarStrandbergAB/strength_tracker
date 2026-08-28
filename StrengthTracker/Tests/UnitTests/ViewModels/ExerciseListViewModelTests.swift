@@ -144,4 +144,36 @@ struct ExerciseListViewModelTests {
         vm.selectedCategory = nil
         #expect(vm.filteredExercises.count == 2)
     }
+
+    // MARK: - saveExercise upsert
+
+    @Test("Saving the same exercise id twice updates in place — no duplicate row")
+    func saveExerciseUpserts() async {
+        let (vm, _) = makeViewModel()
+        var exercise = makeExercise(name: "Glute Drive", category: .machine)
+
+        await vm.saveExercise(exercise)
+        #expect(vm.exercises.count == 1)
+
+        exercise.equipmentBrand = "Hammer Strength"
+        exercise.loadingType = .plateLoaded
+        await vm.saveExercise(exercise)
+
+        #expect(vm.exercises.count == 1)
+        #expect(vm.exercises[0].equipmentBrand == "Hammer Strength")
+        #expect(vm.exercises[0].loadingType == .plateLoaded)
+    }
+
+    @Test("Renaming via save re-sorts the list")
+    func saveExerciseResorts() async {
+        let (vm, _) = makeViewModel()
+        var abduction = makeExercise(name: "Abduction")
+        await vm.saveExercise(abduction)
+        await vm.saveExercise(makeExercise(name: "Curl"))
+        #expect(vm.exercises.map(\.name) == ["Abduction", "Curl"])
+
+        abduction.name = "Zercher Squat"
+        await vm.saveExercise(abduction)
+        #expect(vm.exercises.map(\.name) == ["Curl", "Zercher Squat"])
+    }
 }

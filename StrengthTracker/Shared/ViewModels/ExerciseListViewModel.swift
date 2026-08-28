@@ -49,7 +49,13 @@ public final class ExerciseListViewModel {
     public func saveExercise(_ exercise: Exercise) async {
         do {
             let saved = try await exerciseRepository.save(exercise)
-            exercises.append(saved)
+            // Upsert: the repository updates-in-place by id; mirroring that here
+            // keeps an edit from showing as a duplicate row.
+            if let index = exercises.firstIndex(where: { $0.id == saved.id }) {
+                exercises[index] = saved
+            } else {
+                exercises.append(saved)
+            }
             exercises.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         } catch {
             errorMessage = error.localizedDescription

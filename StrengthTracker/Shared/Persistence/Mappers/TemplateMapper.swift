@@ -50,7 +50,9 @@ public enum TemplateExerciseMapper {
             instructions: entity.instructions,
             isCustom: entity.isCustom,
             isArchived: entity.isArchived,
-            bodyweightFactor: entity.bodyweightFactor
+            bodyweightFactor: entity.bodyweightFactor,
+            equipmentBrand: entity.equipmentBrand,
+            loadingType: entity.loadingType.flatMap { LoadingType(rawValue: $0) }
         )
 
         var setTargets: [TemplateSetTarget] = []
@@ -95,6 +97,8 @@ public enum TemplateExerciseMapper {
             isCustom: domain.exercise.isCustom,
             isArchived: domain.exercise.isArchived,
             bodyweightFactor: domain.exercise.bodyweightFactor,
+            equipmentBrand: domain.exercise.equipmentBrand,
+            loadingType: domain.exercise.loadingType?.rawValue,
             order: domain.order,
             supersetGroup: domain.supersetGroup,
             notes: domain.notes,
@@ -121,6 +125,8 @@ public enum TemplateExerciseMapper {
         entity.isCustom = domain.exercise.isCustom
         entity.isArchived = domain.exercise.isArchived
         entity.bodyweightFactor = domain.exercise.bodyweightFactor
+        entity.equipmentBrand = domain.exercise.equipmentBrand
+        entity.loadingType = domain.exercise.loadingType?.rawValue
         entity.order = domain.order
         entity.supersetGroup = domain.supersetGroup
         entity.notes = domain.notes
