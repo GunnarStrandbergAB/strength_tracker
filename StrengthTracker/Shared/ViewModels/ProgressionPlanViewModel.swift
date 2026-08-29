@@ -371,6 +371,91 @@ public final class ProgressionPlanViewModel {
 
     // MARK: - Plan Generation
 
+    /// Everything needed to create a plan, independent of the draft flow state.
+    public struct PlanCreationRequest: Sendable {
+        public var name: String
+        public var trainingStatus: TrainingStatus
+        public var programType: ProgramType
+        public var primaryGoal: TrainingGoal
+        public var weeklyFrequency: Int
+        /// Calendar.weekday day numbers (Sun=1 … Sat=7); empty = defaults.
+        public var trainingDays: Set<Int>
+        /// Deload-week day numbers; nil = same as training days.
+        public var deloadDays: [Int]?
+        public var startDate: Date
+        public var exercises: [PlanExercise]
+        public var daySchedule: [DayScheduleEntry]
+        public var creationSource: ProgressionPlan.PlanCreationSource
+
+        public init(
+            name: String,
+            trainingStatus: TrainingStatus,
+            programType: ProgramType,
+            primaryGoal: TrainingGoal,
+            weeklyFrequency: Int,
+            trainingDays: Set<Int> = [],
+            deloadDays: [Int]? = nil,
+            startDate: Date = Date(),
+            exercises: [PlanExercise],
+            daySchedule: [DayScheduleEntry] = [],
+            creationSource: ProgressionPlan.PlanCreationSource
+        ) {
+            self.name = name
+            self.trainingStatus = trainingStatus
+            self.programType = programType
+            self.primaryGoal = primaryGoal
+            self.weeklyFrequency = weeklyFrequency
+            self.trainingDays = trainingDays
+            self.deloadDays = deloadDays
+            self.startDate = startDate
+            self.exercises = exercises
+            self.daySchedule = daySchedule
+            self.creationSource = creationSource
+        }
+    }
+
+    /// Creates, generates, and activates a plan — the single core shared by the
+    /// structured draft flow and AI-proposed plans.
+    @discardableResult
+    public func createPlan(from request: PlanCreationRequest) async throws -> ProgressionPlan {
+        let startWeekday = Calendar.current.component(.weekday, from: request.startDate)
+        let startFirstOrder = (0..<7).map { (startWeekday - 1 + $0) % 7 + 1 }
+        let sortedDays = request.trainingDays.isEmpty
+            ? nil
+            : startFirstOrder.filter { request.trainingDays.contains($0) }
+
+        var plan = ProgressionPlan(
+            name: request.name.isEmpty ? "Training Plan" : request.name,
+            status: .active,
+            trainingStatus: request.trainingStatus,
+            programType: request.programType,
+            primaryGoal: request.primaryGoal,
+            weeklyFrequency: request.weeklyFrequency,
+            trainingDays: sortedDays,
+            deloadDays: request.deloadDays,
+            startDate: request.startDate,
+            exercises: request.exercises,
+            daySchedule: request.daySchedule,
+            creationSource: request.creationSource
+        )
+
+        let deloadIntensity = Double(userPreferencesService?.deloadWeightPercentage ?? 50) / 100.0
+        // generateProgram dates all sessions sequentially and re-buckets them into
+        // calendar weeks (sessions arrive sorted chronologically within each week).
+        plan.blocks = programDesignService.generateProgram(for: plan, deloadIntensity: deloadIntensity)
+
+        // Target end date = last scheduled session (fallback: startDate + totalWeeks)
+        let lastScheduledDate = plan.blocks.flatMap(\.weeks).flatMap(\.sessions)
+            .compactMap(\.scheduledDate).max()
+        plan.targetEndDate = lastScheduledDate
+            ?? Calendar.current.date(byAdding: .weekOfYear, value: plan.totalWeeks, to: plan.startDate)
+
+        try await progressionPlanRepository.save(plan)
+        activePlan = plan
+        planProgress = try await planAnalyticsService.generateProgress(for: plan)
+        return plan
+    }
+
     public func generateAndSavePlan() async {
         isSavingPlan = true
         errorMessage = nil
@@ -391,12 +476,6 @@ public final class ProgressionPlanViewModel {
                 )
             }
 
-            let startWeekday = Calendar.current.component(.weekday, from: draftStartDate)
-            let startFirstOrder = (0..<7).map { (startWeekday - 1 + $0) % 7 + 1 }
-            let sortedDays = draftTrainingDays.isEmpty
-                ? nil
-                : startFirstOrder.filter { draftTrainingDays.contains($0) }
-
             // Convert draft day schedule to domain model
             let daySchedule: [DayScheduleEntry] = draftDaySchedule.compactMap { day, entry in
                 guard entry.templateId != nil || !entry.exerciseIds.isEmpty else { return nil }
@@ -412,35 +491,19 @@ public final class ProgressionPlanViewModel {
                 ? Self.dayDisplayOrder.filter { draftDeloadDays.contains($0) }
                 : nil
 
-            var plan = ProgressionPlan(
-                name: draftPlanName.isEmpty ? "Training Plan" : draftPlanName,
-                status: .active,
+            try await createPlan(from: PlanCreationRequest(
+                name: draftPlanName,
                 trainingStatus: draftStatus,
                 programType: draftProgramType,
                 primaryGoal: draftGoal,
                 weeklyFrequency: draftFrequency,
-                trainingDays: sortedDays,
+                trainingDays: draftTrainingDays,
                 deloadDays: sortedDeloadDays,
                 startDate: draftStartDate,
                 exercises: planExercises,
                 daySchedule: daySchedule,
                 creationSource: .structuredFlow
-            )
-
-            let deloadIntensity = Double(userPreferencesService?.deloadWeightPercentage ?? 50) / 100.0
-            // generateProgram dates all sessions sequentially and re-buckets them into
-            // calendar weeks (sessions arrive sorted chronologically within each week).
-            plan.blocks = programDesignService.generateProgram(for: plan, deloadIntensity: deloadIntensity)
-
-            // Target end date = last scheduled session (fallback: startDate + totalWeeks)
-            let lastScheduledDate = plan.blocks.flatMap(\.weeks).flatMap(\.sessions)
-                .compactMap(\.scheduledDate).max()
-            plan.targetEndDate = lastScheduledDate
-                ?? Calendar.current.date(byAdding: .weekOfYear, value: plan.totalWeeks, to: plan.startDate)
-
-            try await progressionPlanRepository.save(plan)
-            activePlan = plan
-            planProgress = try await planAnalyticsService.generateProgress(for: plan)
+            ))
         } catch {
             errorMessage = "Failed to generate plan: \(error.localizedDescription)"
         }

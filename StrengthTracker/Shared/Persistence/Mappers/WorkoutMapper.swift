@@ -52,7 +52,7 @@ public enum WorkoutMapper {
         entity.plannedPlanId = domain.plannedPlanId
 
         // Update exercises in-place to preserve SwiftData relationships
-        let existingById = Dictionary(uniqueKeysWithValues: entity.exercises.map { ($0.id, $0) })
+        let existingById = Dictionary(entity.exercises.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let domainIds = Set(domain.exercises.map(\.id))
 
         // Delete removed exercises from context
@@ -155,7 +155,7 @@ public enum WorkoutExerciseMapper {
         entity.restTimerSeconds = domain.restTimerSeconds
 
         // Update sets in-place to preserve SwiftData relationships
-        let existingById = Dictionary(uniqueKeysWithValues: entity.sets.map { ($0.id, $0) })
+        let existingById = Dictionary(entity.sets.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let domainIds = Set(domain.sets.map(\.id))
 
         // Delete removed sets from context

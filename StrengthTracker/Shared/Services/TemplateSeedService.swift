@@ -32,7 +32,7 @@ public final class TemplateSeedService {
 
         do {
             let existing = try await templateRepository.fetchAll()
-            let existingById = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
+            let existingById = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
             for seed in TemplateSeedData.allTemplates {
                 if let current = existingById[seed.id] {

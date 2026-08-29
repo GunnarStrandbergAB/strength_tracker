@@ -125,7 +125,7 @@ public final class WorkoutAnalyticsService: Sendable {
 
         // Fetch corresponding workouts
         let allWorkouts = try await workoutRepository.fetchAll()
-        let workoutMap = Dictionary(uniqueKeysWithValues: allWorkouts.map { ($0.id, $0) })
+        let workoutMap = Dictionary(allWorkouts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let displayBodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
 
         return topResults.compactMap { result in

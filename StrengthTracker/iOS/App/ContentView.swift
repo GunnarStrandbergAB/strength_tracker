@@ -18,6 +18,10 @@ struct ContentView: View {
     var personalRecordService: PersonalRecordService? = nil
     var proFeatureGate: ProFeatureGate? = nil
     var storeService: StoreService? = nil
+    var aiCredentialsService: AICredentialsService? = nil
+    var aiChatClient: (any AIChatClient)? = nil
+    var aiChatViewModel: AIChatViewModel? = nil
+    var aiMemoryService: AIMemoryService? = nil
 
     init(
         dashboardViewModel: DashboardViewModel,
@@ -33,7 +37,11 @@ struct ContentView: View {
         restTimerService: RestTimerService,
         personalRecordService: PersonalRecordService? = nil,
         proFeatureGate: ProFeatureGate? = nil,
-        storeService: StoreService? = nil
+        storeService: StoreService? = nil,
+        aiCredentialsService: AICredentialsService? = nil,
+        aiChatClient: (any AIChatClient)? = nil,
+        aiChatViewModel: AIChatViewModel? = nil,
+        aiMemoryService: AIMemoryService? = nil
     ) {
         self.dashboardViewModel = dashboardViewModel
         self.exerciseListViewModel = exerciseListViewModel
@@ -49,6 +57,10 @@ struct ContentView: View {
         self.personalRecordService = personalRecordService
         self.proFeatureGate = proFeatureGate
         self.storeService = storeService
+        self.aiCredentialsService = aiCredentialsService
+        self.aiChatClient = aiChatClient
+        self.aiChatViewModel = aiChatViewModel
+        self.aiMemoryService = aiMemoryService
         _selectedTab = State(initialValue: workoutViewModel.isActive ? 1 : 0)
     }
 
@@ -65,6 +77,10 @@ struct ContentView: View {
                 connectivityManager: connectivityManager,
                 proFeatureGate: proFeatureGate,
                 storeService: storeService,
+                aiCredentialsService: aiCredentialsService,
+                aiChatClient: aiChatClient,
+                aiChatViewModel: aiChatViewModel,
+                aiMemoryService: aiMemoryService,
                 onStartWorkout: {
                     selectedTab = 1
                     Task {

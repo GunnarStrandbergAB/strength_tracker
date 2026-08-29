@@ -13,6 +13,11 @@ struct DashboardView: View {
     let connectivityManager: ConnectivityManager?
     var proFeatureGate: ProFeatureGate? = nil
     var storeService: StoreService? = nil
+    var aiCredentialsService: AICredentialsService? = nil
+    var aiChatClient: (any AIChatClient)? = nil
+    var aiChatViewModel: AIChatViewModel? = nil
+    var aiMemoryService: AIMemoryService? = nil
+    @State private var showAIChat = false
     let onStartWorkout: () -> Void
     let onStartSession: (WorkoutTemplate, UUID, UUID, Bool) async -> Void
     let onHistoryTapped: () -> Void
@@ -28,6 +33,10 @@ struct DashboardView: View {
         connectivityManager: ConnectivityManager? = nil,
         proFeatureGate: ProFeatureGate? = nil,
         storeService: StoreService? = nil,
+        aiCredentialsService: AICredentialsService? = nil,
+        aiChatClient: (any AIChatClient)? = nil,
+        aiChatViewModel: AIChatViewModel? = nil,
+        aiMemoryService: AIMemoryService? = nil,
         onStartWorkout: @escaping () -> Void,
         onStartSession: @escaping (WorkoutTemplate, UUID, UUID, Bool) async -> Void,
         onHistoryTapped: @escaping () -> Void
@@ -42,9 +51,18 @@ struct DashboardView: View {
         self.connectivityManager = connectivityManager
         self.proFeatureGate = proFeatureGate
         self.storeService = storeService
+        self.aiCredentialsService = aiCredentialsService
+        self.aiChatClient = aiChatClient
+        self.aiChatViewModel = aiChatViewModel
+        self.aiMemoryService = aiMemoryService
         self.onStartWorkout = onStartWorkout
         self.onStartSession = onStartSession
         self.onHistoryTapped = onHistoryTapped
+    }
+
+    private var showAIChatButton: Bool {
+        guard let aiCredentialsService, aiChatViewModel != nil else { return false }
+        return userPreferencesService.aiChatEnabled && aiCredentialsService.hasKey
     }
 
     var body: some View {
@@ -152,9 +170,24 @@ struct DashboardView: View {
             .navigationBarTitleDisplayMode(.inline)
             .stNavigationBarStyle()
             .toolbar {
+                if showAIChatButton {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            showAIChat = true
+                        } label: {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 16))
+                                .foregroundStyle(STColors.primary)
+                                .frame(width: 36, height: 36)
+                                .background(STColors.surface)
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
-                        SettingsView(preferencesService: userPreferencesService, connectivityManager: connectivityManager, proFeatureGate: proFeatureGate, storeService: storeService)
+                        SettingsView(preferencesService: userPreferencesService, connectivityManager: connectivityManager, proFeatureGate: proFeatureGate, storeService: storeService, aiCredentialsService: aiCredentialsService, aiChatClient: aiChatClient, aiMemoryService: aiMemoryService)
                     } label: {
                         Image(systemName: "gearshape")
                             .font(.system(size: 16))
@@ -164,6 +197,14 @@ struct DashboardView: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
+                }
+            }
+            .fullScreenCover(isPresented: $showAIChat) {
+                if let aiChatViewModel {
+                    AIChatView(
+                        viewModel: aiChatViewModel,
+                        userPreferencesService: userPreferencesService
+                    )
                 }
             }
             .task {

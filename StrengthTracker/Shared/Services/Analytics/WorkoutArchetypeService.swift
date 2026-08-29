@@ -38,7 +38,7 @@ public final class WorkoutArchetypeService: Sendable {
         }
 
         // Build archetypes
-        let workoutMap = Dictionary(uniqueKeysWithValues: workouts.map { ($0.id, $0) })
+        let workoutMap = Dictionary(workouts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let now = Date()
         let calendar = Calendar.current
 

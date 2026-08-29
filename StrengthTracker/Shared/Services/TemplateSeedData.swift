@@ -25,7 +25,7 @@ public enum TemplateSeedData {
 
     /// Lookup exercise snapshot from seed data by name
     private static let exercisesByName: [String: Exercise] = {
-        Dictionary(uniqueKeysWithValues: ExerciseSeedData.allExercises.map { ($0.name, $0) })
+        Dictionary(ExerciseSeedData.allExercises.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
     }()
 
     private static func exercise(_ name: String) -> Exercise {

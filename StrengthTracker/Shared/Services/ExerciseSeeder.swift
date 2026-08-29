@@ -26,7 +26,7 @@ public final class ExerciseSeeder {
         guard !hasSeeded else { return }
         do {
             let existing = try await exerciseRepository.fetchAll()
-            let existingById = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
+            let existingById = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
             for seed in ExerciseSeedData.allExercises {
                 if let current = existingById[seed.id] {

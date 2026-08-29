@@ -47,6 +47,7 @@ public final class ExerciseListViewModel {
     #endif
 
     public func saveExercise(_ exercise: Exercise) async {
+        errorMessage = nil
         do {
             let saved = try await exerciseRepository.save(exercise)
             // Upsert: the repository updates-in-place by id; mirroring that here
