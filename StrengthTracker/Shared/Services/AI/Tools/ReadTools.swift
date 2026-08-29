@@ -36,6 +36,83 @@ public enum ExerciseNameResolver {
     }
 }
 
+/// Resolves model-provided template names against the user's custom templates.
+@MainActor
+public enum TemplateNameResolver {
+    public static func resolve(name: String, in templates: [WorkoutTemplate]) throws -> WorkoutTemplate {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let userTemplates = templates.filter(\.isCustom)
+        if let match = userTemplates.first(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            return match
+        }
+        let query = trimmed.lowercased()
+        let suggestions = userTemplates
+            .filter { $0.name.lowercased().contains(query) || query.contains($0.name.lowercased()) }
+            .prefix(5)
+            .map(\.name)
+        let hint = suggestions.isEmpty
+            ? "Use list_templates to see available names."
+            : "Closest matches: \(suggestions.joined(separator: ", "))."
+        throw AIToolError("No template named '\(trimmed)'. \(hint)")
+    }
+}
+
+// MARK: - list_templates
+
+@MainActor
+public final class ListTemplatesTool: AITool {
+    private let templateRepository: any TemplateRepository
+
+    public init(templateRepository: any TemplateRepository) {
+        self.templateRepository = templateRepository
+    }
+
+    public let name = "list_templates"
+    public let description = """
+    List the user's workout templates with their exercises. Reference templates by \
+    exact name (e.g. when linking a template to a training-plan day).
+    """
+
+    public var parametersSchema: JSONValue {
+        AIToolRegistry.objectSchema(properties: [
+            "query": AIToolRegistry.stringSchema("Case-insensitive substring of the template name")
+        ])
+    }
+
+    private struct Arguments: Decodable {
+        var query: String?
+    }
+
+    public func call(argumentsJSON: String) async throws -> AIToolResult {
+        let args = try decodeArguments(Arguments.self, from: argumentsJSON)
+
+        var templates = try await templateRepository.fetchAll().filter(\.isCustom)
+        if let query = args.query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
+            templates = templates.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        }
+
+        let entries = templates.map { template -> JSONValue in
+            .object([
+                "name": .string(template.name),
+                "exercises": .array(
+                    template.exercises
+                        .sorted { $0.order < $1.order }
+                        .map { .string($0.exercise.name) }
+                )
+            ])
+        }
+
+        let output = AIJSON.string(.object([
+            "count": .number(Double(entries.count)),
+            "templates": .array(entries)
+        ]))
+        return AIToolResult(
+            outputForModel: output,
+            activityLabel: "Browsed \(entries.count) template\(entries.count == 1 ? "" : "s")"
+        )
+    }
+}
+
 // MARK: - list_exercises
 
 @MainActor
@@ -441,8 +518,7 @@ public final class GetActivePlanTool: AITool {
         }
 
         let currentWeekNumber = plan.currentWeek?.absoluteWeekNumber
-        // PlanExercise 1RM values are stored in the user's display unit.
-        let unit = userPreferencesService.weightUnit.rawValue
+        // PlanExercise 1RM values follow the app-wide kg convention.
         let exercises = plan.exercises.sorted { $0.order < $1.order }.map { exercise -> JSONValue in
             .object([
                 "n": .string(exercise.exerciseName),
@@ -457,7 +533,7 @@ public final class GetActivePlanTool: AITool {
             "weekly_frequency": .number(Double(plan.weeklyFrequency)),
             "total_weeks": .number(Double(plan.totalWeeks)),
             "start_date": .string(AIJSON.dateString(plan.startDate)),
-            "unit_for_1rm": .string(unit),
+            "unit_for_1rm": .string("kg"),
             "exercises": .array(exercises)
         ]
         if let currentWeekNumber {

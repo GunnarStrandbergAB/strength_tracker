@@ -11,6 +11,8 @@ public final class AIChatViewModel {
     public private(set) var isStreaming = false
     /// Name of the tool currently executing, for the live activity chip.
     public private(set) var activeToolName: String?
+    /// The draft message currently being saved (disables its card's buttons).
+    public private(set) var savingDraftID: UUID?
     public var errorMessage: String?
 
     // MARK: - Dependencies
@@ -93,7 +95,7 @@ public final class AIChatViewModel {
             // Keep whatever partial text arrived, marked as stopped.
             if var last = messages.last, last.role == .assistant, last.kind == .text, !last.text.isEmpty {
                 last.text += "\n\n*(stopped)*"
-                messages[messages.count - 1] = last
+                replaceMessage(last)
                 persistMessage(last, update: true)
             }
         }
@@ -102,12 +104,25 @@ public final class AIChatViewModel {
     // MARK: - Drafts
 
     public func saveDraft(messageID: UUID) async {
-        guard let index = messages.firstIndex(where: { $0.id == messageID }),
-              let draft = decodeDraft(messages[index]) else { return }
+        // Re-entrancy guard: the card's Save stays tappable until this returns.
+        guard savingDraftID == nil,
+              let message = messages.first(where: { $0.id == messageID }),
+              message.draftStatus == .pending,
+              let draft = decodeDraft(message) else { return }
+        savingDraftID = messageID
+        defer { savingDraftID = nil }
         do {
             try await onSaveDraft?(draft)
-            messages[index].draftStatus = .accepted
-            persistMessage(messages[index], update: true)
+            // The object is saved — persist the accepted status unconditionally
+            // (even if the visible chat changed during the await, the stored
+            // card must never re-arm a duplicate save after relaunch).
+            var accepted = message
+            accepted.draftStatus = .accepted
+            persistMessage(accepted, update: true)
+            // Update the in-memory list only if the message is still shown.
+            if let index = messages.firstIndex(where: { $0.id == messageID }) {
+                messages[index].draftStatus = .accepted
+            }
             pendingContextNotes.append("[User accepted the proposed \(draftNoun(draft)) '\(draft.title)'.]")
         } catch {
             errorMessage = error.localizedDescription
@@ -115,7 +130,9 @@ public final class AIChatViewModel {
     }
 
     public func discardDraft(messageID: UUID) {
-        guard let index = messages.firstIndex(where: { $0.id == messageID }) else { return }
+        guard savingDraftID != messageID,
+              let index = messages.firstIndex(where: { $0.id == messageID }),
+              messages[index].draftStatus == .pending else { return }
         messages[index].draftStatus = .discarded
         persistMessage(messages[index], update: true)
         if let draft = decodeDraft(messages[index]) {
@@ -156,7 +173,7 @@ public final class AIChatViewModel {
                 if var message = assistantMessage {
                     message.text += delta
                     assistantMessage = message
-                    messages[messages.count - 1] = message
+                    replaceMessage(message)
                 } else {
                     let message = ChatMessage(role: .assistant, text: delta)
                     assistantMessage = message
@@ -172,7 +189,7 @@ public final class AIChatViewModel {
                 if var message = assistantMessage {
                     message.toolActivities.append(activity)
                     assistantMessage = message
-                    messages[messages.count - 1] = message
+                    replaceMessage(message)
                 } else {
                     // Chip with no text yet: hang activities on an empty assistant message.
                     let message = ChatMessage(role: .assistant, text: "", toolActivities: [activity])
@@ -224,6 +241,8 @@ public final class AIChatViewModel {
                         : message
                 )
                 messages.append(errorBubble)
+                // Later deltas must start a fresh bubble, never overwrite the error.
+                assistantMessage = nil
             }
         }
 
@@ -244,18 +263,26 @@ public final class AIChatViewModel {
         return new
     }
 
+    /// Replaces a message by id — never by positional index, which can go
+    /// stale whenever the array shrinks.
+    private func replaceMessage(_ message: ChatMessage) {
+        guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
+        messages[index] = message
+    }
+
     // MARK: - Persistence (fire-and-forget; chat must never block on disk)
 
     private func persistMessage(_ message: ChatMessage, update: Bool = false) {
-        guard let conversationID = conversation?.id else { return }
         let repository = chatRepository
-        Task {
-            if update {
-                try? await repository.updateMessage(message)
-            } else {
-                try? await repository.appendMessage(message, to: conversationID)
-            }
+        if update {
+            // Updates address the message by id — they must go through even
+            // when the visible conversation has changed (e.g. draft accepted
+            // while the user already started a new chat).
+            Task { try? await repository.updateMessage(message) }
+            return
         }
+        guard let conversationID = conversation?.id else { return }
+        Task { try? await repository.appendMessage(message, to: conversationID) }
     }
 
     private func persistConversation(_ conversation: ChatConversation) {

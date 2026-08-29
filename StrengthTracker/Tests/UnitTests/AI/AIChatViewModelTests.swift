@@ -149,6 +149,101 @@ struct AIChatViewModelTests {
         #expect(agent.runs[1].contextNotes == ["[User accepted the proposed exercise 'Cable Fly'.]"])
     }
 
+    @Test("saveDraft is not re-entrant: a second call while in flight is a no-op")
+    func saveDraftReentrancy() async {
+        let draft = makeDraft()
+        let (viewModel, _, _) = makeViewModel(script: [
+            [.draftProduced(draft), .turnCompleted(responseID: "resp_1", text: "", activities: [])]
+        ])
+
+        var saveCount = 0
+        viewModel.onSaveDraft = { _ in
+            saveCount += 1
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        viewModel.send("Propose")
+        await waitForTurnEnd(viewModel)
+        let draftMessage = viewModel.messages.first { $0.kind == .draft }!
+
+        async let first: Void = viewModel.saveDraft(messageID: draftMessage.id)
+        try? await Task.sleep(nanoseconds: 10_000_000)
+        #expect(viewModel.savingDraftID == draftMessage.id)
+        await viewModel.saveDraft(messageID: draftMessage.id)   // double tap
+        await first
+
+        #expect(saveCount == 1)
+        #expect(viewModel.savingDraftID == nil)
+        #expect(viewModel.messages.first { $0.kind == .draft }?.draftStatus == .accepted)
+    }
+
+    @Test("saveDraft survives the messages array changing during the save")
+    func saveDraftStaleIndex() async {
+        let draft = makeDraft()
+        let (viewModel, _, repository) = makeViewModel(script: [
+            [.draftProduced(draft), .turnCompleted(responseID: "resp_1", text: "", activities: [])]
+        ])
+
+        viewModel.onSaveDraft = { [weak viewModel] _ in
+            // Simulate the user clearing the chat mid-save (toolbar "New chat").
+            viewModel?.startNewConversation()
+        }
+
+        viewModel.send("Propose")
+        await waitForTurnEnd(viewModel)
+        let conversationID = try? await repository.fetchConversations().first?.id
+        let draftMessage = viewModel.messages.first { $0.kind == .draft }!
+
+        await viewModel.saveDraft(messageID: draftMessage.id)   // must not trap
+        try? await Task.sleep(nanoseconds: 30_000_000)          // let persistence drain
+
+        #expect(viewModel.messages.isEmpty)
+        #expect(viewModel.savingDraftID == nil)
+
+        // The stored card must be marked accepted even though the visible chat
+        // changed — otherwise it re-arms a duplicate save after relaunch.
+        let persisted = try? await repository.fetchMessages(conversationID: conversationID ?? UUID())
+        #expect(persisted?.first { $0.id == draftMessage.id }?.draftStatus == .accepted)
+    }
+
+    @Test("An already-accepted draft cannot be saved again")
+    func saveDraftIdempotent() async {
+        let draft = makeDraft()
+        let (viewModel, _, _) = makeViewModel(script: [
+            [.draftProduced(draft), .turnCompleted(responseID: "resp_1", text: "", activities: [])]
+        ])
+        var saveCount = 0
+        viewModel.onSaveDraft = { _ in saveCount += 1 }
+
+        viewModel.send("Propose")
+        await waitForTurnEnd(viewModel)
+        let draftMessage = viewModel.messages.first { $0.kind == .draft }!
+
+        await viewModel.saveDraft(messageID: draftMessage.id)
+        await viewModel.saveDraft(messageID: draftMessage.id)
+        viewModel.discardDraft(messageID: draftMessage.id)      // accepted, not pending — no-op
+
+        #expect(saveCount == 1)
+        #expect(viewModel.messages.first { $0.kind == .draft }?.draftStatus == .accepted)
+    }
+
+    @Test("A delta after a failure starts a new bubble instead of overwriting the error")
+    func deltaAfterFailure() async {
+        let (viewModel, _, _) = makeViewModel(script: [[
+            .assistantDelta("Working on it"),
+            .failed(message: "tool exploded", conversationExpired: false),
+            .assistantDelta("Recovered text")
+        ]])
+
+        viewModel.send("Go")
+        await waitForTurnEnd(viewModel)
+
+        let errorBubble = viewModel.messages.first { $0.kind == .error }
+        #expect(errorBubble?.text == "tool exploded")
+        #expect(viewModel.messages.last?.text == "Recovered text")
+        #expect(viewModel.messages.last?.kind == .text)
+    }
+
     @Test("Save failures keep the draft pending and surface an error")
     func saveDraftFailure() async {
         let draft = makeDraft()

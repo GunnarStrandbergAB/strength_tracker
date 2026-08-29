@@ -126,6 +126,67 @@ struct ReadToolsTests {
         }
     }
 
+    // MARK: - list_templates
+
+    private func makeTemplate(name: String, exerciseNames: [String], isCustom: Bool = true) -> WorkoutTemplate {
+        WorkoutTemplate(
+            id: UUID(), name: name, notes: nil, sortOrder: 0,
+            lastUsedAt: nil, timesUsed: 0,
+            exercises: exerciseNames.enumerated().map { index, exerciseName in
+                TemplateExercise(
+                    id: UUID(), exercise: makeExercise(name: exerciseName), order: index,
+                    supersetGroup: nil, notes: nil, restTimerSeconds: nil,
+                    targetSets: 3, targetReps: 10, targetWeight: 0,
+                    targetDurationSeconds: nil, targetDistanceMeters: nil
+                )
+            },
+            isCustom: isCustom
+        )
+    }
+
+    @Test("list_templates lists only custom templates with their exercises")
+    func listTemplates() async throws {
+        let repo = InMemoryTemplateRepository()
+        _ = try await repo.save(makeTemplate(name: "Push Day", exerciseNames: ["Bench Press", "Overhead Press"]))
+        _ = try await repo.save(makeTemplate(name: "Library Thing", exerciseNames: ["Squat"], isCustom: false))
+
+        let tool = ListTemplatesTool(templateRepository: repo)
+        let output = try json(try await tool.call(argumentsJSON: "{}"))
+
+        #expect(output["count"] == .number(1))
+        guard case .array(let templates)? = output["templates"],
+              case .object(let template)? = templates.first else {
+            Issue.record("unexpected shape: \(output)")
+            return
+        }
+        #expect(template["name"] == .string("Push Day"))
+        #expect(template["exercises"] == .array([.string("Bench Press"), .string("Overhead Press")]))
+    }
+
+    @Test("list_templates query filters by name")
+    func listTemplatesQuery() async throws {
+        let repo = InMemoryTemplateRepository()
+        _ = try await repo.save(makeTemplate(name: "Push Day", exerciseNames: ["Bench Press"]))
+        _ = try await repo.save(makeTemplate(name: "Pull Day", exerciseNames: ["Row"]))
+
+        let tool = ListTemplatesTool(templateRepository: repo)
+        let output = try json(try await tool.call(argumentsJSON: "{\"query\":\"push\"}"))
+        #expect(output["count"] == .number(1))
+    }
+
+    @Test("TemplateNameResolver suggests close names on a miss")
+    func templateResolverSuggestions() {
+        let templates = [
+            makeTemplate(name: "Push Day", exerciseNames: []),
+            makeTemplate(name: "Pull Day", exerciseNames: [])
+        ]
+        #expect(throws: AIToolError.self) {
+            _ = try TemplateNameResolver.resolve(name: "Push", in: templates)
+        }
+        let resolved = try? TemplateNameResolver.resolve(name: "push day", in: templates)
+        #expect(resolved?.name == "Push Day")
+    }
+
     // MARK: - get_training_history
 
     private func makeHistoryTool(

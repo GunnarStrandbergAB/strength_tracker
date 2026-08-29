@@ -29,9 +29,12 @@ public struct AIToolResult: Sendable {
 }
 
 /// Thrown by tools for invalid arguments; the message is sent to the model.
-public struct AIToolError: Error, Sendable {
+/// Also used by draft-save routing — LocalizedError so alerts show the real
+/// message instead of "The operation couldn't be completed…".
+public struct AIToolError: Error, Sendable, LocalizedError {
     public var message: String
     public init(_ message: String) { self.message = message }
+    public var errorDescription: String? { message }
 }
 
 /// Small helpers shared by tool implementations.

@@ -52,9 +52,12 @@ public final class SwiftDataExerciseRepository: ExerciseRepository, Sendable {
     }
 
     public func save(_ exercise: Exercise) async throws -> Exercise {
+        // Hoisted capture — #Predicate keypathing into a captured struct is a
+        // known SwiftData footgun.
+        let exerciseID = exercise.id
         let descriptor = FetchDescriptor<ExerciseEntity>(
             predicate: #Predicate { entity in
-                entity.id == exercise.id
+                entity.id == exerciseID
             }
         )
 
@@ -70,9 +73,10 @@ public final class SwiftDataExerciseRepository: ExerciseRepository, Sendable {
     }
 
     public func delete(_ exercise: Exercise) async throws {
+        let exerciseID = exercise.id
         let descriptor = FetchDescriptor<ExerciseEntity>(
             predicate: #Predicate { entity in
-                entity.id == exercise.id
+                entity.id == exerciseID
             }
         )
 

@@ -38,8 +38,11 @@ public final class SwiftDataChatRepository: ChatRepository, Sendable {
     public func appendMessage(_ message: ChatMessage, to conversationID: UUID) async throws {
         guard let conversation = try fetchConversationEntity(id: conversationID) else { return }
         let entity = ChatMapper.toEntity(message)
-        entity.conversation = conversation
+        // Insert the unattached entity first, then wire the relationship —
+        // setting the parent on an un-inserted model implicitly registers it,
+        // and a second explicit insert of the same unique id is fragile.
         modelContext.insert(entity)
+        entity.conversation = conversation
         conversation.updatedAt = message.createdAt
         try modelContext.save()
     }

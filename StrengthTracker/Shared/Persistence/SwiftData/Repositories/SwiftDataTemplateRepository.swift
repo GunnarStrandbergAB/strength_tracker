@@ -19,9 +19,12 @@ public final class SwiftDataTemplateRepository: TemplateRepository, Sendable {
     }
 
     public func save(_ template: WorkoutTemplate) async throws -> WorkoutTemplate {
+        // Hoist the captured value — #Predicate keypathing into a captured
+        // struct is a known SwiftData footgun (see incrementUsage's style).
+        let templateID = template.id
         let descriptor = FetchDescriptor<WorkoutTemplateEntity>(
             predicate: #Predicate { entity in
-                entity.id == template.id
+                entity.id == templateID
             }
         )
 
@@ -34,9 +37,13 @@ public final class SwiftDataTemplateRepository: TemplateRepository, Sendable {
             existingEntity.timesUsed = template.timesUsed
             existingEntity.isCustom = template.isCustom
 
-            // Build lookup of existing exercise entities by ID
+            // Build lookup of existing exercise entities by ID. The to-many
+            // array can carry duplicates (both relationship sides set on
+            // un-inserted models plus explicit child inserts), so dedupe
+            // instead of trapping via uniqueKeysWithValues.
             let existingExercises = Dictionary(
-                uniqueKeysWithValues: existingEntity.exercises.map { ($0.id, $0) }
+                existingEntity.exercises.map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first }
             )
             let domainExerciseIds = Set(template.exercises.map { $0.id })
 
@@ -96,9 +103,10 @@ public final class SwiftDataTemplateRepository: TemplateRepository, Sendable {
     }
 
     public func delete(_ template: WorkoutTemplate) async throws {
+        let templateID = template.id
         let descriptor = FetchDescriptor<WorkoutTemplateEntity>(
             predicate: #Predicate { entity in
-                entity.id == template.id
+                entity.id == templateID
             }
         )
 

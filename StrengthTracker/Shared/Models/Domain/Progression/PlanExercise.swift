@@ -7,7 +7,7 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
     public var exerciseName: String
     public var primaryMuscleGroup: MuscleGroup
     public var category: ExerciseCategory
-    public var estimated1RM: Double                    // In user's preferred weight unit
+    public var estimated1RM: Double                    // Always kg (app-wide convention; convert at display boundary)
     public var tested1RM: Double?                      // Actual tested value (if available)
     public var oneRMSource: OneRMSource                // How 1RM was determined
     public var targetPercentageIncrease: Double?       // Goal: e.g., 0.10 = 10% improvement

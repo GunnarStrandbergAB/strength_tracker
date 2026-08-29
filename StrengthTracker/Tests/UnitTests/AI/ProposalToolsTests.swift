@@ -9,13 +9,33 @@ struct ProposalToolsTests {
     private func makeExercise(
         name: String,
         muscle: MuscleGroup = .chest,
-        type: ExerciseType = .weightedReps
+        type: ExerciseType = .weightedReps,
+        isArchived: Bool = false
     ) -> Exercise {
         Exercise(
             id: UUID(), name: name, primaryMuscleGroup: muscle,
             secondaryMuscleGroups: [], category: .barbell,
-            exerciseType: type, instructions: nil, isCustom: false, isArchived: false
+            exerciseType: type, instructions: nil, isCustom: false, isArchived: isArchived
         )
+    }
+
+    @Test("AIToolError renders its message as the localized description")
+    func toolErrorLocalization() {
+        let error: Error = AIToolError("machine broke")
+        #expect(error.localizedDescription == "machine broke")
+    }
+
+    @Test("Archived exercises do not block a same-named proposal")
+    func archivedNameReusable() async throws {
+        let repo = InMemoryExerciseRepository()
+        _ = try await repo.save(makeExercise(name: "Bench Press", isArchived: true))
+        let tool = ProposeExerciseTool(exerciseRepository: repo)
+
+        let result = try await tool.call(argumentsJSON: """
+        {"name":"Bench Press","primary_muscle_group":"chest",
+         "category":"barbell","exercise_type":"weightedReps"}
+        """)
+        #expect(result.draft != nil)
     }
 
     // MARK: - propose_exercise

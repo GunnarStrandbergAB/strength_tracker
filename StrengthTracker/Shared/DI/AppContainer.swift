@@ -309,8 +309,10 @@ public final class AppContainer: Sendable {
             ),
             ProposeTrainingPlanTool(
                 exerciseRepository: exerciseRepository,
-                personalRecordRepository: personalRecordRepository
-            )
+                personalRecordRepository: personalRecordRepository,
+                templateRepository: templateRepository
+            ),
+            ListTemplatesTool(templateRepository: templateRepository)
         ])
         let prefs = userPreferencesService
         aiAgentService = AIAgentService(
@@ -332,32 +334,82 @@ public final class AppContainer: Sendable {
         let templateVM = templateViewModel
         let progressionVM = progressionPlanViewModel
         let statusDetector = trainingStatusDetector
+        let exerciseRepo = exerciseRepository
+        let planRepo = progressionPlanRepository
+        let proGate = proFeatureGate
         aiChatViewModel.onSaveDraft = { [weak exerciseVM, weak templateVM, weak progressionVM] draft in
             switch draft {
             case .exercise(let exercise):
-                await exerciseVM?.saveExercise(exercise)
+                guard let exerciseVM else { throw AIToolError("Exercise saving is unavailable.") }
+                // Save-time duplicate check — the propose-time check can be
+                // stale (old pending card after relaunch, manual creation in
+                // between).
+                let existing = try await exerciseRepo.fetchAll()
+                if existing.contains(where: {
+                    $0.id != exercise.id && !$0.isArchived
+                        && $0.name.caseInsensitiveCompare(exercise.name) == .orderedSame
+                }) {
+                    throw AIToolError("An exercise named '\(exercise.name)' already exists.")
+                }
+                exerciseVM.errorMessage = nil
+                await exerciseVM.saveExercise(exercise)
+                if let message = exerciseVM.errorMessage {
+                    throw AIToolError(message)
+                }
 
             case .template(var template):
-                template.sortOrder = templateVM?.userTemplates.count ?? 0
-                await templateVM?.saveTemplate(template)
+                guard let templateVM else { return }
+                // The chat can run before the Templates tab ever loaded; an
+                // empty list would collide sortOrder at 0 and make the Watch
+                // sync push only this template, wiping the others.
+                if templateVM.templates.isEmpty {
+                    await templateVM.loadTemplates()
+                }
+                template.sortOrder = templateVM.userTemplates.count
+                templateVM.errorMessage = nil
+                await templateVM.saveTemplate(template)
+                if let message = templateVM.errorMessage {
+                    // saveTemplate swallows repository errors into errorMessage;
+                    // rethrow so the card stays pending instead of showing "Saved".
+                    throw AIToolError(message)
+                }
 
             case .plan(let parameters):
-                guard let progressionVM else { return }
-                let trainingStatus = (try? await statusDetector.detect()) ?? .beginner
-                // PlanExercise 1RM fields are stored in the user's display unit.
-                let unit = prefs.weightUnit
+                guard let progressionVM else { throw AIToolError("Plan saving is unavailable.") }
+                guard proGate.hasProAccess else {
+                    throw AIToolError("Training plans require HellBentIron Pro. Upgrade in Settings to save this plan.")
+                }
+                if let active = try await planRepo.fetchActive() {
+                    throw AIToolError("You already have an active plan '\(active.name)'. Complete or abandon it on the Dashboard first.")
+                }
+                // User-stated level wins; otherwise auto-detect (wizard parity).
+                let trainingStatus: TrainingStatus
+                if let stated = parameters.trainingStatus {
+                    trainingStatus = stated
+                } else {
+                    trainingStatus = (try? await statusDetector.detect()) ?? .beginner
+                }
+                // 1RM values are kg end to end (app-wide convention).
                 let exercises = parameters.exercises.enumerated().map { index, selection in
-                    let oneRM = selection.estimated1RMKg.map { unit.fromKg($0) } ?? 0
+                    let oneRMKg = selection.estimated1RMKg ?? 0
                     return PlanExercise(
                         exerciseId: selection.exerciseID,
                         exerciseName: selection.exerciseName,
                         primaryMuscleGroup: selection.primaryMuscleGroup,
                         category: selection.category,
-                        estimated1RM: oneRM,
-                        oneRMSource: .naturalLanguage,
-                        current1RM: oneRM,
+                        estimated1RM: oneRMKg,
+                        oneRMSource: selection.oneRMFromPersonalRecord == true ? .personalRecord : .naturalLanguage,
+                        current1RM: oneRMKg,
                         isCompound: selection.category == .barbell || selection.category == .dumbbell,
                         order: index
+                    )
+                }
+                let daySchedule = (parameters.daySplits ?? []).map { split in
+                    DayScheduleEntry(
+                        dayOfWeek: split.dayOfWeek,
+                        templateId: split.templateID,
+                        templateName: split.templateName,
+                        exerciseIds: split.exerciseIDs
                     )
                 }
                 try await progressionVM.createPlan(from: ProgressionPlanViewModel.PlanCreationRequest(
@@ -367,8 +419,10 @@ public final class AppContainer: Sendable {
                     primaryGoal: parameters.primaryGoal,
                     weeklyFrequency: parameters.weeklyFrequency,
                     trainingDays: Set(parameters.trainingDays ?? []),
+                    deloadDays: parameters.deloadDays,
                     startDate: parameters.startDate,
                     exercises: exercises,
+                    daySchedule: daySchedule,
                     creationSource: .naturalLanguage
                 ))
             }

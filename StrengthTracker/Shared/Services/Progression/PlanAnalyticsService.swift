@@ -54,7 +54,7 @@ public final class PlanAnalyticsService: Sendable {
         }
 
         // Build a lookup for resolved workouts per session
-        let workoutById = Dictionary(uniqueKeysWithValues: completedWorkouts.map { ($0.id, $0) })
+        let workoutById = Dictionary(completedWorkouts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let resolvedWorkouts = resolveWorkouts(
             sessions: allSessions,
             workoutById: workoutById,

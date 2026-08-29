@@ -7,6 +7,7 @@ struct DraftCardView: View {
     let draft: AIDraft
     let status: DraftStatus
     let weightUnit: WeightUnit
+    var isSaving: Bool = false
     let onSave: () -> Void
     let onDiscard: () -> Void
 
@@ -56,13 +57,21 @@ struct DraftCardView: View {
         case .pending:
             HStack(spacing: 10) {
                 Button(action: onSave) {
-                    Text("Save")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 9)
-                        .background(STColors.primary)
-                        .clipShape(RoundedRectangle(cornerRadius: STRadius.input))
+                    Group {
+                        if isSaving {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(.black)
+                        } else {
+                            Text("Save")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                    }
+                    .foregroundStyle(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+                    .background(STColors.primary)
+                    .clipShape(RoundedRectangle(cornerRadius: STRadius.input))
                 }
                 Button(action: onDiscard) {
                     Text("Discard")
@@ -75,6 +84,7 @@ struct DraftCardView: View {
                 }
             }
             .buttonStyle(.plain)
+            .disabled(isSaving)
         case .accepted:
             statusPill(text: "Saved", icon: "checkmark.circle.fill", color: STColors.success)
         case .discarded:
@@ -213,6 +223,26 @@ private struct PlanDraftContent: View {
                 .font(.stCaption)
                 .foregroundStyle(STColors.textSecondary)
 
+            if let splits = parameters.daySplits, !splits.isEmpty {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(splits.sorted(by: { $0.dayOfWeek < $1.dayOfWeek }), id: \.dayOfWeek) { split in
+                        HStack(alignment: .top) {
+                            Text(weekdayName(split.dayOfWeek))
+                                .font(.stCaption)
+                                .foregroundStyle(STColors.textSecondary)
+                                .frame(width: 36, alignment: .leading)
+                            splitDescription(split)
+                        }
+                    }
+                }
+            }
+
+            if let deloadDays = parameters.deloadDays, !deloadDays.isEmpty {
+                Text("Deload days: \(deloadDays.sorted().map(weekdayName).joined(separator: ", "))")
+                    .font(.stCaption)
+                    .foregroundStyle(STColors.textSecondary)
+            }
+
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(parameters.exercises, id: \.exerciseID) { selection in
                     HStack {
@@ -234,6 +264,27 @@ private struct PlanDraftContent: View {
                 .font(.stCaption)
                 .foregroundStyle(STColors.textTertiary)
         }
+    }
+
+    @ViewBuilder
+    private func splitDescription(_ split: AIPlanParameters.DaySplit) -> some View {
+        let exercises = split.exerciseNames.joined(separator: ", ")
+        if let templateName = split.templateName {
+            (Text(templateName).foregroundStyle(STColors.primary)
+                + Text(exercises.isEmpty ? "" : " + \(exercises)")
+                    .foregroundStyle(STColors.textPrimary))
+                .font(.stBody)
+        } else {
+            Text(exercises)
+                .font(.stBody)
+                .foregroundStyle(STColors.textPrimary)
+        }
+    }
+
+    private func weekdayName(_ dayOfWeek: Int) -> String {
+        let symbols = Calendar.current.shortWeekdaySymbols   // Sun=index 0
+        guard (1...symbols.count).contains(dayOfWeek) else { return "?" }
+        return symbols[dayOfWeek - 1]
     }
 
     private var goalLabel: String {

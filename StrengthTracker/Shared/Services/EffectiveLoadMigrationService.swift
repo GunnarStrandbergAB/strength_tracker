@@ -38,9 +38,9 @@ public final class EffectiveLoadMigrationService {
 
         do {
             let library = try await exerciseRepository.fetchAll()
-            let factorById = Dictionary(uniqueKeysWithValues: library.compactMap { exercise in
+            let factorById = Dictionary(library.compactMap { exercise in
                 exercise.bodyweightFactor.map { (exercise.id, $0) }
-            })
+            }, uniquingKeysWith: { first, _ in first })
 
             try await backfillWorkouts(factorById: factorById)
             try await backfillTemplates(factorById: factorById)

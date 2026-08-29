@@ -28,19 +28,51 @@ public struct AIPlanParameters: Codable, Sendable, Equatable {
         public var category: ExerciseCategory
         /// Estimated 1RM in kg, if known (from PRs or provided by the model).
         public var estimated1RMKg: Double?
+        /// True when the 1RM came from the user's personal records (provenance).
+        public var oneRMFromPersonalRecord: Bool?
 
         public init(
             exerciseID: UUID,
             exerciseName: String,
             primaryMuscleGroup: MuscleGroup,
             category: ExerciseCategory,
-            estimated1RMKg: Double? = nil
+            estimated1RMKg: Double? = nil,
+            oneRMFromPersonalRecord: Bool? = nil
         ) {
             self.exerciseID = exerciseID
             self.exerciseName = exerciseName
             self.primaryMuscleGroup = primaryMuscleGroup
             self.category = category
             self.estimated1RMKg = estimated1RMKg
+            self.oneRMFromPersonalRecord = oneRMFromPersonalRecord
+        }
+    }
+
+    /// Which exercises/template train on which day — maps onto DayScheduleEntry.
+    public struct DaySplit: Codable, Sendable, Equatable {
+        /// Calendar.weekday day number (Sun=1 … Sat=7).
+        public var dayOfWeek: Int
+        /// May be empty when a template carries the whole day.
+        public var exerciseIDs: [UUID]
+        /// Kept alongside the ids for card display.
+        public var exerciseNames: [String]
+        /// Linked user template: the day's workout starts from this template
+        /// with progression targets overlaid on tracked exercises.
+        public var templateID: UUID?
+        public var templateName: String?
+
+        public init(
+            dayOfWeek: Int,
+            exerciseIDs: [UUID],
+            exerciseNames: [String],
+            templateID: UUID? = nil,
+            templateName: String? = nil
+        ) {
+            self.dayOfWeek = dayOfWeek
+            self.exerciseIDs = exerciseIDs
+            self.exerciseNames = exerciseNames
+            self.templateID = templateID
+            self.templateName = templateName
         }
     }
 
@@ -52,6 +84,12 @@ public struct AIPlanParameters: Codable, Sendable, Equatable {
     public var trainingDays: [Int]?
     public var startDate: Date
     public var exercises: [ExerciseSelection]
+    /// Per-day exercise assignment; nil = every exercise on every training day.
+    public var daySplits: [DaySplit]?
+    /// Weekdays deload weeks train on; nil = same as training days.
+    public var deloadDays: [Int]?
+    /// User-stated training level override; nil = auto-detect at save time.
+    public var trainingStatus: TrainingStatus?
 
     public init(
         name: String,
@@ -60,7 +98,10 @@ public struct AIPlanParameters: Codable, Sendable, Equatable {
         weeklyFrequency: Int,
         trainingDays: [Int]? = nil,
         startDate: Date = Date(),
-        exercises: [ExerciseSelection]
+        exercises: [ExerciseSelection],
+        daySplits: [DaySplit]? = nil,
+        deloadDays: [Int]? = nil,
+        trainingStatus: TrainingStatus? = nil
     ) {
         self.name = name
         self.primaryGoal = primaryGoal
@@ -69,5 +110,8 @@ public struct AIPlanParameters: Codable, Sendable, Equatable {
         self.trainingDays = trainingDays
         self.startDate = startDate
         self.exercises = exercises
+        self.daySplits = daySplits
+        self.deloadDays = deloadDays
+        self.trainingStatus = trainingStatus
     }
 }

@@ -51,6 +51,14 @@ struct AIChatView: View {
         .task {
             await viewModel.loadLatestConversation()
         }
+        .alert("Error", isPresented: .init(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(viewModel.errorMessage ?? "")
+        }
     }
 
     // MARK: - Messages
@@ -97,6 +105,7 @@ struct AIChatView: View {
                 draft: draft,
                 status: message.draftStatus ?? .pending,
                 weightUnit: userPreferencesService.weightUnit,
+                isSaving: viewModel.savingDraftID == message.id,
                 onSave: {
                     Task { await viewModel.saveDraft(messageID: message.id) }
                 },
