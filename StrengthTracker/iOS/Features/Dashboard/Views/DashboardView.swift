@@ -16,6 +16,7 @@ struct DashboardView: View {
     var aiCredentialsService: AICredentialsService? = nil
     var aiChatClient: (any AIChatClient)? = nil
     var aiChatViewModel: AIChatViewModel? = nil
+    var aiMemoryService: AIMemoryService? = nil
     @State private var showAIChat = false
     let onStartWorkout: () -> Void
     let onStartSession: (WorkoutTemplate, UUID, UUID, Bool) async -> Void
@@ -35,6 +36,7 @@ struct DashboardView: View {
         aiCredentialsService: AICredentialsService? = nil,
         aiChatClient: (any AIChatClient)? = nil,
         aiChatViewModel: AIChatViewModel? = nil,
+        aiMemoryService: AIMemoryService? = nil,
         onStartWorkout: @escaping () -> Void,
         onStartSession: @escaping (WorkoutTemplate, UUID, UUID, Bool) async -> Void,
         onHistoryTapped: @escaping () -> Void
@@ -52,6 +54,7 @@ struct DashboardView: View {
         self.aiCredentialsService = aiCredentialsService
         self.aiChatClient = aiChatClient
         self.aiChatViewModel = aiChatViewModel
+        self.aiMemoryService = aiMemoryService
         self.onStartWorkout = onStartWorkout
         self.onStartSession = onStartSession
         self.onHistoryTapped = onHistoryTapped
@@ -184,7 +187,7 @@ struct DashboardView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
-                        SettingsView(preferencesService: userPreferencesService, connectivityManager: connectivityManager, proFeatureGate: proFeatureGate, storeService: storeService, aiCredentialsService: aiCredentialsService, aiChatClient: aiChatClient)
+                        SettingsView(preferencesService: userPreferencesService, connectivityManager: connectivityManager, proFeatureGate: proFeatureGate, storeService: storeService, aiCredentialsService: aiCredentialsService, aiChatClient: aiChatClient, aiMemoryService: aiMemoryService)
                     } label: {
                         Image(systemName: "gearshape")
                             .font(.system(size: 16))

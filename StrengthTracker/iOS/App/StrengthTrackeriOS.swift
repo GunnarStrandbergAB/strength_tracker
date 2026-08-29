@@ -186,7 +186,8 @@ struct ContentViewWrapper: View {
                 storeService: container.storeService,
                 aiCredentialsService: container.aiCredentialsService,
                 aiChatClient: container.aiChatClient,
-                aiChatViewModel: container.makeAIChatViewModel()
+                aiChatViewModel: container.makeAIChatViewModel(),
+                aiMemoryService: container.aiMemoryService
             )
         } else {
             STColors.background.ignoresSafeArea()

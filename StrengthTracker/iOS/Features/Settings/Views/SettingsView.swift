@@ -11,6 +11,7 @@ struct SettingsView: View {
     var storeService: StoreService? = nil
     var aiCredentialsService: AICredentialsService? = nil
     var aiChatClient: (any AIChatClient)? = nil
+    var aiMemoryService: AIMemoryService? = nil
     @State private var showUpgradeSheet = false
     @State private var connectionTestState: ConnectionTestState = .idle
 
@@ -27,7 +28,8 @@ struct SettingsView: View {
         proFeatureGate: ProFeatureGate? = nil,
         storeService: StoreService? = nil,
         aiCredentialsService: AICredentialsService? = nil,
-        aiChatClient: (any AIChatClient)? = nil
+        aiChatClient: (any AIChatClient)? = nil,
+        aiMemoryService: AIMemoryService? = nil
     ) {
         self.preferencesService = preferencesService
         self.connectivityManager = connectivityManager
@@ -35,6 +37,7 @@ struct SettingsView: View {
         self.storeService = storeService
         self.aiCredentialsService = aiCredentialsService
         self.aiChatClient = aiChatClient
+        self.aiMemoryService = aiMemoryService
     }
 
     var body: some View {
@@ -393,6 +396,19 @@ struct SettingsView: View {
                     Text(message)
                         .font(.caption)
                         .foregroundStyle(STColors.danger)
+                }
+            }
+
+            if let aiMemoryService {
+                NavigationLink {
+                    AIMemoriesView(memoryService: aiMemoryService)
+                } label: {
+                    HStack {
+                        Text("Memories")
+                        Spacer()
+                        Text("\(aiMemoryService.memories.count)")
+                            .foregroundStyle(STColors.textSecondary)
+                    }
                 }
             }
         } header: {

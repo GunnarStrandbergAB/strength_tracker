@@ -32,6 +32,7 @@ public final class AppContainer: Sendable {
 
     // AI assistant
     public let aiCredentialsService: AICredentialsService
+    public let aiMemoryService: AIMemoryService
     public let aiChatClient: any AIChatClient
     public let chatRepository: any ChatRepository
     public let aiToolRegistry: AIToolRegistry
@@ -132,6 +133,7 @@ public final class AppContainer: Sendable {
 
         // AI assistant
         aiCredentialsService = AICredentialsService()
+        aiMemoryService = AIMemoryService()
         let credentials = aiCredentialsService
         aiChatClient = XAIClient(apiKeyProvider: { @MainActor in
             credentials.hasKey ? credentials.xaiAPIKey : nil
@@ -312,14 +314,20 @@ public final class AppContainer: Sendable {
                 personalRecordRepository: personalRecordRepository,
                 templateRepository: templateRepository
             ),
-            ListTemplatesTool(templateRepository: templateRepository)
+            ListTemplatesTool(templateRepository: templateRepository),
+            SaveMemoryTool(memoryService: aiMemoryService),
+            ForgetMemoryTool(memoryService: aiMemoryService)
         ])
         let prefs = userPreferencesService
+        let memoryService = aiMemoryService
         aiAgentService = AIAgentService(
             client: aiChatClient,
             registry: aiToolRegistry,
             instructionsProvider: { @MainActor in
-                AISystemPrompt.build(weightUnit: prefs.weightUnit)
+                AISystemPrompt.build(
+                    weightUnit: prefs.weightUnit,
+                    memories: memoryService.memories.map(\.text)
+                )
             }
         )
         aiChatViewModel = AIChatViewModel(
