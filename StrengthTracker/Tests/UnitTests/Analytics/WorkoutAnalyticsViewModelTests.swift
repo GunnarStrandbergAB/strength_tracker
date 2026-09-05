@@ -117,8 +117,8 @@ final class WorkoutAnalyticsViewModelTests: XCTestCase {
         workoutRepo.seed([targetWorkout, similarWorkout])
 
         let vectorizer = WorkoutVectorizer()
-        let vec1 = vectorizer.vectorize(targetWorkout)
-        let vec2 = vectorizer.vectorize(similarWorkout)
+        let vec1 = vectorizer.vectorize(targetWorkout, bodyWeightKg: UserPreferencesService.defaultBodyWeightKg)
+        let vec2 = vectorizer.vectorize(similarWorkout, bodyWeightKg: UserPreferencesService.defaultBodyWeightKg)
         try? await analyticsRepo.storeVector(vec1)
         try? await analyticsRepo.storeVector(vec2)
 

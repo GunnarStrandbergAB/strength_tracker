@@ -168,10 +168,12 @@ public final class StartWorkoutTool: AITool {
 public final class FinishWorkoutTool: AITool {
     private let session: any WorkoutSessionControlling
     private let preferences: UserPreferencesService?
+    private let bodyWeightProvider: BodyWeightProvider?
 
-    public init(session: any WorkoutSessionControlling, userPreferencesService: UserPreferencesService?) {
+    public init(session: any WorkoutSessionControlling, userPreferencesService: UserPreferencesService?, bodyWeightProvider: BodyWeightProvider? = nil) {
         self.session = session
         self.preferences = userPreferencesService
+        self.bodyWeightProvider = bodyWeightProvider
     }
 
     public let name = "finish_workout"
@@ -196,7 +198,7 @@ public final class FinishWorkoutTool: AITool {
         let completed = try await session.finish(notes: args.notes)
 
         let unit = preferences?.weightUnit ?? .kg
-        let bodyWeight = preferences?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+        let bodyWeight = bodyWeightProvider?.current ?? preferences?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
         let setsDone = completed.exercises.reduce(0) { $0 + $1.sets.filter(\.isCompleted).count }
         let incomplete = completed.exercises.reduce(0) { $0 + $1.sets.filter { !$0.isCompleted }.count }
         let volumeKg = completed.totalVolume(bodyWeightKg: bodyWeight)

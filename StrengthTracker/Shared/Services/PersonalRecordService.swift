@@ -9,15 +9,18 @@ public final class PersonalRecordService {
     public init(
         personalRecordRepository: any PersonalRecordRepository,
         workoutRepository: any WorkoutRepository,
-        userPreferencesService: UserPreferencesService? = nil
+        userPreferencesService: UserPreferencesService? = nil,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
         self.personalRecordRepository = personalRecordRepository
         self.workoutRepository = workoutRepository
         self.userPreferencesService = userPreferencesService
+        self.bodyWeightProvider = bodyWeightProvider
     }
 
+    private let bodyWeightProvider: BodyWeightProvider?
     private var bodyWeightKg: Double {
-        userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+        bodyWeightProvider?.current ?? userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
 
     /// Check if a completed set is a new personal record

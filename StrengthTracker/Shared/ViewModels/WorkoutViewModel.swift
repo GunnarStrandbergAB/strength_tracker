@@ -65,6 +65,12 @@ public final class WorkoutViewModel {
     private let progressionPlanRepository: (any ProgressionPlanRepository)?
     private let coachingInsightService: CoachingInsightService?
     private let weightSuggestionService: WeightSuggestionService?
+    private let bodyWeightProvider: BodyWeightProvider?
+
+    /// Single resolved body weight (HealthKit → prefs → default) shared with every screen.
+    private var bodyWeightKg: Double {
+        bodyWeightProvider?.current ?? userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+    }
 
     public init(
         workoutRepository: any WorkoutRepository,
@@ -77,8 +83,10 @@ public final class WorkoutViewModel {
         webhookService: WebhookService? = nil,
         progressionPlanRepository: (any ProgressionPlanRepository)? = nil,
         coachingInsightService: CoachingInsightService? = nil,
-        weightSuggestionService: WeightSuggestionService? = nil
+        weightSuggestionService: WeightSuggestionService? = nil,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
+        self.bodyWeightProvider = bodyWeightProvider
         self.workoutRepository = workoutRepository
         self.templateRepository = templateRepository
         self.personalRecordService = personalRecordService
@@ -368,20 +376,16 @@ public final class WorkoutViewModel {
         // Save to HealthKit with calorie estimation (iPhone-only path)
         #if canImport(HealthKit)
         Task {
-            let bodyWeightKg = await resolveBodyWeightKg()
-            if let bw = bodyWeightKg {
-                let result = calorieEstimationService.estimateCalories(workout: saved, bodyWeightKg: bw)
-                try? await healthKitService.saveWorkout(saved, calories: result.totalCalories, bodyWeightKg: bw)
-            } else {
-                try? await healthKitService.saveWorkout(saved)
-            }
+            let bw = bodyWeightKg
+            let result = calorieEstimationService.estimateCalories(workout: saved, bodyWeightKg: bw)
+            try? await healthKitService.saveWorkout(saved, calories: result.totalCalories, bodyWeightKg: bw)
         }
         #endif
 
         // Vectorize workout for analytics, then generate post-workout debrief
         Task {
-            let bodyWeightKg = await resolveBodyWeightKg() ?? UserPreferencesService.defaultBodyWeightKg
-            try? await analyticsService?.vectorizeWorkout(saved, bodyWeightKg: bodyWeightKg)
+            let bodyWeightKg = self.bodyWeightKg
+            try? await analyticsService?.vectorizeWorkout(saved)
 
             // Generate post-workout debrief after vectorization completes
             if let coaching = coachingInsightService, let analytics = analyticsService {
@@ -429,15 +433,6 @@ public final class WorkoutViewModel {
         }
     }
 
-    /// Resolve body weight via fallback chain: HealthKit → UserPreferences → nil
-    private func resolveBodyWeightKg() async -> Double? {
-        // Try HealthKit first
-        if let hkWeight = await healthKitService.fetchBodyWeightKg() {
-            return hkWeight
-        }
-        // Fallback to user preference
-        return userPreferencesService?.bodyWeightKg
-    }
 
     /// Fetch previous set data for an exercise to help with progressive overload
     public func previousSetData(for exerciseId: UUID, setIndex: Int) async -> String? {
@@ -520,7 +515,7 @@ public final class WorkoutViewModel {
     /// Load coaching data (weight suggestions, effort creep) for all exercises.
     public func loadCoachingData() async {
         guard let workout = currentWorkout, let wss = weightSuggestionService else { return }
-        let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+        let bodyWeightKg = self.bodyWeightKg
         do {
             let allWorkouts = try await workoutRepository.fetchAll()
             // Suggestions scan recentWorkouts per set — cap the window so a long

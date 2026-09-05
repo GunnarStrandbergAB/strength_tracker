@@ -81,8 +81,12 @@ public final class ProgressionPlanViewModel {
     private let sessionExecutionService: SessionExecutionService
     private let adaptiveAdjustmentService: AdaptiveAdjustmentService?
     private let coachingCommunicationService: CoachingCommunicationService?
+    private let bodyWeightProvider: BodyWeightProvider?
 
     public var weightUnit: WeightUnit { userPreferencesService?.weightUnit ?? .kg }
+    private var bodyWeightKg: Double {
+        bodyWeightProvider?.current ?? userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+    }
 
     // MARK: - Init
 
@@ -97,8 +101,10 @@ public final class ProgressionPlanViewModel {
         workoutRepository: (any WorkoutRepository)? = nil,
         sessionExecutionService: SessionExecutionService = SessionExecutionService(),
         adaptiveAdjustmentService: AdaptiveAdjustmentService? = nil,
-        coachingCommunicationService: CoachingCommunicationService? = nil
+        coachingCommunicationService: CoachingCommunicationService? = nil,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
+        self.bodyWeightProvider = bodyWeightProvider
         self.progressionPlanRepository = progressionPlanRepository
         self.trainingStatusDetector = trainingStatusDetector
         self.programDesignService = programDesignService
@@ -827,7 +833,7 @@ public final class ProgressionPlanViewModel {
                 plan.blocks[bi].weeks[wi].sessions[si],
                 workout: workout,
                 planExercises: plan.exercises,
-                bodyWeightKg: userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+                bodyWeightKg: bodyWeightKg
             )
             plan.blocks[bi].weeks[wi].sessions[si] = result.updatedSession
             // Completion wins over a prior skip.

@@ -30,17 +30,20 @@ public final class ProgressViewModel {
     private let exerciseRepository: any ExerciseRepository
     private let workoutRepository: any WorkoutRepository
     public let userPreferencesService: UserPreferencesService?
+    private let bodyWeightProvider: BodyWeightProvider?
 
     public var weightUnit: WeightUnit { userPreferencesService?.weightUnit ?? .kg }
 
     public init(
         exerciseRepository: any ExerciseRepository,
         workoutRepository: any WorkoutRepository,
-        userPreferencesService: UserPreferencesService? = nil
+        userPreferencesService: UserPreferencesService? = nil,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
         self.exerciseRepository = exerciseRepository
         self.workoutRepository = workoutRepository
         self.userPreferencesService = userPreferencesService
+        self.bodyWeightProvider = bodyWeightProvider
     }
 
     public func loadExercises() async {
@@ -60,7 +63,7 @@ public final class ProgressViewModel {
             let completed = allWorkouts.filter { $0.completedAt != nil }
             var results: [(date: Date, weight: Double, reps: Int)] = []
 
-            let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+            let bodyWeightKg = bodyWeightProvider?.current ?? userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
             for workout in completed {
                 for workoutExercise in workout.exercises {
                     if workoutExercise.exercise.id == exerciseId {

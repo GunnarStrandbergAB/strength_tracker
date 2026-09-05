@@ -7,13 +7,16 @@ public final class PlanAnalyticsService: Sendable {
     private let workoutRepository: any WorkoutRepository
     private let userPreferencesService: UserPreferencesService?
 
-    public init(workoutRepository: any WorkoutRepository, userPreferencesService: UserPreferencesService? = nil) {
+    private let bodyWeightProvider: BodyWeightProvider?
+
+    public init(workoutRepository: any WorkoutRepository, userPreferencesService: UserPreferencesService? = nil, bodyWeightProvider: BodyWeightProvider? = nil) {
         self.workoutRepository = workoutRepository
         self.userPreferencesService = userPreferencesService
+        self.bodyWeightProvider = bodyWeightProvider
     }
 
     private var bodyWeightKg: Double {
-        userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+        bodyWeightProvider?.current ?? userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
 
     // MARK: - Public API

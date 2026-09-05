@@ -55,6 +55,7 @@ public final class WorkoutAnalyticsViewModel {
     private let adherenceService: AdherenceAnalysisService?
     private let coachingInsightService: CoachingInsightService?
     public let userPreferencesService: UserPreferencesService?
+    private let bodyWeightProvider: BodyWeightProvider?
 
     public var weightUnit: WeightUnit { userPreferencesService?.weightUnit ?? .kg }
 
@@ -72,8 +73,10 @@ public final class WorkoutAnalyticsViewModel {
         proFeatureGate: ProFeatureGate? = nil,
         adherenceService: AdherenceAnalysisService? = nil,
         coachingInsightService: CoachingInsightService? = nil,
-        userPreferencesService: UserPreferencesService? = nil
+        userPreferencesService: UserPreferencesService? = nil,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
+        self.bodyWeightProvider = bodyWeightProvider
         self.analyticsService = analyticsService
         self.qualityScoreService = qualityScoreService
         self.featureGate = featureGate
@@ -153,7 +156,9 @@ public final class WorkoutAnalyticsViewModel {
                 // Weekly digest (M5)
                 if unlockedFeatures.contains(.weeklyDigest),
                    let coaching = coachingInsightService {
-                    let bw = 80.0 // Default; actual body weight resolved in view layer
+                    let bw = bodyWeightProvider?.current
+                        ?? userPreferencesService?.bodyWeightKg
+                        ?? UserPreferencesService.defaultBodyWeightKg
                     weeklyDigest = coaching.generateWeeklyDigest(
                         workouts: allWorkouts,
                         overloadTrends: rawInsights.overloadTrends,

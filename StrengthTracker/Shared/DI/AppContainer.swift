@@ -22,6 +22,7 @@ public final class AppContainer: Sendable {
     public let personalRecordService: PersonalRecordService
     public let restTimerService: RestTimerService
     public let userPreferencesService: UserPreferencesService
+    public let bodyWeightProvider: BodyWeightProvider
     public let exerciseSeeder: ExerciseSeeder
     public let templateSeedService: TemplateSeedService
     public let effectiveLoadMigrationService: EffectiveLoadMigrationService
@@ -110,10 +111,21 @@ public final class AppContainer: Sendable {
 
         // Wire up services
         userPreferencesService = UserPreferencesService()
+        // Platform-specific services
+        #if canImport(HealthKit)
+        healthKitService = DefaultHealthKitService()
+        #else
+        healthKitService = NoOpHealthKitService()
+        #endif
+        bodyWeightProvider = BodyWeightProvider(
+            healthKitService: healthKitService,
+            userPreferencesService: userPreferencesService
+        )
         personalRecordService = PersonalRecordService(
             personalRecordRepository: personalRecordRepository,
             workoutRepository: workoutRepository,
-            userPreferencesService: userPreferencesService
+            userPreferencesService: userPreferencesService,
+            bodyWeightProvider: bodyWeightProvider
         )
         restTimerService = RestTimerService()
         exerciseSeeder = ExerciseSeeder(exerciseRepository: exerciseRepository)
@@ -126,12 +138,6 @@ public final class AppContainer: Sendable {
             userPreferencesService: userPreferencesService
         )
 
-        // Platform-specific services
-        #if canImport(HealthKit)
-        healthKitService = DefaultHealthKitService()
-        #else
-        healthKitService = NoOpHealthKitService()
-        #endif
         connectivityManager = ConnectivityManager()
         calorieEstimationService = CalorieEstimationService()
         webhookService = WebhookService(preferencesService: userPreferencesService)
@@ -149,7 +155,7 @@ public final class AppContainer: Sendable {
         analyticsRepository = SwiftDataAnalyticsRepository(modelContext: modelContext)
 
         // Progression: TrainingStatusDetector needed by VolumeLandmarkService
-        trainingStatusDetector = TrainingStatusDetector(workoutRepository: workoutRepository, userPreferencesService: userPreferencesService)
+        trainingStatusDetector = TrainingStatusDetector(workoutRepository: workoutRepository, userPreferencesService: userPreferencesService, bodyWeightProvider: bodyWeightProvider)
 
         // Analytics services (stateless -- ADR-012)
         vectorizer = WorkoutVectorizer()
@@ -161,7 +167,8 @@ public final class AppContainer: Sendable {
             workoutRepository: workoutRepository,
             muscleBalanceService: muscleBalanceService,
             healthKitService: healthKitService,
-            userPreferencesService: userPreferencesService
+            userPreferencesService: userPreferencesService,
+            bodyWeightProvider: bodyWeightProvider
         )
         analyticsFeatureGate = AnalyticsFeatureGate(workoutRepository: workoutRepository)
 
@@ -206,7 +213,8 @@ public final class AppContainer: Sendable {
             insightGenerator: insightGen,
             archetypeService: workoutArchetypeService,
             changePointService: changePointDetectionService,
-            qualityScoreService: qualityScoreService
+            qualityScoreService: qualityScoreService,
+            bodyWeightProvider: bodyWeightProvider
         )
 
         coachingInsightService = CoachingInsightService(
@@ -221,8 +229,8 @@ public final class AppContainer: Sendable {
         // Remaining progression services (stateless -- ADR-014)
         programDesignService = ProgramDesignService()
         sessionExecutionService = SessionExecutionService()
-        adaptiveAdjustmentService = AdaptiveAdjustmentService(workoutRepository: workoutRepository, userPreferencesService: userPreferencesService)
-        planAnalyticsService = PlanAnalyticsService(workoutRepository: workoutRepository, userPreferencesService: userPreferencesService)
+        adaptiveAdjustmentService = AdaptiveAdjustmentService(workoutRepository: workoutRepository, userPreferencesService: userPreferencesService, bodyWeightProvider: bodyWeightProvider)
+        planAnalyticsService = PlanAnalyticsService(workoutRepository: workoutRepository, userPreferencesService: userPreferencesService, bodyWeightProvider: bodyWeightProvider)
         coachingCommunicationService = CoachingCommunicationService()
 
         // Initialize cached ViewModels
@@ -237,7 +245,8 @@ public final class AppContainer: Sendable {
             webhookService: webhookService,
             progressionPlanRepository: progressionPlanRepository,
             coachingInsightService: coachingInsightService,
-            weightSuggestionService: weightSuggestionService
+            weightSuggestionService: weightSuggestionService,
+            bodyWeightProvider: bodyWeightProvider
         )
         workoutSessionCoordinator = WorkoutSessionCoordinator(
             workoutViewModel: workoutViewModel,
@@ -256,7 +265,8 @@ public final class AppContainer: Sendable {
             healthKitService: healthKitService,
             connectivityManager: connectivityManager,
             userPreferencesService: userPreferencesService,
-            analyticsService: analyticsService
+            analyticsService: analyticsService,
+            bodyWeightProvider: bodyWeightProvider
         )
         watchWorkoutListViewModel = WatchWorkoutListViewModel(
             workoutRepository: workoutRepository,
@@ -270,7 +280,8 @@ public final class AppContainer: Sendable {
             proFeatureGate: proFeatureGate,
             adherenceService: adherenceAnalysisService,
             coachingInsightService: coachingInsightService,
-            userPreferencesService: userPreferencesService
+            userPreferencesService: userPreferencesService,
+            bodyWeightProvider: bodyWeightProvider
         )
         widgetRefreshService = WidgetRefreshService(
             workoutRepository: workoutRepository,
@@ -281,7 +292,8 @@ public final class AppContainer: Sendable {
             qualityScoreService: qualityScoreService,
             workoutAnalyticsViewModel: workoutAnalyticsViewModel,
             workoutViewModel: workoutViewModel,
-            restTimerService: restTimerService
+            restTimerService: restTimerService,
+            bodyWeightProvider: bodyWeightProvider
         )
         historyViewModel = Self.buildHistoryViewModel(
             workoutRepository: workoutRepository,
@@ -293,7 +305,8 @@ public final class AppContainer: Sendable {
             calorieEstimationService: calorieEstimationService,
             webhookService: webhookService,
             widgetRefreshService: widgetRefreshService,
-            qualityScoreService: qualityScoreService
+            qualityScoreService: qualityScoreService,
+            bodyWeightProvider: bodyWeightProvider
         )
         progressionPlanViewModel = ProgressionPlanViewModel(
             progressionPlanRepository: progressionPlanRepository,
@@ -306,7 +319,8 @@ public final class AppContainer: Sendable {
             workoutRepository: workoutRepository,
             sessionExecutionService: sessionExecutionService,
             adaptiveAdjustmentService: adaptiveAdjustmentService,
-            coachingCommunicationService: coachingCommunicationService
+            coachingCommunicationService: coachingCommunicationService,
+            bodyWeightProvider: bodyWeightProvider
         )
 
         // AI assistant: workout editing seams (the AI writes through the same
@@ -319,6 +333,7 @@ public final class AppContainer: Sendable {
             widgetRefreshService: widgetRefreshService, qualityScoreService: qualityScoreService
         )
         let uiHistoryVM = historyViewModel
+        let bodyWeightProviderRef = bodyWeightProvider
         workoutEditorResolver = WorkoutEditorResolver(
             workoutViewModel: workoutViewModel,
             coordinator: workoutSessionCoordinator,
@@ -334,7 +349,8 @@ public final class AppContainer: Sendable {
                     calorieEstimationService: historyDeps.calorieEstimationService,
                     webhookService: historyDeps.webhookService,
                     widgetRefreshService: historyDeps.widgetRefreshService,
-                    qualityScoreService: historyDeps.qualityScoreService
+                    qualityScoreService: historyDeps.qualityScoreService,
+            bodyWeightProvider: bodyWeightProviderRef
                 )
             },
             onHistoryWorkoutChanged: { [weak uiHistoryVM] workout in
@@ -361,7 +377,8 @@ public final class AppContainer: Sendable {
             GetTrainingHistoryTool(
                 workoutRepository: workoutRepository,
                 exerciseRepository: exerciseRepository,
-                userPreferencesService: userPreferencesService
+                userPreferencesService: userPreferencesService,
+            bodyWeightProvider: bodyWeightProvider
             ),
             GetAnalyticsInsightsTool(analyticsService: analyticsService),
             GetPersonalRecordsTool(
@@ -404,7 +421,7 @@ public final class AppContainer: Sendable {
             SetNotesTool(resolver: workoutEditorResolver, userPreferencesService: userPreferencesService),
             SetDeloadTool(resolver: workoutEditorResolver, userPreferencesService: userPreferencesService),
             StartWorkoutTool(session: sessionController, userPreferencesService: userPreferencesService),
-            FinishWorkoutTool(session: sessionController, userPreferencesService: userPreferencesService),
+            FinishWorkoutTool(session: sessionController, userPreferencesService: userPreferencesService, bodyWeightProvider: bodyWeightProvider),
             CancelWorkoutTool(session: sessionController)
         ])
         let prefs = userPreferencesService
@@ -570,7 +587,8 @@ public final class AppContainer: Sendable {
             calorieEstimationService: calorieEstimationService,
             webhookService: webhookService,
             widgetRefreshService: widgetRefreshService,
-            qualityScoreService: qualityScoreService
+            qualityScoreService: qualityScoreService,
+            bodyWeightProvider: bodyWeightProvider
         )
     }
 
@@ -584,7 +602,8 @@ public final class AppContainer: Sendable {
         calorieEstimationService: CalorieEstimationService,
         webhookService: WebhookService,
         widgetRefreshService: WidgetRefreshService,
-        qualityScoreService: WorkoutQualityScoreService
+        qualityScoreService: WorkoutQualityScoreService,
+        bodyWeightProvider: BodyWeightProvider
     ) -> HistoryViewModel {
         HistoryViewModel(
             workoutRepository: workoutRepository,
@@ -596,7 +615,8 @@ public final class AppContainer: Sendable {
             calorieEstimationService: calorieEstimationService,
             webhookService: webhookService,
             widgetRefreshService: widgetRefreshService,
-            qualityScoreService: qualityScoreService
+            qualityScoreService: qualityScoreService,
+            bodyWeightProvider: bodyWeightProvider
         )
     }
 
@@ -610,7 +630,8 @@ public final class AppContainer: Sendable {
             personalRecordRepository: personalRecordRepository,
             qualityScoreService: qualityScoreService,
             healthKitService: healthKitService,
-            userPreferencesService: userPreferencesService
+            userPreferencesService: userPreferencesService,
+            bodyWeightProvider: bodyWeightProvider
         )
     }
 
@@ -618,7 +639,8 @@ public final class AppContainer: Sendable {
         ProgressViewModel(
             exerciseRepository: exerciseRepository,
             workoutRepository: workoutRepository,
-            userPreferencesService: userPreferencesService
+            userPreferencesService: userPreferencesService,
+            bodyWeightProvider: bodyWeightProvider
         )
     }
 

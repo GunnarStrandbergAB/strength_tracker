@@ -149,6 +149,7 @@ struct StrengthTrackeriOSApp: App {
             ContentViewWrapper(container: container)
         }
         .modelContainer(container.modelContainer)
+        .environment(container.bodyWeightProvider)
     }
 
 }
@@ -216,8 +217,9 @@ struct ContentViewWrapper: View {
                 container.restTimerService.handleForegroundReturn()
                 container.restTimerService.endAllStaleActivities()
 
-                // Refresh widget data with analytics
+                // Body weight first (HealthKit may have a newer sample), then widgets.
                 Task { @MainActor in
+                    await container.bodyWeightProvider.refresh()
                     await refreshWidgetData()
                 }
 

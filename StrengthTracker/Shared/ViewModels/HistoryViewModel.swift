@@ -20,6 +20,7 @@ public final class HistoryViewModel {
     private let webhookService: WebhookService?
     private let widgetRefreshService: WidgetRefreshService?
     private let qualityScoreService: WorkoutQualityScoreService?
+    private let bodyWeightProvider: BodyWeightProvider?
 
     /// Workouts retro-created this session that still owe their one-shot side effects
     /// (webhook + optional HealthKit save). Keyed by workout id; value = HealthKit opt-in.
@@ -37,8 +38,10 @@ public final class HistoryViewModel {
         calorieEstimationService: CalorieEstimationService? = nil,
         webhookService: WebhookService? = nil,
         widgetRefreshService: WidgetRefreshService? = nil,
-        qualityScoreService: WorkoutQualityScoreService? = nil
+        qualityScoreService: WorkoutQualityScoreService? = nil,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
+        self.bodyWeightProvider = bodyWeightProvider
         self.workoutRepository = workoutRepository
         self.userPreferencesService = userPreferencesService
         self.templateRepository = templateRepository
@@ -424,21 +427,15 @@ public final class HistoryViewModel {
               workout.completedAt != nil else { return }
         hasUnsavedFinalization = false
 
-        let bodyWeightKg = await resolveBodyWeightKg()
-        try? await analyticsService?.vectorizeWorkout(
-            workout,
-            bodyWeightKg: bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
-        )
+        let bodyWeightKg = displayBodyWeightKg
+        try? await analyticsService?.vectorizeWorkout(workout)
         try? await personalRecordService?.recalculateAllPRs()
 
         if let healthKitOptIn = pendingRetroFinalization.removeValue(forKey: workout.id) {
             if healthKitOptIn, let healthKitService {
-                if let bw = bodyWeightKg, let calorieEstimationService {
-                    let result = calorieEstimationService.estimateCalories(workout: workout, bodyWeightKg: bw)
-                    try? await healthKitService.saveWorkout(workout, calories: result.totalCalories, bodyWeightKg: bw)
-                } else {
-                    try? await healthKitService.saveWorkout(workout)
-                }
+                let calories = calorieEstimationService?
+                    .estimateCalories(workout: workout, bodyWeightKg: bodyWeightKg).totalCalories ?? 0
+                try? await healthKitService.saveWorkout(workout, calories: calories, bodyWeightKg: bodyWeightKg)
             }
             await webhookService?.send(workout)
         }
@@ -449,17 +446,10 @@ public final class HistoryViewModel {
         await widgetRefreshService?.refresh()
     }
 
-    /// Synchronous body-weight resolution for display sites (prefs → default);
-    /// the async HealthKit chain is only used for finalization side effects.
+    /// The single resolved body weight (HealthKit → prefs → default), shared with
+    /// every other screen so the same workout never shows two volumes.
     public var displayBodyWeightKg: Double {
-        userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
-    }
-
-    private func resolveBodyWeightKg() async -> Double? {
-        if let hkWeight = await healthKitService?.fetchBodyWeightKg() {
-            return hkWeight
-        }
-        return userPreferencesService?.bodyWeightKg
+        bodyWeightProvider?.current ?? userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
 
     // MARK: - Delete Workout

@@ -192,12 +192,15 @@ public final class GetTrainingHistoryTool: AITool {
     private let workoutRepository: any WorkoutRepository
     private let exerciseRepository: any ExerciseRepository
     private let userPreferencesService: UserPreferencesService
+    private let bodyWeightProvider: BodyWeightProvider?
 
     public init(
         workoutRepository: any WorkoutRepository,
         exerciseRepository: any ExerciseRepository,
-        userPreferencesService: UserPreferencesService
+        userPreferencesService: UserPreferencesService,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
+        self.bodyWeightProvider = bodyWeightProvider
         self.workoutRepository = workoutRepository
         self.exerciseRepository = exerciseRepository
         self.userPreferencesService = userPreferencesService
@@ -260,7 +263,7 @@ public final class GetTrainingHistoryTool: AITool {
         let truncated = workouts.count > limit
         workouts = Array(workouts.prefix(limit))
 
-        let bodyWeight = userPreferencesService.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+        let bodyWeight = bodyWeightProvider?.current ?? userPreferencesService.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
         let summaries = workouts.map { workout in
             summarize(workout, bodyWeightKg: bodyWeight, only: filterExercise)
         }

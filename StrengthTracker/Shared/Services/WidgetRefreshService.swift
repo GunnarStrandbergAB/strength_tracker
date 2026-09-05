@@ -17,6 +17,7 @@ public final class WidgetRefreshService {
     private let workoutAnalyticsViewModel: WorkoutAnalyticsViewModel
     private let workoutViewModel: WorkoutViewModel
     private let restTimerService: RestTimerService
+    private let bodyWeightProvider: BodyWeightProvider?
 
     public init(
         workoutRepository: any WorkoutRepository,
@@ -27,8 +28,10 @@ public final class WidgetRefreshService {
         qualityScoreService: WorkoutQualityScoreService,
         workoutAnalyticsViewModel: WorkoutAnalyticsViewModel,
         workoutViewModel: WorkoutViewModel,
-        restTimerService: RestTimerService
+        restTimerService: RestTimerService,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
+        self.bodyWeightProvider = bodyWeightProvider
         self.workoutRepository = workoutRepository
         self.progressionPlanRepository = progressionPlanRepository
         self.healthKitService = healthKitService
@@ -46,8 +49,7 @@ public final class WidgetRefreshService {
         do {
             let workouts = try await workoutRepository.fetchAll()
 
-            // Resolve bodyweight for volume calculations
-            let bw = await healthKitService.fetchBodyWeightKg()
+            let bw = bodyWeightProvider?.current
                 ?? userPreferencesService.bodyWeightKg
                 ?? UserPreferencesService.defaultBodyWeightKg
 

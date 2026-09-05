@@ -9,6 +9,7 @@ public final class WorkoutQualityScoreService: Sendable {
     private let muscleBalanceService: MuscleBalanceService
     private let healthKitService: any HealthKitServiceProtocol
     private let userPreferencesService: UserPreferencesService
+    private let bodyWeightProvider: BodyWeightProvider?
 
     /// Cache keyed by workout ID to avoid recomputing scores
     private var cache: [UUID: WorkoutQualityScore] = [:]
@@ -17,12 +18,14 @@ public final class WorkoutQualityScoreService: Sendable {
         workoutRepository: any WorkoutRepository,
         muscleBalanceService: MuscleBalanceService,
         healthKitService: any HealthKitServiceProtocol,
-        userPreferencesService: UserPreferencesService
+        userPreferencesService: UserPreferencesService,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
         self.workoutRepository = workoutRepository
         self.muscleBalanceService = muscleBalanceService
         self.healthKitService = healthKitService
         self.userPreferencesService = userPreferencesService
+        self.bodyWeightProvider = bodyWeightProvider
     }
 
     /// Drop one workout's cached score (e.g. after that workout was edited).
@@ -52,8 +55,7 @@ public final class WorkoutQualityScoreService: Sendable {
     }
 
     private func computeScoreInternal(for workout: Workout, history: [Workout]) -> WorkoutQualityScore {
-        let bodyWeightKg = userPreferencesService.bodyWeightKg
-            ?? UserPreferencesService.defaultBodyWeightKg
+        let bodyWeightKg = resolvedBodyWeightKg
 
         let volumeScore: Double
         let intensityScore: Double
@@ -179,7 +181,7 @@ public final class WorkoutQualityScoreService: Sendable {
 
     /// Build per-exercise best e1RM map from history, excluding a specific workout.
     private var resolvedBodyWeightKg: Double {
-        userPreferencesService.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+        bodyWeightProvider?.current ?? userPreferencesService.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
 
     private func buildBestE1RMMap(excluding workoutId: UUID, from history: [Workout]) -> [UUID: Double] {

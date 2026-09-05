@@ -7,10 +7,6 @@ public protocol HealthKitServiceProtocol: Sendable {
     /// Request authorization to read and write health data
     func requestAuthorization() async throws
 
-    /// Save a completed workout to HealthKit
-    /// - Parameter workout: The workout to save
-    func saveWorkout(_ workout: Workout) async throws
-
     /// Save a completed workout with custom calorie estimation
     /// - Parameters:
     ///   - workout: The workout to save
@@ -72,10 +68,6 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked
         ]
 
         try await healthStore.requestAuthorization(toShare: typesToShare, read: typesToRead)
-    }
-
-    public func saveWorkout(_ workout: Workout) async throws {
-        try await saveWorkout(workout, calories: 0, bodyWeightKg: UserPreferencesService.defaultBodyWeightKg)
     }
 
     public func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws {
@@ -148,10 +140,8 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked
     }
 
     public func endWorkoutSession(_ workout: Workout) async throws {
-        // On iOS, save the workout to HealthKit when it completes
-        #if os(iOS)
-        try await saveWorkout(workout)
-        #endif
+        // On iOS the completion pipeline saves the workout with calories and the
+        // resolved body weight; nothing to do here.
     }
 
 }
@@ -165,7 +155,6 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol {
     public init() {}
 
     public func requestAuthorization() async throws {}
-    public func saveWorkout(_ workout: Workout) async throws {}
     public func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws {}
     public func fetchBodyWeightKg() async -> Double? { nil }
     public func startWorkoutSession() async throws {}

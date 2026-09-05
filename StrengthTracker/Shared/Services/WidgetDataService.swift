@@ -75,7 +75,7 @@ public final class WidgetDataService: Sendable {
         restEndDate: Date?,
         nextPlannedSession: WidgetPlannedSession?,
         weeklyGoal: Int,
-        bodyWeightKg: Double = 70.0,
+        bodyWeightKg: Double,
         weeklyQualityScore: Double? = nil,
         qualityTrend: Double? = nil,
         activeExerciseId: UUID? = nil
@@ -212,7 +212,7 @@ public final class WidgetDataService: Sendable {
     /// Calendar-week (Monday-start) volume for the current and previous week.
     public func calculateVolumeTrend(
         from workouts: [Workout], calendar: Calendar = .mondayStart, now: Date = Date(),
-        bodyWeightKg: Double = 70.0
+        bodyWeightKg: Double
     ) -> (current: Double?, previous: Double?) {
         let (thisWeek, lastWeek) = weeklyWorkoutSplit(from: workouts, calendar: calendar, now: now)
         let thisWeekVolume = thisWeek.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) }

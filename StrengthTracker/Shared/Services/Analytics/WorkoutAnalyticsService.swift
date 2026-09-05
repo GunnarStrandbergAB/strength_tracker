@@ -17,6 +17,11 @@ public final class WorkoutAnalyticsService: Sendable {
 
     private let trainingStatusDetector: TrainingStatusDetector?
     private let userPreferencesService: UserPreferencesService?
+    private let bodyWeightProvider: BodyWeightProvider?
+    /// Single resolved body weight for every volume/e1RM computation in this service.
+    private var resolvedBodyWeightKg: Double {
+        bodyWeightProvider?.current ?? userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+    }
 
     /// Current vector schema version — bump when normalization constants change
     // v3: WorkoutVector.createdAt now carries the training date (workout.startedAt)
@@ -68,8 +73,10 @@ public final class WorkoutAnalyticsService: Sendable {
         insightGenerator: (any InsightTextGenerating)? = nil,
         archetypeService: WorkoutArchetypeService? = nil,
         changePointService: ChangePointDetectionService? = nil,
-        qualityScoreService: WorkoutQualityScoreService? = nil
+        qualityScoreService: WorkoutQualityScoreService? = nil,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
+        self.bodyWeightProvider = bodyWeightProvider
         self.analyticsRepository = analyticsRepository
         self.workoutRepository = workoutRepository
         self.exerciseRepository = exerciseRepository
@@ -126,7 +133,7 @@ public final class WorkoutAnalyticsService: Sendable {
         // Fetch corresponding workouts
         let allWorkouts = try await workoutRepository.fetchAll()
         let workoutMap = Dictionary(allWorkouts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let displayBodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+        let displayBodyWeightKg = resolvedBodyWeightKg
 
         return topResults.compactMap { result in
             guard result.index < vectors.count else { return nil }
@@ -156,7 +163,7 @@ public final class WorkoutAnalyticsService: Sendable {
     /// Generate a consistent WorkoutInsights snapshot for the dashboard
     public func generateInsights(timeWindow: TimeInterval = 2_592_000) async throws -> WorkoutInsights {
         // Migrate vectors if normalization constants changed
-        let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+        let bodyWeightKg = resolvedBodyWeightKg
         try await migrateVectorsIfNeeded(bodyWeightKg: bodyWeightKg)
 
         let workouts = try await workoutRepository.fetchAll()
@@ -168,7 +175,7 @@ public final class WorkoutAnalyticsService: Sendable {
 
         let trainingStatus = try await trainingStatusDetector?.detect() ?? .intermediate
         let plateausResult = plateauService.analyzePlateaus(bodyWeightKg: bodyWeightKg, workouts: nonDeloadWorkouts, trainingStatus: trainingStatus)
-        let muscleBalanceResult = muscleBalanceService.analyze(workouts: nonDeloadWorkouts, timeWindow: timeWindow)
+        let muscleBalanceResult = muscleBalanceService.analyze(workouts: nonDeloadWorkouts, timeWindow: timeWindow, bodyWeightKg: bodyWeightKg)
 
         // Generate recommendations using plateau and balance data
         let availableExercises = try await exerciseRepository.fetchAll()
@@ -329,7 +336,8 @@ public final class WorkoutAnalyticsService: Sendable {
     }
 
     /// Vectorize a single workout and store
-    public func vectorizeWorkout(_ workout: Workout, bodyWeightKg: Double = UserPreferencesService.defaultBodyWeightKg) async throws {
+    public func vectorizeWorkout(_ workout: Workout) async throws {
+        let bodyWeightKg = resolvedBodyWeightKg
         let allWorkouts = try await workoutRepository.fetchAll()
         let vector = vectorizer.vectorize(workout, historicalWorkouts: allWorkouts, bodyWeightKg: bodyWeightKg)
 
@@ -350,7 +358,8 @@ public final class WorkoutAnalyticsService: Sendable {
     }
 
     /// Batch vectorize all workouts missing vectors
-    public func vectorizeAllWorkouts(bodyWeightKg: Double = UserPreferencesService.defaultBodyWeightKg) async throws {
+    public func vectorizeAllWorkouts() async throws {
+        let bodyWeightKg = resolvedBodyWeightKg
         let allWorkouts = try await workoutRepository.fetchAll()
         let existingVectors = try await analyticsRepository.fetchAllVectors()
         let vectorizedIds = Set(existingVectors.map(\.workoutId))
@@ -380,7 +389,7 @@ public final class WorkoutAnalyticsService: Sendable {
         guard let prefs = userPreferencesService,
               prefs.vectorVersion < Self.currentVectorVersion else { return }
         try await analyticsRepository.deleteAllVectors()
-        try await vectorizeAllWorkouts(bodyWeightKg: bodyWeightKg)
+        try await vectorizeAllWorkouts()
         prefs.vectorVersion = Self.currentVectorVersion
     }
 
