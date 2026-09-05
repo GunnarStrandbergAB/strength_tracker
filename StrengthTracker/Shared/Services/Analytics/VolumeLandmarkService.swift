@@ -27,7 +27,7 @@ public final class VolumeLandmarkService: Sendable {
         }
         let fourWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -AnalyticsCalculations.Windows.recentWeeks, to: Date())!
         let recentWorkouts = allWorkouts.filter {
-            $0.completedAt != nil && ($0.completedAt ?? $0.startedAt) >= fourWeeksAgo
+            $0.completedAt != nil && $0.trainingDate >= fourWeeksAgo
         }
 
         guard !recentWorkouts.isEmpty else { return [] }

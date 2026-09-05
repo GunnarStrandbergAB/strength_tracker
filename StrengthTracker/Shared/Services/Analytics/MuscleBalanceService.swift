@@ -15,8 +15,12 @@ public final class MuscleBalanceService: Sendable {
         (.glutes, .hipFlexors)
     ]
 
-    private let mildImbalanceThreshold = 1.5
-    private let moderateImbalanceThreshold = 2.0
+    /// Antagonist ratio tiers: mild ≥1.25, moderate ≥1.5, severe ≥2.0.
+    private let mildImbalanceThreshold = 1.25
+    private let moderateImbalanceThreshold = 1.5
+    private let severeImbalanceThreshold = 2.0
+    /// A group's volume must move ≥10% window-over-window to count as a trend.
+    private let trendTolerance = 0.10
 
     public init() {}
 
@@ -31,30 +35,17 @@ public final class MuscleBalanceService: Sendable {
         bodyWeightKg: Double = UserPreferencesService.defaultBodyWeightKg
     ) -> MuscleBalance {
         let calendar = Calendar.mondayStart
-        let windowStart = calendar.date(byAdding: .weekOfYear, value: -windowWeeks, to: Date())!
+        let now = Date()
+        let windowStart = calendar.date(byAdding: .weekOfYear, value: -windowWeeks, to: now)!
+        let previousWindowStart = calendar.date(byAdding: .weekOfYear, value: -windowWeeks, to: windowStart)!
 
-        let recentWorkouts = workouts.filter {
-            guard let completedAt = $0.completedAt else { return false }
-            return completedAt >= windowStart
-        }
+        let completed = workouts.filter { $0.completedAt != nil }
+        let recentWorkouts = completed.filter { $0.trainingDate >= windowStart }
+        let previousWorkouts = completed.filter { $0.trainingDate >= previousWindowStart && $0.trainingDate < windowStart }
 
-        // Calculate total volume per muscle group (bodyweight-aware)
-        var muscleVolumes: [MuscleGroup: Double] = [:]
-
-        for workout in recentWorkouts {
-            for exercise in workout.exercises {
-                let volume = exercise.exerciseVolume(bodyWeightKg: bodyWeightKg)
-
-                let attributed = AnalyticsCalculations.attributeVolume(
-                    volume: volume,
-                    primaryMuscle: exercise.exercise.primaryMuscleGroup,
-                    secondaryMuscles: exercise.exercise.secondaryMuscleGroups
-                )
-                for (muscle, vol) in attributed {
-                    muscleVolumes[muscle, default: 0] += vol
-                }
-            }
-        }
+        // Total volume per muscle group (bodyweight-aware), this window and the one before
+        let muscleVolumes = attributedVolumes(for: recentWorkouts, bodyWeightKg: bodyWeightKg)
+        let previousVolumes = attributedVolumes(for: previousWorkouts, bodyWeightKg: bodyWeightKg)
 
         // If total volume is zero, return a zero score rather than misleading perfect score
         let totalVol = muscleVolumes.values.reduce(0, +)
@@ -71,7 +62,7 @@ public final class MuscleBalanceService: Sendable {
         var muscleSets: [MuscleGroup: Int] = [:]
         for workout in recentWorkouts {
             for exercise in workout.exercises {
-                let completedSets = exercise.sets.filter(\.isCompleted).count
+                let completedSets = exercise.sets.filter { $0.isCompleted && $0.setType != .warmup }.count
                 muscleSets[exercise.exercise.primaryMuscleGroup, default: 0] += completedSets
             }
         }
@@ -82,7 +73,7 @@ public final class MuscleBalanceService: Sendable {
                 muscleGroup: group.rawValue,
                 weeklyVolume: volume,
                 weeklySetCount: muscleSets[group] ?? 0,
-                trend: .stable
+                trend: trend(current: volume, previous: previousVolumes[group])
             )
         }
 
@@ -108,6 +99,39 @@ public final class MuscleBalanceService: Sendable {
 
     // MARK: - Private
 
+    private func attributedVolumes(for workouts: [Workout], bodyWeightKg: Double) -> [MuscleGroup: Double] {
+        var volumes: [MuscleGroup: Double] = [:]
+        for workout in workouts {
+            for exercise in workout.exercises {
+                let volume = exercise.exerciseVolume(bodyWeightKg: bodyWeightKg)
+                let attributed = AnalyticsCalculations.attributeVolume(
+                    volume: volume,
+                    primaryMuscle: exercise.exercise.primaryMuscleGroup,
+                    secondaryMuscles: exercise.exercise.secondaryMuscleGroups
+                )
+                for (muscle, vol) in attributed {
+                    volumes[muscle, default: 0] += vol
+                }
+            }
+        }
+        return volumes
+    }
+
+    /// Window-over-window direction; no previous data means no trend claim.
+    private func trend(current: Double, previous: Double?) -> VolumeTrend {
+        guard let previous, previous > 0 else { return .stable }
+        let change = (current - previous) / previous
+        if change >= trendTolerance { return .increasing }
+        if change <= -trendTolerance { return .decreasing }
+        return .stable
+    }
+
+    private func severity(for ratio: Double) -> ImbalanceSeverity {
+        if ratio >= severeImbalanceThreshold { return .severe }
+        if ratio >= moderateImbalanceThreshold { return .moderate }
+        return .mild
+    }
+
     private func identifyImbalances(muscleVolumes: [MuscleGroup: Double]) -> [MuscleImbalance] {
         var imbalances: [MuscleImbalance] = []
 
@@ -119,26 +143,24 @@ public final class MuscleBalanceService: Sendable {
 
             let ratio = primaryVol / comparisonVol
             if ratio >= mildImbalanceThreshold {
-                let severity: ImbalanceSeverity = ratio >= moderateImbalanceThreshold ? .severe : .moderate
                 imbalances.append(MuscleImbalance(
                     id: UUID(),
                     primaryGroup: primary.rawValue,
                     comparisonGroup: comparison.rawValue,
                     ratio: ratio,
-                    severity: severity
+                    severity: severity(for: ratio)
                 ))
             }
 
             // Check reverse
             let reverseRatio = comparisonVol / primaryVol
             if reverseRatio >= mildImbalanceThreshold {
-                let severity: ImbalanceSeverity = reverseRatio >= moderateImbalanceThreshold ? .severe : .moderate
                 imbalances.append(MuscleImbalance(
                     id: UUID(),
                     primaryGroup: comparison.rawValue,
                     comparisonGroup: primary.rawValue,
                     ratio: reverseRatio,
-                    severity: severity
+                    severity: severity(for: reverseRatio)
                 ))
             }
         }

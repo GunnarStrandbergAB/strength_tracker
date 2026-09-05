@@ -19,14 +19,6 @@ public final class WorkoutAnalyticsViewModel {
     public var aggregateQuality: AggregateQualityScore?
     public var isQualityScoreLoading = false
 
-    /// Drops quality-related state and the insights freshness gate so the next load
-    /// recomputes — call after history edits invalidate the score caches.
-    public func invalidateQualityState() {
-        qualityScore = nil
-        aggregateQuality = nil
-        lastInsightsLoadTime = nil
-    }
-
     /// Feature gating
     public var unlockedFeatures: Set<AnalyticsFeatureGate.Feature> = []
     public var nextFeatureUnlock: (feature: AnalyticsFeatureGate.Feature, workoutsNeeded: Int)?
@@ -55,10 +47,17 @@ public final class WorkoutAnalyticsViewModel {
     private let adherenceService: AdherenceAnalysisService?
     private let coachingInsightService: CoachingInsightService?
     public let userPreferencesService: UserPreferencesService?
+    private let bodyWeightProvider: BodyWeightProvider?
 
     public var weightUnit: WeightUnit { userPreferencesService?.weightUnit ?? .kg }
 
     private var lastInsightsLoadTime: Date?
+    private let dataRevision: DataRevision?
+    private var lastLoadedRevision: Int?
+    private var inflightLoad: Task<Void, Never>?
+
+    /// Views key their `.task(id:)` on this so any completed mutation reloads them.
+    public var currentRevision: Int { dataRevision?.value ?? 0 }
 
     private static let migrationKey = "analytics_migration_complete"
 
@@ -72,8 +71,12 @@ public final class WorkoutAnalyticsViewModel {
         proFeatureGate: ProFeatureGate? = nil,
         adherenceService: AdherenceAnalysisService? = nil,
         coachingInsightService: CoachingInsightService? = nil,
-        userPreferencesService: UserPreferencesService? = nil
+        userPreferencesService: UserPreferencesService? = nil,
+        bodyWeightProvider: BodyWeightProvider? = nil,
+        dataRevision: DataRevision? = nil
     ) {
+        self.bodyWeightProvider = bodyWeightProvider
+        self.dataRevision = dataRevision
         self.analyticsService = analyticsService
         self.qualityScoreService = qualityScoreService
         self.featureGate = featureGate
@@ -88,14 +91,28 @@ public final class WorkoutAnalyticsViewModel {
 
     /// Load all analytics for dashboard as a consistent snapshot
     public func loadDashboardInsights(force: Bool = false) async {
-        // Skip reload if fresh (within 60s) unless forced
-        if !force,
-           let lastLoad = lastInsightsLoadTime,
-           Date().timeIntervalSince(lastLoad) < 60,
-           insights.workoutCount > 0 {
-            return
+        let targetRevision = dataRevision?.value
+        if !force, insights.workoutCount > 0 {
+            if let targetRevision {
+                // Revision-gated: reload only when a completed mutation bumped it.
+                if lastLoadedRevision == targetRevision { return }
+            } else if let lastLoad = lastInsightsLoadTime, Date().timeIntervalSince(lastLoad) < 60 {
+                // No revision source injected (tests): keep the time-based gate.
+                return
+            }
         }
+        // Coalesce concurrent callers (several views mount on the same bump).
+        if let inflightLoad {
+            await inflightLoad.value
+            if !force, let targetRevision, lastLoadedRevision == targetRevision { return }
+        }
+        let task = Task { await performInsightsLoad(revision: targetRevision) }
+        inflightLoad = task
+        await task.value
+        inflightLoad = nil
+    }
 
+    private func performInsightsLoad(revision: Int?) async {
         isInsightsLoading = true
         defer { isInsightsLoading = false }
 
@@ -118,6 +135,7 @@ public final class WorkoutAnalyticsViewModel {
             insights = rawInsights
             errorMessage = nil
             lastInsightsLoadTime = Date()
+            lastLoadedRevision = revision
 
             // Auto-load quality score and aggregate using the same workouts
             if unlockedFeatures.contains(.qualityScore),
@@ -125,9 +143,9 @@ public final class WorkoutAnalyticsViewModel {
                 let allCompleted = try await repo.fetchAll()
                 let completedWorkouts = allCompleted.filter { $0.completedAt != nil }
 
-                // Per-workout score for the latest workout (used in detail views)
-                if qualityScore == nil,
-                   let latest = completedWorkouts
+                // Per-workout score for the latest workout (used in detail views);
+                // always rescored — baselines are history-relative.
+                if let latest = completedWorkouts
                     .sorted(by: { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) })
                     .first {
                     qualityScore = qualityScoreService.computeScore(for: latest, history: allCompleted)
@@ -153,11 +171,14 @@ public final class WorkoutAnalyticsViewModel {
                 // Weekly digest (M5)
                 if unlockedFeatures.contains(.weeklyDigest),
                    let coaching = coachingInsightService {
-                    let bw = 80.0 // Default; actual body weight resolved in view layer
+                    let bw = bodyWeightProvider?.current
+                        ?? userPreferencesService?.bodyWeightKg
+                        ?? UserPreferencesService.defaultBodyWeightKg
                     weeklyDigest = coaching.generateWeeklyDigest(
                         workouts: allWorkouts,
                         overloadTrends: rawInsights.overloadTrends,
-                        bodyWeightKg: bw
+                        bodyWeightKg: bw,
+                        verdict: rawInsights.verdict
                     )
                 }
             }
@@ -191,7 +212,8 @@ public final class WorkoutAnalyticsViewModel {
             highlights: quality ? raw.highlights : [],
             archetypes: unlockedFeatures.contains(.archetypeClustering) ? raw.archetypes : [],
             trainingFingerprint: unlockedFeatures.contains(.trainingFingerprint) ? raw.trainingFingerprint : nil,
-            timeOfDayAnalysis: unlockedFeatures.contains(.timeOfDayAnalysis) ? raw.timeOfDayAnalysis : nil
+            timeOfDayAnalysis: unlockedFeatures.contains(.timeOfDayAnalysis) ? raw.timeOfDayAnalysis : nil,
+            verdict: quality ? raw.verdict : nil
         )
     }
 
@@ -233,7 +255,7 @@ public final class WorkoutAnalyticsViewModel {
     // MARK: - Advanced Insights Accessors
 
     public var advancedInsightsLoaded: Bool {
-        isFeatureUnlocked(.advancedInsights) && insights.workoutCount >= 19
+        isFeatureUnlocked(.advancedInsights) && insights.workoutCount >= AnalyticsFeatureGate.threshold(for: .advancedInsights)
     }
 
 
@@ -261,11 +283,11 @@ public final class WorkoutAnalyticsViewModel {
     }
 
     public func formatACWR(_ acwr: Double) -> String {
-        String(format: "%.2f", acwr)
+        AnalyticsFormatting.acwr(acwr)
     }
 
     public func formatSlope(_ slope: Double) -> String {
-        String(format: "%+.1f %@/wk", weightUnit.fromKg(slope), weightUnit.symbol)
+        AnalyticsFormatting.slope(kgPerWeek: slope, unit: weightUnit)
     }
 
     // MARK: - Feature Gate Helpers

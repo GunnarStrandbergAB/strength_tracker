@@ -81,8 +81,13 @@ public final class ProgressionPlanViewModel {
     private let sessionExecutionService: SessionExecutionService
     private let adaptiveAdjustmentService: AdaptiveAdjustmentService?
     private let coachingCommunicationService: CoachingCommunicationService?
+    private let bodyWeightProvider: BodyWeightProvider?
+    private let trainingAdvisor: TrainingAdvisor?
 
     public var weightUnit: WeightUnit { userPreferencesService?.weightUnit ?? .kg }
+    private var bodyWeightKg: Double {
+        bodyWeightProvider?.current ?? userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+    }
 
     // MARK: - Init
 
@@ -97,8 +102,12 @@ public final class ProgressionPlanViewModel {
         workoutRepository: (any WorkoutRepository)? = nil,
         sessionExecutionService: SessionExecutionService = SessionExecutionService(),
         adaptiveAdjustmentService: AdaptiveAdjustmentService? = nil,
-        coachingCommunicationService: CoachingCommunicationService? = nil
+        coachingCommunicationService: CoachingCommunicationService? = nil,
+        bodyWeightProvider: BodyWeightProvider? = nil,
+        trainingAdvisor: TrainingAdvisor? = nil
     ) {
+        self.trainingAdvisor = trainingAdvisor
+        self.bodyWeightProvider = bodyWeightProvider
         self.progressionPlanRepository = progressionPlanRepository
         self.trainingStatusDetector = trainingStatusDetector
         self.programDesignService = programDesignService
@@ -804,9 +813,14 @@ public final class ProgressionPlanViewModel {
             return
         }
 
-        // Step 2: idempotency — Watch transfers can retry the same completion.
-        guard plan.blocks[bi].weeks[wi].sessions[si].completedWorkoutId == nil else {
-            await loadActivePlan()
+        // Step 2: idempotency — Watch transfers can retry the same completion. A retry
+        // for the SAME workout means its contents may have changed: treat as an edit.
+        if let existing = plan.blocks[bi].weeks[wi].sessions[si].completedWorkoutId {
+            if existing == workoutId {
+                await handleSessionEdited(sessionId: sessionId, planId: planId, workoutId: workoutId)
+            } else {
+                await loadActivePlan()
+            }
             return
         }
 
@@ -827,7 +841,7 @@ public final class ProgressionPlanViewModel {
                 plan.blocks[bi].weeks[wi].sessions[si],
                 workout: workout,
                 planExercises: plan.exercises,
-                bodyWeightKg: userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+                bodyWeightKg: bodyWeightKg
             )
             plan.blocks[bi].weeks[wi].sessions[si] = result.updatedSession
             // Completion wins over a prior skip.
@@ -835,8 +849,15 @@ public final class ProgressionPlanViewModel {
             plan.blocks[bi].weeks[wi].sessions[si].skippedAt = nil
             plan.exercises = result.updatedExercises
 
+            // Step 4b: the coach verdict gates APRE load increases. While it says
+            // deload, "Increase Weight" would contradict every analytics surface.
+            let verdict = trainingAdvisor?.lastVerdict
+            let gated = Self.gateAPREIncreases(result.adjustments, verdict: verdict)
+            var engineAdjustments = gated.kept
+            if let note = gated.note { engineAdjustments.append(note) }
+
             // Step 5: engine adjustments are auto-applied (recorded as accepted).
-            for var adjustment in result.adjustments {
+            for var adjustment in engineAdjustments {
                 adjustment.wasAccepted = true
                 if let coaching = coachingCommunicationService {
                     let explanation = await coaching.provider.explain(
@@ -848,16 +869,13 @@ public final class ProgressionPlanViewModel {
             }
 
             // Step 6: propagate updated targets to future sessions.
-            applyExerciseUpdatesToFutureSessions(plan: &plan, adjustments: result.adjustments)
+            applyExerciseUpdatesToFutureSessions(plan: &plan, adjustments: gated.kept)
 
             // Step 7: adviser proposals over the last 8 weeks of completed workouts.
             if let adviser = adaptiveAdjustmentService {
                 let cutoff = Calendar.current.date(byAdding: .weekOfYear, value: -8, to: Date()) ?? .distantPast
-                let recentWorkouts = allWorkouts.filter {
-                    guard let completedAt = $0.completedAt else { return false }
-                    return completedAt >= cutoff
-                }
-                let proposals = try await adviser.analyzeAndPropose(plan: plan, recentWorkouts: recentWorkouts)
+                let recentWorkouts = allWorkouts.filter { $0.completedAt != nil && $0.trainingDate >= cutoff }
+                let proposals = try await adviser.analyzeAndPropose(plan: plan, recentWorkouts: recentWorkouts, verdict: verdict)
                 for proposal in proposals {
                     guard !Self.isDuplicateProposal(proposal.adjustment, existing: plan.adjustments) else { continue }
                     var adjustment = proposal.adjustment
@@ -885,6 +903,61 @@ public final class ProgressionPlanViewModel {
         }
     }
 
+    /// A completed, plan-linked workout was edited after the fact: replay every
+    /// completed session so 1RM estimates and future targets reflect the corrected
+    /// numbers without double-applying the EWMA/APRE steps.
+    public func handleSessionEdited(sessionId: UUID, planId: UUID, workoutId: UUID) async {
+        guard let workoutRepository,
+              var plan = try? await progressionPlanRepository.fetch(id: planId),
+              let (bi, wi, si) = Self.locateSession(sessionId, in: plan),
+              plan.blocks[bi].weeks[wi].sessions[si].completedWorkoutId == workoutId,
+              let workouts = try? await workoutRepository.fetchAll() else { return }
+        let workoutsById = Dictionary(workouts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let replay = sessionExecutionService.replayCompletedSessions(
+            plan: plan, workoutsById: workoutsById, bodyWeightKg: bodyWeightKg
+        )
+        plan = replay.plan
+        applyExerciseUpdatesToFutureSessions(plan: &plan, adjustments: replay.lastSessionAdjustments)
+        plan.updatedAt = Date()
+        do {
+            try await progressionPlanRepository.save(plan)
+            await loadActivePlan()
+        } catch {
+            errorMessage = "Failed to update plan after edit: \(error.localizedDescription)"
+        }
+    }
+
+    /// A plan-linked workout was deleted: clear the session's completion and replay
+    /// the rest so nothing keeps pointing at a missing workout.
+    public func handleWorkoutUnlinked(workoutId: UUID) async {
+        guard let workoutRepository,
+              let plans = try? await progressionPlanRepository.fetchAll() else { return }
+        for var plan in plans {
+            var cleared = false
+            for bi in plan.blocks.indices {
+                for wi in plan.blocks[bi].weeks.indices {
+                    for si in plan.blocks[bi].weeks[wi].sessions.indices
+                    where plan.blocks[bi].weeks[wi].sessions[si].completedWorkoutId == workoutId {
+                        plan.blocks[bi].weeks[wi].sessions[si].completedWorkoutId = nil
+                        plan.blocks[bi].weeks[wi].sessions[si].completedAt = nil
+                        plan.blocks[bi].weeks[wi].sessions[si].userWorkoutNotes = nil
+                        cleared = true
+                    }
+                }
+            }
+            guard cleared, let workouts = try? await workoutRepository.fetchAll() else { continue }
+            let workoutsById = Dictionary(workouts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let replay = sessionExecutionService.replayCompletedSessions(
+                plan: plan, workoutsById: workoutsById, bodyWeightKg: bodyWeightKg
+            )
+            plan = replay.plan
+            applyExerciseUpdatesToFutureSessions(plan: &plan, adjustments: replay.lastSessionAdjustments)
+            plan.updatedAt = Date()
+            try? await progressionPlanRepository.save(plan)
+        }
+        await loadActivePlan()
+    }
+
     /// Pre-pipeline behavior: just mark the session completed and reload.
     private func fallbackMarkSessionCompleted(sessionId: UUID, planId: UUID, workoutId: UUID) async {
         do {
@@ -905,6 +978,30 @@ public final class ProgressionPlanViewModel {
             }
         }
         return nil
+    }
+
+    /// APRE "Increase Weight" adjustments are dropped while the coach verdict is
+    /// deload. One informational `.reforecast` adjustment records why, so the plan
+    /// history explains the missing increases.
+    static func gateAPREIncreases(
+        _ adjustments: [PlanAdjustment],
+        verdict: TrainingVerdict?
+    ) -> (kept: [PlanAdjustment], note: PlanAdjustment?) {
+        guard let verdict, verdict.kind == .deload else { return (adjustments, nil) }
+        let dropped = adjustments.filter { $0.trigger == .apre && $0.adjustmentType == .loadIncrease }
+        guard !dropped.isEmpty else { return (adjustments, nil) }
+        let kept = adjustments.filter { !($0.trigger == .apre && $0.adjustmentType == .loadIncrease) }
+        let affected = Array(Set(dropped.flatMap(\.affectedExerciseIds)))
+        let note = PlanAdjustment(
+            adjustmentType: .reforecast,
+            trigger: .recoverySignal,
+            description: "Held \(dropped.count) APRE load increase\(dropped.count == 1 ? "" : "s"): the coach verdict is deload. Targets stay at last session's loads until the verdict clears.",
+            affectedExerciseIds: affected,
+            newValues: ["heldIncreases": String(dropped.count)],
+            wasAccepted: true,
+            coachingExplanation: verdict.action
+        )
+        return (kept, note)
     }
 
     /// Propagates post-session exercise state to future sessions.
@@ -992,6 +1089,9 @@ public final class ProgressionPlanViewModel {
     // MARK: - Pending Adjustments
 
     /// Adviser proposals awaiting a user decision (engine adjustments are recorded as accepted).
+    /// The shared coach verdict, for annotating suggestions that contradict it.
+    public var coachVerdict: TrainingVerdict? { trainingAdvisor?.lastVerdict }
+
     public var pendingAdjustments: [PlanAdjustment] {
         activePlan?.adjustments.filter { $0.wasAccepted == nil } ?? []
     }

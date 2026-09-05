@@ -4,6 +4,7 @@ import StrengthTrackerShared
 
 /// Per-workout quality score breakdown shown inline in WorkoutDetailView.
 struct WorkoutQualityScoreView: View {
+    @Environment(DataRevision.self) private var dataRevision: DataRevision?
     let viewModel: WorkoutAnalyticsViewModel
     let workout: Workout
 
@@ -49,6 +50,10 @@ struct WorkoutQualityScoreView: View {
         // Keyed on the workout VALUE so edits to its sets re-trigger the load
         // (the service cache keeps unchanged reloads cheap).
         .task(id: workout) {
+            await viewModel.loadQualityScore(for: workout)
+        }
+        // Baselines are history-relative: any completed mutation rescored it.
+        .task(id: dataRevision?.value ?? 0) {
             await viewModel.loadQualityScore(for: workout)
         }
     }

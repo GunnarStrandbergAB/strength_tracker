@@ -16,12 +16,12 @@ public enum TrainingLoadService {
     ) -> TrainingLoad? {
         let completed = workouts
             .filter { $0.completedAt != nil }
-            .sorted { ($0.completedAt ?? $0.startedAt) < ($1.completedAt ?? $1.startedAt) }
+            .sorted { $0.trainingDate < $1.trainingDate }
 
         // Cold-start: require 8+ workouts spanning at least 14 calendar days
         guard completed.count >= 8,
-              let firstDate = completed.first?.completedAt ?? completed.first?.startedAt,
-              let lastDate = completed.last?.completedAt ?? completed.last?.startedAt,
+              let firstDate = completed.first?.trainingDate,
+              let lastDate = completed.last?.trainingDate,
               Calendar.current.dateComponents([.day], from: firstDate, to: lastDate).day ?? 0 >= 14
         else { return nil }
 
@@ -64,7 +64,7 @@ public enum TrainingLoadService {
         let calendar = Calendar.current
         guard let firstWorkout = workoutLoads.first else { return [] }
 
-        let startDay = calendar.startOfDay(for: firstWorkout.workout.completedAt ?? firstWorkout.workout.startedAt)
+        let startDay = calendar.startOfDay(for: firstWorkout.workout.trainingDate)
         let endDay = calendar.startOfDay(for: Date())
         guard let totalDays = calendar.dateComponents([.day], from: startDay, to: endDay).day else { return [] }
         let dayCount = totalDays + 1
@@ -72,7 +72,7 @@ public enum TrainingLoadService {
 
         var dailyLoads = [Double](repeating: 0, count: dayCount)
         for (workout, load) in workoutLoads {
-            let workoutDay = calendar.startOfDay(for: workout.completedAt ?? workout.startedAt)
+            let workoutDay = calendar.startOfDay(for: workout.trainingDate)
             if let dayIndex = calendar.dateComponents([.day], from: startDay, to: workoutDay).day,
                dayIndex >= 0, dayIndex < dayCount {
                 dailyLoads[dayIndex] += load
@@ -112,7 +112,7 @@ public enum TrainingLoadService {
         var chronicLoads: [String: Double] = [:]  // Last 28 days
 
         for workout in workouts {
-            let workoutDate = workout.completedAt ?? workout.startedAt
+            let workoutDate = workout.trainingDate
 
             for we in workout.exercises {
                 var muscleLoad = 0.0

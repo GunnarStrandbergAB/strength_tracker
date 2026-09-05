@@ -103,6 +103,8 @@ public struct WidgetData: Codable, Sendable {
     // Quality score (EWMA aggregate)
     public let weeklyQualityScore: Double?
     public let qualityTrend: Double?
+    /// "kg" / "lbs" for volume strings; optional so old App-Group JSON still decodes.
+    public let weightUnitSymbol: String?
 
     public static let empty = WidgetData(
         lastWorkoutDate: nil,
@@ -144,7 +146,8 @@ public struct WidgetData: Codable, Sendable {
         weeklyVolume: Double? = nil,
         previousWeekVolume: Double? = nil,
         weeklyQualityScore: Double? = nil,
-        qualityTrend: Double? = nil
+        qualityTrend: Double? = nil,
+        weightUnitSymbol: String? = nil
     ) {
         self.lastWorkoutDate = lastWorkoutDate
         self.lastWorkoutName = lastWorkoutName
@@ -163,6 +166,7 @@ public struct WidgetData: Codable, Sendable {
         self.previousWeekVolume = previousWeekVolume
         self.weeklyQualityScore = weeklyQualityScore
         self.qualityTrend = qualityTrend
+        self.weightUnitSymbol = weightUnitSymbol
     }
 
     // Backward-compatible decoding for old data without new fields
@@ -185,5 +189,6 @@ public struct WidgetData: Codable, Sendable {
         previousWeekVolume = try? container.decodeIfPresent(Double.self, forKey: .previousWeekVolume)
         weeklyQualityScore = try? container.decodeIfPresent(Double.self, forKey: .weeklyQualityScore)
         qualityTrend = try? container.decodeIfPresent(Double.self, forKey: .qualityTrend)
+        weightUnitSymbol = try? container.decodeIfPresent(String.self, forKey: .weightUnitSymbol)
     }
 }

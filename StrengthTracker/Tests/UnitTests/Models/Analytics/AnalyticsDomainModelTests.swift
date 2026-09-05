@@ -180,7 +180,7 @@ struct PlateauAnalysisTests {
         #expect(plateau.volumeCoefficient == 0.95)
     }
 
-    @Test("PlateauAnalysis recommendation for 4+ weeks stalled suggests deload")
+    @Test("PlateauAnalysis recommendation for 4+ weeks stalled suggests a change, not a deload")
     func testRecommendationDeload() {
         let plateau = PlateauAnalysis(
             exerciseId: UUID(),
@@ -191,7 +191,8 @@ struct PlateauAnalysisTests {
             lastProgressDate: nil
         )
 
-        #expect(plateau.recommendation.contains("deload"))
+        #expect(plateau.recommendation.contains("Stalled 4+ weeks"))
+        #expect(!plateau.recommendation.lowercased().contains("deload"))
     }
 
     @Test("PlateauAnalysis recommendation for 2-3 weeks stalled suggests volume/technique")
@@ -261,7 +262,7 @@ struct PlateauAnalysisTests {
         #expect(decoded.exerciseId == plateau.exerciseId)
         #expect(decoded.consecutiveWeeksStalled == 4)
         // Computed property should still work after decode
-        #expect(decoded.recommendation.contains("deload"))
+        #expect(decoded.recommendation.contains("Stalled 4+ weeks"))
     }
 }
 

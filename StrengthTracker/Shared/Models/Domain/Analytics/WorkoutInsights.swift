@@ -25,6 +25,10 @@ public struct WorkoutInsights: Sendable {
     public let archetypes: [WorkoutArchetype]
     public let trainingFingerprint: TrainingFingerprint?
     public let timeOfDayAnalysis: TimeOfDayAnalysis?
+    /// The shared deload / hold / progress call (nil below the advanced-insights gate).
+    public let verdict: TrainingVerdict?
+
+    public var isActiveDeload: Bool { verdict?.isActiveDeload ?? false }
 
     public init(
         generatedAt: Date,
@@ -44,7 +48,8 @@ public struct WorkoutInsights: Sendable {
         highlights: [AnalyticsHighlight] = [],
         archetypes: [WorkoutArchetype] = [],
         trainingFingerprint: TrainingFingerprint? = nil,
-        timeOfDayAnalysis: TimeOfDayAnalysis? = nil
+        timeOfDayAnalysis: TimeOfDayAnalysis? = nil,
+        verdict: TrainingVerdict? = nil
     ) {
         self.generatedAt = generatedAt
         self.workoutCount = workoutCount
@@ -64,6 +69,7 @@ public struct WorkoutInsights: Sendable {
         self.archetypes = archetypes
         self.trainingFingerprint = trainingFingerprint
         self.timeOfDayAnalysis = timeOfDayAnalysis
+        self.verdict = verdict
     }
 
     /// Empty insights for initial state before data loads.

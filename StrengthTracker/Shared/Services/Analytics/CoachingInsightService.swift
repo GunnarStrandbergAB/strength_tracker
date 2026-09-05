@@ -9,15 +9,19 @@ public final class CoachingInsightService: Sendable {
     private let searchService: VectorSearchService
     private let qualityScoreService: WorkoutQualityScoreService?
     private let insightGenerator: (any InsightTextGenerating)?
+    /// Display unit for slope strings (defaults to kg for tests).
+    private let weightUnit: @MainActor () -> WeightUnit
 
     public init(
         searchService: VectorSearchService,
         qualityScoreService: WorkoutQualityScoreService? = nil,
-        insightGenerator: (any InsightTextGenerating)? = nil
+        insightGenerator: (any InsightTextGenerating)? = nil,
+        weightUnit: @escaping @MainActor () -> WeightUnit = { .kg }
     ) {
         self.searchService = searchService
         self.qualityScoreService = qualityScoreService
         self.insightGenerator = insightGenerator
+        self.weightUnit = weightUnit
     }
 
     // MARK: - Post-Workout Debrief (C1 + C6)
@@ -32,7 +36,8 @@ public final class CoachingInsightService: Sendable {
         optimalVolumes: [OptimalVolumeRange],
         currentVector: WorkoutVector?,
         allVectors: [WorkoutVector],
-        bodyWeightKg: Double
+        bodyWeightKg: Double,
+        verdict: TrainingVerdict? = nil
     ) async -> PostWorkoutDebrief {
         let completedWorkouts = allWorkouts.filter { $0.completedAt != nil && $0.id != workout.id }
         let workoutCount = completedWorkouts.count + 1
@@ -71,7 +76,7 @@ public final class CoachingInsightService: Sendable {
         }
 
         // Quality score delta vs EWMA (needs 5+ workouts)
-        if workoutCount >= 5, let score = qualityScore, let qService = qualityScoreService {
+        if workoutCount >= AnalyticsFeatureGate.threshold(for: .qualityScore), let score = qualityScore, let qService = qualityScoreService {
             let aggregate = qService.computeAggregateScore(workouts: allWorkouts)
             let delta = score.overallScore - aggregate.ewmaOverall
             if abs(delta) > 5 {
@@ -87,15 +92,15 @@ public final class CoachingInsightService: Sendable {
             }
         }
 
-        // Overload trends for exercises in this workout (needs 10+ workouts)
-        if workoutCount >= 10 {
+        // Overload trends for exercises in this workout (Phase 3 gate)
+        if workoutCount >= AnalyticsFeatureGate.threshold(for: .plateauDetection) {
             let workoutExerciseIds = Set(workout.exercises.map(\.exercise.id))
             let relevantTrends = overloadTrends.filter { workoutExerciseIds.contains($0.exerciseId) }
             if let best = relevantTrends.filter({ $0.trendStatus == .progressing }).max(by: { $0.slopePerWeek < $1.slopePerWeek }) {
                 candidates.append(CoachingInsight(
                     priority: 5,
                     title: "\(best.exerciseName) Trending Up",
-                    detail: String(format: "+%.1f kg/week over recent weeks", best.slopePerWeek),
+                    detail: "\(AnalyticsFormatting.slope(kgPerWeek: best.slopePerWeek, unit: weightUnit())) over recent weeks",
                     icon: "arrow.up.right",
                     color: .success,
                     source: .overloadTrend
@@ -115,8 +120,8 @@ public final class CoachingInsightService: Sendable {
             ))
         }
 
-        // Volume delta vs 30-day average (needs 5+ workouts, skip during deload)
-        if !workout.isDeload && workoutCount >= 5 {
+        // Volume delta vs 30-day average (quality-score gate, skip during deload)
+        if !workout.isDeload && workoutCount >= AnalyticsFeatureGate.threshold(for: .qualityScore) {
             let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
             let recentWorkouts = completedWorkouts.filter {
                 ($0.completedAt ?? .distantPast) >= thirtyDaysAgo && !$0.isDeload
@@ -140,32 +145,37 @@ public final class CoachingInsightService: Sendable {
             }
         }
 
-        // ACWR warning (needs 19+ workouts)
-        if workoutCount >= 19, let load = trainingLoad {
-            if load.loadZone == .danger || load.loadZone == .caution {
+        // Load direction (needs 19+ workouts). When a verdict exists the debrief
+        // shows it as the "NEXT SESSION" banner, so no separate load bullet — the
+        // two could only ever disagree. Without a verdict, a descriptive note only.
+        if workoutCount >= AnalyticsFeatureGate.threshold(for: .advancedInsights), verdict == nil, let load = trainingLoad {
+            switch load.loadZone {
+            case .danger, .caution:
                 candidates.append(CoachingInsight(
                     priority: 2,
-                    title: "High Training Load",
-                    detail: String(format: "ACWR at %.2f — consider reducing volume next session", load.acwr),
+                    title: "Training Load \(AnalyticsFormatting.loadZoneLabel(load.loadZone))",
+                    detail: AnalyticsFormatting.loadZoneDescription(load.loadZone, acwr: load.acwr, activeDeload: workout.isDeload),
                     icon: "exclamationmark.triangle.fill",
                     color: load.loadZone == .danger ? .danger : .warning,
                     source: .acwr
                 ))
-            } else if load.loadZone == .underTraining {
+            case .underTraining:
                 candidates.append(CoachingInsight(
                     priority: 7,
-                    title: "Low Training Load",
-                    detail: String(format: "ACWR at %.2f — room to push harder", load.acwr),
+                    title: "Training Load Low",
+                    detail: AnalyticsFormatting.loadZoneDescription(load.loadZone, acwr: load.acwr, activeDeload: workout.isDeload),
                     icon: "arrow.up.circle",
                     color: .info,
                     source: .acwr
                 ))
+            case .optimal:
+                break
             }
         }
 
-        // Recovery hint (needs 19+ workouts)
-        if workoutCount >= 19 {
-            let fatigued = recoveryPatterns.filter { $0.recoveryStatus == .fatigued }
+        // Recovery hint (advanced-insights gate)
+        if workoutCount >= AnalyticsFeatureGate.threshold(for: .advancedInsights) {
+            let fatigued = recoveryPatterns.filter { $0.recoveryStatus == .fatigued && !$0.isJustTrained }
             let workoutMuscles = Set(workout.exercises.map { $0.exercise.primaryMuscleGroup.rawValue.lowercased() })
             let relevantFatigued = fatigued.filter { workoutMuscles.contains($0.muscleGroup.lowercased()) }
             if let first = relevantFatigued.first, let ready = first.readyToTrainDate {
@@ -184,7 +194,7 @@ public final class CoachingInsightService: Sendable {
         }
 
         // Similar session comparison bullet (C6, needs 10+ workouts)
-        if workoutCount >= 10, let comparison = similarSession {
+        if workoutCount >= AnalyticsFeatureGate.threshold(for: .plateauDetection), let comparison = similarSession {
             let dateFormatter = DateFormatter()
             dateFormatter.dateStyle = .medium
             let dateStr = dateFormatter.string(from: comparison.matchDate)
@@ -224,7 +234,8 @@ public final class CoachingInsightService: Sendable {
             qualityScore: qualityScore,
             prsHit: prsHit,
             bullets: enhancedBullets,
-            similarSession: similarSession
+            similarSession: similarSession,
+            verdict: verdict
         )
     }
 
@@ -276,32 +287,24 @@ public final class CoachingInsightService: Sendable {
 
     // MARK: - Weekly Digest (C2)
 
+    /// Compares the last complete Monday-start week with the one before it.
+    /// The verdict, when present, owns the top insight so the digest never says
+    /// "gaining" while the analytics screens say "deload".
     public func generateWeeklyDigest(
         workouts: [Workout],
         overloadTrends: [OverloadTrend],
-        bodyWeightKg: Double
+        bodyWeightKg: Double,
+        verdict: TrainingVerdict? = nil,
+        now: Date = Date(),
+        calendar: Calendar = .mondayStart
     ) -> WeeklyDigest? {
         let completed = workouts.filter { $0.completedAt != nil }
-        guard completed.count >= 5 else { return nil }
+        guard completed.count >= AnalyticsFeatureGate.threshold(for: .weeklyDigest) else { return nil }
 
-        let calendar = Calendar.current
-        let now = Date()
-        guard let thisWeekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)),
-              let lastWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeekStart),
-              let priorWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: lastWeekStart) else {
-            return nil
-        }
-
-        let thisWeek = completed.filter { ($0.completedAt ?? .distantPast) >= thisWeekStart }
-        let lastWeek = completed.filter {
-            let d = $0.completedAt ?? .distantPast
-            return d >= lastWeekStart && d < thisWeekStart
-        }
-        let priorWeek = completed.filter {
-            let d = $0.completedAt ?? .distantPast
-            return d >= priorWeekStart && d < lastWeekStart
-        }
-
+        let window = WorkoutWeekWindow.split(completed, now: now, calendar: calendar)
+        let thisWeek = window.current
+        let lastWeek = window.previous
+        let priorWeek = window.prior
         guard !lastWeek.isEmpty else { return nil }
 
         // Compare two complete weeks (last vs prior) — avoids partial-week distortion
@@ -309,16 +312,35 @@ public final class CoachingInsightService: Sendable {
         let priorVolume = priorWeek.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) }
         let volumeDelta = priorVolume > 0 ? ((lastVolume - priorVolume) / priorVolume) * 100 : 0
 
-        let thisWeekPRs = thisWeek.flatMap(\.exercises).flatMap(\.sets).filter(\.isPersonalRecord).count
+        let prsThisWeek = thisWeek.flatMap(\.exercises).flatMap(\.sets).filter(\.isPersonalRecord).count
+        let prsLastWeek = lastWeek.flatMap(\.exercises).flatMap(\.sets).filter(\.isPersonalRecord).count
 
         // Pick top insight
         let topInsight: CoachingInsight
         let progressingTrends = overloadTrends.filter { $0.trendStatus == .progressing }
-        if let best = progressingTrends.max(by: { $0.slopePerWeek < $1.slopePerWeek }) {
+        if let verdict, verdict.kind == .deload, !verdict.isActiveDeload {
+            topInsight = CoachingInsight(
+                priority: 1,
+                title: "Deload Recommended",
+                detail: verdict.action,
+                icon: "exclamationmark.triangle.fill",
+                color: .warning,
+                source: .acwr
+            )
+        } else if let verdict, verdict.isActiveDeload {
+            topInsight = CoachingInsight(
+                priority: 1,
+                title: "Deload In Progress",
+                detail: "Intentional recovery week: reduced volume and intensity as planned",
+                icon: "heart.circle.fill",
+                color: .success,
+                source: .recovery
+            )
+        } else if let best = progressingTrends.max(by: { $0.slopePerWeek < $1.slopePerWeek }) {
             topInsight = CoachingInsight(
                 priority: 1,
                 title: "\(best.exerciseName) Gaining",
-                detail: String(format: "+%.1f kg/week over recent weeks", best.slopePerWeek),
+                detail: "\(AnalyticsFormatting.slope(kgPerWeek: best.slopePerWeek, unit: weightUnit())) over recent weeks",
                 icon: "arrow.up.right",
                 color: .success,
                 source: .overloadTrend
@@ -327,7 +349,7 @@ public final class CoachingInsightService: Sendable {
             topInsight = CoachingInsight(
                 priority: 2,
                 title: "Volume \(volumeDelta > 0 ? "Up" : "Down")",
-                detail: String(format: "%.0f%% vs last week", abs(volumeDelta)),
+                detail: "\(AnalyticsFormatting.percentDelta(volumeDelta)) vs prior week",
                 icon: volumeDelta > 0 ? "flame.fill" : "arrow.down",
                 color: volumeDelta > 0 ? .primary : .info,
                 source: .volumeDelta
@@ -336,7 +358,7 @@ public final class CoachingInsightService: Sendable {
             topInsight = CoachingInsight(
                 priority: 3,
                 title: "Consistent Training",
-                detail: "\(thisWeek.count) workouts this week",
+                detail: "\(lastWeek.count) workout\(lastWeek.count == 1 ? "" : "s") last week",
                 icon: "checkmark.circle",
                 color: .success,
                 source: .adherence
@@ -344,13 +366,14 @@ public final class CoachingInsightService: Sendable {
         }
 
         return WeeklyDigest(
-            weekStart: thisWeekStart,
+            weekStart: window.previousWeekStart,
             topInsight: topInsight,
             workoutsThisWeek: thisWeek.count,
             workoutsLastWeek: lastWeek.count,
             volumeDeltaPercent: volumeDelta,
             qualityTrend: 0, // Quality score comparison deferred
-            prsThisWeek: thisWeekPRs
+            prsThisWeek: prsThisWeek,
+            prsLastWeek: prsLastWeek
         )
     }
 }

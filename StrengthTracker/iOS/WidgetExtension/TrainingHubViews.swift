@@ -65,7 +65,7 @@ struct AnalyticsSmallView: View {
                     .font(.system(size: 20))
                     .foregroundStyle(.orange)
 
-                Text(entry.data.currentStreak > 0 ? "\(entry.data.currentStreak)-day streak" : "Start Training")
+                Text(entry.data.currentStreak > 0 ? "\(entry.data.currentStreak)-week streak" : "Start Training")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(WidgetColors.textPrimary)
 
@@ -124,13 +124,14 @@ struct AnalyticsMediumView: View {
                 if entry.data.highlights.count < 2 {
                     // Fill with stats
                     if entry.data.currentStreak > 0 {
-                        statRow(icon: "flame.fill", text: "\(entry.data.currentStreak)-day streak", color: .orange)
+                        statRow(icon: "flame.fill", text: "\(entry.data.currentStreak)-week streak", color: .orange)
                     }
                     if let quality = entry.data.weeklyQualityScore {
                         statRow(icon: "star.fill", text: "\(Int(quality))/100 quality", color: WidgetColors.accent)
                     }
                     if let volume = entry.data.weeklyVolume {
-                        let formatted = volume >= 1000 ? String(format: "%.1fT", volume / 1000) : String(format: "%.0f kg", volume)
+                        let unit = WeightUnit(rawValue: entry.data.weightUnitSymbol ?? "kg") ?? .kg
+                        let formatted = AnalyticsFormatting.compactVolume(kg: volume, unit: unit)
                         statRow(icon: "scalemass.fill", text: formatted, color: WidgetColors.accent)
                     }
                 }
@@ -362,7 +363,7 @@ struct AnalyticsLargeView: View {
                     Image(systemName: "flame.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(.orange)
-                    Text("\(entry.data.currentStreak)-day streak")
+                    Text(AnalyticsFormatting.streak(weeks: entry.data.currentStreak))
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(WidgetColors.textPrimary)
                 }

@@ -6,6 +6,7 @@ import StrengthTrackerShared
 /// Sections: Highlights, Training Load, Phase, Volume, Recovery, Overload, Drift, Deload, Anomalies.
 struct AdvancedInsightsView: View {
     let viewModel: WorkoutAnalyticsViewModel
+    @Environment(DataRevision.self) private var dataRevision: DataRevision?
 
     var body: some View {
         ScrollView {
@@ -37,8 +38,8 @@ struct AdvancedInsightsView: View {
                 if let drift = viewModel.insights.trainingDrift {
                     driftSection(drift)
                 }
-                if let deload = viewModel.insights.deloadRecommendation {
-                    deloadSection(deload)
+                if let verdict = viewModel.insights.verdict {
+                    verdictSection(verdict, recommendation: viewModel.insights.deloadRecommendation)
                 }
                 if let comparison = viewModel.insights.blockComparison {
                     blockComparisonSection(comparison)
@@ -54,6 +55,9 @@ struct AdvancedInsightsView: View {
         }
         .background(STColors.background)
         .scrollIndicators(.hidden)
+        .task(id: dataRevision?.value ?? 0) {
+            await viewModel.loadDashboardInsights()
+        }
         .navigationTitle("Advanced Insights")
         .navigationBarTitleDisplayMode(.inline)
         .stNavigationBarStyle()
@@ -96,7 +100,7 @@ struct AdvancedInsightsView: View {
     @ViewBuilder
     private var trainingLoadSection: some View {
         if let load = viewModel.insights.trainingLoad {
-            let isDeload = viewModel.insights.highlights.contains { $0.title == "Deload In Progress" }
+            let isDeload = viewModel.insights.isActiveDeload
             VStack(alignment: .leading, spacing: 12) {
                 sectionHeader("Training Load")
 
@@ -126,15 +130,19 @@ struct AdvancedInsightsView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
-                        loadRow("Recent (7d)", value: String(format: "%.0f", load.acuteLoad))
-                        loadRow("Baseline (28d)", value: String(format: "%.0f", load.chronicLoad))
+                        loadRow("Recent load (7d)", value: String(format: "%.0f", load.acuteLoad))
+                        loadRow("Baseline load (28d)", value: String(format: "%.0f", load.chronicLoad))
                     }
                 }
 
-                Text(zoneExplanation(load.loadZone, acwr: load.acwr, isDeload: isDeload))
+                Text(AnalyticsFormatting.loadZoneDescription(load.loadZone, acwr: load.acwr, activeDeload: isDeload))
                     .font(.system(size: 11))
                     .foregroundStyle(zoneColor(load.loadZone))
                     .padding(.top, 4)
+
+                Text("Load = sets × reps × %e1RM, not kg volume")
+                    .font(.system(size: 10))
+                    .foregroundStyle(STColors.textTertiary)
             }
             .padding(STSpacing.cardPadding)
             .background(STColors.surface)
@@ -420,25 +428,19 @@ struct AdvancedInsightsView: View {
     // MARK: - Deload
 
     @ViewBuilder
-    private func deloadSection(_ deload: DeloadRecommendation) -> some View {
+    private func verdictSection(_ verdict: TrainingVerdict, recommendation: DeloadRecommendation?) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Deload Recommendation")
+            sectionHeader("Coach Verdict")
 
-            HStack(spacing: 10) {
-                Image(systemName: "exclamationmark.shield.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(deload.urgencyScore > 0.5 ? STColors.danger : .orange)
+            VerdictBanner(verdict: verdict, style: .inline, showReasons: true)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(String(format: "Urgency: %.0f%%", deload.urgencyScore * 100))
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(STColors.textPrimary)
-
-                    Text(deload.suggestedAction)
-                        .font(.system(size: 12))
+            if let deload = recommendation {
+                HStack(spacing: 12) {
+                    Text(String(format: "Fatigue urgency %.0f%%", deload.urgencyScore * 100))
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(STColors.textSecondary)
-
-                    Text("\(deload.weeksSinceLastDeload) weeks since last deload")
+                    Spacer()
+                    Text("\(deload.weeksSinceLastDeload) weeks since a lighter week")
                         .font(.system(size: 11))
                         .foregroundStyle(STColors.textTertiary)
                 }
@@ -536,25 +538,7 @@ struct AdvancedInsightsView: View {
     }
 
     private func zoneColor(_ zone: LoadZone) -> Color {
-        switch zone {
-        case .underTraining: return .blue
-        case .optimal: return STColors.success
-        case .caution: return .orange
-        case .danger: return STColors.danger
-        }
-    }
-
-    private func zoneExplanation(_ zone: LoadZone, acwr: Double, isDeload: Bool) -> String {
-        if isDeload {
-            return "Deload phase — reduced training load is intentional for recovery"
-        }
-        switch zone {
-        case .underTraining: return "Training well below your baseline — increase effort to keep progressing"
-        case .optimal where acwr < 1.0: return "Training within a sustainable range — load is slightly below your baseline"
-        case .optimal:       return "Sustainable progression — slightly above baseline is ideal for gains"
-        case .caution:       return "Ramping up quickly — make sure recovery keeps up"
-        case .danger:        return "Very high load spike — ease off to reduce injury risk"
-        }
+        AnalyticsColors.zone(zone)
     }
 
     private func anomalyDescription(_ score: Double) -> String {
@@ -566,25 +550,8 @@ struct AdvancedInsightsView: View {
         }
     }
 
-    private func highlightIcon(_ type: HighlightType) -> String {
-        switch type {
-        case .personalRecord: return "trophy.fill"
-        case .streak: return "flame.fill"
-        case .milestone: return "flag.fill"
-        case .improvement: return "arrow.up.right"
-        case .warning: return "exclamationmark.triangle.fill"
-        }
-    }
-
-    private func highlightColor(_ type: HighlightType) -> Color {
-        switch type {
-        case .personalRecord: return STColors.primary
-        case .streak: return .orange
-        case .milestone: return STColors.primary
-        case .improvement: return STColors.success
-        case .warning: return STColors.danger
-        }
-    }
+    private func highlightIcon(_ type: HighlightType) -> String { AnalyticsColors.highlightIcon(type) }
+    private func highlightColor(_ type: HighlightType) -> Color { AnalyticsColors.highlight(type) }
 
     private func phaseIcon(_ phase: DetectedPhase) -> String {
         switch phase {
@@ -616,13 +583,7 @@ struct AdvancedInsightsView: View {
         }
     }
 
-    private func recoveryColor(_ status: RecoveryStatus) -> Color {
-        switch status {
-        case .ready: return STColors.success
-        case .recovering: return .yellow
-        case .fatigued: return STColors.danger
-        }
-    }
+    private func recoveryColor(_ status: RecoveryStatus) -> Color { AnalyticsColors.recovery(status) }
 
     private func recoveryLabel(_ status: RecoveryStatus) -> String {
         switch status {
@@ -640,13 +601,7 @@ struct AdvancedInsightsView: View {
         }
     }
 
-    private func trendColor(_ status: TrendStatus) -> Color {
-        switch status {
-        case .progressing: return STColors.success
-        case .plateau: return .yellow
-        case .regressing: return STColors.danger
-        }
-    }
+    private func trendColor(_ status: TrendStatus) -> Color { AnalyticsColors.trend(status) }
 
     private func trendLabel(_ status: TrendStatus) -> String {
         switch status {

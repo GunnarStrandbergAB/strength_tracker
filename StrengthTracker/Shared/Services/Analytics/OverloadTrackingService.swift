@@ -15,24 +15,15 @@ public enum OverloadTrackingService {
         var exerciseNames: [UUID: String] = [:]
 
         for workout in completed {
-            let workoutDate = workout.completedAt ?? workout.startedAt
-            let weekStart = calendar.dateInterval(of: .weekOfYear, for: workoutDate)?.start ?? workoutDate
+            let weekStart = calendar.weekStart(for: workout.trainingDate)
 
             for we in workout.exercises {
                 exerciseNames[we.exercise.id] = we.exercise.name
                 let baseLoad = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
-                var bestE1RM = 0.0
-                for set in we.sets {
-                    guard set.isCompleted, set.setType != .warmup else { continue }
-                    for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
-                        let e1rm = AnalyticsCalculations.calculateOneRM(weight: part.load, reps: min(part.reps, 15))
-                        bestE1RM = max(bestE1RM, e1rm)
-                    }
-                }
-                guard bestE1RM > 0 else { continue }
+                guard let bestE1RM = AnalyticsCalculations.bestE1RM(in: we.sets, baseLoadPerRep: baseLoad), bestE1RM > 0 else { continue }
 
                 var entries = exerciseWeeklyE1RMs[we.exercise.id] ?? []
-                if let existing = entries.firstIndex(where: { calendar.isDate($0.weekStart, equalTo: weekStart, toGranularity: .weekOfYear) }) {
+                if let existing = entries.firstIndex(where: { $0.weekStart == weekStart }) {
                     entries[existing] = (weekStart, max(entries[existing].e1rm, bestE1RM))
                 } else {
                     entries.append((weekStart, bestE1RM))

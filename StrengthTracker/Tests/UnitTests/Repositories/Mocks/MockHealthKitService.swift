@@ -27,21 +27,23 @@ final class MockHealthKitService: HealthKitServiceProtocol, @unchecked Sendable 
         }
     }
 
-    func saveWorkout(_ workout: Workout) async throws {
-        saveWorkoutCalled = true
-        savedWorkout = workout
-        if let error = saveWorkoutError {
-            throw error
-        }
-    }
+    var savedWorkoutIds: [UUID] = []
+    var deletedWorkoutIds: [UUID] = []
 
-    func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws {
+    @discardableResult
+    func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws -> UUID? {
         saveWorkoutCalled = true
         savedWorkout = workout
         savedCalories = calories
+        savedWorkoutIds.append(workout.id)
         if let error = saveWorkoutError {
             throw error
         }
+        return UUID()
+    }
+
+    func deleteWorkout(appWorkoutId: UUID) async throws {
+        deletedWorkoutIds.append(appWorkoutId)
     }
 
     func addCaloriesToExistingWorkout(healthKitWorkoutId: UUID, calories: Double, workout: Workout) async throws {

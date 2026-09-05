@@ -6,6 +6,8 @@ import StrengthTrackerShared
 struct SettingsView: View {
     @State private var preferencesService: UserPreferencesService
     @State private var bodyWeightText: String = ""
+    @Environment(BodyWeightProvider.self) private var bodyWeightProvider: BodyWeightProvider?
+    @State private var healthSyncMessage: String?
     private var connectivityManager: ConnectivityManager?
     var proFeatureGate: ProFeatureGate? = nil
     var storeService: StoreService? = nil
@@ -125,10 +127,33 @@ struct SettingsView: View {
                         Text(preferencesService.weightUnit == .kg ? "kg" : "lbs")
                             .foregroundStyle(.secondary)
                     }
+                    if let bodyWeightProvider {
+                        Button {
+                            Task {
+                                do {
+                                    try await bodyWeightProvider.requestHealthKitAccess()
+                                    healthSyncMessage = bodyWeightProvider.source == .healthKit
+                                        ? "Using Apple Health weight: \(preferencesService.weightUnit.format(bodyWeightProvider.current, decimals: 1))"
+                                        : "No weight sample in Apple Health yet."
+                                } catch {
+                                    healthSyncMessage = error.localizedDescription
+                                }
+                            }
+                        } label: {
+                            Label("Sync with Apple Health", systemImage: "heart.text.square")
+                        }
+                        if let healthSyncMessage {
+                            Text(healthSyncMessage)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 } header: {
                     Text("Profile")
                 } footer: {
-                    Text("Used for bodyweight exercises and calorie estimation. Syncs from Apple Health when available.")
+                    Text(bodyWeightProvider?.source == .healthKit
+                        ? "Apple Health weight is in use for bodyweight exercises and calorie estimation."
+                        : "Used for bodyweight exercises and calorie estimation. Syncs from Apple Health when available.")
                 }
 
                 // Units Section

@@ -1,12 +1,18 @@
 import Foundation
 
-/// Suggests weights for upcoming sets based on recent performance, recovery, and overload trends.
+/// Suggests weights for upcoming sets based on recent performance, recovery, overload
+/// trends and the shared training verdict.
 @MainActor
 public final class WeightSuggestionService: Sendable {
+
+    /// Stacked reductions (recovery, ACWR, verdict) never take more than this off the e1RM.
+    public static let maximumReduction = 0.20
 
     public init() {}
 
     /// Suggest a weight for an exercise at the given target rep count.
+    /// - `verdict`: the shared coach verdict. `.hold` skips trend extrapolation,
+    ///   `.deload` skips it and takes 10% off; `.progress` (or nil) extrapolates.
     public func suggest(
         exerciseId: UUID,
         exerciseName: String,
@@ -16,59 +22,73 @@ public final class WeightSuggestionService: Sendable {
         recoveryStatus: RecoveryStatus?,
         trainingLoad: TrainingLoad?,
         isDeload: Bool,
-        bodyWeightKg: Double
+        bodyWeightKg: Double,
+        verdict: TrainingVerdict? = nil
     ) -> WeightSuggestion? {
         guard targetReps > 0 else { return nil }
 
-        // Find best recent e1RM (effective load) for this exercise
-        let bestE1RM = bestRecentE1RM(exerciseId: exerciseId, workouts: recentWorkouts, bodyWeightKg: bodyWeightKg)
-        guard let e1rm = bestE1RM, e1rm > 0 else { return nil }
+        // No coaching suggestions during a deload session — weights are intentionally reduced
+        if isDeload { return nil }
+
+        // Best recent e1RM (effective load) for this exercise, deload sessions excluded
+        let history = recentWorkouts.filter { !$0.isDeload }
+        guard let e1rm = bestRecentE1RM(exerciseId: exerciseId, workouts: history, bodyWeightKg: bodyWeightKg), e1rm > 0 else {
+            return nil
+        }
 
         var modifiers: [String] = []
         var adjustedE1RM = e1rm
 
-        // Apply overload trend extrapolation
-        if let trend = overloadTrend, trend.trendStatus == .progressing {
-            let weeksSinceLast = weeksSinceLastSession(exerciseId: exerciseId, workouts: recentWorkouts)
+        // Trend extrapolation only while the verdict allows progressing
+        let allowsExtrapolation = (verdict?.kind ?? .progress) == .progress
+        if allowsExtrapolation, let trend = overloadTrend, trend.trendStatus == .progressing {
+            let weeksSinceLast = weeksSinceLastSession(exerciseId: exerciseId, workouts: history)
             let extrapolation = trend.slopePerWeek * weeksSinceLast
             if extrapolation > 0 {
                 adjustedE1RM += extrapolation
                 modifiers.append(String(format: "Trend: +%.1f kg/wk", trend.slopePerWeek))
             }
         }
+        let baseline = adjustedE1RM
+        var reduction = 1.0
 
-        // No coaching suggestions during deload — weights are intentionally reduced
-        if isDeload {
-            return nil
+        if let verdict, verdict.kind == .deload {
+            reduction *= 0.90
+            modifiers.append("Coach: deload -10%")
         }
 
-        // Recovery modifier
         if let recovery = recoveryStatus {
             switch recovery {
             case .fatigued:
-                adjustedE1RM *= 0.90
+                reduction *= 0.90
                 modifiers.append("Recovery: -10%")
             case .recovering:
-                adjustedE1RM *= 0.95
+                reduction *= 0.95
                 modifiers.append("Recovery: -5%")
             case .ready:
                 break
             }
         }
 
-        // ACWR modifier
         if let load = trainingLoad {
             switch load.loadZone {
             case .danger:
-                adjustedE1RM *= 0.85
-                modifiers.append("High ACWR: -15%")
+                reduction *= 0.85
+                modifiers.append("Very high load: -15%")
             case .caution:
-                adjustedE1RM *= 0.90
-                modifiers.append("ACWR caution: -10%")
+                reduction *= 0.90
+                modifiers.append("High load: -10%")
             case .optimal, .underTraining:
                 break
             }
         }
+
+        // Cap the stacked reductions so three mild signals never halve the weight.
+        if reduction < 1 - Self.maximumReduction {
+            reduction = 1 - Self.maximumReduction
+            modifiers.append(String(format: "Capped at -%.0f%%", Self.maximumReduction * 100))
+        }
+        adjustedE1RM = baseline * reduction
 
         // Convert e1RM to weight at target reps via inverse Brzycki. For bodyweight
         // exercises the e1RM is EFFECTIVE load, but the suggestion is shown in the
@@ -84,7 +104,12 @@ public final class WeightSuggestionService: Sendable {
         let rounded = roundToNearest2_5(targetWeight)
         guard rounded > 0 else { return nil }
 
-        let explanation = String(format: "Based on %.0f kg e1RM", e1rm)
+        let explanation: String
+        if abs(adjustedE1RM - e1rm) >= 0.5 {
+            explanation = String(format: "Based on %.0f kg e1RM (adjusted from %.0f kg)", adjustedE1RM, e1rm)
+        } else {
+            explanation = String(format: "Based on %.0f kg e1RM", e1rm)
+        }
 
         return WeightSuggestion(
             weight: rounded,
@@ -96,7 +121,8 @@ public final class WeightSuggestionService: Sendable {
 
     // MARK: - Effort Creep Detection
 
-    /// Check if RPE is monotonically increasing while e1RM is flat or declining.
+    /// RPE rising across recent sessions while e1RM is flat or declining. Deload
+    /// sessions are excluded (a deload followed by normal sessions is not creep).
     public func checkEffortCreep(
         exerciseId: UUID,
         exerciseName: String,
@@ -105,8 +131,8 @@ public final class WeightSuggestionService: Sendable {
     ) -> EffortCreepWarning? {
         // Collect RPE and e1RM per session for this exercise (last 5 sessions max)
         let sessions = recentWorkouts
-            .filter { $0.completedAt != nil }
-            .sorted { ($0.completedAt ?? .distantPast) < ($1.completedAt ?? .distantPast) }
+            .filter { $0.completedAt != nil && !$0.isDeload }
+            .sorted { $0.trainingDate < $1.trainingDate }
             .compactMap { workout -> (rpe: Double, e1rm: Double)? in
                 guard let we = workout.exercises.first(where: { $0.exercise.id == exerciseId }) else { return nil }
                 let completedSets = we.sets.filter { $0.isCompleted && $0.setType != .warmup }
@@ -115,25 +141,20 @@ public final class WeightSuggestionService: Sendable {
                 let avgRPE = rpes.reduce(0, +) / Double(rpes.count)
 
                 let base = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
-                let e1rms = completedSets.flatMap { set in
-                    set.effectiveLoadParts(baseLoadPerRep: base).map {
-                        AnalyticsCalculations.calculateOneRM(weight: $0.load, reps: min($0.reps, 15))
-                    }
-                }
-                guard let best = e1rms.max() else { return nil }
+                guard let best = AnalyticsCalculations.bestE1RM(in: completedSets, baseLoadPerRep: base) else { return nil }
                 return (avgRPE, best)
             }
             .suffix(5)
 
         guard sessions.count >= 3 else { return nil }
 
-        // Check RPE trend: monotonically increasing or slope > 0.3/session
+        // RPE trend: slope > 0.3/session
         let rpeValues = sessions.map(\.rpe)
         let xs = rpeValues.indices.map { Double($0) }
         guard let regression = AnalyticsCalculations.linearRegression(xs: xs, ys: rpeValues) else { return nil }
         guard regression.slope > 0.3 else { return nil }
 
-        // Check e1RM trend: flat or declining (slope ≤ 0)
+        // e1RM trend: flat or declining (slope ≤ 0)
         let e1rmValues = sessions.map(\.e1rm)
         guard let e1rmReg = AnalyticsCalculations.linearRegression(xs: xs, ys: e1rmValues) else { return nil }
         guard e1rmReg.slope <= 0 else { return nil }
@@ -143,7 +164,7 @@ public final class WeightSuggestionService: Sendable {
             exerciseName: exerciseName,
             rpeIncrease: rpeIncrease,
             sessionsTracked: sessions.count,
-            message: String(format: "RPE climbing (+%.1f over %d sessions) without strength gains", rpeIncrease, sessions.count)
+            message: String(format: "RPE up %+.1f over %d sessions while e1RM stayed flat", rpeIncrease, sessions.count)
         )
     }
 

@@ -13,7 +13,7 @@ struct StatsCarouselView: View {
             HStack(spacing: 12) {
                 StatCard(
                     icon: "scalemass",
-                    label: "TOTAL VOLUME",
+                    label: "LIFETIME VOLUME",
                     value: formattedVolume,
                     unit: volumeUnit
                 )

@@ -3,12 +3,10 @@ import Foundation
 /// Detects progress plateaus using e1RM progression analysis.
 /// - Max e1RM per exercise per week as progression signal (not raw volume)
 /// - Dynamic thresholds based on training status
-/// - CV for stagnation detection
 @MainActor
 public final class PlateauDetectionService: Sendable {
 
     private let minWeeksForAnalysis = 4
-    private let plateauThresholdCV = 0.10
 
     public init() {}
 
@@ -29,14 +27,12 @@ public final class PlateauDetectionService: Sendable {
     ///   - workouts: All user workouts
     ///   - trainingStatus: Current training status for dynamic thresholds
     ///   - windowWeeks: Number of weeks to analyze (default 4)
-    ///   - stallThreshold: CV threshold below which a plateau is detected (default 0.05)
     /// - Returns: Array of plateau analyses sorted by weeks stalled descending
     public func analyzePlateaus(
         bodyWeightKg: Double,
         workouts: [Workout],
         trainingStatus: TrainingStatus = .intermediate,
-        windowWeeks: Int = 4,
-        stallThreshold: Double = 0.05
+        windowWeeks: Int = 4
     ) -> [PlateauAnalysis] {
         let calendar = Calendar.mondayStart
         let windowStart = calendar.date(byAdding: .weekOfYear, value: -max(windowWeeks, minWeeksForAnalysis), to: Date())!
@@ -66,7 +62,6 @@ public final class PlateauDetectionService: Sendable {
                 exerciseId: exerciseId,
                 exerciseName: workoutExercises[0].1.exercise.name,
                 workoutExercises: workoutExercises,
-                stallThreshold: stallThreshold,
                 improvementThreshold: improvementThreshold
             )
             if analysis.consecutiveWeeksStalled >= 3 {
@@ -84,7 +79,6 @@ public final class PlateauDetectionService: Sendable {
         exerciseId: UUID,
         exerciseName: String,
         workoutExercises: [(Workout, WorkoutExercise)],
-        stallThreshold: Double,
         improvementThreshold: Double
     ) -> PlateauAnalysis {
         let sorted = workoutExercises.sorted { $0.0.startedAt < $1.0.startedAt }
@@ -95,12 +89,7 @@ public final class PlateauDetectionService: Sendable {
             .map { weekStart, group in
                 let best = group.compactMap { (_, workoutExercise) -> Double? in
                     let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
-                    return workoutExercise.sets
-                        .filter { $0.isCompleted && $0.setType != .warmup }
-                        .flatMap { $0.effectiveLoadParts(baseLoadPerRep: baseLoad) }
-                        .filter { $0.reps <= 15 }
-                        .map { AnalyticsCalculations.calculateOneRM(weight: $0.load, reps: $0.reps) }
-                        .max()
+                    return AnalyticsCalculations.bestE1RM(in: workoutExercise.sets, baseLoadPerRep: baseLoad)
                 }.max() ?? 0.0
                 return (weekStart, best)
             }
@@ -167,7 +156,7 @@ public final class PlateauDetectionService: Sendable {
         var groups: [Date: [(Workout, WorkoutExercise)]] = [:]
 
         for item in items {
-            let date = item.0.completedAt ?? item.0.startedAt
+            let date = item.0.trainingDate
             guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: date) else { continue }
             groups[weekInterval.start, default: []].append(item)
         }

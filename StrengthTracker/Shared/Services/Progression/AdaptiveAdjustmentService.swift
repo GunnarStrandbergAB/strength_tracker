@@ -131,24 +131,32 @@ public final class AdaptiveAdjustmentService: Sendable {
 
     private let userPreferencesService: UserPreferencesService?
 
-    public init(workoutRepository: any WorkoutRepository, userPreferencesService: UserPreferencesService? = nil) {
+    private let bodyWeightProvider: BodyWeightProvider?
+
+    public init(workoutRepository: any WorkoutRepository, userPreferencesService: UserPreferencesService? = nil, bodyWeightProvider: BodyWeightProvider? = nil) {
         self.workoutRepository = workoutRepository
         self.userPreferencesService = userPreferencesService
+        self.bodyWeightProvider = bodyWeightProvider
     }
 
     private var bodyWeightKg: Double {
-        userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+        bodyWeightProvider?.current ?? userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
 
     // MARK: - Public API
 
     /// Analyze plan state and propose adjustments.
+    /// - `verdict`: the shared coach verdict. A deload proposal needs either a
+    ///   deload verdict or two distinct signal sources, and is never raised
+    ///   during a week that already contains a deload session.
     public func analyzeAndPropose(
         plan: ProgressionPlan,
-        recentWorkouts: [Workout]
+        recentWorkouts: [Workout],
+        verdict: TrainingVerdict? = nil,
+        now: Date = Date()
     ) async throws -> [ProposedAdjustment] {
         let insights = collectInsights(plan: plan, recentWorkouts: recentWorkouts)
-        return arbitrate(insights: insights, plan: plan)
+        return arbitrate(insights: insights, plan: plan, verdict: verdict, recentWorkouts: recentWorkouts, now: now)
     }
 
     // MARK: - Insight Collection
@@ -305,65 +313,72 @@ public final class AdaptiveAdjustmentService: Sendable {
 
     // MARK: - Performance Decline Detection
 
-    /// If recent 1RM estimate dropped >5% from plan exercise current1RM.
+    /// Recent 1RM estimate more than 5% below the plan's current 1RM. Emits ONE
+    /// signal, and only when at least two exercises declined or one exercise has
+    /// been below for two consecutive sessions — a single bad day is not a
+    /// systemic signal. Deload sessions are ignored.
+    static let declineThreshold = 0.05
+
     private func detectPerformanceDecline(
         plan: ProgressionPlan,
         recentWorkouts: [Workout],
         report: inout InsightReport
     ) {
-        for planExercise in plan.exercises {
-            // Estimate current 1RM from recent workouts
-            let recent1RM = estimateCurrent1RM(
-                exerciseId: planExercise.exerciseId,
-                from: recentWorkouts
-            )
+        let sessions = recentWorkouts
+            .filter { $0.completedAt != nil && !$0.isDeload }
+            .sorted { $0.trainingDate > $1.trainingDate }   // newest first
 
-            guard let recent1RM = recent1RM, planExercise.current1RM > 0 else { continue }
+        var decliningExercises = 0
+        var sustainedDecline = false
+        var worstDecline = 0.0
 
-            let declinePercent = (planExercise.current1RM - recent1RM) / planExercise.current1RM
-            if declinePercent > 0.05 {
-                report.deloadSignals.append(
-                    InsightReport.DeloadSignal(
-                        source: .reactivePerformance,
-                        severity: min(1.0, declinePercent * 2)
-                    )
-                )
+        for planExercise in plan.exercises where planExercise.current1RM > 0 {
+            // Per-session best e1RM for this exercise, newest first.
+            let perSession: [Double] = sessions.compactMap { workout in
+                let estimates = workout.exercises
+                    .filter { $0.exercise.id == planExercise.exerciseId }
+                    .compactMap { we -> Double? in
+                        let baseLoad = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
+                        return AnalyticsCalculations.bestE1RM(in: we.sets, baseLoadPerRep: baseLoad)
+                    }
+                return estimates.max()
+            }
+            guard let latest = perSession.first else { continue }
+
+            let declineOf = { (e1rm: Double) -> Double in
+                (planExercise.current1RM - e1rm) / planExercise.current1RM
+            }
+            let latestDecline = declineOf(latest)
+            guard latestDecline > Self.declineThreshold else { continue }
+
+            decliningExercises += 1
+            worstDecline = max(worstDecline, latestDecline)
+            if perSession.count >= 2, declineOf(perSession[1]) > Self.declineThreshold {
+                sustainedDecline = true
             }
         }
+
+        guard decliningExercises >= 2 || sustainedDecline else { return }
+        report.deloadSignals.append(
+            InsightReport.DeloadSignal(
+                source: .reactivePerformance,
+                severity: min(1.0, worstDecline * 2)
+            )
+        )
     }
 
-    /// Simple 1RM estimation from workout sets using Epley/Brzycki.
+    /// Best recent 1RM estimate for an exercise (app-wide formula: warm-ups and
+    /// incomplete sets ignored, every drop segment considered, reps clamped to 15).
     private func estimateCurrent1RM(exerciseId: UUID, from workouts: [Workout]) -> Double? {
         var best: Double?
-
         for workout in workouts {
-            for workoutExercise in workout.exercises {
-                guard workoutExercise.exercise.id == exerciseId else { continue }
+            for workoutExercise in workout.exercises where workoutExercise.exercise.id == exerciseId {
                 let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
-                for set in workoutExercise.sets where set.isCompleted {
-                    guard let first = set.effectiveLoadParts(baseLoadPerRep: baseLoad).first,
-                          first.reps <= 15 else { continue }
-                    let weight = first.load
-                    let reps = first.reps
-
-                    let estimate: Double
-                    if reps == 1 {
-                        estimate = weight
-                    } else if reps <= 5 {
-                        estimate = weight * (1.0 + Double(reps) / 30.0)
-                    } else {
-                        estimate = weight * 36.0 / (37.0 - Double(reps))
-                    }
-
-                    if let current = best {
-                        best = max(current, estimate)
-                    } else {
-                        best = estimate
-                    }
+                if let estimate = AnalyticsCalculations.bestE1RM(in: workoutExercise.sets, baseLoadPerRep: baseLoad) {
+                    best = max(best ?? 0, estimate)
                 }
             }
         }
-
         return best
     }
 
@@ -376,7 +391,10 @@ public final class AdaptiveAdjustmentService: Sendable {
     /// - Deload proposals are highest priority, exercise swaps next, load adjustments last
     private func arbitrate(
         insights: InsightReport,
-        plan: ProgressionPlan
+        plan: ProgressionPlan,
+        verdict: TrainingVerdict? = nil,
+        recentWorkouts: [Workout] = [],
+        now: Date = Date()
     ) -> [ProposedAdjustment] {
         var proposals: [ProposedAdjustment] = []
 
@@ -403,19 +421,32 @@ public final class AdaptiveAdjustmentService: Sendable {
             ))
         }
 
-        // Multi-signal deload (Review Fix #12): if deloadSignals.count >= 2, trigger deload
-        if insights.deloadSignals.count >= 2 {
+        // Deload proposal: the verdict or two DISTINCT signal sources, never during
+        // a week that already holds a deload session (or an active deload verdict).
+        let distinctSources = Set(insights.deloadSignals.map(\.source))
+        let verdictSaysDeload = verdict?.kind == .deload && !(verdict?.isActiveDeload ?? false)
+        let weekStart = Calendar.mondayStart.weekStart(for: now)
+        let deloadThisWeek = recentWorkouts.contains { $0.isDeload && $0.trainingDate >= weekStart }
+            || (verdict?.isActiveDeload ?? false)
+        let hasSignal = !insights.deloadSignals.isEmpty
+        if !deloadThisWeek, (distinctSources.count >= 2 || (verdictSaysDeload && hasSignal)) {
             let maxSeverity = insights.deloadSignals.map(\.severity).max() ?? 0.5
+            let reason: String
+            if verdictSaysDeload {
+                reason = "Coach verdict is deload" + (distinctSources.count >= 2 ? " and multiple deload signals agree" : "")
+            } else {
+                reason = "Multiple deload signals detected (severity up to \(String(format: "%.1f", maxSeverity)))"
+            }
             let deloadAdj = PlanAdjustment(
                 adjustmentType: .deload,
                 trigger: .recoverySignal,
-                description: "Multi-signal deload triggered (\(insights.deloadSignals.count) signals detected). Volume reduced by 50% for 1 week.",
+                description: "Deload triggered (\(distinctSources.count) signal source\(distinctSources.count == 1 ? "" : "s")\(verdictSaysDeload ? ", coach verdict: deload" : "")). Volume reduced by 50% for 1 week.",
                 affectedBlockIds: plan.currentBlock.map { [$0.id] } ?? []
             )
             proposals.append(ProposedAdjustment(
                 adjustment: deloadAdj,
                 priority: 1,
-                reasoning: "Multiple deload signals detected (severity up to \(String(format: "%.1f", maxSeverity))). Recommending volume reduction to 50% for 1 recovery week."
+                reasoning: "\(reason). Recommending volume reduction to 50% for 1 recovery week."
             ))
         }
 
@@ -480,10 +511,12 @@ public final class AdaptiveAdjustmentService: Sendable {
         return Array(proposals.prefix(3))
     }
 
-    /// Removes contradictory proposals (increase + decrease on same exercise).
-    private func removeContradictions(_ proposals: [ProposedAdjustment]) -> [ProposedAdjustment] {
+    /// Removes contradictory proposals: an increase and a decrease on the same
+    /// exercise, or any increase while a block-wide deload/decrease stands.
+    func removeContradictions(_ proposals: [ProposedAdjustment]) -> [ProposedAdjustment] {
         var exerciseActions: [UUID: AdjustmentType] = [:]
         var result: [ProposedAdjustment] = []
+        var blockWideDecrease = false
 
         // First pass: deloads always win (priority 1)
         let sorted = proposals.sorted { $0.priority < $1.priority }
@@ -494,6 +527,9 @@ public final class AdaptiveAdjustmentService: Sendable {
 
             // Check for contradictions
             var hasContradiction = false
+            if blockWideDecrease, adjType == .loadIncrease {
+                hasContradiction = true
+            }
             for exerciseId in exerciseIds {
                 if let existing = exerciseActions[exerciseId] {
                     if isContradiction(existing, adjType) {
@@ -507,6 +543,9 @@ public final class AdaptiveAdjustmentService: Sendable {
                 result.append(proposal)
                 for exerciseId in exerciseIds {
                     exerciseActions[exerciseId] = adjType
+                }
+                if exerciseIds.isEmpty, adjType == .deload || adjType == .loadDecrease {
+                    blockWideDecrease = true
                 }
             }
         }

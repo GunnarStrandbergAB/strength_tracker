@@ -9,6 +9,7 @@ public final class WorkoutQualityScoreService: Sendable {
     private let muscleBalanceService: MuscleBalanceService
     private let healthKitService: any HealthKitServiceProtocol
     private let userPreferencesService: UserPreferencesService
+    private let bodyWeightProvider: BodyWeightProvider?
 
     /// Cache keyed by workout ID to avoid recomputing scores
     private var cache: [UUID: WorkoutQualityScore] = [:]
@@ -17,12 +18,14 @@ public final class WorkoutQualityScoreService: Sendable {
         workoutRepository: any WorkoutRepository,
         muscleBalanceService: MuscleBalanceService,
         healthKitService: any HealthKitServiceProtocol,
-        userPreferencesService: UserPreferencesService
+        userPreferencesService: UserPreferencesService,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
         self.workoutRepository = workoutRepository
         self.muscleBalanceService = muscleBalanceService
         self.healthKitService = healthKitService
         self.userPreferencesService = userPreferencesService
+        self.bodyWeightProvider = bodyWeightProvider
     }
 
     /// Drop one workout's cached score (e.g. after that workout was edited).
@@ -52,8 +55,7 @@ public final class WorkoutQualityScoreService: Sendable {
     }
 
     private func computeScoreInternal(for workout: Workout, history: [Workout]) -> WorkoutQualityScore {
-        let bodyWeightKg = userPreferencesService.bodyWeightKg
-            ?? UserPreferencesService.defaultBodyWeightKg
+        let bodyWeightKg = resolvedBodyWeightKg
 
         let volumeScore: Double
         let intensityScore: Double
@@ -179,7 +181,7 @@ public final class WorkoutQualityScoreService: Sendable {
 
     /// Build per-exercise best e1RM map from history, excluding a specific workout.
     private var resolvedBodyWeightKg: Double {
-        userPreferencesService.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+        bodyWeightProvider?.current ?? userPreferencesService.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
 
     private func buildBestE1RMMap(excluding workoutId: UUID, from history: [Workout]) -> [UUID: Double] {
@@ -227,7 +229,7 @@ public final class WorkoutQualityScoreService: Sendable {
             $0.id != workout.id &&
             !$0.isDeload &&
             $0.completedAt != nil &&
-            ($0.completedAt ?? $0.startedAt) >= twelveWeeksAgo
+            $0.trainingDate >= twelveWeeksAgo
         }
 
         // Per-muscle-group raw volume for current workout (70/30 split)
@@ -319,7 +321,7 @@ public final class WorkoutQualityScoreService: Sendable {
                 guard set.isCompleted, set.setType != .warmup else { continue }
                 guard let historicalBest = bestE1RM[we.exercise.id], historicalBest > 0 else { continue }
                 for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
-                    let setE1RM = TrainingStatusDetector.calculateOneRM(weight: part.load, reps: min(part.reps, 15))
+                    let setE1RM = AnalyticsCalculations.calculateOneRM(weight: part.load, reps: min(part.reps, AnalyticsCalculations.maxRepsForE1RM))
                     ratios.append(setE1RM / historicalBest)
                 }
             }
@@ -369,7 +371,7 @@ public final class WorkoutQualityScoreService: Sendable {
 
         // All completed workouts from last 12 weeks (including current)
         var recentWorkouts = history.filter {
-            $0.completedAt != nil && ($0.completedAt ?? $0.startedAt) >= twelveWeeksAgo
+            $0.completedAt != nil && $0.trainingDate >= twelveWeeksAgo
         }
         if !recentWorkouts.contains(where: { $0.id == workout.id }) {
             recentWorkouts.append(workout)
@@ -415,7 +417,7 @@ public final class WorkoutQualityScoreService: Sendable {
         let twelveWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -12, to: Date())!
         let historyWorkouts = history.filter {
             $0.id != workout.id && !$0.isDeload && $0.completedAt != nil
-            && ($0.completedAt ?? $0.startedAt) >= twelveWeeksAgo
+            && $0.trainingDate >= twelveWeeksAgo
         }
 
         let currentVolume = workout.totalVolume(bodyWeightKg: bodyWeightKg)
@@ -448,7 +450,7 @@ public final class WorkoutQualityScoreService: Sendable {
                 guard set.isCompleted, set.setType != .warmup else { continue }
                 guard let historicalBest = bestE1RM[we.exercise.id], historicalBest > 0 else { continue }
                 for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
-                    let setE1RM = TrainingStatusDetector.calculateOneRM(weight: part.load, reps: min(part.reps, 15))
+                    let setE1RM = AnalyticsCalculations.calculateOneRM(weight: part.load, reps: min(part.reps, AnalyticsCalculations.maxRepsForE1RM))
                     ratios.append(setE1RM / historicalBest)
                 }
             }

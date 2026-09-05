@@ -27,6 +27,16 @@ public struct RecoveryPattern: Identifiable, Hashable, Sendable, Codable {
         self.readyToTrainDate = readyToTrainDate
         self.recoveryStatus = recoveryStatus
     }
+
+    /// Trained within the last 36 hours. A just-trained group is trivially
+    /// "fatigued"; only groups that stay fatigued past that window indicate a
+    /// recovery problem.
+    public func isJustTrained(asOf now: Date = Date()) -> Bool {
+        guard let last = lastTrainedDate else { return false }
+        return now.timeIntervalSince(last) < 36 * 3600
+    }
+
+    public var isJustTrained: Bool { isJustTrained() }
 }
 
 /// Recovery readiness status for a muscle group.

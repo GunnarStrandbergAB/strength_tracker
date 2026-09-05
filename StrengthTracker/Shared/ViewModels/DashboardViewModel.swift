@@ -24,11 +24,13 @@ public final class DashboardViewModel {
     private let qualityScoreService: WorkoutQualityScoreService
     private let healthKitService: any HealthKitServiceProtocol
     private let userPreferencesService: UserPreferencesService
+    private let bodyWeightProvider: BodyWeightProvider?
 
     public var weightUnit: WeightUnit { userPreferencesService.weightUnit }
-    /// Body weight resolved during load() (HealthKit → prefs → default); used by
-    /// per-row volume formatting so it matches the aggregate numbers.
-    private var resolvedBodyWeightKg: Double = UserPreferencesService.defaultBodyWeightKg
+    /// Single resolved body weight, shared with every other screen.
+    private var resolvedBodyWeightKg: Double {
+        bodyWeightProvider?.current ?? userPreferencesService.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+    }
 
     // MARK: - Init
 
@@ -37,13 +39,15 @@ public final class DashboardViewModel {
         personalRecordRepository: any PersonalRecordRepository,
         qualityScoreService: WorkoutQualityScoreService,
         healthKitService: any HealthKitServiceProtocol,
-        userPreferencesService: UserPreferencesService
+        userPreferencesService: UserPreferencesService,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
         self.workoutRepository = workoutRepository
         self.personalRecordRepository = personalRecordRepository
         self.qualityScoreService = qualityScoreService
         self.healthKitService = healthKitService
         self.userPreferencesService = userPreferencesService
+        self.bodyWeightProvider = bodyWeightProvider
     }
 
     // MARK: - Data Loading
@@ -56,13 +60,9 @@ public final class DashboardViewModel {
             let allWorkouts = try await workoutRepository.fetchAll()
             let completed = allWorkouts.filter { $0.completedAt != nil }
 
-            // Resolve bodyweight once for volume calculations
-            let bw = await healthKitService.fetchBodyWeightKg()
-                ?? userPreferencesService.bodyWeightKg
-                ?? UserPreferencesService.defaultBodyWeightKg
-            resolvedBodyWeightKg = bw
+            let bw = resolvedBodyWeightKg
 
-            let calendar = Calendar.current
+            let calendar = Calendar.mondayStart
             let now = Date()
 
             // Determine start of current week (Monday-based)

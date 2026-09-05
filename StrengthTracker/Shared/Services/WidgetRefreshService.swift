@@ -14,9 +14,9 @@ public final class WidgetRefreshService {
     private let userPreferencesService: UserPreferencesService
     private let analyticsService: WorkoutAnalyticsService
     private let qualityScoreService: WorkoutQualityScoreService
-    private let workoutAnalyticsViewModel: WorkoutAnalyticsViewModel
     private let workoutViewModel: WorkoutViewModel
     private let restTimerService: RestTimerService
+    private let bodyWeightProvider: BodyWeightProvider?
 
     public init(
         workoutRepository: any WorkoutRepository,
@@ -25,17 +25,17 @@ public final class WidgetRefreshService {
         userPreferencesService: UserPreferencesService,
         analyticsService: WorkoutAnalyticsService,
         qualityScoreService: WorkoutQualityScoreService,
-        workoutAnalyticsViewModel: WorkoutAnalyticsViewModel,
         workoutViewModel: WorkoutViewModel,
-        restTimerService: RestTimerService
+        restTimerService: RestTimerService,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
+        self.bodyWeightProvider = bodyWeightProvider
         self.workoutRepository = workoutRepository
         self.progressionPlanRepository = progressionPlanRepository
         self.healthKitService = healthKitService
         self.userPreferencesService = userPreferencesService
         self.analyticsService = analyticsService
         self.qualityScoreService = qualityScoreService
-        self.workoutAnalyticsViewModel = workoutAnalyticsViewModel
         self.workoutViewModel = workoutViewModel
         self.restTimerService = restTimerService
     }
@@ -46,18 +46,20 @@ public final class WidgetRefreshService {
         do {
             let workouts = try await workoutRepository.fetchAll()
 
-            // Resolve bodyweight for volume calculations
-            let bw = await healthKitService.fetchBodyWeightKg()
+            let bw = bodyWeightProvider?.current
                 ?? userPreferencesService.bodyWeightKg
                 ?? UserPreferencesService.defaultBodyWeightKg
 
-            // Get analytics highlights
-            var highlights: [AnalyticsHighlight] = []
-            if !workoutAnalyticsViewModel.insights.highlights.isEmpty {
-                highlights = workoutAnalyticsViewModel.insights.highlights
-            } else {
-                // Try a lightweight generation
-                highlights = (try? await analyticsService.generateInsights().highlights) ?? []
+            // Highlights straight from the service (cached per data revision, so this
+            // is cheap when a screen already computed them — and never pre-edit stale).
+            let insights = try? await analyticsService.generateInsights()
+            var highlights: [AnalyticsHighlight] = insights?.highlights ?? []
+
+            // The coach verdict is always widget highlight #1 (the generator already
+            // leads with it for deload/hold; add the progress card when it is missing).
+            if let verdict = insights?.verdict, highlights.first?.title != verdict.headline {
+                highlights.removeAll { $0.title == verdict.headline }
+                highlights.insert(Self.verdictHighlight(verdict), at: 0)
             }
 
             // Fetch active plan once — reused for next session + weekly goal
@@ -105,16 +107,9 @@ public final class WidgetRefreshService {
             }
 
             // Compute aggregate quality for widget
-            let qualityScore: Double?
-            let qualityTrend: Double?
-            if let agg = workoutAnalyticsViewModel.aggregateQuality, agg.workoutsIncluded > 0 {
-                qualityScore = agg.ewmaOverall
-                qualityTrend = agg.trendVsPrior
-            } else {
-                let agg = qualityScoreService.computeAggregateScore(workouts: workouts)
-                qualityScore = agg.workoutsIncluded > 0 ? agg.ewmaOverall : nil
-                qualityTrend = agg.workoutsIncluded > 0 ? agg.trendVsPrior : nil
-            }
+            let agg = qualityScoreService.computeAggregateScore(workouts: workouts)
+            let qualityScore: Double? = agg.workoutsIncluded > 0 ? agg.ewmaOverall : nil
+            let qualityTrend: Double? = agg.workoutsIncluded > 0 ? agg.trendVsPrior : nil
 
             // Supplement with quality score highlight if room remains
             if highlights.count < 3, let qs = qualityScore {
@@ -139,11 +134,26 @@ public final class WidgetRefreshService {
                 bodyWeightKg: bw,
                 weeklyQualityScore: qualityScore,
                 qualityTrend: qualityTrend,
-                activeExerciseId: workoutViewModel.activeExerciseId
+                activeExerciseId: workoutViewModel.activeExerciseId,
+                weightUnitSymbol: userPreferencesService.weightUnit.symbol
             )
             widgetService.updateWidgetData(data)
         } catch {
             print("[Widget] Failed to refresh widget data: \(error)")
         }
+    }
+
+    static func verdictHighlight(_ verdict: TrainingVerdict) -> AnalyticsHighlight {
+        let type: HighlightType
+        if verdict.isActiveDeload {
+            type = .improvement
+        } else {
+            switch verdict.kind {
+            case .deload: type = .warning
+            case .hold: type = .milestone
+            case .progress: type = .improvement
+            }
+        }
+        return AnalyticsHighlight(type: type, title: verdict.headline, detail: verdict.action)
     }
 }

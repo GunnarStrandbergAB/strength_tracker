@@ -192,12 +192,15 @@ public final class GetTrainingHistoryTool: AITool {
     private let workoutRepository: any WorkoutRepository
     private let exerciseRepository: any ExerciseRepository
     private let userPreferencesService: UserPreferencesService
+    private let bodyWeightProvider: BodyWeightProvider?
 
     public init(
         workoutRepository: any WorkoutRepository,
         exerciseRepository: any ExerciseRepository,
-        userPreferencesService: UserPreferencesService
+        userPreferencesService: UserPreferencesService,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
+        self.bodyWeightProvider = bodyWeightProvider
         self.workoutRepository = workoutRepository
         self.exerciseRepository = exerciseRepository
         self.userPreferencesService = userPreferencesService
@@ -260,7 +263,7 @@ public final class GetTrainingHistoryTool: AITool {
         let truncated = workouts.count > limit
         workouts = Array(workouts.prefix(limit))
 
-        let bodyWeight = userPreferencesService.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+        let bodyWeight = bodyWeightProvider?.current ?? userPreferencesService.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
         let summaries = workouts.map { workout in
             summarize(workout, bodyWeightKg: bodyWeight, only: filterExercise)
         }
@@ -340,7 +343,8 @@ public final class GetAnalyticsInsightsTool: AITool {
     public let name = "get_analytics_insights"
     public let description = """
     Aggregated training analytics: plateaus, muscle balance, training load (ACWR), \
-    deload recommendation, and notable highlights for a recent time window.
+    the coach verdict (deload / hold / progress), deload recommendation, and notable \
+    highlights for a recent time window.
     """
 
     public var parametersSchema: JSONValue {
@@ -390,6 +394,16 @@ public final class GetAnalyticsInsightsTool: AITool {
             payload["training_load"] = .object([
                 "acwr": .number(AIJSON.round1(load.acwr)),
                 "zone": .string(load.loadZone.rawValue)
+            ])
+        }
+
+        if let verdict = insights.verdict {
+            payload["coach_verdict"] = .object([
+                "kind": .string(verdict.kind.rawValue),
+                "headline": .string(verdict.headline),
+                "action": .string(verdict.action),
+                "reasons": .array(verdict.reasons.map { .string($0) }),
+                "active_deload": .bool(verdict.isActiveDeload)
             ])
         }
 

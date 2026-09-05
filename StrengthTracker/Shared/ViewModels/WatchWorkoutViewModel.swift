@@ -48,6 +48,10 @@ public final class WatchWorkoutViewModel {
     private let connectivityManager: ConnectivityManager
     private let userPreferencesService: UserPreferencesService?
     private let analyticsService: WorkoutAnalyticsService?
+    private let bodyWeightProvider: BodyWeightProvider?
+    private var bodyWeightKg: Double {
+        bodyWeightProvider?.current ?? userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+    }
     private var restTimer: Timer?
     private var restStartDate: Date?
 
@@ -59,13 +63,15 @@ public final class WatchWorkoutViewModel {
         healthKitService: any HealthKitServiceProtocol,
         connectivityManager: ConnectivityManager,
         userPreferencesService: UserPreferencesService? = nil,
-        analyticsService: WorkoutAnalyticsService? = nil
+        analyticsService: WorkoutAnalyticsService? = nil,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
         self.workoutRepository = workoutRepository
         self.healthKitService = healthKitService
         self.connectivityManager = connectivityManager
         self.userPreferencesService = userPreferencesService
         self.analyticsService = analyticsService
+        self.bodyWeightProvider = bodyWeightProvider
         if let prefs = userPreferencesService {
             self.restDuration = TimeInterval(prefs.defaultRestSeconds)
         }
@@ -165,8 +171,7 @@ public final class WatchWorkoutViewModel {
     }
 
     public var currentExerciseVolume: Double {
-        let bw = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
-        return currentExercise?.exerciseVolume(bodyWeightKg: bw) ?? 0
+        return currentExercise?.exerciseVolume(bodyWeightKg: bodyWeightKg) ?? 0
     }
 
     public var totalSetsCompleted: Int {
@@ -465,8 +470,7 @@ public final class WatchWorkoutViewModel {
 
         // Vectorize workout for analytics in background
         Task {
-            let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
-            try? await analyticsService?.vectorizeWorkout(saved, bodyWeightKg: bodyWeightKg)
+            try? await analyticsService?.vectorizeWorkout(saved)
         }
     }
 

@@ -8,6 +8,8 @@ public struct WeeklyDigest: Sendable {
     public let volumeDeltaPercent: Double
     public let qualityTrend: Double
     public let prsThisWeek: Int
+    /// PRs set during the last complete week (the week the digest compares).
+    public let prsLastWeek: Int
 
     public init(
         weekStart: Date,
@@ -16,7 +18,8 @@ public struct WeeklyDigest: Sendable {
         workoutsLastWeek: Int,
         volumeDeltaPercent: Double,
         qualityTrend: Double,
-        prsThisWeek: Int
+        prsThisWeek: Int,
+        prsLastWeek: Int = 0
     ) {
         self.weekStart = weekStart
         self.topInsight = topInsight
@@ -25,5 +28,6 @@ public struct WeeklyDigest: Sendable {
         self.volumeDeltaPercent = volumeDeltaPercent
         self.qualityTrend = qualityTrend
         self.prsThisWeek = prsThisWeek
+        self.prsLastWeek = prsLastWeek
     }
 }

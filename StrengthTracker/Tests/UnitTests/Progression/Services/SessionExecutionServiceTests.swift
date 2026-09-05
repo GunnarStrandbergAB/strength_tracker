@@ -256,11 +256,12 @@ struct SessionExecutionServiceTests {
         #expect(result == 107.5)
     }
 
-    @Test("estimateCurrent1RM: high reps (>15) are ignored, returns nil")
-    func testEstimateCurrent1RM_highReps_ignored() {
+    @Test("estimateCurrent1RM: high reps (>15) are clamped to 15, never dropped")
+    func testEstimateCurrent1RM_highReps_clamped() {
         let sets = [makeCompletedSet(weight: 50.0, reps: 20, order: 0)]
         let result = sut.estimateCurrent1RM(from: sets)
-        #expect(result == nil)
+        // Brzycki at 15 reps: 50 × 36 / 22 = 81.8 → 82.5
+        #expect(result == AnalyticsCalculations.calculateOneRM(weight: 50, reps: 15).rounded(toNearest: 2.5))
     }
 
     @Test("estimateCurrent1RM: no completed sets returns nil")
@@ -453,5 +454,80 @@ struct SessionExecutionServiceTests {
             templateId: nil,
             exercises: exercises
         )
+    }
+
+    // MARK: - Replay
+
+    private func replayFixture() -> (plan: ProgressionPlan, first: Workout, second: Workout, sessionIds: (UUID, UUID)) {
+        // Baseline 115: 100×5 (e1RM 116.7), 105×5 (122.5) and the edited 115×5 (134.2)
+        // all stay inside the 15% outlier guard of the running estimate.
+        let benchPlan = ProgressionTestHelpers.makeTestPlanExercise(exerciseId: benchId, name: "Bench Press", current1RM: 115, estimated1RM: 115)
+        let day = 86_400.0
+        var first = makeWorkout(completedAt: Date().addingTimeInterval(-7 * day), exercises: [
+            makeWorkoutExercise(exerciseId: benchId, name: "Bench Press", sets: [makeCompletedSet(weight: 100, reps: 5, order: 1)])
+        ])
+        first.startedAt = first.completedAt!.addingTimeInterval(-3600)
+        var second = makeWorkout(completedAt: Date().addingTimeInterval(-2 * day), exercises: [
+            makeWorkoutExercise(exerciseId: benchId, name: "Bench Press", sets: [makeCompletedSet(weight: 105, reps: 5, order: 1)])
+        ])
+        second.startedAt = second.completedAt!.addingTimeInterval(-3600)
+        let s1 = ProgressionTestHelpers.makeTestPlannedSession(label: "Day 1", completedWorkoutId: first.id, completedAt: first.completedAt)
+        let s2 = ProgressionTestHelpers.makeTestPlannedSession(label: "Day 2", completedWorkoutId: second.id, completedAt: second.completedAt)
+        let week = TrainingWeek(weekNumber: 1, absoluteWeekNumber: 1, sessions: [s1, s2])
+        let block = TrainingBlock(name: "Block 1", order: 1, durationWeeks: 4, weeks: [week])
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block], exercises: [benchPlan])
+        return (plan, first, second, (s1.id, s2.id))
+    }
+
+    @Test("replay reproduces the incremental completion result exactly")
+    func testReplay_matchesIncremental() {
+        let (plan, first, second, _) = replayFixture()
+        // Incremental: session 1 then session 2.
+        let r1 = sut.completeSession(plan.blocks[0].weeks[0].sessions[0], workout: first, planExercises: plan.exercises, bodyWeightKg: 70)
+        let r2 = sut.completeSession(plan.blocks[0].weeks[0].sessions[1], workout: second, planExercises: r1.updatedExercises, bodyWeightKg: 70)
+
+        let replay = sut.replayCompletedSessions(plan: plan, workoutsById: [first.id: first, second.id: second], bodyWeightKg: 70)
+
+        #expect(replay.plan.exercises[0].current1RM == r2.updatedExercises[0].current1RM)
+        #expect(replay.plan.adjustments.count == r1.adjustments.count + r2.adjustments.count)
+        #expect(replay.plan.adjustments.allSatisfy { $0.wasAccepted == true })
+        #expect(replay.lastSessionAdjustments.count == r2.adjustments.count)
+    }
+
+    @Test("replay after an edit is not double-applied and strips the stale engine adjustments")
+    func testReplay_afterEdit() {
+        var (plan, first, second, _) = replayFixture()
+        _ = (first, second)
+        // Simulate the incremental pipeline having already run and recorded adjustments.
+        let r1 = sut.completeSession(plan.blocks[0].weeks[0].sessions[0], workout: first, planExercises: plan.exercises, bodyWeightKg: 70)
+        let r2 = sut.completeSession(plan.blocks[0].weeks[0].sessions[1], workout: second, planExercises: r1.updatedExercises, bodyWeightKg: 70)
+        plan.exercises = r2.updatedExercises
+        plan.adjustments = (r1.adjustments + r2.adjustments).map { var a = $0; a.wasAccepted = true; a.coachingExplanation = "kept"; return a }
+        plan.adjustments.append(PlanAdjustment(adjustmentType: .deload, trigger: .recoverySignal, description: "Adviser", wasAccepted: nil))
+
+        // The user corrects workout 2: it was really 115 kg, not 105.
+        var edited = second
+        edited.exercises[0].sets[0].weight = 115
+        let replay = sut.replayCompletedSessions(plan: plan, workoutsById: [first.id: first, second.id: edited], bodyWeightKg: 70)
+
+        let fresh2 = sut.completeSession(plan.blocks[0].weeks[0].sessions[1], workout: edited, planExercises: r1.updatedExercises, bodyWeightKg: 70)
+        #expect(replay.plan.exercises[0].current1RM == fresh2.updatedExercises[0].current1RM)
+        #expect(replay.plan.exercises[0].current1RM > r2.updatedExercises[0].current1RM)
+        #expect(replay.plan.adjustments.contains { $0.trigger == .recoverySignal }, "non-engine adjustments survive")
+        #expect(replay.plan.adjustments.filter { $0.trigger == .oneRMUpdate }.count == 2, "engine rows rebuilt, not stacked")
+        #expect(replay.plan.adjustments.first { $0.description == r1.adjustments[0].description }?.coachingExplanation == "kept",
+                "unchanged adjustment keeps its explanation")
+    }
+
+    @Test("replay after an unlink drops the session's contribution")
+    func testReplay_afterUnlink() {
+        var (plan, first, second, _) = replayFixture()
+        let r1 = sut.completeSession(plan.blocks[0].weeks[0].sessions[0], workout: first, planExercises: plan.exercises, bodyWeightKg: 70)
+        plan.blocks[0].weeks[0].sessions[1].completedWorkoutId = nil
+        plan.blocks[0].weeks[0].sessions[1].completedAt = nil
+
+        let replay = sut.replayCompletedSessions(plan: plan, workoutsById: [first.id: first, second.id: second], bodyWeightKg: 70)
+        #expect(replay.plan.exercises[0].current1RM == r1.updatedExercises[0].current1RM)
+        #expect(replay.plan.blocks[0].weeks[0].sessions[1].completedWorkoutId == nil)
     }
 }

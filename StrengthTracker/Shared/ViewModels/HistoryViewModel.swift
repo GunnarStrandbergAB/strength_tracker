@@ -20,12 +20,20 @@ public final class HistoryViewModel {
     private let webhookService: WebhookService?
     private let widgetRefreshService: WidgetRefreshService?
     private let qualityScoreService: WorkoutQualityScoreService?
+    private let bodyWeightProvider: BodyWeightProvider?
 
     /// Workouts retro-created this session that still owe their one-shot side effects
     /// (webhook + optional HealthKit save). Keyed by workout id; value = HealthKit opt-in.
     private var pendingRetroFinalization: [UUID: Bool] = [:]
     /// Set whenever an edit persists; lets endEditing() skip finalization for no-op sessions.
     private var hasUnsavedFinalization = false
+    /// Catalog exercise ids touched during the edit session (union of before/after),
+    /// so a swapped-out exercise's records are re-elected too.
+    private var touchedExerciseIds: Set<UUID> = []
+
+    /// The post-change pipeline. Set by AppContainer; when nil (tests) the legacy
+    /// inline sequence runs.
+    public var finalizer: WorkoutFinalizer?
 
     public init(
         workoutRepository: any WorkoutRepository,
@@ -37,8 +45,10 @@ public final class HistoryViewModel {
         calorieEstimationService: CalorieEstimationService? = nil,
         webhookService: WebhookService? = nil,
         widgetRefreshService: WidgetRefreshService? = nil,
-        qualityScoreService: WorkoutQualityScoreService? = nil
+        qualityScoreService: WorkoutQualityScoreService? = nil,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
+        self.bodyWeightProvider = bodyWeightProvider
         self.workoutRepository = workoutRepository
         self.userPreferencesService = userPreferencesService
         self.templateRepository = templateRepository
@@ -52,6 +62,8 @@ public final class HistoryViewModel {
     }
 
     public func loadHistory() async {
+        // A revision bump during an open edit session must not clobber selectedWorkout.
+        guard !isEditing else { return }
         isLoading = true
         errorMessage = nil
         do {
@@ -75,9 +87,9 @@ public final class HistoryViewModel {
             for workoutExercise in workout.exercises {
                 if workoutExercise.exercise.id == exerciseId {
                     let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: displayBodyWeightKg)
-                    for set in workoutExercise.sets where set.isCompleted {
+                    for set in workoutExercise.sets where set.isCompleted && set.setType != .warmup {
                         // One point per performed segment so drop-set parts feed the
-                        // charts like any other effort.
+                        // charts like any other effort (warm-ups are not performance data).
                         for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
                             results.append((date: workout.startedAt, weight: part.load, reps: part.reps))
                         }
@@ -396,12 +408,6 @@ public final class HistoryViewModel {
         }
     }
 
-    /// Peer sync for deletions.
-    public func absorbExternalDeletion(workoutId: UUID) {
-        workouts.removeAll { $0.id == workoutId }
-        if selectedWorkout?.id == workoutId { selectedWorkout = nil }
-    }
-
     /// Completes every incomplete set, stamped inside the workout's own window.
     public func markAllSetsComplete() async {
         guard var workout = selectedWorkout else { return }
@@ -423,22 +429,27 @@ public final class HistoryViewModel {
               let workout = selectedWorkout,
               workout.completedAt != nil else { return }
         hasUnsavedFinalization = false
+        let touched = touchedExerciseIds
+        touchedExerciseIds = []
 
-        let bodyWeightKg = await resolveBodyWeightKg()
-        try? await analyticsService?.vectorizeWorkout(
-            workout,
-            bodyWeightKg: bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
-        )
+        if let finalizer {
+            let retro = pendingRetroFinalization.removeValue(forKey: workout.id)
+                .map(WorkoutFinalizer.RetroOptions.init(saveToHealthKit:))
+            let finalized = await finalizer.workoutEdited(workout, touchedExerciseIds: touched, retro: retro)
+            if selectedWorkout?.id == finalized.id { selectedWorkout = finalized }
+            if let index = workouts.firstIndex(where: { $0.id == finalized.id }) { workouts[index] = finalized }
+            return
+        }
+
+        let bodyWeightKg = displayBodyWeightKg
+        try? await analyticsService?.vectorizeWorkout(workout)
         try? await personalRecordService?.recalculateAllPRs()
 
         if let healthKitOptIn = pendingRetroFinalization.removeValue(forKey: workout.id) {
             if healthKitOptIn, let healthKitService {
-                if let bw = bodyWeightKg, let calorieEstimationService {
-                    let result = calorieEstimationService.estimateCalories(workout: workout, bodyWeightKg: bw)
-                    try? await healthKitService.saveWorkout(workout, calories: result.totalCalories, bodyWeightKg: bw)
-                } else {
-                    try? await healthKitService.saveWorkout(workout)
-                }
+                let calories = calorieEstimationService?
+                    .estimateCalories(workout: workout, bodyWeightKg: bodyWeightKg).totalCalories ?? 0
+                try? await healthKitService.saveWorkout(workout, calories: calories, bodyWeightKg: bodyWeightKg)
             }
             await webhookService?.send(workout)
         }
@@ -449,17 +460,10 @@ public final class HistoryViewModel {
         await widgetRefreshService?.refresh()
     }
 
-    /// Synchronous body-weight resolution for display sites (prefs → default);
-    /// the async HealthKit chain is only used for finalization side effects.
+    /// The single resolved body weight (HealthKit → prefs → default), shared with
+    /// every other screen so the same workout never shows two volumes.
     public var displayBodyWeightKg: Double {
-        userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
-    }
-
-    private func resolveBodyWeightKg() async -> Double? {
-        if let hkWeight = await healthKitService?.fetchBodyWeightKg() {
-            return hkWeight
-        }
-        return userPreferencesService?.bodyWeightKg
+        bodyWeightProvider?.current ?? userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
 
     // MARK: - Delete Workout
@@ -470,6 +474,10 @@ public final class HistoryViewModel {
             workouts.removeAll { $0.id == workout.id }
             if selectedWorkout?.id == workout.id {
                 selectedWorkout = nil
+            }
+            if let finalizer {
+                await finalizer.workoutDeleted(workout)
+                return
             }
             // A deleted workout changes every history-relative metric.
             qualityScoreService?.invalidateAll()
@@ -570,6 +578,8 @@ public final class HistoryViewModel {
     // MARK: - Save Helper
 
     private func saveAndSync(_ workout: Workout) async {
+        touchedExerciseIds.formUnion(selectedWorkout?.exerciseIds ?? [])
+        touchedExerciseIds.formUnion(workout.exerciseIds)
         do {
             let saved = try await workoutRepository.save(workout)
             selectedWorkout = saved

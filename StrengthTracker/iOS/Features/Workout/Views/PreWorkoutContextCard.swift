@@ -6,6 +6,7 @@ struct PreWorkoutContextCard: View {
     let recoveryPatterns: [RecoveryPattern]
     let trainingLoad: TrainingLoad?
     let adherence: AdherenceAnalysis?
+    var verdict: TrainingVerdict? = nil
     let onStartWorkout: () -> Void
     let onStartFromPlan: (() -> Void)?
 
@@ -22,6 +23,13 @@ struct PreWorkoutContextCard: View {
             .padding(.horizontal, STSpacing.cardPadding)
             .padding(.top, STSpacing.cardPadding)
             .padding(.bottom, 12)
+
+            // Coach verdict: the one load/deload call
+            if let verdict {
+                VerdictBanner(verdict: verdict, style: .inline)
+                    .padding(.horizontal, STSpacing.cardPadding)
+                    .padding(.bottom, 12)
+            }
 
             // Recovery status
             if !recoveryPatterns.isEmpty {
@@ -103,13 +111,13 @@ struct PreWorkoutContextCard: View {
                         .font(.system(size: 13))
                         .foregroundStyle(STColors.textPrimary)
                     Spacer()
-                    Text(statusLabel(pattern.recoveryStatus))
+                    Text(statusLabel(pattern))
                         .font(.system(size: 11))
                         .foregroundStyle(STColors.textSecondary)
                 }
             }
 
-            Text("\(ready.count) ready, \(recovering.count + fatigued.count) recovering")
+            Text("\(ready.count) ready · \(recovering.count) recovering · \(fatigued.count) fatigued")
                 .font(.system(size: 11))
                 .foregroundStyle(STColors.textTertiary)
                 .padding(.top, 2)
@@ -123,13 +131,13 @@ struct PreWorkoutContextCard: View {
     private func loadSection(_ load: TrainingLoad) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Training Load")
+                Text("Training load")
                     .font(.system(size: 11, weight: .bold))
                     .tracking(1.0)
                     .foregroundStyle(STColors.textSecondary)
-                Text(String(format: "ACWR %.2f", load.acwr))
+                Text("ACWR \(AnalyticsFormatting.acwr(load.acwr)) · \(AnalyticsFormatting.loadZoneLabel(load.loadZone))")
                     .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(loadZoneColor(load.loadZone))
+                    .foregroundStyle(AnalyticsColors.zone(load.loadZone))
             }
 
             Spacer()
@@ -143,15 +151,12 @@ struct PreWorkoutContextCard: View {
                         .fill(STColors.border)
                         .frame(height: 6)
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(loadZoneColor(load.loadZone))
+                        .fill(AnalyticsColors.zone(load.loadZone))
                         .frame(width: width * fill, height: 6)
                 }
             }
             .frame(width: 80, height: 6)
 
-            Text(loadZoneLabel(load.loadZone))
-                .font(.system(size: 11))
-                .foregroundStyle(STColors.textSecondary)
         }
         .padding(.horizontal, STSpacing.cardPadding)
         .padding(.vertical, 12)
@@ -173,21 +178,21 @@ struct PreWorkoutContextCard: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text("This week")
+                Text("Usual pace")
                     .font(.system(size: 11))
                     .foregroundStyle(STColors.textTertiary)
                 let weeklyTarget = Int(adherence.weeklyFrequency.rounded())
-                Text("\(min(7, max(0, weeklyTarget))) typical")
+                Text("\(min(7, max(0, weeklyTarget)))×/week")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(STColors.textPrimary)
             }
 
             if adherence.currentStreak > 1 {
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("Streak")
+                    Text("Rhythm")
                         .font(.system(size: 11))
                         .foregroundStyle(STColors.textTertiary)
-                    Text("\(adherence.currentStreak) wk")
+                    Text(AnalyticsFormatting.streak(weeks: adherence.currentStreak))
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(STColors.primary)
                 }
@@ -200,38 +205,32 @@ struct PreWorkoutContextCard: View {
     // MARK: - Helpers
 
     private func statusColor(_ status: RecoveryStatus) -> Color {
-        switch status {
-        case .ready: return STColors.success
-        case .recovering: return Color.orange
-        case .fatigued: return STColors.danger
-        }
+        AnalyticsColors.recovery(status)
     }
 
-    private func statusLabel(_ status: RecoveryStatus) -> String {
-        switch status {
+    private func statusLabel(_ pattern: RecoveryPattern) -> String {
+        switch pattern.recoveryStatus {
         case .ready: return "Ready"
-        case .recovering: return "Recovering"
-        case .fatigued: return "Fatigued"
+        case .recovering:
+            if let ready = pattern.readyToTrainDate, ready > Date() {
+                return "Ready \(Self.dayFormatter.string(from: ready))"
+            }
+            return "Recovering"
+        case .fatigued:
+            if pattern.isJustTrained { return "Trained recently" }
+            if let ready = pattern.readyToTrainDate, ready > Date() {
+                return "Ready \(Self.dayFormatter.string(from: ready))"
+            }
+            return "Fatigued"
         }
     }
 
-    private func loadZoneColor(_ zone: LoadZone) -> Color {
-        switch zone {
-        case .underTraining: return .blue
-        case .optimal: return STColors.success
-        case .caution: return .orange
-        case .danger: return STColors.danger
-        }
-    }
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE"
+        return f
+    }()
 
-    private func loadZoneLabel(_ zone: LoadZone) -> String {
-        switch zone {
-        case .underTraining: return "Under"
-        case .optimal: return "Optimal"
-        case .caution: return "Caution"
-        case .danger: return "Danger"
-        }
-    }
 }
 
 #endif

@@ -51,6 +51,10 @@ public final class WorkoutViewModel {
     /// plain markSessionCompleted repository call.
     public var onPlannedSessionCompleted: ((_ sessionId: UUID, _ planId: UUID, _ workoutId: UUID) async -> Void)?
 
+    /// The post-completion pipeline (vector, PRs, HealthKit, webhook, revision, widgets).
+    /// Set by AppContainer; when nil (tests) the legacy inline sequence runs.
+    public var finalizer: WorkoutFinalizer?
+
     /// Stores original set weights before deload reduction, keyed by exerciseId → setId → weight
     private var preDeloadWeights: [UUID: [UUID: Double?]]?
 
@@ -65,6 +69,13 @@ public final class WorkoutViewModel {
     private let progressionPlanRepository: (any ProgressionPlanRepository)?
     private let coachingInsightService: CoachingInsightService?
     private let weightSuggestionService: WeightSuggestionService?
+    private let qualityScoreService: WorkoutQualityScoreService?
+    private let bodyWeightProvider: BodyWeightProvider?
+
+    /// Single resolved body weight (HealthKit → prefs → default) shared with every screen.
+    private var bodyWeightKg: Double {
+        bodyWeightProvider?.current ?? userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+    }
 
     public init(
         workoutRepository: any WorkoutRepository,
@@ -77,8 +88,12 @@ public final class WorkoutViewModel {
         webhookService: WebhookService? = nil,
         progressionPlanRepository: (any ProgressionPlanRepository)? = nil,
         coachingInsightService: CoachingInsightService? = nil,
-        weightSuggestionService: WeightSuggestionService? = nil
+        weightSuggestionService: WeightSuggestionService? = nil,
+        qualityScoreService: WorkoutQualityScoreService? = nil,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
+        self.qualityScoreService = qualityScoreService
+        self.bodyWeightProvider = bodyWeightProvider
         self.workoutRepository = workoutRepository
         self.templateRepository = templateRepository
         self.personalRecordService = personalRecordService
@@ -291,16 +306,10 @@ public final class WorkoutViewModel {
         )
 
         workout.exercises[exerciseIndex].sets.append(newSet)
+        // Live PR check flags the set before the single save (skipped on deload).
+        await evaluatePR(in: &workout, exerciseId: workout.exercises[exerciseIndex].id, setId: newSet.id)
         workout = try await workoutRepository.save(workout)
         currentWorkout = workout
-
-        // Check for personal records (skip during deload — intentionally lighter)
-        if let prService = personalRecordService, !(currentWorkout?.isDeload ?? false) {
-            let exercise = workout.exercises[exerciseIndex].exercise
-            if let pr = try? await prService.checkForPR(exercise: exercise, set: newSet) {
-                lastPR = pr
-            }
-        }
     }
 
     public func removeSet(exerciseId: UUID, setId: UUID) async {
@@ -348,6 +357,20 @@ public final class WorkoutViewModel {
         activeExerciseId = nil
         Self.hasPendingActiveWorkout = false
 
+        if let finalizer {
+            plannedSessionId = nil
+            plannedPlanId = nil
+            Task {
+                let finalized = await finalizer.workoutCompleted(saved, source: .phone)
+                if currentWorkout?.id == finalized.id { currentWorkout = finalized }
+                if let coaching = coachingInsightService, let analytics = analyticsService {
+                    await generateDebrief(workout: finalized, analyticsService: analytics, coachingService: coaching, bodyWeightKg: bodyWeightKg)
+                }
+            }
+            return
+        }
+
+        // Legacy inline sequence (no finalizer injected).
         // Mark progression plan session completed.
         // Prefer the IDs persisted on the workout itself so this works even if the VM was
         // reset/rebuilt mid-workout (e.g., the app was killed and resumed).
@@ -368,20 +391,16 @@ public final class WorkoutViewModel {
         // Save to HealthKit with calorie estimation (iPhone-only path)
         #if canImport(HealthKit)
         Task {
-            let bodyWeightKg = await resolveBodyWeightKg()
-            if let bw = bodyWeightKg {
-                let result = calorieEstimationService.estimateCalories(workout: saved, bodyWeightKg: bw)
-                try? await healthKitService.saveWorkout(saved, calories: result.totalCalories, bodyWeightKg: bw)
-            } else {
-                try? await healthKitService.saveWorkout(saved)
-            }
+            let bw = bodyWeightKg
+            let result = calorieEstimationService.estimateCalories(workout: saved, bodyWeightKg: bw)
+            try? await healthKitService.saveWorkout(saved, calories: result.totalCalories, bodyWeightKg: bw)
         }
         #endif
 
         // Vectorize workout for analytics, then generate post-workout debrief
         Task {
-            let bodyWeightKg = await resolveBodyWeightKg() ?? UserPreferencesService.defaultBodyWeightKg
-            try? await analyticsService?.vectorizeWorkout(saved, bodyWeightKg: bodyWeightKg)
+            let bodyWeightKg = self.bodyWeightKg
+            try? await analyticsService?.vectorizeWorkout(saved)
 
             // Generate post-workout debrief after vectorization completes
             if let coaching = coachingInsightService, let analytics = analyticsService {
@@ -407,8 +426,13 @@ public final class WorkoutViewModel {
             let allVectors = try await analyticsService.fetchAllVectors()
             let currentVector = allVectors.first { $0.workoutId == workout.id }
 
-            // Try to compute quality score for this workout
-            let qualityScore: WorkoutQualityScore? = nil  // scored async elsewhere if available
+            // Real quality score once the feature is unlocked (memoized in the service).
+            let completedCount = allWorkouts.filter { $0.completedAt != nil }.count
+            var qualityScore: WorkoutQualityScore?
+            if completedCount >= AnalyticsFeatureGate.threshold(for: .qualityScore),
+               let qualityScoreService {
+                qualityScore = qualityScoreService.computeScore(for: workout, history: allWorkouts)
+            }
 
             let debrief = await coachingService.generatePostWorkoutDebrief(
                 workout: workout,
@@ -420,7 +444,8 @@ public final class WorkoutViewModel {
                 optimalVolumes: insights.optimalVolumes,
                 currentVector: currentVector,
                 allVectors: allVectors,
-                bodyWeightKg: bodyWeightKg
+                bodyWeightKg: bodyWeightKg,
+                verdict: insights.verdict
             )
             postWorkoutDebrief = debrief
             showPostWorkoutSummary = true
@@ -429,15 +454,6 @@ public final class WorkoutViewModel {
         }
     }
 
-    /// Resolve body weight via fallback chain: HealthKit → UserPreferences → nil
-    private func resolveBodyWeightKg() async -> Double? {
-        // Try HealthKit first
-        if let hkWeight = await healthKitService.fetchBodyWeightKg() {
-            return hkWeight
-        }
-        // Fallback to user preference
-        return userPreferencesService?.bodyWeightKg
-    }
 
     /// Fetch previous set data for an exercise to help with progressive overload
     public func previousSetData(for exerciseId: UUID, setIndex: Int) async -> String? {
@@ -517,25 +533,34 @@ public final class WorkoutViewModel {
         }
     }
 
-    /// Load coaching data (weight suggestions, effort creep) for all exercises.
+    /// Load coaching data (weight suggestions, effort creep, recovery notes) for all
+    /// exercises. Suggestions take the real overload trend, recovery status, training
+    /// load and coach verdict from the revision-cached insights so an in-workout hint
+    /// can never contradict the analytics screens.
     public func loadCoachingData() async {
         guard let workout = currentWorkout, let wss = weightSuggestionService else { return }
-        let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+        let bodyWeightKg = self.bodyWeightKg
         do {
             let allWorkouts = try await workoutRepository.fetchAll()
             // Suggestions scan recentWorkouts per set — cap the window so a long
             // history doesn't cost seconds of main-actor time on workout entry.
+            // Deload sessions are not evidence of what the lifter can do.
             let recentCompleted = Array(
                 allWorkouts
-                    .filter { $0.completedAt != nil && $0.id != workout.id }
+                    .filter { $0.completedAt != nil && $0.id != workout.id && !$0.isDeload }
                     .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
                     .prefix(20)
             )
             guard recentCompleted.count >= 3 else { return }
 
+            let insights = (try? await analyticsService?.generateInsights()) ?? .empty
+            let trendsByExercise = Dictionary(insights.overloadTrends.map { ($0.exerciseId, $0) }, uniquingKeysWith: { a, _ in a })
+            let recoveryByGroup = Dictionary(insights.recoveryPatterns.map { ($0.muscleGroup.lowercased(), $0) }, uniquingKeysWith: { a, _ in a })
+
             for we in workout.exercises {
                 await Task.yield()  // keep the UI responsive during workout entry
                 let exerciseId = we.exercise.id
+                let recovery = recoveryByGroup[we.exercise.primaryMuscleGroup.rawValue.lowercased()]
                 var suggestions: [Int: WeightSuggestion] = [:]
                 for (setIndex, set) in we.sets.enumerated() {
                     let targetReps = set.reps ?? 8
@@ -544,11 +569,12 @@ public final class WorkoutViewModel {
                         exerciseName: we.exercise.name,
                         targetReps: targetReps,
                         recentWorkouts: recentCompleted,
-                        overloadTrend: nil,
-                        recoveryStatus: nil,
-                        trainingLoad: nil,
+                        overloadTrend: trendsByExercise[exerciseId],
+                        recoveryStatus: recovery?.recoveryStatus,
+                        trainingLoad: insights.trainingLoad,
                         isDeload: workout.isDeload,
-                        bodyWeightKg: bodyWeightKg
+                        bodyWeightKg: bodyWeightKg,
+                        verdict: insights.verdict
                     ) {
                         suggestions[setIndex] = suggestion
                     }
@@ -561,16 +587,32 @@ public final class WorkoutViewModel {
                     bodyWeightKg: bodyWeightKg
                 )
 
-                if !suggestions.isEmpty || effortCreep != nil {
+                let recoveryNote = Self.recoveryNote(for: recovery)
+
+                if !suggestions.isEmpty || effortCreep != nil || recoveryNote != nil {
                     exerciseCoachingCache[we.id] = ExerciseCoachingData(
                         suggestions: suggestions,
-                        effortCreepWarning: effortCreep
+                        effortCreepWarning: effortCreep,
+                        recoveryNote: recoveryNote
                     )
                 }
             }
         } catch {
             // Coaching data is best-effort
         }
+    }
+
+    /// "Chest is still recovering, ready Thursday" — only for a fatigued group that
+    /// was not just trained (a group trained yesterday is trivially fatigued).
+    static func recoveryNote(for pattern: RecoveryPattern?, now: Date = Date()) -> String? {
+        guard let pattern, pattern.recoveryStatus == .fatigued, !pattern.isJustTrained(asOf: now) else { return nil }
+        let name = pattern.muscleGroup.capitalized
+        guard let ready = pattern.readyToTrainDate, ready > now else {
+            return "\(name) is still recovering"
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE"
+        return "\(name) is still recovering, ready \(formatter.string(from: ready))"
     }
 
     /// Load previous data for a single exercise (fills any missing cache keys)
@@ -691,6 +733,14 @@ public final class WorkoutViewModel {
             guard set.dropSets.isEmpty else { return }
             set.weight = weight
         }
+        await reelectIfCompleted(exerciseId: exerciseId, setId: setId)
+    }
+
+    /// A completed set's load changed: its record status may have changed either way.
+    private func reelectIfCompleted(exerciseId: UUID, setId: UUID) async {
+        guard let set = currentWorkout?.exercises.first(where: { $0.id == exerciseId })?
+                .sets.first(where: { $0.id == setId }), set.isCompleted else { return }
+        await reelectPRs(exerciseId: exerciseId)
     }
 
     /// Update the reps of a specific set within an exercise.
@@ -699,6 +749,7 @@ public final class WorkoutViewModel {
             guard set.dropSets.isEmpty else { return }
             set.reps = reps
         }
+        await reelectIfCompleted(exerciseId: exerciseId, setId: setId)
     }
 
     /// Update the intensity of a set in the given metric — stores the entered value
@@ -786,10 +837,49 @@ public final class WorkoutViewModel {
 
     /// Toggle the completion status of a specific set.
     public func toggleSetCompletion(exerciseId: UUID, setId: UUID) async {
-        guard var workout = currentWorkout else { return }
-        guard workout.toggleSetCompletion(exerciseId: exerciseId, setId: setId) != nil else { return }
+        guard var workout = currentWorkout,
+              let nowCompleted = workout.toggleSetCompletion(exerciseId: exerciseId, setId: setId) else { return }
         activeExerciseId = exerciseId
-        await persist(workout)
+        if nowCompleted {
+            await evaluatePR(in: &workout, exerciseId: exerciseId, setId: setId)
+            await persist(workout)
+        } else {
+            let hadRecord = workout.exercises.first { $0.id == exerciseId }?
+                .sets.first { $0.id == setId }?.isPersonalRecord ?? false
+            if hadRecord, let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+               let si = workout.exercises[ei].sets.firstIndex(where: { $0.id == setId }) {
+                workout.exercises[ei].sets[si].isPersonalRecord = false
+            }
+            await persist(workout)
+            if hadRecord { await reelectPRs(exerciseId: exerciseId) }
+        }
+    }
+
+    // MARK: - Personal records (live)
+
+    /// Runs the live PR check on a just-completed set and flags it on `workout`.
+    private func evaluatePR(in workout: inout Workout, exerciseId: UUID, setId: UUID) async {
+        guard let prService = personalRecordService, !workout.isDeload,
+              let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              let si = workout.exercises[ei].sets.firstIndex(where: { $0.id == setId }) else { return }
+        let exercise = workout.exercises[ei].exercise
+        let set = workout.exercises[ei].sets[si]
+        if let pr = try? await prService.checkForPR(exercise: exercise, set: set, isDeloadWorkout: workout.isDeload) {
+            workout.exercises[ei].sets[si].isPersonalRecord = true
+            lastPR = pr
+        }
+    }
+
+    /// Authoritative re-election for one exercise (after an un-complete or an edit
+    /// of a completed set); refreshes this workout's flags from the result.
+    private func reelectPRs(exerciseId: UUID) async {
+        guard let prService = personalRecordService,
+              let current = currentWorkout,
+              let exercise = current.exercises.first(where: { $0.id == exerciseId })?.exercise else { return }
+        guard let changed = try? await prService.recalculatePRs(for: [exercise.id], includeInProgress: true) else { return }
+        if let refreshed = changed[current.id] {
+            currentWorkout = refreshed
+        }
     }
 
     public func moveSets(exerciseId: UUID, from source: Int, to destination: Int) async {
@@ -864,7 +954,12 @@ public final class WorkoutViewModel {
 
     /// Cancel the current workout without saving completion.
     public func cancelWorkout() async {
+        let cancelledExerciseIds = Set(currentWorkout?.exercises.map(\.exercise.id) ?? [])
         try? await workoutRepository.deleteAllIncomplete()
+        // Live PRs from the discarded session must not linger.
+        if !cancelledExerciseIds.isEmpty {
+            _ = try? await personalRecordService?.recalculatePRs(for: cancelledExerciseIds)
+        }
         currentWorkout = nil
         isActive = false
         activeExerciseId = nil

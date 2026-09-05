@@ -23,24 +23,27 @@ public final class ProgressViewModel {
             .max()
     }
 
-    public var totalVolume: Double {
-        progressionData.reduce(0) { $0 + $1.weight * Double($1.reps) }
-    }
+    /// Effective-load volume of every completed working set of the exercise, all time
+    /// (same definition as Workout.totalVolume). Computed in loadProgression.
+    public private(set) var totalVolume: Double = 0
 
     private let exerciseRepository: any ExerciseRepository
     private let workoutRepository: any WorkoutRepository
     public let userPreferencesService: UserPreferencesService?
+    private let bodyWeightProvider: BodyWeightProvider?
 
     public var weightUnit: WeightUnit { userPreferencesService?.weightUnit ?? .kg }
 
     public init(
         exerciseRepository: any ExerciseRepository,
         workoutRepository: any WorkoutRepository,
-        userPreferencesService: UserPreferencesService? = nil
+        userPreferencesService: UserPreferencesService? = nil,
+        bodyWeightProvider: BodyWeightProvider? = nil
     ) {
         self.exerciseRepository = exerciseRepository
         self.workoutRepository = workoutRepository
         self.userPreferencesService = userPreferencesService
+        self.bodyWeightProvider = bodyWeightProvider
     }
 
     public func loadExercises() async {
@@ -59,17 +62,20 @@ public final class ProgressViewModel {
             let allWorkouts = try await workoutRepository.fetchAll()
             let completed = allWorkouts.filter { $0.completedAt != nil }
             var results: [(date: Date, weight: Double, reps: Int)] = []
+            var volume: Double = 0
 
-            let bodyWeightKg = userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+            let bodyWeightKg = bodyWeightProvider?.current ?? userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
             for workout in completed {
                 for workoutExercise in workout.exercises {
                     if workoutExercise.exercise.id == exerciseId {
                         let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
-                        for set in workoutExercise.sets where set.isCompleted {
+                        // Working sets only: warm-ups are not performance data.
+                        for set in workoutExercise.sets where set.isCompleted && set.setType != .warmup {
+                            volume += set.setVolume(baseLoadPerRep: baseLoad)
                             // One point per performed segment so drop-set parts feed
-                            // best-weight/best-reps/e1RM/volume like any other effort.
+                            // best-weight/best-reps/e1RM like any other effort.
                             for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
-                                results.append((date: workout.startedAt, weight: part.load, reps: part.reps))
+                                results.append((date: workout.trainingDate, weight: part.load, reps: part.reps))
                             }
                         }
                     }
@@ -77,6 +83,7 @@ public final class ProgressViewModel {
             }
 
             progressionData = results.sorted { $0.date < $1.date }
+            totalVolume = volume
         } catch {
             progressionData = []
         }

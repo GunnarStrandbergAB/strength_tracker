@@ -7,13 +7,16 @@ public final class PlanAnalyticsService: Sendable {
     private let workoutRepository: any WorkoutRepository
     private let userPreferencesService: UserPreferencesService?
 
-    public init(workoutRepository: any WorkoutRepository, userPreferencesService: UserPreferencesService? = nil) {
+    private let bodyWeightProvider: BodyWeightProvider?
+
+    public init(workoutRepository: any WorkoutRepository, userPreferencesService: UserPreferencesService? = nil, bodyWeightProvider: BodyWeightProvider? = nil) {
         self.workoutRepository = workoutRepository
         self.userPreferencesService = userPreferencesService
+        self.bodyWeightProvider = bodyWeightProvider
     }
 
     private var bodyWeightKg: Double {
-        userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+        bodyWeightProvider?.current ?? userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
 
     // MARK: - Public API
@@ -249,7 +252,7 @@ public final class PlanAnalyticsService: Sendable {
                 for session in week.sessions {
                     guard let workout = resolvedWorkouts[session.id] else { continue }
                     for workoutExercise in workout.exercises {
-                        for set in workoutExercise.sets where set.isCompleted {
+                        for set in workoutExercise.sets where set.isCompleted && set.setType != .warmup {
                             if let rpe = set.rpe {
                                 totalRPE += rpe
                                 rpeCount += 1
@@ -292,7 +295,7 @@ public final class PlanAnalyticsService: Sendable {
 
                 // Average intensity from RPE values across sets
                 for workoutExercise in workout.exercises {
-                    for set in workoutExercise.sets where set.isCompleted {
+                    for set in workoutExercise.sets where set.isCompleted && set.setType != .warmup {
                         if let rpe = set.rpe {
                             totalIntensity += rpe
                             intensityCount += 1

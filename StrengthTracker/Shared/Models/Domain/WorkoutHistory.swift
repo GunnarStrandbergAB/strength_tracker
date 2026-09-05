@@ -27,7 +27,7 @@ public struct WorkoutHistory: Identifiable, Hashable, Sendable, Codable {
     }
 
     public func workoutsInWeek(containing date: Date) -> [Workout] {
-        let calendar = Calendar.current
+        let calendar = Calendar.mondayStart
         guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: date) else {
             return []
         }
@@ -41,7 +41,7 @@ public struct WorkoutHistory: Identifiable, Hashable, Sendable, Codable {
     }
 
     public func currentWeeklyStreak() -> Int {
-        let calendar = Calendar.current
+        let calendar = Calendar.mondayStart
         let now = Date()
         var streak = 0
         var weekDate = now

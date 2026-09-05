@@ -7,6 +7,7 @@ import StrengthTrackerShared
 struct ExerciseInsightsView: View {
     let exercise: Exercise
     let viewModel: WorkoutAnalyticsViewModel
+    @Environment(DataRevision.self) private var dataRevision: DataRevision?
 
     private var plateau: PlateauAnalysis? {
         viewModel.insights.plateaus.first { $0.exerciseId == exercise.id }
@@ -42,7 +43,7 @@ struct ExerciseInsightsView: View {
                             .foregroundStyle(STColors.textPrimary)
                     }
 
-                    Text("No progress for \(plateau.consecutiveWeeksStalled) week\(plateau.consecutiveWeeksStalled == 1 ? "" : "s")")
+                    Text(AnalyticsFormatting.weeksStalled(plateau.consecutiveWeeksStalled))
                         .font(.system(size: 12))
                         .foregroundStyle(STColors.textSecondary)
 
@@ -73,6 +74,9 @@ struct ExerciseInsightsView: View {
                     }
                 }
             }
+        }
+        .task(id: dataRevision?.value ?? 0) {
+            await viewModel.loadDashboardInsights()
         }
     }
 }

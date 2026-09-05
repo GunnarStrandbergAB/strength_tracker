@@ -4,11 +4,11 @@ import Foundation
 /// Features unlock progressively as the user accumulates data, ensuring
 /// meaningful insights and avoiding empty-state confusion.
 ///
-/// Aligned with UX progressive disclosure phases:
-/// - Phase 1 (1-5 workouts): Basic stats, PR tracking only
-/// - Phase 2 (5-20 workouts): Quality score, basic trends, recommendations
-/// - Phase 3 (20-50 workouts): Plateau detection, muscle balance, recovery
-/// - Phase 4 (50+ workouts): Volume optimization, cycle comparisons, predictions
+/// Aligned with UX progressive disclosure phases (see `thresholds` for the
+/// exact numbers — 1 / 5 / 10 / 15 / 19 / 20 workouts):
+/// - Phase 1: Basic stats, PR tracking, post-workout debrief
+/// - Phase 2 (5+): Quality score, basic trends, recommendations, pre-workout context
+/// - Phase 3 (10–20): Plateau detection, muscle balance, recovery, advanced insights
 @MainActor
 public final class AnalyticsFeatureGate: Sendable {
 
@@ -57,6 +57,12 @@ public final class AnalyticsFeatureGate: Sendable {
         .recoveryTimeline: 20,
         .timeOfDayAnalysis: 20,
     ]
+
+    /// The single source for "how many workouts unlock X" — views and services
+    /// must never hard-code these numbers.
+    public static func threshold(for feature: Feature) -> Int {
+        thresholds[feature] ?? 0
+    }
 
     private let workoutRepository: any WorkoutRepository
 
