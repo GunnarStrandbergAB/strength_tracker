@@ -51,6 +51,10 @@ public final class WorkoutViewModel {
     /// plain markSessionCompleted repository call.
     public var onPlannedSessionCompleted: ((_ sessionId: UUID, _ planId: UUID, _ workoutId: UUID) async -> Void)?
 
+    /// The post-completion pipeline (vector, PRs, HealthKit, webhook, revision, widgets).
+    /// Set by AppContainer; when nil (tests) the legacy inline sequence runs.
+    public var finalizer: WorkoutFinalizer?
+
     /// Stores original set weights before deload reduction, keyed by exerciseId → setId → weight
     private var preDeloadWeights: [UUID: [UUID: Double?]]?
 
@@ -350,6 +354,20 @@ public final class WorkoutViewModel {
         activeExerciseId = nil
         Self.hasPendingActiveWorkout = false
 
+        if let finalizer {
+            plannedSessionId = nil
+            plannedPlanId = nil
+            Task {
+                let finalized = await finalizer.workoutCompleted(saved, source: .phone)
+                if currentWorkout?.id == finalized.id { currentWorkout = finalized }
+                if let coaching = coachingInsightService, let analytics = analyticsService {
+                    await generateDebrief(workout: finalized, analyticsService: analytics, coachingService: coaching, bodyWeightKg: bodyWeightKg)
+                }
+            }
+            return
+        }
+
+        // Legacy inline sequence (no finalizer injected).
         // Mark progression plan session completed.
         // Prefer the IDs persisted on the workout itself so this works even if the VM was
         // reset/rebuilt mid-workout (e.g., the app was killed and resumed).

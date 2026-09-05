@@ -8,7 +8,8 @@ final class StubBodyWeightHealthKit: HealthKitServiceProtocol, @unchecked Sendab
     var authorizationRequests = 0
     init(bodyWeightKg: Double? = nil) { self.bodyWeightKg = bodyWeightKg }
     func requestAuthorization() async throws { authorizationRequests += 1 }
-    func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws {}
+    func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws -> UUID? { nil }
+    func deleteWorkout(appWorkoutId: UUID) async throws {}
     func fetchBodyWeightKg() async -> Double? { bodyWeightKg }
     func startWorkoutSession() async throws {}
     func endWorkoutSession(_ workout: Workout) async throws {}

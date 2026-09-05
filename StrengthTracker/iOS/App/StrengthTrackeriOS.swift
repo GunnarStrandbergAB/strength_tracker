@@ -89,33 +89,12 @@ struct StrengthTrackeriOSApp: App {
 
             // Wire up Watch → iPhone workout sync (SwiftData + webhook only)
             // Watch already saves HKWorkout with sensor-based calories — iPhone must NOT touch HealthKit
-            let workoutRepo = container.workoutRepository
-            let webhookService = container.webhookService
-            let progressionPlanVM = container.progressionPlanViewModel
+            let finalizer = container.workoutFinalizer
             container.connectivityManager.onWorkoutReceived = { workout, metadata in
                 Task { @MainActor in
-                    do {
-                        // Guard against duplicate/out-of-order transfers: never let a
-                        // non-completed copy overwrite an already-completed stored workout.
-                        if let existing = try await workoutRepo.fetchAll().first(where: { $0.id == workout.id }),
-                           existing.completedAt != nil, workout.completedAt == nil {
-                            return
-                        }
-                        _ = try await workoutRepo.save(workout)
-                        await webhookService.send(workout)
-
-                        // Run the adaptive completion pipeline if Watch sent session/plan IDs
-                        if let sessionIdStr = metadata?["plannedSessionId"],
-                           let planIdStr = metadata?["plannedPlanId"],
-                           let sessionId = UUID(uuidString: sessionIdStr),
-                           let planId = UUID(uuidString: planIdStr) {
-                            await progressionPlanVM.handleSessionCompleted(
-                                sessionId: sessionId, planId: planId, workoutId: workout.id
-                            )
-                        }
-                    } catch {
-                        print("Failed to save Watch workout: \(error)")
-                    }
+                    // One pipeline for every completed workout: plan session, vector,
+                    // PRs, caches, webhook, revision, widgets (HealthKit stays Watch-side).
+                    await finalizer.workoutReceivedFromWatch(workout, metadata: metadata)
                 }
             }
 

@@ -25,6 +25,9 @@ public final class WatchWorkoutListViewModel: Sendable {
     private let workoutRepository: any WorkoutRepository
     private let templateRepository: any TemplateRepository
 
+    /// Set by AppContainer so a Watch-side delete also drops derived data.
+    public var finalizer: WorkoutFinalizer?
+
     public init(workoutRepository: any WorkoutRepository, templateRepository: any TemplateRepository) {
         self.workoutRepository = workoutRepository
         self.templateRepository = templateRepository
@@ -61,6 +64,7 @@ public final class WatchWorkoutListViewModel: Sendable {
         #if canImport(SwiftData)
         do {
             try await workoutRepository.delete(workout)
+            await finalizer?.workoutDeleted(workout)
             await loadData()
         } catch {
             errorMessage = error.localizedDescription

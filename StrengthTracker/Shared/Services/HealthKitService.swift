@@ -12,7 +12,12 @@ public protocol HealthKitServiceProtocol: Sendable {
     ///   - workout: The workout to save
     ///   - calories: Estimated total calories burned
     ///   - bodyWeightKg: Body weight for effective-load volume metadata
-    func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws
+    /// - Returns: the HKWorkout uuid, or nil when nothing was written
+    @discardableResult
+    func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws -> UUID?
+
+    /// Delete the HKWorkout(s) this app wrote for a workout id (best effort).
+    func deleteWorkout(appWorkoutId: UUID) async throws
 
     /// Fetch the user's latest body weight from HealthKit
     func fetchBodyWeightKg() async -> Double?
@@ -70,8 +75,9 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked
         try await healthStore.requestAuthorization(toShare: typesToShare, read: typesToRead)
     }
 
-    public func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws {
-        guard let endDate = workout.completedAt else { return }
+    @discardableResult
+    public func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws -> UUID? {
+        guard let endDate = workout.completedAt else { return nil }
         let startDate = workout.startedAt
         let totalDuration = endDate.timeIntervalSince(startDate)
 
@@ -112,6 +118,40 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol, @unchecked
                 end: endDate
             )
             try await healthStore.addSamples([energySample], to: hkWorkout)
+        }
+        return hkWorkout.uuid
+    }
+
+    /// Deletes every HKWorkout carrying our `StrengthTrackerWorkoutId` metadata for
+    /// `appWorkoutId`, plus the energy samples attached to it. Workouts written by
+    /// another source (the Watch app) are refused by HealthKit; that is ignored.
+    public func deleteWorkout(appWorkoutId: UUID) async throws {
+        let predicate = HKQuery.predicateForObjects(
+            withMetadataKey: "StrengthTrackerWorkoutId",
+            allowedValues: [appWorkoutId.uuidString]
+        )
+        let workouts: [HKWorkout] = try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(sampleType: .workoutType(), predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
+                if let error { continuation.resume(throwing: error); return }
+                continuation.resume(returning: (samples as? [HKWorkout]) ?? [])
+            }
+            healthStore.execute(query)
+        }
+        for hkWorkout in workouts {
+            let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
+            let samples: [HKSample] = try await withCheckedThrowingContinuation { continuation in
+                let query = HKSampleQuery(sampleType: energyType, predicate: HKQuery.predicateForObjects(from: hkWorkout), limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
+                    if let error { continuation.resume(throwing: error); return }
+                    continuation.resume(returning: samples ?? [])
+                }
+                healthStore.execute(query)
+            }
+            if !samples.isEmpty { try? await healthStore.delete(samples) }
+            do {
+                try await healthStore.delete(hkWorkout)
+            } catch let error as HKError where error.code == .errorAuthorizationDenied {
+                continue
+            }
         }
     }
 
@@ -155,7 +195,8 @@ public final class DefaultHealthKitService: HealthKitServiceProtocol {
     public init() {}
 
     public func requestAuthorization() async throws {}
-    public func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws {}
+    public func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws -> UUID? { nil }
+    public func deleteWorkout(appWorkoutId: UUID) async throws {}
     public func fetchBodyWeightKg() async -> Double? { nil }
     public func startWorkoutSession() async throws {}
     public func endWorkoutSession(_ workout: Workout) async throws {}
@@ -169,8 +210,8 @@ public final class NoOpHealthKitService: HealthKitServiceProtocol {
     public init() {}
 
     public func requestAuthorization() async throws {}
-    public func saveWorkout(_ workout: Workout) async throws {}
-    public func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws {}
+    public func saveWorkout(_ workout: Workout, calories: Double, bodyWeightKg: Double) async throws -> UUID? { nil }
+    public func deleteWorkout(appWorkoutId: UUID) async throws {}
     public func fetchBodyWeightKg() async -> Double? { nil }
     public func startWorkoutSession() async throws {}
     public func endWorkoutSession(_ workout: Workout) async throws {}

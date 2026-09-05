@@ -9,7 +9,11 @@ import Foundation
 @MainActor
 public final class EffectiveLoadMigrationService {
     /// Bump when the effective-load model changes in a way that requires re-running.
-    public static let targetVersion = 1
+    /// v2: personal-record rows deduped + per-set flags written by the rebuild.
+    public static let targetVersion = 2
+
+    /// Set by AppContainer; the full derived-data rebuild replaces the bare PR recalc.
+    public var finalizer: WorkoutFinalizer?
 
     private let workoutRepository: any WorkoutRepository
     private let templateRepository: any TemplateRepository
@@ -44,7 +48,11 @@ public final class EffectiveLoadMigrationService {
 
             try await backfillWorkouts(factorById: factorById)
             try await backfillTemplates(factorById: factorById)
-            try? await personalRecordService?.recalculateAllPRs()
+            if let finalizer {
+                await finalizer.rebuildAll(reason: .migration)
+            } else {
+                try? await personalRecordService?.recalculateAllPRs()
+            }
 
             userPreferencesService.effectiveLoadModelVersion = Self.targetVersion
         } catch {

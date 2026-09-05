@@ -27,6 +27,13 @@ public final class HistoryViewModel {
     private var pendingRetroFinalization: [UUID: Bool] = [:]
     /// Set whenever an edit persists; lets endEditing() skip finalization for no-op sessions.
     private var hasUnsavedFinalization = false
+    /// Catalog exercise ids touched during the edit session (union of before/after),
+    /// so a swapped-out exercise's records are re-elected too.
+    private var touchedExerciseIds: Set<UUID> = []
+
+    /// The post-change pipeline. Set by AppContainer; when nil (tests) the legacy
+    /// inline sequence runs.
+    public var finalizer: WorkoutFinalizer?
 
     public init(
         workoutRepository: any WorkoutRepository,
@@ -428,6 +435,17 @@ public final class HistoryViewModel {
               let workout = selectedWorkout,
               workout.completedAt != nil else { return }
         hasUnsavedFinalization = false
+        let touched = touchedExerciseIds
+        touchedExerciseIds = []
+
+        if let finalizer {
+            let retro = pendingRetroFinalization.removeValue(forKey: workout.id)
+                .map(WorkoutFinalizer.RetroOptions.init(saveToHealthKit:))
+            let finalized = await finalizer.workoutEdited(workout, touchedExerciseIds: touched, retro: retro)
+            if selectedWorkout?.id == finalized.id { selectedWorkout = finalized }
+            if let index = workouts.firstIndex(where: { $0.id == finalized.id }) { workouts[index] = finalized }
+            return
+        }
 
         let bodyWeightKg = displayBodyWeightKg
         try? await analyticsService?.vectorizeWorkout(workout)
@@ -462,6 +480,10 @@ public final class HistoryViewModel {
             workouts.removeAll { $0.id == workout.id }
             if selectedWorkout?.id == workout.id {
                 selectedWorkout = nil
+            }
+            if let finalizer {
+                await finalizer.workoutDeleted(workout)
+                return
             }
             // A deleted workout changes every history-relative metric.
             qualityScoreService?.invalidateAll()
@@ -562,6 +584,8 @@ public final class HistoryViewModel {
     // MARK: - Save Helper
 
     private func saveAndSync(_ workout: Workout) async {
+        touchedExerciseIds.formUnion(selectedWorkout?.exerciseIds ?? [])
+        touchedExerciseIds.formUnion(workout.exerciseIds)
         do {
             let saved = try await workoutRepository.save(workout)
             selectedWorkout = saved

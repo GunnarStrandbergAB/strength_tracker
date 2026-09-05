@@ -14,7 +14,6 @@ public final class WidgetRefreshService {
     private let userPreferencesService: UserPreferencesService
     private let analyticsService: WorkoutAnalyticsService
     private let qualityScoreService: WorkoutQualityScoreService
-    private let workoutAnalyticsViewModel: WorkoutAnalyticsViewModel
     private let workoutViewModel: WorkoutViewModel
     private let restTimerService: RestTimerService
     private let bodyWeightProvider: BodyWeightProvider?
@@ -26,7 +25,6 @@ public final class WidgetRefreshService {
         userPreferencesService: UserPreferencesService,
         analyticsService: WorkoutAnalyticsService,
         qualityScoreService: WorkoutQualityScoreService,
-        workoutAnalyticsViewModel: WorkoutAnalyticsViewModel,
         workoutViewModel: WorkoutViewModel,
         restTimerService: RestTimerService,
         bodyWeightProvider: BodyWeightProvider? = nil
@@ -38,7 +36,6 @@ public final class WidgetRefreshService {
         self.userPreferencesService = userPreferencesService
         self.analyticsService = analyticsService
         self.qualityScoreService = qualityScoreService
-        self.workoutAnalyticsViewModel = workoutAnalyticsViewModel
         self.workoutViewModel = workoutViewModel
         self.restTimerService = restTimerService
     }
@@ -53,14 +50,9 @@ public final class WidgetRefreshService {
                 ?? userPreferencesService.bodyWeightKg
                 ?? UserPreferencesService.defaultBodyWeightKg
 
-            // Get analytics highlights
-            var highlights: [AnalyticsHighlight] = []
-            if !workoutAnalyticsViewModel.insights.highlights.isEmpty {
-                highlights = workoutAnalyticsViewModel.insights.highlights
-            } else {
-                // Try a lightweight generation
-                highlights = (try? await analyticsService.generateInsights().highlights) ?? []
-            }
+            // Highlights straight from the service (cached per data revision, so this
+            // is cheap when a screen already computed them — and never pre-edit stale).
+            var highlights: [AnalyticsHighlight] = (try? await analyticsService.generateInsights().highlights) ?? []
 
             // Fetch active plan once — reused for next session + weekly goal
             let activePlan = try await progressionPlanRepository.fetchActive()
@@ -107,16 +99,9 @@ public final class WidgetRefreshService {
             }
 
             // Compute aggregate quality for widget
-            let qualityScore: Double?
-            let qualityTrend: Double?
-            if let agg = workoutAnalyticsViewModel.aggregateQuality, agg.workoutsIncluded > 0 {
-                qualityScore = agg.ewmaOverall
-                qualityTrend = agg.trendVsPrior
-            } else {
-                let agg = qualityScoreService.computeAggregateScore(workouts: workouts)
-                qualityScore = agg.workoutsIncluded > 0 ? agg.ewmaOverall : nil
-                qualityTrend = agg.workoutsIncluded > 0 ? agg.trendVsPrior : nil
-            }
+            let agg = qualityScoreService.computeAggregateScore(workouts: workouts)
+            let qualityScore: Double? = agg.workoutsIncluded > 0 ? agg.ewmaOverall : nil
+            let qualityTrend: Double? = agg.workoutsIncluded > 0 ? agg.trendVsPrior : nil
 
             // Supplement with quality score highlight if room remains
             if highlights.count < 3, let qs = qualityScore {

@@ -70,6 +70,7 @@ public final class AppContainer: Sendable {
 
     // Cached ViewModels (shared across multiple views)
     public let widgetRefreshService: WidgetRefreshService
+    public let workoutFinalizer: WorkoutFinalizer
 
     public let workoutViewModel: WorkoutViewModel
     public let workoutSessionCoordinator: WorkoutSessionCoordinator
@@ -294,7 +295,6 @@ public final class AppContainer: Sendable {
             userPreferencesService: userPreferencesService,
             analyticsService: analyticsService,
             qualityScoreService: qualityScoreService,
-            workoutAnalyticsViewModel: workoutAnalyticsViewModel,
             workoutViewModel: workoutViewModel,
             restTimerService: restTimerService,
             bodyWeightProvider: bodyWeightProvider
@@ -327,6 +327,27 @@ public final class AppContainer: Sendable {
             bodyWeightProvider: bodyWeightProvider
         )
 
+        // The single post-change pipeline every completed-workout mutation ends in.
+        let aiFinalizerBox = FinalizerBox()
+        workoutFinalizer = WorkoutFinalizer(
+            workoutRepository: workoutRepository,
+            analyticsRepository: analyticsRepository,
+            analyticsService: analyticsService,
+            personalRecordService: personalRecordService,
+            qualityScoreService: qualityScoreService,
+            healthKitService: healthKitService,
+            calorieEstimationService: calorieEstimationService,
+            webhookService: webhookService,
+            widgetRefresh: widgetRefreshService,
+            bodyWeightProvider: bodyWeightProvider,
+            dataRevision: dataRevision
+        )
+        workoutViewModel.finalizer = workoutFinalizer
+        historyViewModel.finalizer = workoutFinalizer
+        watchWorkoutListViewModel.finalizer = workoutFinalizer
+        effectiveLoadMigrationService.finalizer = workoutFinalizer
+        aiFinalizerBox.finalizer = workoutFinalizer
+
         // AI assistant: workout editing seams (the AI writes through the same
         // ViewModels/coordinator the UI uses), tool registry, agent loop, chat VM.
         let historyDeps = (
@@ -343,7 +364,7 @@ public final class AppContainer: Sendable {
             coordinator: workoutSessionCoordinator,
             workoutRepository: workoutRepository,
             makeHistoryViewModel: {
-                Self.buildHistoryViewModel(
+                let vm = Self.buildHistoryViewModel(
                     workoutRepository: historyDeps.workoutRepository,
                     userPreferencesService: historyDeps.userPreferencesService,
                     templateRepository: historyDeps.templateRepository,
@@ -356,6 +377,8 @@ public final class AppContainer: Sendable {
                     qualityScoreService: historyDeps.qualityScoreService,
             bodyWeightProvider: bodyWeightProviderRef
                 )
+                vm.finalizer = aiFinalizerBox.finalizer
+                return vm
             },
             onHistoryWorkoutChanged: { [weak uiHistoryVM] workout in
                 uiHistoryVM?.absorbExternalChange(workout)
@@ -562,6 +585,16 @@ public final class AppContainer: Sendable {
                 sessionId: sessionId, planId: planId, workoutId: workoutId
             )
         }
+        workoutFinalizer.onSessionCompleted = { [weak planVM] sessionId, planId, workoutId in
+            await planVM?.handleSessionCompleted(
+                sessionId: sessionId, planId: planId, workoutId: workoutId
+            )
+        }
+        // A material body-weight change shifts every effective-load number: rebuild once.
+        let finalizerForRebuild = workoutFinalizer
+        bodyWeightProvider.onMaterialChange = { _, _ in
+            await finalizerForRebuild.rebuildAll(reason: .bodyWeightChanged)
+        }
     }
 
     // Factory methods for ViewModels
@@ -659,5 +692,12 @@ public final class AppContainer: Sendable {
     public func makeAIChatViewModel() -> AIChatViewModel {
         aiChatViewModel
     }
+}
+
+/// Lets closures created during `AppContainer.init` reach the finalizer that is
+/// constructed later in the same initializer.
+@MainActor
+final class FinalizerBox {
+    var finalizer: WorkoutFinalizer?
 }
 #endif
