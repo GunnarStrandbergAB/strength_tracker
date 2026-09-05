@@ -39,6 +39,8 @@ public final class ChatMessageEntity {
     public var draftJSON: String?
     public var draftStatus: String?
     public var toolActivityJSON: String?
+    /// Added after the first release: optional so SwiftData migrates lightweight.
+    public var receiptJSON: String?
     public var conversation: ChatConversationEntity?
 
     public init(
@@ -49,7 +51,8 @@ public final class ChatMessageEntity {
         createdAt: Date,
         draftJSON: String? = nil,
         draftStatus: String? = nil,
-        toolActivityJSON: String? = nil
+        toolActivityJSON: String? = nil,
+        receiptJSON: String? = nil
     ) {
         self.id = id
         self.role = role
@@ -59,6 +62,7 @@ public final class ChatMessageEntity {
         self.draftJSON = draftJSON
         self.draftStatus = draftStatus
         self.toolActivityJSON = toolActivityJSON
+        self.receiptJSON = receiptJSON
     }
 }
 #endif

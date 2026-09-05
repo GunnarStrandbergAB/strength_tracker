@@ -76,4 +76,36 @@ struct ChatMapperTests {
         #expect(mapped.title == original.title)
         #expect(mapped.lastResponseID == "resp_1")
     }
+
+    @Test("Receipt message round-trips and a broken payload degrades to text")
+    func receiptRoundTrip() throws {
+        let receipt = AIReceipt(scope: .historyWorkout, workoutID: UUID(), headline: "Legs · Sep 3",
+                                sections: [.init(symbol: "checkmark.circle.fill", title: "Squat · set 2", lines: ["100 kg × 5", "RPE 8"])])
+        let json = String(data: try JSONEncoder().encode(receipt), encoding: .utf8)
+        let original = ChatMessage(role: .assistant, kind: .receipt, text: receipt.headline, receiptJSON: json)
+
+        let mapped = ChatMapper.toDomain(ChatMapper.toEntity(original))
+        #expect(mapped == original)
+
+        let broken = ChatMapper.toEntity(ChatMessage(role: .assistant, kind: .receipt, text: "", receiptJSON: "{not json"))
+        let degraded = ChatMapper.toDomain(broken)
+        #expect(degraded.kind == .text)
+        #expect(degraded.receiptJSON == nil)
+        #expect(degraded.text == "(This receipt is no longer available.)")
+    }
+
+    @Test("Action draft round-trips with its kind payload")
+    func actionDraftRoundTrip() throws {
+        let action = AIPendingAction(
+            kind: .removeSet(workoutID: UUID(), exerciseID: UUID(), setID: UUID()),
+            title: "Remove set 3?", summaryLines: ["85 kg × 8"], confirmLabel: "Remove"
+        )
+        let json = String(data: try JSONEncoder().encode(AIDraft.action(action)), encoding: .utf8)
+        let original = ChatMessage(role: .assistant, kind: .draft, text: action.title, draftJSON: json, draftStatus: .pending)
+
+        let mapped = ChatMapper.toDomain(ChatMapper.toEntity(original))
+        #expect(mapped == original)
+        let decoded = try JSONDecoder().decode(AIDraft.self, from: Data(mapped.draftJSON!.utf8))
+        #expect(decoded == .action(action))
+    }
 }

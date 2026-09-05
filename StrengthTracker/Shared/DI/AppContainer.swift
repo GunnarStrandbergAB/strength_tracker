@@ -38,6 +38,9 @@ public final class AppContainer: Sendable {
     public let aiToolRegistry: AIToolRegistry
     public let aiAgentService: AIAgentService
     public let aiChatViewModel: AIChatViewModel
+    public let workoutEditorResolver: WorkoutEditorResolver
+    public let aiPendingActionExecutor: AIPendingActionExecutor
+    public let activeWorkoutContextNoteProvider: ActiveWorkoutContextNoteProvider
 
     // Analytics
     public let analyticsRepository: any AnalyticsRepository
@@ -67,6 +70,8 @@ public final class AppContainer: Sendable {
     public let widgetRefreshService: WidgetRefreshService
 
     public let workoutViewModel: WorkoutViewModel
+    public let workoutSessionCoordinator: WorkoutSessionCoordinator
+    public let historyViewModel: HistoryViewModel
     public let templateViewModel: TemplateViewModel
     public let exerciseListViewModel: ExerciseListViewModel
     public let watchWorkoutViewModel: WatchWorkoutViewModel
@@ -234,6 +239,11 @@ public final class AppContainer: Sendable {
             coachingInsightService: coachingInsightService,
             weightSuggestionService: weightSuggestionService
         )
+        workoutSessionCoordinator = WorkoutSessionCoordinator(
+            workoutViewModel: workoutViewModel,
+            restTimer: restTimerService,
+            preferences: userPreferencesService
+        )
         templateViewModel = TemplateViewModel(
             templateRepository: templateRepository,
             exerciseRepository: exerciseRepository,
@@ -273,6 +283,18 @@ public final class AppContainer: Sendable {
             workoutViewModel: workoutViewModel,
             restTimerService: restTimerService
         )
+        historyViewModel = Self.buildHistoryViewModel(
+            workoutRepository: workoutRepository,
+            userPreferencesService: userPreferencesService,
+            templateRepository: templateRepository,
+            analyticsService: analyticsService,
+            personalRecordService: personalRecordService,
+            healthKitService: healthKitService,
+            calorieEstimationService: calorieEstimationService,
+            webhookService: webhookService,
+            widgetRefreshService: widgetRefreshService,
+            qualityScoreService: qualityScoreService
+        )
         progressionPlanViewModel = ProgressionPlanViewModel(
             progressionPlanRepository: progressionPlanRepository,
             trainingStatusDetector: trainingStatusDetector,
@@ -287,7 +309,53 @@ public final class AppContainer: Sendable {
             coachingCommunicationService: coachingCommunicationService
         )
 
-        // AI assistant: tool registry, agent loop, and cached chat ViewModel.
+        // AI assistant: workout editing seams (the AI writes through the same
+        // ViewModels/coordinator the UI uses), tool registry, agent loop, chat VM.
+        let historyDeps = (
+            workoutRepository: workoutRepository, userPreferencesService: userPreferencesService,
+            templateRepository: templateRepository, analyticsService: analyticsService,
+            personalRecordService: personalRecordService, healthKitService: healthKitService,
+            calorieEstimationService: calorieEstimationService, webhookService: webhookService,
+            widgetRefreshService: widgetRefreshService, qualityScoreService: qualityScoreService
+        )
+        let uiHistoryVM = historyViewModel
+        workoutEditorResolver = WorkoutEditorResolver(
+            workoutViewModel: workoutViewModel,
+            coordinator: workoutSessionCoordinator,
+            workoutRepository: workoutRepository,
+            makeHistoryViewModel: {
+                Self.buildHistoryViewModel(
+                    workoutRepository: historyDeps.workoutRepository,
+                    userPreferencesService: historyDeps.userPreferencesService,
+                    templateRepository: historyDeps.templateRepository,
+                    analyticsService: historyDeps.analyticsService,
+                    personalRecordService: historyDeps.personalRecordService,
+                    healthKitService: historyDeps.healthKitService,
+                    calorieEstimationService: historyDeps.calorieEstimationService,
+                    webhookService: historyDeps.webhookService,
+                    widgetRefreshService: historyDeps.widgetRefreshService,
+                    qualityScoreService: historyDeps.qualityScoreService
+                )
+            },
+            onHistoryWorkoutChanged: { [weak uiHistoryVM] workout in
+                uiHistoryVM?.absorbExternalChange(workout)
+            }
+        )
+        aiPendingActionExecutor = AIPendingActionExecutor(
+            coordinator: workoutSessionCoordinator,
+            resolver: workoutEditorResolver,
+            templateRepository: templateRepository,
+            progressionPlanViewModel: progressionPlanViewModel
+        )
+        activeWorkoutContextNoteProvider = ActiveWorkoutContextNoteProvider(
+            workoutViewModel: workoutViewModel,
+            userPreferencesService: userPreferencesService
+        )
+        let sessionController = AppWorkoutSessionController(
+            coordinator: workoutSessionCoordinator,
+            templateRepository: templateRepository,
+            progressionPlanViewModel: progressionPlanViewModel
+        )
         aiToolRegistry = AIToolRegistry(tools: [
             ListExercisesTool(exerciseRepository: exerciseRepository),
             GetTrainingHistoryTool(
@@ -316,7 +384,28 @@ public final class AppContainer: Sendable {
             ),
             ListTemplatesTool(templateRepository: templateRepository),
             SaveMemoryTool(memoryService: aiMemoryService),
-            ForgetMemoryTool(memoryService: aiMemoryService)
+            ForgetMemoryTool(memoryService: aiMemoryService),
+            // Workout editing (active or by date) and session control.
+            GetWorkoutTool(resolver: workoutEditorResolver),
+            LogSetTool(resolver: workoutEditorResolver, userPreferencesService: userPreferencesService),
+            AddSetsTool(resolver: workoutEditorResolver, userPreferencesService: userPreferencesService),
+            RemoveSetTool(resolver: workoutEditorResolver, userPreferencesService: userPreferencesService),
+            AddExerciseTool(
+                resolver: workoutEditorResolver,
+                exerciseRepository: exerciseRepository,
+                userPreferencesService: userPreferencesService
+            ),
+            RemoveExerciseTool(resolver: workoutEditorResolver, userPreferencesService: userPreferencesService),
+            ChangeExerciseTool(
+                resolver: workoutEditorResolver,
+                exerciseRepository: exerciseRepository,
+                userPreferencesService: userPreferencesService
+            ),
+            SetNotesTool(resolver: workoutEditorResolver, userPreferencesService: userPreferencesService),
+            SetDeloadTool(resolver: workoutEditorResolver, userPreferencesService: userPreferencesService),
+            StartWorkoutTool(session: sessionController, userPreferencesService: userPreferencesService),
+            FinishWorkoutTool(session: sessionController, userPreferencesService: userPreferencesService),
+            CancelWorkoutTool(session: sessionController)
         ])
         let prefs = userPreferencesService
         let memoryService = aiMemoryService
@@ -326,6 +415,7 @@ public final class AppContainer: Sendable {
             instructionsProvider: { @MainActor in
                 AISystemPrompt.build(
                     weightUnit: prefs.weightUnit,
+                    intensityMetric: prefs.intensityMetric,
                     memories: memoryService.memories.map(\.text)
                 )
             }
@@ -335,6 +425,8 @@ public final class AppContainer: Sendable {
             chatRepository: chatRepository,
             userPreferencesService: userPreferencesService
         )
+        let noteProvider = activeWorkoutContextNoteProvider
+        aiChatViewModel.contextNoteProvider = { noteProvider.note() }
 
         // Accepted AI drafts route through the same seams the UI uses
         // (saveTemplate includes the Watch sync; createPlan runs the program generator).
@@ -345,8 +437,12 @@ public final class AppContainer: Sendable {
         let exerciseRepo = exerciseRepository
         let planRepo = progressionPlanRepository
         let proGate = proFeatureGate
+        let actionExecutor = aiPendingActionExecutor
         aiChatViewModel.onSaveDraft = { [weak exerciseVM, weak templateVM, weak progressionVM] draft in
             switch draft {
+            case .action(let action):
+                try await actionExecutor.execute(action)
+
             case .exercise(let exercise):
                 guard let exerciseVM else { throw AIToolError("Exercise saving is unavailable.") }
                 // Save-time duplicate check — the propose-time check can be
@@ -456,7 +552,40 @@ public final class AppContainer: Sendable {
         workoutViewModel
     }
 
+    /// The UI's shared history ViewModel (Dashboard + History tab).
     public func makeHistoryViewModel() -> HistoryViewModel {
+        historyViewModel
+    }
+
+    /// A fresh, fully wired HistoryViewModel. The AI editor owns its own instance
+    /// so its edit session never collides with the screen the user has open.
+    public func makeIsolatedHistoryViewModel() -> HistoryViewModel {
+        Self.buildHistoryViewModel(
+            workoutRepository: workoutRepository,
+            userPreferencesService: userPreferencesService,
+            templateRepository: templateRepository,
+            analyticsService: analyticsService,
+            personalRecordService: personalRecordService,
+            healthKitService: healthKitService,
+            calorieEstimationService: calorieEstimationService,
+            webhookService: webhookService,
+            widgetRefreshService: widgetRefreshService,
+            qualityScoreService: qualityScoreService
+        )
+    }
+
+    private static func buildHistoryViewModel(
+        workoutRepository: any WorkoutRepository,
+        userPreferencesService: UserPreferencesService,
+        templateRepository: any TemplateRepository,
+        analyticsService: WorkoutAnalyticsService,
+        personalRecordService: PersonalRecordService,
+        healthKitService: any HealthKitServiceProtocol,
+        calorieEstimationService: CalorieEstimationService,
+        webhookService: WebhookService,
+        widgetRefreshService: WidgetRefreshService,
+        qualityScoreService: WorkoutQualityScoreService
+    ) -> HistoryViewModel {
         HistoryViewModel(
             workoutRepository: workoutRepository,
             userPreferencesService: userPreferencesService,

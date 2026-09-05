@@ -23,6 +23,9 @@ public final class AIChatViewModel {
 
     /// Routes accepted drafts into the app (wired by AppContainer).
     public var onSaveDraft: (@MainActor (AIDraft) async throws -> Void)?
+    /// Per-turn app-state note (e.g. the active workout), prepended to every
+    /// turn's input because the system prompt is frozen per conversation.
+    public var contextNoteProvider: (@MainActor () -> String?)?
 
     // MARK: - Private state
 
@@ -123,7 +126,7 @@ public final class AIChatViewModel {
             if let index = messages.firstIndex(where: { $0.id == messageID }) {
                 messages[index].draftStatus = .accepted
             }
-            pendingContextNotes.append("[User accepted the proposed \(draftNoun(draft)) '\(draft.title)'.]")
+            pendingContextNotes.append(acceptanceNote(for: draft, accepted: true))
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -136,13 +139,31 @@ public final class AIChatViewModel {
         messages[index].draftStatus = .discarded
         persistMessage(messages[index], update: true)
         if let draft = decodeDraft(messages[index]) {
-            pendingContextNotes.append("[User discarded the proposed \(draftNoun(draft)) '\(draft.title)'.]")
+            pendingContextNotes.append(acceptanceNote(for: draft, accepted: false))
         }
     }
 
     public func decodeDraft(_ message: ChatMessage) -> AIDraft? {
         guard message.kind == .draft, let json = message.draftJSON else { return nil }
         return try? JSONDecoder().decode(AIDraft.self, from: Data(json.utf8))
+    }
+
+    public func decodeReceipt(_ message: ChatMessage) -> AIReceipt? {
+        guard message.kind == .receipt, let json = message.receiptJSON else { return nil }
+        return try? JSONDecoder().decode(AIReceipt.self, from: Data(json.utf8))
+    }
+
+    private func acceptanceNote(for draft: AIDraft, accepted: Bool) -> String {
+        switch draft {
+        case .action(let action):
+            return accepted
+                ? "[User confirmed and the app executed the action '\(action.title)'.]"
+                : "[User declined the action '\(action.title)'. Nothing was changed.]"
+        default:
+            return accepted
+                ? "[User accepted the proposed \(draftNoun(draft)) '\(draft.title)'.]"
+                : "[User discarded the proposed \(draftNoun(draft)) '\(draft.title)'.]"
+        }
     }
 
     // MARK: - Turn execution
@@ -154,10 +175,16 @@ public final class AIChatViewModel {
         messages.append(userMessage)
         persistMessage(userMessage)
 
-        let notes = pendingContextNotes
+        var notes: [String] = []
+        if let stateNote = contextNoteProvider?() {
+            notes.append(stateNote)
+        }
+        notes += pendingContextNotes
         pendingContextNotes = []
 
         var assistantMessage: ChatMessage?
+        /// The receipt card consecutive write receipts merge into.
+        var receiptMessage: ChatMessage?
 
         let events = agent.run(
             userText: userText,
@@ -179,6 +206,8 @@ public final class AIChatViewModel {
                     assistantMessage = message
                     messages.append(message)
                     persistMessage(message)
+                    // Text after a card: later receipts start a new card.
+                    receiptMessage = nil
                 }
 
             case .toolStarted(let name):
@@ -190,6 +219,12 @@ public final class AIChatViewModel {
                     message.toolActivities.append(activity)
                     assistantMessage = message
                     replaceMessage(message)
+                } else if var card = receiptMessage {
+                    // Chips between merged receipt sections hang on the card itself.
+                    card.toolActivities.append(activity)
+                    receiptMessage = card
+                    replaceMessage(card)
+                    persistMessage(card, update: true)
                 } else {
                     // Chip with no text yet: hang activities on an empty assistant message.
                     let message = ChatMessage(role: .assistant, text: "", toolActivities: [activity])
@@ -211,8 +246,49 @@ public final class AIChatViewModel {
                         persistMessage(message, update: true)
                     }
                     assistantMessage = nil
+                    receiptMessage = nil
                     messages.append(draftMessage)
                     persistMessage(draftMessage)
+                }
+
+            case .receiptProduced(let receipt):
+                if var card = receiptMessage,
+                   var existing = decodeReceipt(card),
+                   existing.canMerge(receipt) {
+                    existing.merge(receipt)
+                    if let json = encode(existing) {
+                        card.receiptJSON = json
+                        card.text = existing.headline
+                        receiptMessage = card
+                        replaceMessage(card)
+                        persistMessage(card, update: true)
+                    }
+                } else if let json = encode(receipt) {
+                    if var message = assistantMessage, message.text.isEmpty {
+                        // A chip-only bubble (tool ran before any text): turn it
+                        // into the card so the chips sit on the receipt.
+                        message.kind = .receipt
+                        message.text = receipt.headline
+                        message.receiptJSON = json
+                        assistantMessage = nil
+                        receiptMessage = message
+                        replaceMessage(message)
+                        persistMessage(message, update: true)
+                    } else {
+                        let card = ChatMessage(
+                            role: .assistant, kind: .receipt, text: receipt.headline,
+                            receiptJSON: json
+                        )
+                        // The card becomes the latest message; further text deltas
+                        // start a fresh bubble after it.
+                        if let message = assistantMessage {
+                            persistMessage(message, update: true)
+                        }
+                        assistantMessage = nil
+                        receiptMessage = card
+                        messages.append(card)
+                        persistMessage(card)
+                    }
                 }
 
             case .turnCompleted(let responseID, _, _):
@@ -243,6 +319,7 @@ public final class AIChatViewModel {
                 messages.append(errorBubble)
                 // Later deltas must start a fresh bubble, never overwrite the error.
                 assistantMessage = nil
+                receiptMessage = nil
             }
         }
 
@@ -297,6 +374,12 @@ public final class AIChatViewModel {
         case .exercise: return "exercise"
         case .template: return "template"
         case .plan: return "training plan"
+        case .action: return "action"
         }
+    }
+
+    private func encode<T: Encodable>(_ value: T) -> String? {
+        guard let data = try? JSONEncoder().encode(value) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 }

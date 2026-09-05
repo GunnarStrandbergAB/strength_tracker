@@ -218,17 +218,112 @@ public final class HistoryViewModel {
     /// Adds an exercise to the selected workout (mirror of the active-workout flow,
     /// but persisted immediately).
     public func addExercise(_ exercise: Exercise) async {
-        guard var workout = selectedWorkout else { return }
+        await addExercise(exercise, sets: [])
+    }
+
+    /// Adds an exercise with pre-built sets (renumbered here). Returns the saved
+    /// WorkoutExercise, or nil when there is no selected workout.
+    @discardableResult
+    public func addExercise(
+        _ exercise: Exercise,
+        sets: [ExerciseSet],
+        restTimerSeconds: Int? = nil,
+        notes: String? = nil
+    ) async -> WorkoutExercise? {
+        guard var workout = selectedWorkout else { return nil }
+        var numbered = sets
+        for i in numbered.indices { numbered[i].order = i + 1 }
         let workoutExercise = WorkoutExercise(
             id: UUID(),
             exercise: exercise,
             order: workout.exercises.count + 1,
             supersetGroup: nil,
-            notes: nil,
-            restTimerSeconds: nil,
-            sets: []
+            notes: notes,
+            restTimerSeconds: restTimerSeconds,
+            sets: numbered
         )
         workout.exercises.append(workoutExercise)
+        await saveAndSync(workout)
+        return selectedWorkout?.exercises.first { $0.id == workoutExercise.id }
+    }
+
+    /// Appends `count` empty incomplete sets in one save.
+    @discardableResult
+    public func addEmptySets(exerciseId: UUID, count: Int) async -> [ExerciseSet] {
+        guard count > 0,
+              var workout = selectedWorkout,
+              let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }) else { return [] }
+        var added: [ExerciseSet] = []
+        for _ in 0..<count {
+            let newSet = ExerciseSet(
+                id: UUID(),
+                order: workout.exercises[ei].sets.count + 1,
+                setType: .normal,
+                weight: nil,
+                reps: nil,
+                durationSeconds: nil,
+                distanceMeters: nil,
+                rpe: nil,
+                isCompleted: false,
+                isPersonalRecord: false,
+                completedAt: nil
+            )
+            workout.exercises[ei].sets.append(newSet)
+            added.append(newSet)
+        }
+        await saveAndSync(workout)
+        return added
+    }
+
+    /// Appends pre-built sets (renumbered here) in one save. Returns the saved sets.
+    @discardableResult
+    public func appendSets(exerciseId: UUID, sets: [ExerciseSet]) async -> [ExerciseSet] {
+        guard !sets.isEmpty,
+              var workout = selectedWorkout,
+              let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }) else { return [] }
+        var numbered = sets
+        let base = workout.exercises[ei].sets.count
+        for i in numbered.indices { numbered[i].order = base + i + 1 }
+        workout.exercises[ei].sets.append(contentsOf: numbered)
+        await saveAndSync(workout)
+        let ids = Set(numbered.map(\.id))
+        return selectedWorkout?.exercises.first { $0.id == exerciseId }?.sets.filter { ids.contains($0.id) } ?? []
+    }
+
+    public func updateSetDuration(exerciseId: UUID, setId: UUID, seconds: Int?) async {
+        guard var workout = selectedWorkout,
+              let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              let si = workout.exercises[ei].sets.firstIndex(where: { $0.id == setId }) else { return }
+        workout.exercises[ei].sets[si].durationSeconds = seconds
+        await saveAndSync(workout)
+    }
+
+    public func updateSetDistance(exerciseId: UUID, setId: UUID, meters: Double?) async {
+        guard var workout = selectedWorkout,
+              let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              let si = workout.exercises[ei].sets.firstIndex(where: { $0.id == setId }) else { return }
+        workout.exercises[ei].sets[si].distanceMeters = meters
+        await saveAndSync(workout)
+    }
+
+    /// Removes one set and renumbers the rest.
+    public func removeSet(exerciseId: UUID, setId: UUID) async {
+        guard var workout = selectedWorkout,
+              let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              workout.exercises[ei].sets.contains(where: { $0.id == setId }) else { return }
+        workout.exercises[ei].sets.removeAll { $0.id == setId }
+        for i in workout.exercises[ei].sets.indices {
+            workout.exercises[ei].sets[i].order = i + 1
+        }
+        await saveAndSync(workout)
+    }
+
+    /// Replaces every drop-set segment of a set (`[]` reverts it to a plain set).
+    public func replaceDropSets(exerciseId: UUID, setId: UUID, entries: [DropSetEntry]) async {
+        guard var workout = selectedWorkout,
+              let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              let si = workout.exercises[ei].sets.firstIndex(where: { $0.id == setId }) else { return }
+        workout.exercises[ei].sets[si].applyDropSets(entries)
         await saveAndSync(workout)
     }
 
@@ -259,6 +354,52 @@ public final class HistoryViewModel {
         guard var workout = selectedWorkout, !name.isEmpty, name != workout.name else { return }
         workout.name = name
         await saveAndSync(workout)
+    }
+
+    /// Workout-level notes; empty or nil clears.
+    public func updateNotes(_ notes: String?) async {
+        guard var workout = selectedWorkout else { return }
+        let trimmed = notes?.isEmpty == true ? nil : notes
+        guard trimmed != workout.notes else { return }
+        workout.notes = trimmed
+        await saveAndSync(workout)
+    }
+
+    public func updateExerciseNotes(exerciseId: UUID, notes: String?) async {
+        guard var workout = selectedWorkout,
+              let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }) else { return }
+        let trimmed = notes?.isEmpty == true ? nil : notes
+        guard trimmed != workout.exercises[ei].notes else { return }
+        workout.exercises[ei].notes = trimmed
+        await saveAndSync(workout)
+    }
+
+    /// Flag only — a completed workout's weights are history, so no deload scaling.
+    /// endEditing() recalculates PRs (deload sets are excluded).
+    public func setDeload(_ isDeload: Bool) async {
+        guard var workout = selectedWorkout, workout.isDeload != isDeload else { return }
+        workout.isDeload = isDeload
+        await saveAndSync(workout)
+    }
+
+    /// Peer sync: another HistoryViewModel instance (the AI editor's) saved this
+    /// workout. Mirror it into `workouts` and `selectedWorkout` without re-saving.
+    public func absorbExternalChange(_ workout: Workout) {
+        if let index = workouts.firstIndex(where: { $0.id == workout.id }) {
+            workouts[index] = workout
+        } else if workout.completedAt != nil {
+            let insertIndex = workouts.firstIndex { $0.startedAt < workout.startedAt } ?? workouts.endIndex
+            workouts.insert(workout, at: insertIndex)
+        }
+        if selectedWorkout?.id == workout.id {
+            selectedWorkout = workout
+        }
+    }
+
+    /// Peer sync for deletions.
+    public func absorbExternalDeletion(workoutId: UUID) {
+        workouts.removeAll { $0.id == workoutId }
+        if selectedWorkout?.id == workoutId { selectedWorkout = nil }
     }
 
     /// Completes every incomplete set, stamped inside the workout's own window.
@@ -438,8 +579,9 @@ public final class HistoryViewModel {
                 workouts[index] = saved
             }
         } catch {
-            // Revert on failure
+            // Keep the optimistic copy; surface why the persist failed.
             selectedWorkout = workout
+            errorMessage = error.localizedDescription
         }
     }
 }

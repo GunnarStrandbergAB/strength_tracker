@@ -8,12 +8,15 @@ public enum AIDraft: Codable, Sendable, Equatable {
     case exercise(Exercise)
     case template(WorkoutTemplate)
     case plan(AIPlanParameters)
+    /// A destructive action awaiting the user's Confirm (never a creation).
+    case action(AIPendingAction)
 
     public var title: String {
         switch self {
         case .exercise(let exercise): return exercise.name
         case .template(let template): return template.name
         case .plan(let parameters): return parameters.name
+        case .action(let action): return action.title
         }
     }
 }

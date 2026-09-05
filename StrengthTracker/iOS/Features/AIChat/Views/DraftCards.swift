@@ -48,7 +48,19 @@ struct DraftCardView: View {
             TemplateDraftContent(template: template, weightUnit: weightUnit)
         case .plan(let parameters):
             PlanDraftContent(parameters: parameters, weightUnit: weightUnit)
+        case .action(let action):
+            ActionConfirmContent(action: action)
         }
+    }
+
+    private var isAction: Bool {
+        if case .action = draft { return true }
+        return false
+    }
+
+    private var confirmLabel: String {
+        if case .action(let action) = draft { return action.confirmLabel }
+        return "Save"
     }
 
     @ViewBuilder
@@ -63,18 +75,18 @@ struct DraftCardView: View {
                                 .controlSize(.small)
                                 .tint(.black)
                         } else {
-                            Text("Save")
+                            Text(confirmLabel)
                                 .font(.system(size: 14, weight: .semibold))
                         }
                     }
-                    .foregroundStyle(.black)
+                    .foregroundStyle(isAction ? .white : .black)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
-                    .background(STColors.primary)
+                    .background(isAction ? STColors.danger : STColors.primary)
                     .clipShape(RoundedRectangle(cornerRadius: STRadius.input))
                 }
                 Button(action: onDiscard) {
-                    Text("Discard")
+                    Text(isAction ? "Cancel" : "Discard")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(STColors.textSecondary)
                         .frame(maxWidth: .infinity)
@@ -86,9 +98,9 @@ struct DraftCardView: View {
             .buttonStyle(.plain)
             .disabled(isSaving)
         case .accepted:
-            statusPill(text: "Saved", icon: "checkmark.circle.fill", color: STColors.success)
+            statusPill(text: isAction ? "Done" : "Saved", icon: "checkmark.circle.fill", color: STColors.success)
         case .discarded:
-            statusPill(text: "Discarded", icon: "xmark.circle.fill", color: STColors.textTertiary)
+            statusPill(text: isAction ? "Cancelled" : "Discarded", icon: "xmark.circle.fill", color: STColors.textTertiary)
         }
     }
 
@@ -107,6 +119,7 @@ struct DraftCardView: View {
         case .exercise: return "Proposed Exercise"
         case .template: return "Proposed Template"
         case .plan: return "Proposed Training Plan"
+        case .action: return "Confirm Action"
         }
     }
 
@@ -115,11 +128,29 @@ struct DraftCardView: View {
         case .exercise: return "dumbbell"
         case .template: return "list.clipboard"
         case .plan: return "calendar"
+        case .action: return "exclamationmark.triangle"
         }
     }
 }
 
 // MARK: - Content per draft kind
+
+private struct ActionConfirmContent: View {
+    let action: AIPendingAction
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(action.title)
+                .font(.stTitle)
+                .foregroundStyle(STColors.textPrimary)
+            ForEach(action.summaryLines, id: \.self) { line in
+                Text(line)
+                    .font(.stCaption)
+                    .foregroundStyle(STColors.textSecondary)
+            }
+        }
+    }
+}
 
 private struct ExerciseDraftContent: View {
     let exercise: Exercise

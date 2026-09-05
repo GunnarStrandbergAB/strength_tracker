@@ -364,4 +364,111 @@ struct AIChatViewModelTests {
         await waitForTurnEnd(viewModel)
         #expect(agent.runs[0].previousResponseID == "resp_9")
     }
+
+    // MARK: - Receipts, context notes, action drafts
+
+    private func makeReceipt(workoutID: UUID, title: String) -> AIReceipt {
+        AIReceipt(scope: .activeWorkout, workoutID: workoutID, headline: "Active workout · Push",
+                  sections: [.init(symbol: "checkmark.circle.fill", title: title, lines: ["85 kg × 8"])])
+    }
+
+    @Test("Consecutive receipts for the same workout merge into one card")
+    func receiptsMerge() async throws {
+        let workoutID = UUID()
+        let (viewModel, _, repository) = makeViewModel(script: [[
+            .toolStarted(name: "log_set"),
+            .toolFinished(ToolActivity(name: "log_set", label: "Logged set 1")),
+            .receiptProduced(makeReceipt(workoutID: workoutID, title: "Bench · set 1")),
+            .toolStarted(name: "log_set"),
+            .toolFinished(ToolActivity(name: "log_set", label: "Logged set 2")),
+            .receiptProduced(makeReceipt(workoutID: workoutID, title: "Bench · set 2")),
+            .assistantDelta("Logged both."),
+            .turnCompleted(responseID: "resp_1", text: "Logged both.", activities: [])
+        ]])
+
+        viewModel.send("log two sets")
+        await waitForTurnEnd(viewModel)
+
+        let cards = viewModel.messages.filter { $0.kind == .receipt }
+        #expect(cards.count == 1)
+        let receipt = try #require(viewModel.decodeReceipt(cards[0]))
+        #expect(receipt.sections.map(\.title) == ["Bench · set 1", "Bench · set 2"])
+        #expect(cards[0].toolActivities.count == 2, "chips between merged sections hang on the card")
+        #expect(viewModel.messages.last?.text == "Logged both.")
+
+        let conversationID = try #require(try await repository.fetchConversations().first?.id)
+        let stored = try await repository.fetchMessages(conversationID: conversationID)
+        let storedCard = try #require(stored.first { $0.kind == .receipt })
+        #expect(storedCard.receiptJSON != nil)
+    }
+
+    @Test("Text between receipts, or a different workout, starts a new card")
+    func receiptsSplit() async {
+        let (viewModel, _, _) = makeViewModel(script: [[
+            .receiptProduced(makeReceipt(workoutID: UUID(), title: "A")),
+            .assistantDelta("Done. "),
+            .receiptProduced(makeReceipt(workoutID: UUID(), title: "B")),
+            .receiptProduced(AIReceipt(scope: .session, workoutID: nil, headline: "Finished", sections: [])),
+            .turnCompleted(responseID: "resp_1", text: "Done. ", activities: [])
+        ]])
+
+        viewModel.send("go")
+        await waitForTurnEnd(viewModel)
+
+        let kinds = viewModel.messages.map(\.kind)
+        #expect(kinds == [.text, .receipt, .text, .receipt, .receipt])
+    }
+
+    @Test("The app-state note precedes queued acceptance notes on every turn")
+    func contextNoteOrdering() async {
+        let (viewModel, agent, _) = makeViewModel(script: [
+            [.draftProduced(makeDraft()), .turnCompleted(responseID: "resp_1", text: "", activities: [])],
+            [.assistantDelta("ok"), .turnCompleted(responseID: "resp_2", text: "ok", activities: [])]
+        ])
+        viewModel.contextNoteProvider = { "[App state, auto-generated: no active workout.]" }
+        viewModel.onSaveDraft = { _ in }
+
+        viewModel.send("propose")
+        await waitForTurnEnd(viewModel)
+        let draftID = viewModel.messages.first { $0.kind == .draft }!.id
+        await viewModel.saveDraft(messageID: draftID)
+        viewModel.send("next")
+        await waitForTurnEnd(viewModel)
+
+        #expect(agent.runs[0].contextNotes == ["[App state, auto-generated: no active workout.]"])
+        #expect(agent.runs[1].contextNotes.count == 2)
+        #expect(agent.runs[1].contextNotes[0].hasPrefix("[App state"))
+        #expect(agent.runs[1].contextNotes[1] == "[User accepted the proposed exercise 'Cable Fly'.]")
+    }
+
+    @Test("Action drafts route through onSaveDraft and produce confirm/decline notes")
+    func actionDraft() async {
+        let action = AIPendingAction(kind: .cancelWorkout(workoutID: UUID()), title: "Cancel 'Legs'?", summaryLines: ["3 sets"], confirmLabel: "Cancel Workout")
+        let (viewModel, agent, _) = makeViewModel(script: [
+            [.draftProduced(.action(action)), .turnCompleted(responseID: "resp_1", text: "", activities: [])],
+            [.draftProduced(.action(action)), .turnCompleted(responseID: "resp_2", text: "", activities: [])],
+            [.assistantDelta("ok"), .turnCompleted(responseID: "resp_3", text: "ok", activities: [])]
+        ])
+        var executed = 0
+        viewModel.onSaveDraft = { draft in
+            if case .action = draft { executed += 1 }
+        }
+
+        viewModel.send("cancel")
+        await waitForTurnEnd(viewModel)
+        let first = viewModel.messages.first { $0.kind == .draft }!.id
+        await viewModel.saveDraft(messageID: first)
+        #expect(executed == 1)
+        #expect(viewModel.messages.first { $0.id == first }?.draftStatus == .accepted)
+
+        viewModel.send("again")
+        await waitForTurnEnd(viewModel)
+        let second = viewModel.messages.last { $0.kind == .draft }!.id
+        viewModel.discardDraft(messageID: second)
+        viewModel.send("done")
+        await waitForTurnEnd(viewModel)
+
+        #expect(agent.runs[1].contextNotes.contains("[User confirmed and the app executed the action 'Cancel 'Legs'?'.]"))
+        #expect(agent.runs[2].contextNotes.contains("[User declined the action 'Cancel 'Legs'?'. Nothing was changed.]"))
+    }
 }

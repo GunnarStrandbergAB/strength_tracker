@@ -33,6 +33,7 @@ public enum ChatMapper {
         var kind = MessageKind(rawValue: entity.kind) ?? .text
         var text = entity.text
         var draftJSON = entity.draftJSON
+        var receiptJSON = entity.receiptJSON
 
         // A draft message whose payload no longer decodes (e.g. after a model
         // change) degrades to plain text instead of crashing history.
@@ -44,6 +45,17 @@ public enum ChatMapper {
                 kind = .text
                 draftJSON = nil
                 if text.isEmpty { text = "(This proposal is no longer available.)" }
+            }
+        }
+
+        if kind == .receipt {
+            let decodable = receiptJSON
+                .flatMap { $0.data(using: .utf8) }
+                .flatMap { try? JSONDecoder().decode(AIReceipt.self, from: $0) }
+            if decodable == nil {
+                kind = .text
+                receiptJSON = nil
+                if text.isEmpty { text = "(This receipt is no longer available.)" }
             }
         }
 
@@ -59,6 +71,7 @@ public enum ChatMapper {
             createdAt: entity.createdAt,
             draftJSON: draftJSON,
             draftStatus: entity.draftStatus.flatMap { DraftStatus(rawValue: $0) },
+            receiptJSON: receiptJSON,
             toolActivities: activities ?? []
         )
     }
@@ -72,7 +85,8 @@ public enum ChatMapper {
             createdAt: domain.createdAt,
             draftJSON: domain.draftJSON,
             draftStatus: domain.draftStatus?.rawValue,
-            toolActivityJSON: encodeActivities(domain.toolActivities)
+            toolActivityJSON: encodeActivities(domain.toolActivities),
+            receiptJSON: domain.receiptJSON
         )
     }
 
@@ -84,6 +98,7 @@ public enum ChatMapper {
         entity.draftJSON = domain.draftJSON
         entity.draftStatus = domain.draftStatus?.rawValue
         entity.toolActivityJSON = encodeActivities(domain.toolActivities)
+        entity.receiptJSON = domain.receiptJSON
     }
 
     private static func encodeActivities(_ activities: [ToolActivity]) -> String? {
