@@ -129,6 +129,57 @@ struct HistoryViewModelRetroTests {
         #expect(after.exercises.map(\.order) == [1])
     }
 
+    @Test("replaceExercise swaps the exercise but keeps id, order, and sets")
+    func testReplaceExerciseKeepsSets() async throws {
+        let (vm, repo, _, _, _) = makeStack()
+        let created = try #require(await vm.createRetroWorkout(
+            name: "Rings", startedAt: twoWeeksAgo, duration: 3600, saveToHealthKit: false
+        ))
+        await vm.addExercise(makeExercise(name: "Ring Dip"))
+        await vm.addExercise(makeExercise(name: "Ring Row"))
+        let target = vm.selectedWorkout!.exercises[0]
+        await vm.addEmptySet(exerciseId: target.id)
+        await vm.addEmptySet(exerciseId: target.id)
+        let setId = vm.selectedWorkout!.exercises[0].sets[0].id
+        await vm.updateSetWeight(exerciseId: target.id, setId: setId, weight: 20)
+        await vm.updateSetReps(exerciseId: target.id, setId: setId, reps: 8)
+        await vm.updateSetIntensity(exerciseId: target.id, setId: setId, value: 8, metric: .rpe)
+        let setIdsBefore = vm.selectedWorkout!.exercises[0].sets.map(\.id)
+
+        let replacement = makeExercise(name: "Bar Dip")
+        await vm.replaceExercise(exerciseId: target.id, with: replacement)
+
+        let persisted = try #require(try await repo.fetchAll().first { $0.id == created.id })
+        let swapped = persisted.exercises[0]
+        #expect(swapped.id == target.id)
+        #expect(swapped.order == 1)
+        #expect(swapped.exercise.id == replacement.id)
+        #expect(swapped.exercise.name == "Bar Dip")
+        #expect(swapped.sets.map(\.id) == setIdsBefore)
+        #expect(swapped.sets[0].weight == 20)
+        #expect(swapped.sets[0].reps == 8)
+        #expect(swapped.sets[0].rpe == 8)
+        #expect(swapped.sets.allSatisfy { !$0.isPersonalRecord })
+        #expect(persisted.exercises.map(\.exercise.name) == ["Bar Dip", "Ring Row"])
+    }
+
+    @Test("replaceExercise with the same exercise is a no-op")
+    func testReplaceExerciseSameIsNoOp() async throws {
+        let (vm, repo, _, _, _) = makeStack()
+        let created = try #require(await vm.createRetroWorkout(
+            name: "Rings", startedAt: twoWeeksAgo, duration: 3600, saveToHealthKit: false
+        ))
+        let exercise = makeExercise(name: "Ring Dip")
+        await vm.addExercise(exercise)
+        let before = try #require(vm.selectedWorkout)
+
+        await vm.replaceExercise(exerciseId: before.exercises[0].id, with: exercise)
+
+        #expect(vm.selectedWorkout == before)
+        let persisted = try #require(try await repo.fetchAll().first { $0.id == created.id })
+        #expect(persisted == before)
+    }
+
     @Test("set completion stamps the workout's own window, not now")
     func testSetCompletionStampsWorkoutWindow() async throws {
         let (vm, _, _, _, _) = makeStack()

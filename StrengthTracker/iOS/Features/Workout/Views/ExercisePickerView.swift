@@ -5,12 +5,14 @@ import StrengthTrackerShared
 struct ExercisePickerView: View {
     @State private var viewModel: ExerciseListViewModel
     let onSelect: (Exercise) -> Void
+    private let title: String
     @Environment(\.dismiss) private var dismiss
     @State private var showingAddExercise = false
     @State private var duplicateSource: Exercise? = nil
 
-    init(viewModel: ExerciseListViewModel, onSelect: @escaping (Exercise) -> Void) {
+    init(viewModel: ExerciseListViewModel, title: String = "Add Exercise", onSelect: @escaping (Exercise) -> Void) {
         self._viewModel = State(initialValue: viewModel)
+        self.title = title
         self.onSelect = onSelect
     }
 
@@ -39,7 +41,7 @@ struct ExercisePickerView: View {
                     exerciseList
                 }
             }
-            .navigationTitle("Add Exercise")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $viewModel.searchText, prompt: "Search exercises")
             .toolbar {

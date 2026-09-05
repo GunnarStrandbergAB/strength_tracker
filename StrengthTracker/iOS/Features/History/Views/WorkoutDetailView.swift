@@ -10,6 +10,10 @@ struct WorkoutDetailView: View {
     @State private var showingDeleteConfirmation = false
     @State private var showingExercisePicker = false
     @State private var exerciseToRemove: WorkoutExercise? = nil
+    @State private var exerciseToReplace: WorkoutExercise? = nil
+    /// Per-exercise intensity-column override keyed by WorkoutExercise.id.
+    /// Absent = derive from setting/data; present = explicit user choice.
+    @State private var intensityOverrides: [UUID: Bool] = [:]
 
     /// The displayed workout: use historyViewModel's selectedWorkout (live edits) if available.
     private var displayedWorkout: Workout {
@@ -28,13 +32,25 @@ struct WorkoutDetailView: View {
         historyViewModel?.displayBodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
 
+    /// "Always show intensity" — kept under the historical name (same setting as the active workout).
+    private var alwaysShowRPE: Bool {
+        historyViewModel?.userPreferencesService?.alwaysShowRPE ?? false
+    }
+
+    /// Mirrors ExerciseCardView: an explicit per-exercise toggle wins, otherwise
+    /// the column shows when the setting is on or any set/segment already has data.
+    private func showsIntensity(for workoutExercise: WorkoutExercise) -> Bool {
+        if let override = intensityOverrides[workoutExercise.id] { return override }
+        return alwaysShowRPE || workoutExercise.sets.contains { set in
+            set.rpe != nil || set.rir != nil || set.dropSets.contains { $0.rpe != nil || $0.rir != nil }
+        }
+    }
+
     // Extracted from `body` — the callback bundle is too much for the SwiftUI
     // type-checker inline.
     @ViewBuilder
     private func editableSetRows(for workoutExercise: WorkoutExercise, hvm: HistoryViewModel) -> some View {
-        let showIntensity = workoutExercise.sets.contains { set in
-            set.rpe != nil || set.rir != nil || set.dropSets.contains { $0.rpe != nil || $0.rir != nil }
-        }
+        let showIntensity = showsIntensity(for: workoutExercise)
         ForEach(Array(workoutExercise.sets.enumerated()), id: \.element.id) { index, exerciseSet in
             editableSetRow(
                 index: index,
@@ -101,6 +117,66 @@ struct WorkoutDetailView: View {
         )
     }
 
+    /// Multiple buttons in one List row need explicit .borderless styles —
+    /// otherwise the row is one tap target and a tap on "Add Set" also fires
+    /// the destructive trash action.
+    @ViewBuilder
+    private func exerciseActionRow(for workoutExercise: WorkoutExercise, hvm: HistoryViewModel) -> some View {
+        let intensityShown = showsIntensity(for: workoutExercise)
+        HStack(spacing: 12) {
+            Button {
+                Task { await hvm.addEmptySet(exerciseId: workoutExercise.id) }
+            } label: {
+                Label("Add Set", systemImage: "plus.circle")
+                    .font(.system(size: 13))
+            }
+            .buttonStyle(.borderless)
+
+            if !workoutExercise.sets.isEmpty {
+                Button(role: .destructive) {
+                    Task { await hvm.removeLastSet(exerciseId: workoutExercise.id) }
+                } label: {
+                    Label("Remove Last", systemImage: "minus.circle")
+                        .font(.system(size: 13))
+                }
+                .buttonStyle(.borderless)
+            }
+
+            Spacer()
+
+            Button {
+                intensityOverrides[workoutExercise.id] = !intensityShown
+            } label: {
+                Image(systemName: "gauge.with.needle")
+                    .font(.system(size: 13))
+                    .foregroundStyle(intensityShown ? Color.blue : Color.secondary)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(intensityShown
+                ? "Hide \(intensityMetric.displayName)"
+                : "Show \(intensityMetric.displayName)")
+
+            if exerciseListViewModel != nil {
+                Button {
+                    exerciseToReplace = workoutExercise
+                } label: {
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(.system(size: 13))
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Change Exercise")
+            }
+
+            Button(role: .destructive) {
+                exerciseToRemove = workoutExercise
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 13))
+            }
+            .buttonStyle(.borderless)
+        }
+    }
+
     var body: some View {
         let isEditing = historyViewModel?.isEditing ?? false
 
@@ -134,39 +210,7 @@ struct WorkoutDetailView: View {
                 Section(workoutExercise.exercise.name) {
                     if isEditing, let hvm = historyViewModel {
                         editableSetRows(for: workoutExercise, hvm: hvm)
-
-                        // Multiple buttons in one List row need explicit .borderless
-                        // styles — otherwise the row is one tap target and a tap on
-                        // "Add Set" also fires the destructive trash action.
-                        HStack(spacing: 12) {
-                            Button {
-                                Task { await hvm.addEmptySet(exerciseId: workoutExercise.id) }
-                            } label: {
-                                Label("Add Set", systemImage: "plus.circle")
-                                    .font(.system(size: 13))
-                            }
-                            .buttonStyle(.borderless)
-
-                            if !workoutExercise.sets.isEmpty {
-                                Button(role: .destructive) {
-                                    Task { await hvm.removeLastSet(exerciseId: workoutExercise.id) }
-                                } label: {
-                                    Label("Remove Last", systemImage: "minus.circle")
-                                        .font(.system(size: 13))
-                                }
-                                .buttonStyle(.borderless)
-                            }
-
-                            Spacer()
-
-                            Button(role: .destructive) {
-                                exerciseToRemove = workoutExercise
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 13))
-                            }
-                            .buttonStyle(.borderless)
-                        }
+                        exerciseActionRow(for: workoutExercise, hvm: hvm)
                     } else {
                         ForEach(Array(workoutExercise.sets.enumerated()), id: \.element.id) { index, exerciseSet in
                             SetRowView(
@@ -285,6 +329,13 @@ struct WorkoutDetailView: View {
             if let exerciseListViewModel, let hvm = historyViewModel {
                 ExercisePickerView(viewModel: exerciseListViewModel) { exercise in
                     Task { await hvm.addExercise(exercise) }
+                }
+            }
+        }
+        .sheet(item: $exerciseToReplace) { target in
+            if let exerciseListViewModel, let hvm = historyViewModel {
+                ExercisePickerView(viewModel: exerciseListViewModel, title: "Change Exercise") { exercise in
+                    Task { await hvm.replaceExercise(exerciseId: target.id, with: exercise) }
                 }
             }
         }
