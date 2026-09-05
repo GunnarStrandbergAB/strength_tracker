@@ -69,6 +69,7 @@ public final class WorkoutViewModel {
     private let progressionPlanRepository: (any ProgressionPlanRepository)?
     private let coachingInsightService: CoachingInsightService?
     private let weightSuggestionService: WeightSuggestionService?
+    private let qualityScoreService: WorkoutQualityScoreService?
     private let bodyWeightProvider: BodyWeightProvider?
 
     /// Single resolved body weight (HealthKit → prefs → default) shared with every screen.
@@ -88,8 +89,10 @@ public final class WorkoutViewModel {
         progressionPlanRepository: (any ProgressionPlanRepository)? = nil,
         coachingInsightService: CoachingInsightService? = nil,
         weightSuggestionService: WeightSuggestionService? = nil,
+        qualityScoreService: WorkoutQualityScoreService? = nil,
         bodyWeightProvider: BodyWeightProvider? = nil
     ) {
+        self.qualityScoreService = qualityScoreService
         self.bodyWeightProvider = bodyWeightProvider
         self.workoutRepository = workoutRepository
         self.templateRepository = templateRepository
@@ -423,8 +426,13 @@ public final class WorkoutViewModel {
             let allVectors = try await analyticsService.fetchAllVectors()
             let currentVector = allVectors.first { $0.workoutId == workout.id }
 
-            // Try to compute quality score for this workout
-            let qualityScore: WorkoutQualityScore? = nil  // scored async elsewhere if available
+            // Real quality score once the feature is unlocked (memoized in the service).
+            let completedCount = allWorkouts.filter { $0.completedAt != nil }.count
+            var qualityScore: WorkoutQualityScore?
+            if completedCount >= AnalyticsFeatureGate.threshold(for: .qualityScore),
+               let qualityScoreService {
+                qualityScore = qualityScoreService.computeScore(for: workout, history: allWorkouts)
+            }
 
             let debrief = await coachingService.generatePostWorkoutDebrief(
                 workout: workout,
@@ -436,7 +444,8 @@ public final class WorkoutViewModel {
                 optimalVolumes: insights.optimalVolumes,
                 currentVector: currentVector,
                 allVectors: allVectors,
-                bodyWeightKg: bodyWeightKg
+                bodyWeightKg: bodyWeightKg,
+                verdict: insights.verdict
             )
             postWorkoutDebrief = debrief
             showPostWorkoutSummary = true
@@ -524,7 +533,10 @@ public final class WorkoutViewModel {
         }
     }
 
-    /// Load coaching data (weight suggestions, effort creep) for all exercises.
+    /// Load coaching data (weight suggestions, effort creep, recovery notes) for all
+    /// exercises. Suggestions take the real overload trend, recovery status, training
+    /// load and coach verdict from the revision-cached insights so an in-workout hint
+    /// can never contradict the analytics screens.
     public func loadCoachingData() async {
         guard let workout = currentWorkout, let wss = weightSuggestionService else { return }
         let bodyWeightKg = self.bodyWeightKg
@@ -532,17 +544,23 @@ public final class WorkoutViewModel {
             let allWorkouts = try await workoutRepository.fetchAll()
             // Suggestions scan recentWorkouts per set — cap the window so a long
             // history doesn't cost seconds of main-actor time on workout entry.
+            // Deload sessions are not evidence of what the lifter can do.
             let recentCompleted = Array(
                 allWorkouts
-                    .filter { $0.completedAt != nil && $0.id != workout.id }
+                    .filter { $0.completedAt != nil && $0.id != workout.id && !$0.isDeload }
                     .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
                     .prefix(20)
             )
             guard recentCompleted.count >= 3 else { return }
 
+            let insights = (try? await analyticsService?.generateInsights()) ?? .empty
+            let trendsByExercise = Dictionary(insights.overloadTrends.map { ($0.exerciseId, $0) }, uniquingKeysWith: { a, _ in a })
+            let recoveryByGroup = Dictionary(insights.recoveryPatterns.map { ($0.muscleGroup.lowercased(), $0) }, uniquingKeysWith: { a, _ in a })
+
             for we in workout.exercises {
                 await Task.yield()  // keep the UI responsive during workout entry
                 let exerciseId = we.exercise.id
+                let recovery = recoveryByGroup[we.exercise.primaryMuscleGroup.rawValue.lowercased()]
                 var suggestions: [Int: WeightSuggestion] = [:]
                 for (setIndex, set) in we.sets.enumerated() {
                     let targetReps = set.reps ?? 8
@@ -551,11 +569,12 @@ public final class WorkoutViewModel {
                         exerciseName: we.exercise.name,
                         targetReps: targetReps,
                         recentWorkouts: recentCompleted,
-                        overloadTrend: nil,
-                        recoveryStatus: nil,
-                        trainingLoad: nil,
+                        overloadTrend: trendsByExercise[exerciseId],
+                        recoveryStatus: recovery?.recoveryStatus,
+                        trainingLoad: insights.trainingLoad,
                         isDeload: workout.isDeload,
-                        bodyWeightKg: bodyWeightKg
+                        bodyWeightKg: bodyWeightKg,
+                        verdict: insights.verdict
                     ) {
                         suggestions[setIndex] = suggestion
                     }
@@ -568,16 +587,32 @@ public final class WorkoutViewModel {
                     bodyWeightKg: bodyWeightKg
                 )
 
-                if !suggestions.isEmpty || effortCreep != nil {
+                let recoveryNote = Self.recoveryNote(for: recovery)
+
+                if !suggestions.isEmpty || effortCreep != nil || recoveryNote != nil {
                     exerciseCoachingCache[we.id] = ExerciseCoachingData(
                         suggestions: suggestions,
-                        effortCreepWarning: effortCreep
+                        effortCreepWarning: effortCreep,
+                        recoveryNote: recoveryNote
                     )
                 }
             }
         } catch {
             // Coaching data is best-effort
         }
+    }
+
+    /// "Chest is still recovering, ready Thursday" — only for a fatigued group that
+    /// was not just trained (a group trained yesterday is trivially fatigued).
+    static func recoveryNote(for pattern: RecoveryPattern?, now: Date = Date()) -> String? {
+        guard let pattern, pattern.recoveryStatus == .fatigued, !pattern.isJustTrained(asOf: now) else { return nil }
+        let name = pattern.muscleGroup.capitalized
+        guard let ready = pattern.readyToTrainDate, ready > now else {
+            return "\(name) is still recovering"
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE"
+        return "\(name) is still recovering, ready \(formatter.string(from: ready))"
     }
 
     /// Load previous data for a single exercise (fills any missing cache keys)

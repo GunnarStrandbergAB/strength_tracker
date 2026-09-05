@@ -186,7 +186,8 @@ public final class WorkoutAnalyticsViewModel {
                     weeklyDigest = coaching.generateWeeklyDigest(
                         workouts: allWorkouts,
                         overloadTrends: rawInsights.overloadTrends,
-                        bodyWeightKg: bw
+                        bodyWeightKg: bw,
+                        verdict: rawInsights.verdict
                     )
                 }
             }

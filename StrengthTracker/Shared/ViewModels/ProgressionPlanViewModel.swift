@@ -82,6 +82,7 @@ public final class ProgressionPlanViewModel {
     private let adaptiveAdjustmentService: AdaptiveAdjustmentService?
     private let coachingCommunicationService: CoachingCommunicationService?
     private let bodyWeightProvider: BodyWeightProvider?
+    private let trainingAdvisor: TrainingAdvisor?
 
     public var weightUnit: WeightUnit { userPreferencesService?.weightUnit ?? .kg }
     private var bodyWeightKg: Double {
@@ -102,8 +103,10 @@ public final class ProgressionPlanViewModel {
         sessionExecutionService: SessionExecutionService = SessionExecutionService(),
         adaptiveAdjustmentService: AdaptiveAdjustmentService? = nil,
         coachingCommunicationService: CoachingCommunicationService? = nil,
-        bodyWeightProvider: BodyWeightProvider? = nil
+        bodyWeightProvider: BodyWeightProvider? = nil,
+        trainingAdvisor: TrainingAdvisor? = nil
     ) {
+        self.trainingAdvisor = trainingAdvisor
         self.bodyWeightProvider = bodyWeightProvider
         self.progressionPlanRepository = progressionPlanRepository
         self.trainingStatusDetector = trainingStatusDetector
@@ -846,8 +849,15 @@ public final class ProgressionPlanViewModel {
             plan.blocks[bi].weeks[wi].sessions[si].skippedAt = nil
             plan.exercises = result.updatedExercises
 
+            // Step 4b: the coach verdict gates APRE load increases. While it says
+            // deload, "Increase Weight" would contradict every analytics surface.
+            let verdict = trainingAdvisor?.lastVerdict
+            let gated = Self.gateAPREIncreases(result.adjustments, verdict: verdict)
+            var engineAdjustments = gated.kept
+            if let note = gated.note { engineAdjustments.append(note) }
+
             // Step 5: engine adjustments are auto-applied (recorded as accepted).
-            for var adjustment in result.adjustments {
+            for var adjustment in engineAdjustments {
                 adjustment.wasAccepted = true
                 if let coaching = coachingCommunicationService {
                     let explanation = await coaching.provider.explain(
@@ -859,13 +869,13 @@ public final class ProgressionPlanViewModel {
             }
 
             // Step 6: propagate updated targets to future sessions.
-            applyExerciseUpdatesToFutureSessions(plan: &plan, adjustments: result.adjustments)
+            applyExerciseUpdatesToFutureSessions(plan: &plan, adjustments: gated.kept)
 
             // Step 7: adviser proposals over the last 8 weeks of completed workouts.
             if let adviser = adaptiveAdjustmentService {
                 let cutoff = Calendar.current.date(byAdding: .weekOfYear, value: -8, to: Date()) ?? .distantPast
                 let recentWorkouts = allWorkouts.filter { $0.completedAt != nil && $0.trainingDate >= cutoff }
-                let proposals = try await adviser.analyzeAndPropose(plan: plan, recentWorkouts: recentWorkouts)
+                let proposals = try await adviser.analyzeAndPropose(plan: plan, recentWorkouts: recentWorkouts, verdict: verdict)
                 for proposal in proposals {
                     guard !Self.isDuplicateProposal(proposal.adjustment, existing: plan.adjustments) else { continue }
                     var adjustment = proposal.adjustment
@@ -968,6 +978,30 @@ public final class ProgressionPlanViewModel {
             }
         }
         return nil
+    }
+
+    /// APRE "Increase Weight" adjustments are dropped while the coach verdict is
+    /// deload. One informational `.reforecast` adjustment records why, so the plan
+    /// history explains the missing increases.
+    static func gateAPREIncreases(
+        _ adjustments: [PlanAdjustment],
+        verdict: TrainingVerdict?
+    ) -> (kept: [PlanAdjustment], note: PlanAdjustment?) {
+        guard let verdict, verdict.kind == .deload else { return (adjustments, nil) }
+        let dropped = adjustments.filter { $0.trigger == .apre && $0.adjustmentType == .loadIncrease }
+        guard !dropped.isEmpty else { return (adjustments, nil) }
+        let kept = adjustments.filter { !($0.trigger == .apre && $0.adjustmentType == .loadIncrease) }
+        let affected = Array(Set(dropped.flatMap(\.affectedExerciseIds)))
+        let note = PlanAdjustment(
+            adjustmentType: .reforecast,
+            trigger: .recoverySignal,
+            description: "Held \(dropped.count) APRE load increase\(dropped.count == 1 ? "" : "s"): the coach verdict is deload. Targets stay at last session's loads until the verdict clears.",
+            affectedExerciseIds: affected,
+            newValues: ["heldIncreases": String(dropped.count)],
+            wasAccepted: true,
+            coachingExplanation: verdict.action
+        )
+        return (kept, note)
     }
 
     /// Propagates post-session exercise state to future sessions.

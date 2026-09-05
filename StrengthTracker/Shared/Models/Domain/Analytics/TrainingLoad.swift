@@ -29,7 +29,7 @@ public struct TrainingLoad: Identifiable, Hashable, Sendable, Codable {
 /// Training load zone derived from ACWR.
 public enum LoadZone: String, Codable, Sendable {
     case underTraining  // ACWR < 0.6
-    case optimal        // 0.8 - 1.3
+    case optimal        // 0.6 - 1.3
     case caution        // 1.3 - 1.5
     case danger         // > 1.5
 

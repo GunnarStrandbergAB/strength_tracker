@@ -42,13 +42,18 @@ public enum CoachingColor: String, Sendable {
 public struct ExerciseCoachingData: Sendable {
     public let suggestions: [Int: WeightSuggestion]  // setIndex → suggestion
     public let effortCreepWarning: EffortCreepWarning?
+    /// "Chest is still recovering, ready Thursday" — only when the group is
+    /// fatigued and was not just trained.
+    public let recoveryNote: String?
 
     public init(
         suggestions: [Int: WeightSuggestion] = [:],
-        effortCreepWarning: EffortCreepWarning? = nil
+        effortCreepWarning: EffortCreepWarning? = nil,
+        recoveryNote: String? = nil
     ) {
         self.suggestions = suggestions
         self.effortCreepWarning = effortCreepWarning
+        self.recoveryNote = recoveryNote
     }
 }
 

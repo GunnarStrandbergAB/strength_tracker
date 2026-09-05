@@ -229,7 +229,8 @@ public final class AppContainer: Sendable {
         coachingInsightService = CoachingInsightService(
             searchService: searchService,
             qualityScoreService: qualityScoreService,
-            insightGenerator: insightGen
+            insightGenerator: insightGen,
+            weightUnit: { unitPrefs.weightUnit }
         )
 
         weightSuggestionService = WeightSuggestionService()
@@ -255,6 +256,7 @@ public final class AppContainer: Sendable {
             progressionPlanRepository: progressionPlanRepository,
             coachingInsightService: coachingInsightService,
             weightSuggestionService: weightSuggestionService,
+            qualityScoreService: qualityScoreService,
             bodyWeightProvider: bodyWeightProvider
         )
         workoutSessionCoordinator = WorkoutSessionCoordinator(
@@ -329,7 +331,8 @@ public final class AppContainer: Sendable {
             sessionExecutionService: sessionExecutionService,
             adaptiveAdjustmentService: adaptiveAdjustmentService,
             coachingCommunicationService: coachingCommunicationService,
-            bodyWeightProvider: bodyWeightProvider
+            bodyWeightProvider: bodyWeightProvider,
+            trainingAdvisor: trainingAdvisor
         )
 
         // The single post-change pipeline every completed-workout mutation ends in.

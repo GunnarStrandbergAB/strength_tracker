@@ -343,7 +343,8 @@ public final class GetAnalyticsInsightsTool: AITool {
     public let name = "get_analytics_insights"
     public let description = """
     Aggregated training analytics: plateaus, muscle balance, training load (ACWR), \
-    deload recommendation, and notable highlights for a recent time window.
+    the coach verdict (deload / hold / progress), deload recommendation, and notable \
+    highlights for a recent time window.
     """
 
     public var parametersSchema: JSONValue {
@@ -393,6 +394,16 @@ public final class GetAnalyticsInsightsTool: AITool {
             payload["training_load"] = .object([
                 "acwr": .number(AIJSON.round1(load.acwr)),
                 "zone": .string(load.loadZone.rawValue)
+            ])
+        }
+
+        if let verdict = insights.verdict {
+            payload["coach_verdict"] = .object([
+                "kind": .string(verdict.kind.rawValue),
+                "headline": .string(verdict.headline),
+                "action": .string(verdict.action),
+                "reasons": .array(verdict.reasons.map { .string($0) }),
+                "active_deload": .bool(verdict.isActiveDeload)
             ])
         }
 

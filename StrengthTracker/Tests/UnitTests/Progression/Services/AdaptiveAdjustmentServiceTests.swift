@@ -108,19 +108,18 @@ final class AdaptiveAdjustmentServiceTests: XCTestCase {
             current1RM: 100.0
         )
 
-        // Workout 30 days ago with lower 1RM performance (actual performance shows decline >5%)
-        let weakSets = [makeSet(weight: 80, reps: 5)] // 1RM estimate ~93.3, decline > 5% from 100
-        let workoutExercise = makeWorkoutExercise(
-            exerciseId: exerciseId,
-            name: "Squat",
-            sets: weakSets
-        )
-        let workout = makeWorkout(completedAt: daysAgo(30), exercises: [workoutExercise])
+        // Two sessions (30 and 33 days ago) with lower 1RM performance: a decline
+        // sustained over two sessions counts as a performance signal.
+        let workouts = [30, 33].map { days -> Workout in
+            let weakSets = [makeSet(weight: 80, reps: 5)] // 1RM estimate ~93.3, decline > 5% from 100
+            let we = makeWorkoutExercise(exerciseId: exerciseId, name: "Squat", sets: weakSets)
+            return makeWorkout(completedAt: daysAgo(days), exercises: [we])
+        }
 
         let plan = ProgressionTestHelpers.makeTestPlan(exercises: [planExercise])
         let sut = makeSUT()
 
-        let proposals = try await sut.analyzeAndPropose(plan: plan, recentWorkouts: [workout])
+        let proposals = try await sut.analyzeAndPropose(plan: plan, recentWorkouts: workouts)
 
         // Should have at least 1 deload proposal (from multi-signal: detraining + performance decline)
         XCTAssertFalse(proposals.isEmpty, "Should propose deload for 30-day gap + performance decline")
@@ -268,19 +267,16 @@ final class AdaptiveAdjustmentServiceTests: XCTestCase {
             current1RM: 150.0
         )
 
-        // Workout 25 days ago with weak performance (1RM ~116.7, decline > 5% from 150)
-        let weakSets = [makeSet(weight: 100, reps: 5)]
-        let workoutExercise = makeWorkoutExercise(
-            exerciseId: exerciseId,
-            name: "Deadlift",
-            sets: weakSets
-        )
-        let workout = makeWorkout(completedAt: daysAgo(25), exercises: [workoutExercise])
+        // Two sessions 25 and 28 days ago with weak performance (1RM ~116.7, decline > 5% from 150)
+        let workouts = [25, 28].map { days -> Workout in
+            let we = makeWorkoutExercise(exerciseId: exerciseId, name: "Deadlift", sets: [makeSet(weight: 100, reps: 5)])
+            return makeWorkout(completedAt: daysAgo(days), exercises: [we])
+        }
 
         let plan = ProgressionTestHelpers.makeTestPlan(exercises: [planExercise])
         let sut = makeSUT()
 
-        let proposals = try await sut.analyzeAndPropose(plan: plan, recentWorkouts: [workout])
+        let proposals = try await sut.analyzeAndPropose(plan: plan, recentWorkouts: workouts)
 
         let deloadProposals = proposals.filter { $0.adjustment.adjustmentType == .deload }
         XCTAssertEqual(deloadProposals.count, 1, "Should have exactly 1 deload proposal from multi-signal")
@@ -495,15 +491,16 @@ final class AdaptiveAdjustmentServiceTests: XCTestCase {
             current1RM: 180.0
         )
 
-        // 2 signals: detraining (30 days) + performance decline
-        let weakSets = [makeSet(weight: 120, reps: 5)] // 1RM ~140, decline from 180
-        let we = makeWorkoutExercise(exerciseId: exerciseId, name: "Deadlift", sets: weakSets)
-        let workout = makeWorkout(completedAt: daysAgo(30), exercises: [we])
+        // 2 signals: detraining (30 days) + performance decline sustained over two sessions
+        let workouts = [30, 33].map { days -> Workout in
+            let we = makeWorkoutExercise(exerciseId: exerciseId, name: "Deadlift", sets: [makeSet(weight: 120, reps: 5)]) // 1RM ~140, decline from 180
+            return makeWorkout(completedAt: daysAgo(days), exercises: [we])
+        }
 
         let plan = ProgressionTestHelpers.makeTestPlan(exercises: [planExercise])
         let sut = makeSUT()
 
-        let proposals = try await sut.analyzeAndPropose(plan: plan, recentWorkouts: [workout])
+        let proposals = try await sut.analyzeAndPropose(plan: plan, recentWorkouts: workouts)
 
         let deloadProposals = proposals.filter { $0.adjustment.adjustmentType == .deload }
         XCTAssertFalse(deloadProposals.isEmpty, "Should produce a deload proposal")
@@ -809,5 +806,113 @@ final class AdaptiveAdjustmentServiceTests: XCTestCase {
             regressionProposals.isEmpty,
             "Advanced plan should not produce beginner regression proposals. Got: \(proposals.map { $0.adjustment.description })"
         )
+    }
+
+    // MARK: - Verdict gating and signal dedupe
+
+    private func makeVerdict(_ kind: TrainingVerdict.Kind, active: Bool = false) -> TrainingVerdict {
+        TrainingVerdict(kind: kind, urgency: 0.6, reasons: ["test"], signals: [], action: "Take a lighter week",
+                        since: Date(), computedAt: Date(), isActiveDeload: active)
+    }
+
+    func testPerformanceDecline_singleSessionSingleExercise_isNotASignal() async throws {
+        let exerciseId = UUID()
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(exerciseId: exerciseId, name: "Squat", current1RM: 100.0)
+        let we = makeWorkoutExercise(exerciseId: exerciseId, name: "Squat", sets: [makeSet(weight: 80, reps: 5)])
+        let workout = makeWorkout(completedAt: daysAgo(30), exercises: [we])
+        let plan = ProgressionTestHelpers.makeTestPlan(exercises: [planExercise])
+
+        let report = makeSUT().collectInsights(plan: plan, recentWorkouts: [workout])
+        XCTAssertEqual(report.deloadSignals.filter { $0.source == .reactivePerformance }.count, 0)
+    }
+
+    func testPerformanceDecline_twoExercisesInOneSession_isOneSignal() async throws {
+        let squatId = UUID(), benchId = UUID()
+        let plan = ProgressionTestHelpers.makeTestPlan(exercises: [
+            ProgressionTestHelpers.makeTestPlanExercise(exerciseId: squatId, name: "Squat", current1RM: 100.0),
+            ProgressionTestHelpers.makeTestPlanExercise(exerciseId: benchId, name: "Bench", current1RM: 100.0),
+        ])
+        let workout = makeWorkout(completedAt: daysAgo(2), exercises: [
+            makeWorkoutExercise(exerciseId: squatId, name: "Squat", sets: [makeSet(weight: 80, reps: 5)]),
+            makeWorkoutExercise(exerciseId: benchId, name: "Bench", sets: [makeSet(weight: 80, reps: 5)]),
+        ])
+
+        let report = makeSUT().collectInsights(plan: plan, recentWorkouts: [workout])
+        XCTAssertEqual(report.deloadSignals.filter { $0.source == .reactivePerformance }.count, 1,
+                       "Two declining exercises produce exactly one performance signal")
+    }
+
+    func testPerformanceDecline_ignoresDeloadSessions() async throws {
+        let exerciseId = UUID()
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(exerciseId: exerciseId, name: "Squat", current1RM: 100.0)
+        let plan = ProgressionTestHelpers.makeTestPlan(exercises: [planExercise])
+        let workouts = [2, 5].map { days -> Workout in
+            var w = makeWorkout(completedAt: daysAgo(days), exercises: [
+                makeWorkoutExercise(exerciseId: exerciseId, name: "Squat", sets: [makeSet(weight: 60, reps: 5)])
+            ])
+            w.isDeload = true
+            return w
+        }
+
+        let report = makeSUT().collectInsights(plan: plan, recentWorkouts: workouts)
+        XCTAssertTrue(report.deloadSignals.isEmpty)
+    }
+
+    func testDeloadVerdict_withOneSignal_proposesDeload() async throws {
+        // Only the detraining signal, but the coach verdict says deload.
+        let exerciseId = UUID()
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(exerciseId: exerciseId, name: "Squat", current1RM: 100.0)
+        let we = makeWorkoutExercise(exerciseId: exerciseId, name: "Squat", sets: [makeSet(weight: 100, reps: 1)])
+        let workout = makeWorkout(completedAt: daysAgo(15), exercises: [we])
+        let plan = ProgressionTestHelpers.makeTestPlan(exercises: [planExercise])
+
+        let proposals = try await makeSUT().analyzeAndPropose(plan: plan, recentWorkouts: [workout], verdict: makeVerdict(.deload))
+        XCTAssertEqual(proposals.filter { $0.adjustment.adjustmentType == .deload }.count, 1)
+    }
+
+    func testProgressVerdict_withOneSignal_noDeload() async throws {
+        let exerciseId = UUID()
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(exerciseId: exerciseId, name: "Squat", current1RM: 100.0)
+        let we = makeWorkoutExercise(exerciseId: exerciseId, name: "Squat", sets: [makeSet(weight: 100, reps: 1)])
+        let workout = makeWorkout(completedAt: daysAgo(15), exercises: [we])
+        let plan = ProgressionTestHelpers.makeTestPlan(exercises: [planExercise])
+
+        let proposals = try await makeSUT().analyzeAndPropose(plan: plan, recentWorkouts: [workout], verdict: makeVerdict(.progress))
+        XCTAssertTrue(proposals.filter { $0.adjustment.adjustmentType == .deload }.isEmpty)
+    }
+
+    func testDeloadSessionThisWeek_suppressesDeloadProposal() async throws {
+        let exerciseId = UUID()
+        let planExercise = ProgressionTestHelpers.makeTestPlanExercise(exerciseId: exerciseId, name: "Squat", current1RM: 100.0)
+        let plan = ProgressionTestHelpers.makeTestPlan(exercises: [planExercise])
+        // Sustained decline 30+ days ago (two signals), plus a deload logged today.
+        var workouts = [30, 33].map { days -> Workout in
+            makeWorkout(completedAt: daysAgo(days), exercises: [
+                makeWorkoutExercise(exerciseId: exerciseId, name: "Squat", sets: [makeSet(weight: 80, reps: 5)])
+            ])
+        }
+        var deload = makeWorkout(completedAt: Date(), exercises: [
+            makeWorkoutExercise(exerciseId: exerciseId, name: "Squat", sets: [makeSet(weight: 60, reps: 5)])
+        ])
+        deload.isDeload = true
+        workouts.append(deload)
+
+        let proposals = try await makeSUT().analyzeAndPropose(plan: plan, recentWorkouts: workouts, verdict: makeVerdict(.deload))
+        XCTAssertTrue(proposals.filter { $0.adjustment.adjustmentType == .deload }.isEmpty,
+                      "No deload proposal while a deload session is already logged this week")
+    }
+
+    func testRemoveContradictions_blockWideDeloadSuppressesLoadIncrease() {
+        let exerciseId = UUID()
+        let deload = ProposedAdjustment(
+            adjustment: PlanAdjustment(adjustmentType: .deload, trigger: .recoverySignal, description: "d", affectedBlockIds: [UUID()]),
+            priority: 1, reasoning: "r"
+        )
+        let increase = ProposedAdjustment(
+            adjustment: PlanAdjustment(adjustmentType: .loadIncrease, trigger: .apre, description: "i", affectedExerciseIds: [exerciseId]),
+            priority: 3, reasoning: "r"
+        )
+        let result = makeSUT().removeContradictions([increase, deload])
+        XCTAssertEqual(result.map { $0.adjustment.adjustmentType }, [.deload])
     }
 }
