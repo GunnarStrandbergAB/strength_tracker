@@ -220,7 +220,8 @@ public final class WorkoutAnalyticsViewModel {
             highlights: quality ? raw.highlights : [],
             archetypes: unlockedFeatures.contains(.archetypeClustering) ? raw.archetypes : [],
             trainingFingerprint: unlockedFeatures.contains(.trainingFingerprint) ? raw.trainingFingerprint : nil,
-            timeOfDayAnalysis: unlockedFeatures.contains(.timeOfDayAnalysis) ? raw.timeOfDayAnalysis : nil
+            timeOfDayAnalysis: unlockedFeatures.contains(.timeOfDayAnalysis) ? raw.timeOfDayAnalysis : nil,
+            verdict: quality ? raw.verdict : nil
         )
     }
 

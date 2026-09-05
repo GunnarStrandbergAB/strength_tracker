@@ -11,7 +11,8 @@ public protocol InsightTextGenerating: Sendable {
         trainingDrift: TrainingDrift?,
         trainingPhase: TrainingPhaseDetection?,
         recoveryPatterns: [RecoveryPattern],
-        optimalVolumes: [OptimalVolumeRange]
+        optimalVolumes: [OptimalVolumeRange],
+        verdict: TrainingVerdict?
     ) async -> [AnalyticsHighlight]
 
     /// Generate a summary comparing two training blocks.

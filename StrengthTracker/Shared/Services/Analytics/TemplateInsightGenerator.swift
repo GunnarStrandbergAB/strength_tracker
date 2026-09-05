@@ -11,6 +11,12 @@ public final class TemplateInsightGenerator: InsightTextGenerating, @unchecked S
         self.weightUnit = weightUnit
     }
 
+    /// Highlight rules, in priority order. The verdict decides the load story so
+    /// "Deload Recommended" and "Optimal Training Load" can never share a list:
+    /// - active deload → "Deload In Progress" first, every warning suppressed
+    /// - deload → "Deload Recommended" (verdict action), no load-zone praise
+    /// - hold → "Hold Steady", no load-zone praise, no deload warning
+    /// - progress → never a deload warning; load-zone praise allowed
     @MainActor
     public func generateHighlights(
         trainingLoad: TrainingLoad?,
@@ -19,34 +25,60 @@ public final class TemplateInsightGenerator: InsightTextGenerating, @unchecked S
         trainingDrift: TrainingDrift?,
         trainingPhase: TrainingPhaseDetection?,
         recoveryPatterns: [RecoveryPattern],
-        optimalVolumes: [OptimalVolumeRange]
+        optimalVolumes: [OptimalVolumeRange],
+        verdict: TrainingVerdict?
     ) async -> [AnalyticsHighlight] {
         var highlights: [AnalyticsHighlight] = []
+        let activeDeload = verdict?.isActiveDeload ?? false
+        // Without a verdict (older callers/tests) fall back to the raw recommendation.
+        let kind: TrainingVerdict.Kind = verdict?.kind ?? (deloadRecommendation == nil ? .progress : .deload)
 
-        // Priority 1: Warnings
-        if let deload = deloadRecommendation {
+        // Priority 0: the verdict's own card
+        if activeDeload {
             highlights.append(AnalyticsHighlight(
-                type: .warning,
-                title: "Deload Recommended",
-                detail: deload.suggestedAction
+                type: .improvement,
+                title: "Deload In Progress",
+                detail: "Intentional recovery week: reduced volume and intensity as planned"
             ))
+        } else {
+            switch kind {
+            case .deload:
+                highlights.append(AnalyticsHighlight(
+                    type: .warning,
+                    title: "Deload Recommended",
+                    detail: verdict?.action ?? deloadRecommendation?.suggestedAction ?? "Take a lighter week"
+                ))
+            case .hold:
+                highlights.append(AnalyticsHighlight(
+                    type: .milestone,
+                    title: "Hold Steady",
+                    detail: verdict?.action ?? "Keep loads where they are this week"
+                ))
+            case .progress:
+                break
+            }
         }
 
-        if let load = trainingLoad, load.loadZone == .danger {
-            highlights.append(AnalyticsHighlight(
-                type: .warning,
-                title: "High Training Load",
-                detail: "ACWR \(AnalyticsFormatting.acwr(load.acwr)), far above your baseline"
-            ))
-        }
+        // Priority 1: Warnings (never during an active deload)
+        if !activeDeload {
+            // The ACWR story is already in a deload/hold card; only a progress
+            // verdict with a danger zone (advisor disagreement) shows it separately.
+            if kind == .progress, let load = trainingLoad, load.loadZone == .danger {
+                highlights.append(AnalyticsHighlight(
+                    type: .warning,
+                    title: "High Training Load",
+                    detail: "ACWR \(AnalyticsFormatting.acwr(load.acwr)), far above your baseline"
+                ))
+            }
 
-        let overVolume = optimalVolumes.filter { $0.volumeStatus == .overVolume }
-        for vol in overVolume.prefix(2) {
-            highlights.append(AnalyticsHighlight(
-                type: .warning,
-                title: "\(vol.muscleGroup.capitalized) Over Volume",
-                detail: "\(vol.currentWeeklySets) sets/week exceeds MRV of \(vol.maximumWeeklySets)"
-            ))
+            let overVolume = optimalVolumes.filter { $0.volumeStatus == .overVolume }
+            for vol in overVolume.prefix(2) {
+                highlights.append(AnalyticsHighlight(
+                    type: .warning,
+                    title: "\(vol.muscleGroup.capitalized) Over Volume",
+                    detail: "\(vol.currentWeeklySets) sets/week exceeds MRV of \(vol.maximumWeeklySets)"
+                ))
+            }
         }
 
         // Priority 2: Improvements
@@ -59,11 +91,11 @@ public final class TemplateInsightGenerator: InsightTextGenerating, @unchecked S
             ))
         }
 
-        if let load = trainingLoad, load.loadZone == .optimal {
+        if kind == .progress, !activeDeload, let load = trainingLoad, load.loadZone == .optimal {
             highlights.append(AnalyticsHighlight(
                 type: .improvement,
                 title: "Optimal Training Load",
-                detail: "ACWR \(AnalyticsFormatting.acwr(load.acwr)), in the optimal range"
+                detail: "ACWR \(AnalyticsFormatting.acwr(load.acwr)), in a sustainable range"
             ))
         }
 
@@ -76,7 +108,7 @@ public final class TemplateInsightGenerator: InsightTextGenerating, @unchecked S
             ))
         }
 
-        if let drift = trainingDrift, drift.overallDriftScore > 0.15 {
+        if !activeDeload, let drift = trainingDrift, drift.overallDriftScore > 0.15 {
             let topDrift = drift.driftingDimensions.first
             let driftDetail = topDrift.map { "\($0.featureName.replacingOccurrences(of: "_", with: " ")) shifted \($0.delta > 0 ? "up" : "down")" }
                 ?? "Training pattern has shifted"
@@ -87,14 +119,17 @@ public final class TemplateInsightGenerator: InsightTextGenerating, @unchecked S
             ))
         }
 
-        let fatigued = recoveryPatterns.filter { $0.recoveryStatus == .fatigued }
-        if !fatigued.isEmpty {
-            let names = fatigued.prefix(3).map { $0.muscleGroup.capitalized }.joined(separator: ", ")
-            highlights.append(AnalyticsHighlight(
-                type: .warning,
-                title: "Muscles Still Fatigued",
-                detail: "\(names) still fatigued"
-            ))
+        // Systemic fatigue only: a group trained yesterday is trivially "fatigued".
+        if !activeDeload {
+            let fatigued = recoveryPatterns.filter { $0.recoveryStatus == .fatigued }
+            if fatigued.count >= TrainingAdvisor.systemicFatigueGroups, !fatigued.contains(where: \.isJustTrained) {
+                let names = fatigued.prefix(3).map { $0.muscleGroup.capitalized }.joined(separator: ", ")
+                highlights.append(AnalyticsHighlight(
+                    type: .warning,
+                    title: "Recovery Lagging",
+                    detail: "\(names) still fatigued"
+                ))
+            }
         }
 
         return Array(highlights.prefix(5))

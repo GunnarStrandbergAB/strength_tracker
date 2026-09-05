@@ -54,6 +54,7 @@ public final class AppContainer: Sendable {
     public let qualityScoreService: WorkoutQualityScoreService
     public let analyticsFeatureGate: AnalyticsFeatureGate
     public let analyticsService: WorkoutAnalyticsService
+    public let trainingAdvisor: TrainingAdvisor
     public let coachingInsightService: CoachingInsightService
     public let weightSuggestionService: WeightSuggestionService
     public let adherenceAnalysisService: AdherenceAnalysisService
@@ -197,6 +198,8 @@ public final class AppContainer: Sendable {
         workoutArchetypeService = WorkoutArchetypeService(searchService: searchService)
         changePointDetectionService = ChangePointDetectionService()
 
+        trainingAdvisor = TrainingAdvisor(store: UserDefaultsTrainingVerdictStore())
+
         analyticsService = WorkoutAnalyticsService(
             analyticsRepository: analyticsRepository,
             workoutRepository: workoutRepository,
@@ -219,7 +222,8 @@ public final class AppContainer: Sendable {
             changePointService: changePointDetectionService,
             qualityScoreService: qualityScoreService,
             bodyWeightProvider: bodyWeightProvider,
-            dataRevision: dataRevision
+            dataRevision: dataRevision,
+            trainingAdvisor: trainingAdvisor
         )
 
         coachingInsightService = CoachingInsightService(

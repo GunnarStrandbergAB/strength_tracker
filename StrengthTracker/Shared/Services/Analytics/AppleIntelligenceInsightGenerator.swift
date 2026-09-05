@@ -23,7 +23,8 @@ public final class AppleIntelligenceInsightGenerator: InsightTextGenerating, @un
         trainingDrift: TrainingDrift?,
         trainingPhase: TrainingPhaseDetection?,
         recoveryPatterns: [RecoveryPattern],
-        optimalVolumes: [OptimalVolumeRange]
+        optimalVolumes: [OptimalVolumeRange],
+        verdict: TrainingVerdict?
     ) async -> [AnalyticsHighlight] {
         let templateHighlights = await fallback.generateHighlights(
             trainingLoad: trainingLoad,
@@ -32,7 +33,8 @@ public final class AppleIntelligenceInsightGenerator: InsightTextGenerating, @un
             trainingDrift: trainingDrift,
             trainingPhase: trainingPhase,
             recoveryPatterns: recoveryPatterns,
-            optimalVolumes: optimalVolumes
+            optimalVolumes: optimalVolumes,
+            verdict: verdict
         )
 
         #if canImport(FoundationModels)

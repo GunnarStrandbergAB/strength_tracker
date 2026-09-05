@@ -42,6 +42,7 @@ public final class WorkoutAnalyticsService: Sendable {
     private let archetypeService: WorkoutArchetypeService?
     private let changePointService: ChangePointDetectionService?
     private let qualityScoreService: WorkoutQualityScoreService?
+    private let trainingAdvisor: TrainingAdvisor?
 
     // Caches, all keyed on the data revision so any completed mutation drops them.
     private let dataRevision: DataRevision?
@@ -73,8 +74,10 @@ public final class WorkoutAnalyticsService: Sendable {
         changePointService: ChangePointDetectionService? = nil,
         qualityScoreService: WorkoutQualityScoreService? = nil,
         bodyWeightProvider: BodyWeightProvider? = nil,
-        dataRevision: DataRevision? = nil
+        dataRevision: DataRevision? = nil,
+        trainingAdvisor: TrainingAdvisor? = nil
     ) {
+        self.trainingAdvisor = trainingAdvisor
         self.bodyWeightProvider = bodyWeightProvider
         self.dataRevision = dataRevision
         self.analyticsRepository = analyticsRepository
@@ -190,9 +193,6 @@ public final class WorkoutAnalyticsService: Sendable {
         let workouts = try await workoutRepository.fetchAll()
         let completedWorkouts = workouts.filter { $0.completedAt != nil }
         let nonDeloadWorkouts = completedWorkouts.filter { !$0.isDeload }
-        let latestIsDeload = completedWorkouts
-            .sorted { ($0.completedAt ?? .distantPast) < ($1.completedAt ?? .distantPast) }
-            .last?.isDeload ?? false
 
         let trainingStatus = try await trainingStatusDetector?.detect() ?? .intermediate
         let plateausResult = plateauService.analyzePlateaus(bodyWeightKg: bodyWeightKg, workouts: nonDeloadWorkouts, trainingStatus: trainingStatus)
@@ -226,8 +226,9 @@ public final class WorkoutAnalyticsService: Sendable {
         var archetypes: [WorkoutArchetype] = []
         var trainingFingerprint: TrainingFingerprint?
         var timeOfDayAnalysis: TimeOfDayAnalysis?
+        var verdict: TrainingVerdict?
 
-        if completedWorkouts.count >= 19 {
+        if completedWorkouts.count >= AnalyticsFeatureGate.threshold(for: .advancedInsights) {
             let bestE1RM = AnalyticsCalculations.buildBestE1RMMap(from: nonDeloadWorkouts, bodyWeightKg: bodyWeightKg)
 
             // Core services: ACWR needs all workouts (must see load drop), others exclude deloads
@@ -242,6 +243,16 @@ public final class WorkoutAnalyticsService: Sendable {
                 trainingLoad: trainingLoad,
                 bestE1RM: bestE1RM
             )
+
+            // The one deload / hold / progress call every surface consults.
+            verdict = trainingAdvisor?.evaluate(TrainingAdvisor.Input(
+                workouts: completedWorkouts,
+                trainingLoad: trainingLoad,
+                overloadTrends: overloadTrends,
+                deloadRecommendation: deloadRecommendation,
+                recoveryPatterns: recoveryPatterns
+            ))
+            let activeDeload = verdict?.isActiveDeload ?? false
 
             // Vector-powered services — filter deload vectors for drift/anomaly/block
             let allVectors = try await analyticsRepository.fetchAllVectors()
@@ -284,33 +295,21 @@ public final class WorkoutAnalyticsService: Sendable {
                 )
             }
 
-            // Smart highlights
+            // Smart highlights (the generator owns the verdict-aware rules, so
+            // no post-filtering here)
             if let generator = insightGenerator {
                 highlights = await generator.generateHighlights(
                     trainingLoad: trainingLoad,
                     overloadTrends: overloadTrends,
                     deloadRecommendation: deloadRecommendation,
-                    trainingDrift: latestIsDeload ? nil : trainingDrift,
+                    trainingDrift: activeDeload ? nil : trainingDrift,
                     trainingPhase: trainingPhase,
                     recoveryPatterns: recoveryPatterns,
-                    optimalVolumes: optimalVolumes
+                    optimalVolumes: optimalVolumes,
+                    verdict: verdict
                 )
-
-                // During active deload, suppress false warnings and add positive highlight
-                if latestIsDeload {
-                    highlights = highlights.filter {
-                        ($0.type != .warning || $0.title == "Deload Recommended") &&
-                        $0.title != "Optimal Training Load"
-                    }
-                    let deloadHighlight = AnalyticsHighlight(
-                        type: .improvement,
-                        title: "Deload In Progress",
-                        detail: "Intentional recovery phase — reduced volume and intensity as planned"
-                    )
-                    highlights.insert(deloadHighlight, at: 0)
-                }
             }
-        } else if completedWorkouts.count >= 5, let generator = insightGenerator {
+        } else if completedWorkouts.count >= AnalyticsFeatureGate.threshold(for: .qualityScore), let generator = insightGenerator {
             // Early highlights from Phase 2/3 data (plateaus, balance, recommendations)
             highlights = await generator.generateEarlyHighlights(
                 plateaus: plateausResult,
@@ -338,7 +337,8 @@ public final class WorkoutAnalyticsService: Sendable {
             highlights: highlights,
             archetypes: archetypes,
             trainingFingerprint: trainingFingerprint,
-            timeOfDayAnalysis: timeOfDayAnalysis
+            timeOfDayAnalysis: timeOfDayAnalysis,
+            verdict: verdict
         )
     }
 
