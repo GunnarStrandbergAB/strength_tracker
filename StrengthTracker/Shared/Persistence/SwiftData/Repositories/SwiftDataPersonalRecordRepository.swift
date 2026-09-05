@@ -10,6 +10,36 @@ public final class SwiftDataPersonalRecordRepository: PersonalRecordRepository, 
         self.modelContext = modelContext
     }
 
+    public func fetchAll() async throws -> [PersonalRecord] {
+        let descriptor = FetchDescriptor<PersonalRecordEntity>(
+            sortBy: [SortDescriptor(\.achievedAt, order: .reverse)]
+        )
+        return try modelContext.fetch(descriptor).map { PersonalRecordMapper.toDomain($0) }
+    }
+
+    public func deleteForSet(_ setId: UUID) async throws {
+        let descriptor = FetchDescriptor<PersonalRecordEntity>(
+            predicate: #Predicate { entity in entity.setId == setId }
+        )
+        for entity in try modelContext.fetch(descriptor) {
+            modelContext.delete(entity)
+        }
+        try modelContext.save()
+    }
+
+    public func replace(records: [PersonalRecord], forExercise exerciseId: UUID, keepingManual: Bool) async throws {
+        let descriptor = FetchDescriptor<PersonalRecordEntity>(
+            predicate: #Predicate { entity in entity.exerciseId == exerciseId }
+        )
+        for entity in try modelContext.fetch(descriptor) where !(keepingManual && entity.setId == nil) {
+            modelContext.delete(entity)
+        }
+        for record in records {
+            modelContext.insert(PersonalRecordMapper.toEntity(record))
+        }
+        try modelContext.save()
+    }
+
     public func fetchForExercise(_ exerciseId: UUID) async throws -> [PersonalRecord] {
         let descriptor = FetchDescriptor<PersonalRecordEntity>(
             predicate: #Predicate { entity in

@@ -299,16 +299,10 @@ public final class WorkoutViewModel {
         )
 
         workout.exercises[exerciseIndex].sets.append(newSet)
+        // Live PR check flags the set before the single save (skipped on deload).
+        await evaluatePR(in: &workout, exerciseId: workout.exercises[exerciseIndex].id, setId: newSet.id)
         workout = try await workoutRepository.save(workout)
         currentWorkout = workout
-
-        // Check for personal records (skip during deload — intentionally lighter)
-        if let prService = personalRecordService, !(currentWorkout?.isDeload ?? false) {
-            let exercise = workout.exercises[exerciseIndex].exercise
-            if let pr = try? await prService.checkForPR(exercise: exercise, set: newSet) {
-                lastPR = pr
-            }
-        }
     }
 
     public func removeSet(exerciseId: UUID, setId: UUID) async {
@@ -686,6 +680,14 @@ public final class WorkoutViewModel {
             guard set.dropSets.isEmpty else { return }
             set.weight = weight
         }
+        await reelectIfCompleted(exerciseId: exerciseId, setId: setId)
+    }
+
+    /// A completed set's load changed: its record status may have changed either way.
+    private func reelectIfCompleted(exerciseId: UUID, setId: UUID) async {
+        guard let set = currentWorkout?.exercises.first(where: { $0.id == exerciseId })?
+                .sets.first(where: { $0.id == setId }), set.isCompleted else { return }
+        await reelectPRs(exerciseId: exerciseId)
     }
 
     /// Update the reps of a specific set within an exercise.
@@ -694,6 +696,7 @@ public final class WorkoutViewModel {
             guard set.dropSets.isEmpty else { return }
             set.reps = reps
         }
+        await reelectIfCompleted(exerciseId: exerciseId, setId: setId)
     }
 
     /// Update the intensity of a set in the given metric — stores the entered value
@@ -781,10 +784,49 @@ public final class WorkoutViewModel {
 
     /// Toggle the completion status of a specific set.
     public func toggleSetCompletion(exerciseId: UUID, setId: UUID) async {
-        guard var workout = currentWorkout else { return }
-        guard workout.toggleSetCompletion(exerciseId: exerciseId, setId: setId) != nil else { return }
+        guard var workout = currentWorkout,
+              let nowCompleted = workout.toggleSetCompletion(exerciseId: exerciseId, setId: setId) else { return }
         activeExerciseId = exerciseId
-        await persist(workout)
+        if nowCompleted {
+            await evaluatePR(in: &workout, exerciseId: exerciseId, setId: setId)
+            await persist(workout)
+        } else {
+            let hadRecord = workout.exercises.first { $0.id == exerciseId }?
+                .sets.first { $0.id == setId }?.isPersonalRecord ?? false
+            if hadRecord, let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+               let si = workout.exercises[ei].sets.firstIndex(where: { $0.id == setId }) {
+                workout.exercises[ei].sets[si].isPersonalRecord = false
+            }
+            await persist(workout)
+            if hadRecord { await reelectPRs(exerciseId: exerciseId) }
+        }
+    }
+
+    // MARK: - Personal records (live)
+
+    /// Runs the live PR check on a just-completed set and flags it on `workout`.
+    private func evaluatePR(in workout: inout Workout, exerciseId: UUID, setId: UUID) async {
+        guard let prService = personalRecordService, !workout.isDeload,
+              let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              let si = workout.exercises[ei].sets.firstIndex(where: { $0.id == setId }) else { return }
+        let exercise = workout.exercises[ei].exercise
+        let set = workout.exercises[ei].sets[si]
+        if let pr = try? await prService.checkForPR(exercise: exercise, set: set, isDeloadWorkout: workout.isDeload) {
+            workout.exercises[ei].sets[si].isPersonalRecord = true
+            lastPR = pr
+        }
+    }
+
+    /// Authoritative re-election for one exercise (after an un-complete or an edit
+    /// of a completed set); refreshes this workout's flags from the result.
+    private func reelectPRs(exerciseId: UUID) async {
+        guard let prService = personalRecordService,
+              let current = currentWorkout,
+              let exercise = current.exercises.first(where: { $0.id == exerciseId })?.exercise else { return }
+        guard let changed = try? await prService.recalculatePRs(for: [exercise.id], includeInProgress: true) else { return }
+        if let refreshed = changed[current.id] {
+            currentWorkout = refreshed
+        }
     }
 
     public func moveSets(exerciseId: UUID, from source: Int, to destination: Int) async {
@@ -859,7 +901,12 @@ public final class WorkoutViewModel {
 
     /// Cancel the current workout without saving completion.
     public func cancelWorkout() async {
+        let cancelledExerciseIds = Set(currentWorkout?.exercises.map(\.exercise.id) ?? [])
         try? await workoutRepository.deleteAllIncomplete()
+        // Live PRs from the discarded session must not linger.
+        if !cancelledExerciseIds.isEmpty {
+            _ = try? await personalRecordService?.recalculatePRs(for: cancelledExerciseIds)
+        }
         currentWorkout = nil
         isActive = false
         activeExerciseId = nil
