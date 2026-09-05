@@ -23,6 +23,7 @@ public final class AppContainer: Sendable {
     public let restTimerService: RestTimerService
     public let userPreferencesService: UserPreferencesService
     public let bodyWeightProvider: BodyWeightProvider
+    public let dataRevision: DataRevision
     public let exerciseSeeder: ExerciseSeeder
     public let templateSeedService: TemplateSeedService
     public let effectiveLoadMigrationService: EffectiveLoadMigrationService
@@ -121,6 +122,7 @@ public final class AppContainer: Sendable {
             healthKitService: healthKitService,
             userPreferencesService: userPreferencesService
         )
+        dataRevision = DataRevision()
         personalRecordService = PersonalRecordService(
             personalRecordRepository: personalRecordRepository,
             workoutRepository: workoutRepository,
@@ -214,7 +216,8 @@ public final class AppContainer: Sendable {
             archetypeService: workoutArchetypeService,
             changePointService: changePointDetectionService,
             qualityScoreService: qualityScoreService,
-            bodyWeightProvider: bodyWeightProvider
+            bodyWeightProvider: bodyWeightProvider,
+            dataRevision: dataRevision
         )
 
         coachingInsightService = CoachingInsightService(
@@ -281,7 +284,8 @@ public final class AppContainer: Sendable {
             adherenceService: adherenceAnalysisService,
             coachingInsightService: coachingInsightService,
             userPreferencesService: userPreferencesService,
-            bodyWeightProvider: bodyWeightProvider
+            bodyWeightProvider: bodyWeightProvider,
+            dataRevision: dataRevision
         )
         widgetRefreshService = WidgetRefreshService(
             workoutRepository: workoutRepository,

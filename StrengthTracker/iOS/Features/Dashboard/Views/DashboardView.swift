@@ -18,6 +18,7 @@ struct DashboardView: View {
     var aiChatViewModel: AIChatViewModel? = nil
     var aiMemoryService: AIMemoryService? = nil
     @State private var showAIChat = false
+    @Environment(DataRevision.self) private var dataRevision: DataRevision?
     let onStartWorkout: () -> Void
     let onStartSession: (WorkoutTemplate, UUID, UUID, Bool) async -> Void
     let onHistoryTapped: () -> Void
@@ -198,7 +199,7 @@ struct DashboardView: View {
                 }
             }
             .aiChatCover(aiChatEntry, isPresented: $showAIChat)
-            .task {
+            .task(id: dataRevision?.value ?? 0) {
                 async let d: () = viewModel.loadDashboard()
                 async let a: () = analyticsViewModel.loadDashboardInsights()
                 async let p: () = progressionPlanViewModel.loadActivePlan()

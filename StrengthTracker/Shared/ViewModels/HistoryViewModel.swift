@@ -55,6 +55,8 @@ public final class HistoryViewModel {
     }
 
     public func loadHistory() async {
+        // A revision bump during an open edit session must not clobber selectedWorkout.
+        guard !isEditing else { return }
         isLoading = true
         errorMessage = nil
         do {

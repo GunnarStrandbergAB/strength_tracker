@@ -14,6 +14,7 @@ struct ActiveWorkoutView: View {
     /// Assistant entry point; nil when the AI feature is not configured.
     var aiChat: AIChatEntry? = nil
     @State private var showAIChat = false
+    @Environment(DataRevision.self) private var dataRevision: DataRevision?
     @State private var showingExercisePicker = false
     @State private var showingCancelConfirmation = false
     @State private var showingFinishError = false
@@ -192,7 +193,7 @@ struct ActiveWorkoutView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(STColors.background)
-        .task {
+        .task(id: dataRevision?.value ?? 0) {
             // Load analytics for pre-workout context
             await analyticsViewModel?.loadDashboardInsights()
         }

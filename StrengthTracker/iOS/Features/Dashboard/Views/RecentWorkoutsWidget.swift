@@ -146,7 +146,11 @@ private struct RecentWorkoutCard: View {
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
-                Task { await historyViewModel.deleteWorkout(workout) }
+                Task {
+                    await historyViewModel.deleteWorkout(workout)
+                    // The card renders DashboardViewModel's list, not the history VM's.
+                    await viewModel.loadDashboard()
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {

@@ -3,6 +3,7 @@ import SwiftUI
 import StrengthTrackerShared
 
 struct ExerciseProgressView: View {
+    @Environment(DataRevision.self) private var dataRevision: DataRevision?
     @State private var viewModel: ProgressViewModel
 
     init(viewModel: ProgressViewModel, exercise: Exercise? = nil) {
@@ -74,7 +75,7 @@ struct ExerciseProgressView: View {
                 ProgressView()
             }
         }
-        .task {
+        .task(id: dataRevision?.value ?? 0) {
             await viewModel.loadExercises()
             if let exercise = viewModel.selectedExercise {
                 await viewModel.loadProgression(for: exercise.id)

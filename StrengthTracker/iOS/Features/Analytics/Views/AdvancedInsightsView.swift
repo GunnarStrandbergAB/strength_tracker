@@ -6,6 +6,7 @@ import StrengthTrackerShared
 /// Sections: Highlights, Training Load, Phase, Volume, Recovery, Overload, Drift, Deload, Anomalies.
 struct AdvancedInsightsView: View {
     let viewModel: WorkoutAnalyticsViewModel
+    @Environment(DataRevision.self) private var dataRevision: DataRevision?
 
     var body: some View {
         ScrollView {
@@ -54,6 +55,9 @@ struct AdvancedInsightsView: View {
         }
         .background(STColors.background)
         .scrollIndicators(.hidden)
+        .task(id: dataRevision?.value ?? 0) {
+            await viewModel.loadDashboardInsights()
+        }
         .navigationTitle("Advanced Insights")
         .navigationBarTitleDisplayMode(.inline)
         .stNavigationBarStyle()

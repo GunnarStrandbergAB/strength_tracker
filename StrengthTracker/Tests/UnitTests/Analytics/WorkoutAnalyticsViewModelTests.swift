@@ -227,6 +227,19 @@ final class WorkoutAnalyticsViewModelTests: XCTestCase {
         workoutRepo: MockWorkoutRepository,
         exerciseRepo: MockExerciseRepository
     ) {
+        let (vm, a, w, e, _) = makeViewModel(withRevision: false)
+        return (vm, a, w, e)
+    }
+
+    @MainActor
+    private static func makeViewModel(withRevision: Bool) -> (
+        viewModel: WorkoutAnalyticsViewModel,
+        analyticsRepo: MockAnalyticsRepository,
+        workoutRepo: MockWorkoutRepository,
+        exerciseRepo: MockExerciseRepository,
+        revision: DataRevision?
+    ) {
+        let revision: DataRevision? = withRevision ? DataRevision() : nil
         let analyticsRepo = MockAnalyticsRepository()
         let workoutRepo = MockWorkoutRepository()
         let exerciseRepo = MockExerciseRepository()
@@ -239,7 +252,8 @@ final class WorkoutAnalyticsViewModelTests: XCTestCase {
             searchService: VectorSearchService(),
             plateauService: PlateauDetectionService(),
             muscleBalanceService: MuscleBalanceService(),
-            recommendationService: ExerciseRecommendationService()
+            recommendationService: ExerciseRecommendationService(),
+            dataRevision: revision
         )
         let qualityScoreService = WorkoutQualityScoreService(
             workoutRepository: workoutRepo,
@@ -252,9 +266,33 @@ final class WorkoutAnalyticsViewModelTests: XCTestCase {
         let viewModel = WorkoutAnalyticsViewModel(
             analyticsService: analyticsService,
             qualityScoreService: qualityScoreService,
-            featureGate: featureGate
+            featureGate: featureGate,
+            workoutRepository: workoutRepo,
+            dataRevision: revision
         )
 
-        return (viewModel, analyticsRepo, workoutRepo, exerciseRepo)
+        return (viewModel, analyticsRepo, workoutRepo, exerciseRepo, revision)
+    }
+
+    // MARK: - Revision gating
+
+    @MainActor
+    func test_loadDashboardInsights_revisionGate() async {
+        let (vm, _, workoutRepo, _, revision) = Self.makeViewModel(withRevision: true)
+        workoutRepo.seed([AnalyticsTestHelpers.makePushDayWorkout(startedAt: Date().addingTimeInterval(-86400))])
+
+        await vm.loadDashboardInsights()
+        let first = vm.insights.generatedAt
+        await vm.loadDashboardInsights()
+        XCTAssertEqual(vm.insights.generatedAt, first, "same revision: no reload")
+
+        // seed() appends — add one more workout.
+        workoutRepo.seed([AnalyticsTestHelpers.makePushDayWorkout(startedAt: Date().addingTimeInterval(-2 * 86400))])
+        revision?.bump()
+        await vm.loadDashboardInsights()
+        XCTAssertEqual(vm.insights.workoutCount, 2, "bump: reloaded with the new data")
+
+        await vm.loadDashboardInsights(force: true)
+        XCTAssertEqual(vm.insights.workoutCount, 2)
     }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 import StrengthTrackerShared
 
 struct WorkoutHistoryView: View {
+    @Environment(DataRevision.self) private var dataRevision: DataRevision?
     @State private var viewModel: HistoryViewModel
     var analyticsViewModel: WorkoutAnalyticsViewModel? = nil
     var exerciseListViewModel: ExerciseListViewModel? = nil
@@ -74,7 +75,7 @@ struct WorkoutHistoryView: View {
                     )
                 }
             }
-            .task {
+            .task(id: dataRevision?.value ?? 0) {
                 await viewModel.loadHistory()
             }
             .alert("Error", isPresented: .init(

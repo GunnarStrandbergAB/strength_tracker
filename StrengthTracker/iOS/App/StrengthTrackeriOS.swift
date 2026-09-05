@@ -150,6 +150,7 @@ struct StrengthTrackeriOSApp: App {
         }
         .modelContainer(container.modelContainer)
         .environment(container.bodyWeightProvider)
+        .environment(container.dataRevision)
     }
 
 }

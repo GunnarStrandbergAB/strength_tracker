@@ -14,6 +14,7 @@ struct ActivePlanDetailView: View {
     @State private var rescheduleSession: PlannedSession?
     @State private var rescheduleDate: Date = Date()
     @Environment(\.dismiss) private var dismiss
+    @Environment(DataRevision.self) private var dataRevision: DataRevision?
 
     var body: some View {
         ScrollView {
@@ -49,6 +50,9 @@ struct ActivePlanDetailView: View {
             }
         }
         .background(STColors.background)
+        .task(id: dataRevision?.value ?? 0) {
+            await viewModel.loadActivePlan()
+        }
         .navigationTitle("Training Plan")
         .navigationBarTitleDisplayMode(.inline)
         .stNavigationBarStyle()

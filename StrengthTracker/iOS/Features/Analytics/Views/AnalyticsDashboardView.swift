@@ -8,6 +8,7 @@ import Charts
 /// Full analytics dashboard pushed from the InsightsCard.
 struct AnalyticsDashboardView: View {
     let viewModel: WorkoutAnalyticsViewModel
+    @Environment(DataRevision.self) private var dataRevision: DataRevision?
 
     var body: some View {
         ScrollView {
@@ -86,7 +87,7 @@ struct AnalyticsDashboardView: View {
         .navigationTitle("Analytics")
         .navigationBarTitleDisplayMode(.inline)
         .stNavigationBarStyle()
-        .task {
+        .task(id: dataRevision?.value ?? 0) {
             await viewModel.loadDashboardInsights()
         }
     }

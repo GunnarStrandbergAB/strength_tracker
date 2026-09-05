@@ -42,16 +42,13 @@ public final class WorkoutAnalyticsService: Sendable {
     private let changePointService: ChangePointDetectionService?
     private let qualityScoreService: WorkoutQualityScoreService?
 
-    // Cache
-    private var cachedVectors: [UUID: WorkoutVector] = [:]
-    private var cacheTimestamp: Date?
-    private let cacheValidityDuration: TimeInterval = 300
-
-    // Archetype cache: k-means is expensive — recompute only when the vector set grows.
+    // Caches, all keyed on the data revision so any completed mutation drops them.
+    private let dataRevision: DataRevision?
+    private var cachedInsights: (revision: Int, window: TimeInterval, insights: WorkoutInsights)?
+    // Archetype cache: k-means is expensive — recompute only when data changed.
     private var cachedArchetypes: [WorkoutArchetype] = []
-    private var archetypeCacheVectorCount: Int = -1
+    private var archetypeCacheRevision: Int = -1
     // Quality scores memoized per workout (completed workouts are immutable).
-    private var cachedQualityScores: [UUID: WorkoutQualityScore] = [:]
 
     public init(
         analyticsRepository: any AnalyticsRepository,
@@ -74,9 +71,11 @@ public final class WorkoutAnalyticsService: Sendable {
         archetypeService: WorkoutArchetypeService? = nil,
         changePointService: ChangePointDetectionService? = nil,
         qualityScoreService: WorkoutQualityScoreService? = nil,
-        bodyWeightProvider: BodyWeightProvider? = nil
+        bodyWeightProvider: BodyWeightProvider? = nil,
+        dataRevision: DataRevision? = nil
     ) {
         self.bodyWeightProvider = bodyWeightProvider
+        self.dataRevision = dataRevision
         self.analyticsRepository = analyticsRepository
         self.workoutRepository = workoutRepository
         self.exerciseRepository = exerciseRepository
@@ -162,6 +161,27 @@ public final class WorkoutAnalyticsService: Sendable {
 
     /// Generate a consistent WorkoutInsights snapshot for the dashboard
     public func generateInsights(timeWindow: TimeInterval = 2_592_000) async throws -> WorkoutInsights {
+        if let dataRevision, let cached = cachedInsights,
+           cached.revision == dataRevision.value, cached.window == timeWindow {
+            return cached.insights
+        }
+        let insights = try await computeInsights(timeWindow: timeWindow)
+        if let dataRevision {
+            cachedInsights = (dataRevision.value, timeWindow, insights)
+        }
+        return insights
+    }
+
+    /// Drops every derived in-memory cache. Called by the finalizer after any
+    /// completed mutation (the revision bump alone already misses `cachedArchetypes`
+    /// only when the value wraps, but be explicit).
+    public func invalidateDerivedCaches() {
+        cachedInsights = nil
+        cachedArchetypes = []
+        archetypeCacheRevision = -1
+    }
+
+    private func computeInsights(timeWindow: TimeInterval) async throws -> WorkoutInsights {
         // Migrate vectors if normalization constants changed
         let bodyWeightKg = resolvedBodyWeightKg
         try await migrateVectorsIfNeeded(bodyWeightKg: bodyWeightKg)
@@ -236,11 +256,12 @@ public final class WorkoutAnalyticsService: Sendable {
             // K-means clusters are recomputed only when the vector set grows; the
             // fingerprint is cheap and its 4-week windows shift daily, so it always runs.
             if let archetypeService {
-                if nonDeloadVectors.count != archetypeCacheVectorCount {
+                let revision = dataRevision?.value ?? nonDeloadVectors.count
+                if revision != archetypeCacheRevision {
                     cachedArchetypes = archetypeService.cluster(
                         vectors: nonDeloadVectors, workouts: nonDeloadWorkouts, bodyWeightKg: bodyWeightKg
                     )
-                    archetypeCacheVectorCount = nonDeloadVectors.count
+                    archetypeCacheRevision = revision
                 }
                 archetypes = cachedArchetypes
                 trainingFingerprint = archetypeService.fingerprint(
@@ -248,15 +269,17 @@ public final class WorkoutAnalyticsService: Sendable {
                 )
             }
 
-            // Time-of-day quality analysis (per-workout scores memoized — immutable once completed)
+            // Time-of-day quality analysis (per-workout scores come from the quality
+            // service's own memo, which the finalizer invalidates on every change).
             if let changePointService, let qualityScoreService {
-                for workout in completedWorkouts where cachedQualityScores[workout.id] == nil {
-                    cachedQualityScores[workout.id] = qualityScoreService.computeScore(
+                var qualityScores: [UUID: WorkoutQualityScore] = [:]
+                for workout in completedWorkouts {
+                    qualityScores[workout.id] = qualityScoreService.computeScore(
                         for: workout, history: completedWorkouts
                     )
                 }
                 timeOfDayAnalysis = changePointService.analyzeTimeOfDay(
-                    workouts: completedWorkouts, qualityScores: cachedQualityScores
+                    workouts: completedWorkouts, qualityScores: qualityScores
                 )
             }
 
@@ -351,10 +374,10 @@ public final class WorkoutAnalyticsService: Sendable {
             workoutDate: workout.startedAt,
             primaryMuscleGroups: primaryMuscleGroups
         )
-        cachedVectors[workout.id] = vector
         // Re-vectorization implies the workout changed — memoized quality scores are
         // history-relative, so drop them all (cheap; recomputed lazily).
-        cachedQualityScores.removeAll()
+        qualityScoreService?.invalidateAll()
+        invalidateDerivedCaches()
     }
 
     /// Batch vectorize all workouts missing vectors
@@ -364,7 +387,9 @@ public final class WorkoutAnalyticsService: Sendable {
         let existingVectors = try await analyticsRepository.fetchAllVectors()
         let vectorizedIds = Set(existingVectors.map(\.workoutId))
 
-        let needsVectorization = allWorkouts.filter { !vectorizedIds.contains($0.id) }
+        // Only completed workouts get vectors; an active workout that is later
+        // cancelled would otherwise leave an orphan behind.
+        let needsVectorization = allWorkouts.filter { $0.completedAt != nil && !vectorizedIds.contains($0.id) }
 
         for workout in needsVectorization {
             let vector = vectorizer.vectorize(workout, historicalWorkouts: allWorkouts, bodyWeightKg: bodyWeightKg)
@@ -378,8 +403,6 @@ public final class WorkoutAnalyticsService: Sendable {
             )
         }
 
-        cachedVectors.removeAll()
-        cacheTimestamp = nil
     }
 
     // MARK: - Vector Migration
