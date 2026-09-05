@@ -101,7 +101,7 @@ public final class RecoveryEstimationService: Sendable {
                 if let best = bestE1RM[we.exercise.id], best > 0 {
                     for set in hardSets {
                         for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
-                            let e1rm = AnalyticsCalculations.calculateOneRM(weight: part.load, reps: min(part.reps, 15))
+                            let e1rm = AnalyticsCalculations.calculateOneRM(weight: part.load, reps: min(part.reps, AnalyticsCalculations.maxRepsForE1RM))
                             effortRatios.append(e1rm / best)
                         }
                     }

@@ -363,7 +363,7 @@ struct AnalyticsLargeView: View {
                     Image(systemName: "flame.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(.orange)
-                    Text("\(entry.data.currentStreak)-day streak")
+                    Text(AnalyticsFormatting.streak(weeks: entry.data.currentStreak))
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(WidgetColors.textPrimary)
                 }

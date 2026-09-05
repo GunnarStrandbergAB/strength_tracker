@@ -287,9 +287,9 @@ struct WorkoutDetailView: View {
                             if hvm.isEditing {
                                 Task {
                                     await hvm.endEditing()
-                                    // The edit invalidated the score caches — refresh
-                                    // the VM state the quality section renders from.
-                                    analyticsViewModel?.invalidateQualityState()
+                                    // The finalizer bumped the data revision, which
+                                    // reloads every analytics view; refresh this
+                                    // workout's score for the section below.
                                     if let workout = hvm.selectedWorkout {
                                         await analyticsViewModel?.loadQualityScore(for: workout)
                                     }
@@ -364,7 +364,6 @@ struct WorkoutDetailView: View {
             if let hvm = historyViewModel, hvm.isEditing {
                 Task {
                     await hvm.endEditing()
-                    analyticsViewModel?.invalidateQualityState()
                 }
             }
         }

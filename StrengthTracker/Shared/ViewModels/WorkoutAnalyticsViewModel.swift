@@ -19,15 +19,6 @@ public final class WorkoutAnalyticsViewModel {
     public var aggregateQuality: AggregateQualityScore?
     public var isQualityScoreLoading = false
 
-    /// Drops quality-related state and the insights freshness gate so the next load
-    /// recomputes — call after history edits invalidate the score caches.
-    public func invalidateQualityState() {
-        qualityScore = nil
-        aggregateQuality = nil
-        lastInsightsLoadTime = nil
-        lastLoadedRevision = nil
-    }
-
     /// Feature gating
     public var unlockedFeatures: Set<AnalyticsFeatureGate.Feature> = []
     public var nextFeatureUnlock: (feature: AnalyticsFeatureGate.Feature, workoutsNeeded: Int)?

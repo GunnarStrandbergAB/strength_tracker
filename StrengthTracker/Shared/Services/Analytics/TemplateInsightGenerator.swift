@@ -176,7 +176,7 @@ public final class TemplateInsightGenerator: InsightTextGenerating, @unchecked S
         var highlights: [AnalyticsHighlight] = []
 
         // Priority 1 (Warning): Plateau warnings — top 2 by weeks stalled (need 3+ weeks)
-        if workoutCount >= 10 {
+        if workoutCount >= AnalyticsFeatureGate.threshold(for: .plateauDetection) {
             let stalledExercises = plateaus
                 .filter { $0.consecutiveWeeksStalled >= 3 }
                 .sorted { $0.consecutiveWeeksStalled > $1.consecutiveWeeksStalled }

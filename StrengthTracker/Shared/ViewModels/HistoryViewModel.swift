@@ -408,12 +408,6 @@ public final class HistoryViewModel {
         }
     }
 
-    /// Peer sync for deletions.
-    public func absorbExternalDeletion(workoutId: UUID) {
-        workouts.removeAll { $0.id == workoutId }
-        if selectedWorkout?.id == workoutId { selectedWorkout = nil }
-    }
-
     /// Completes every incomplete set, stamped inside the workout's own window.
     public func markAllSetsComplete() async {
         guard var workout = selectedWorkout else { return }

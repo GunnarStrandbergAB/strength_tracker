@@ -76,7 +76,7 @@ public final class CoachingInsightService: Sendable {
         }
 
         // Quality score delta vs EWMA (needs 5+ workouts)
-        if workoutCount >= 5, let score = qualityScore, let qService = qualityScoreService {
+        if workoutCount >= AnalyticsFeatureGate.threshold(for: .qualityScore), let score = qualityScore, let qService = qualityScoreService {
             let aggregate = qService.computeAggregateScore(workouts: allWorkouts)
             let delta = score.overallScore - aggregate.ewmaOverall
             if abs(delta) > 5 {
@@ -92,8 +92,8 @@ public final class CoachingInsightService: Sendable {
             }
         }
 
-        // Overload trends for exercises in this workout (needs 10+ workouts)
-        if workoutCount >= 10 {
+        // Overload trends for exercises in this workout (Phase 3 gate)
+        if workoutCount >= AnalyticsFeatureGate.threshold(for: .plateauDetection) {
             let workoutExerciseIds = Set(workout.exercises.map(\.exercise.id))
             let relevantTrends = overloadTrends.filter { workoutExerciseIds.contains($0.exerciseId) }
             if let best = relevantTrends.filter({ $0.trendStatus == .progressing }).max(by: { $0.slopePerWeek < $1.slopePerWeek }) {
@@ -120,8 +120,8 @@ public final class CoachingInsightService: Sendable {
             ))
         }
 
-        // Volume delta vs 30-day average (needs 5+ workouts, skip during deload)
-        if !workout.isDeload && workoutCount >= 5 {
+        // Volume delta vs 30-day average (quality-score gate, skip during deload)
+        if !workout.isDeload && workoutCount >= AnalyticsFeatureGate.threshold(for: .qualityScore) {
             let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
             let recentWorkouts = completedWorkouts.filter {
                 ($0.completedAt ?? .distantPast) >= thirtyDaysAgo && !$0.isDeload
@@ -173,8 +173,8 @@ public final class CoachingInsightService: Sendable {
             }
         }
 
-        // Recovery hint (needs 19+ workouts)
-        if workoutCount >= 19 {
+        // Recovery hint (advanced-insights gate)
+        if workoutCount >= AnalyticsFeatureGate.threshold(for: .advancedInsights) {
             let fatigued = recoveryPatterns.filter { $0.recoveryStatus == .fatigued && !$0.isJustTrained }
             let workoutMuscles = Set(workout.exercises.map { $0.exercise.primaryMuscleGroup.rawValue.lowercased() })
             let relevantFatigued = fatigued.filter { workoutMuscles.contains($0.muscleGroup.lowercased()) }
@@ -194,7 +194,7 @@ public final class CoachingInsightService: Sendable {
         }
 
         // Similar session comparison bullet (C6, needs 10+ workouts)
-        if workoutCount >= 10, let comparison = similarSession {
+        if workoutCount >= AnalyticsFeatureGate.threshold(for: .plateauDetection), let comparison = similarSession {
             let dateFormatter = DateFormatter()
             dateFormatter.dateStyle = .medium
             let dateStr = dateFormatter.string(from: comparison.matchDate)
