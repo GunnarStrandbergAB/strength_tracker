@@ -1089,6 +1089,9 @@ public final class ProgressionPlanViewModel {
     // MARK: - Pending Adjustments
 
     /// Adviser proposals awaiting a user decision (engine adjustments are recorded as accepted).
+    /// The shared coach verdict, for annotating suggestions that contradict it.
+    public var coachVerdict: TrainingVerdict? { trainingAdvisor?.lastVerdict }
+
     public var pendingAdjustments: [PlanAdjustment] {
         activePlan?.adjustments.filter { $0.wasAccepted == nil } ?? []
     }

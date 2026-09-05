@@ -15,6 +15,7 @@ struct PostWorkoutSummaryView: View {
                 checkmarkHeader
                 statsSection
                 qualityScoreSection
+                verdictSection
                 bulletsSection
                 dismissButton
             }
@@ -124,6 +125,17 @@ struct PostWorkoutSummaryView: View {
             }
             .opacity(showContent ? 1.0 : 0.0)
             .animation(.easeOut(duration: 0.4).delay(0.4), value: showContent)
+        }
+    }
+
+    // MARK: - Next Session (coach verdict)
+
+    @ViewBuilder
+    private var verdictSection: some View {
+        if let verdict = debrief.verdict {
+            VerdictBanner(verdict: verdict, style: .card, kicker: "Next Session")
+                .opacity(showContent ? 1.0 : 0.0)
+                .animation(.easeOut(duration: 0.4).delay(0.45), value: showContent)
         }
     }
 

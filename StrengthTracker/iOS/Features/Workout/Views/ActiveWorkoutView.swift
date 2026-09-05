@@ -161,6 +161,7 @@ struct ActiveWorkoutView: View {
                         recoveryPatterns: analytics.insights.recoveryPatterns,
                         trainingLoad: analytics.insights.trainingLoad,
                         adherence: analytics.adherenceAnalysis,
+                        verdict: analytics.insights.verdict,
                         onStartWorkout: {
                             Task { await startQuickWorkout() }
                         },

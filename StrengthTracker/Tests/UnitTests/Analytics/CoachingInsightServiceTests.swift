@@ -51,27 +51,26 @@ struct CoachingInsightServiceTests {
         )
     }
 
-    @Test("Deload verdict: debrief says Deload Recommended and never 'room to push'")
-    func debriefFollowsDeloadVerdict() async {
+    @Test("With a verdict the debrief carries it and emits no load bullet of its own")
+    func debriefCarriesVerdict() async {
         let d = await debrief(verdict: verdict(.deload), load: load(acwr: 0.5))
-        let titles = d.bullets.map(\.title)
-        #expect(titles.contains("Deload Recommended"))
-        #expect(!titles.contains("Room to Push"))
-        #expect(!titles.contains("Low Training Load"))
+        #expect(d.verdict?.kind == .deload)
+        #expect(!d.bullets.contains { $0.source == .acwr })
+        #expect(!d.bullets.map(\.title).contains("Room to Push"))
+        #expect(!d.bullets.map(\.title).contains("Low Training Load"))
+
+        let p = await debrief(verdict: verdict(.progress), load: load(acwr: 1.7))
+        #expect(p.verdict?.kind == .progress)
+        #expect(!p.bullets.contains { $0.source == .acwr })
     }
 
-    @Test("Progress verdict with low load: room to push")
-    func debriefRoomToPush() async {
-        let d = await debrief(verdict: verdict(.progress), load: load(acwr: 0.5))
-        #expect(d.bullets.map(\.title).contains("Room to Push"))
-    }
-
-    @Test("Hold verdict: Hold Steady bullet with the verdict action")
-    func debriefHold() async {
-        let d = await debrief(verdict: verdict(.hold), load: load(acwr: 1.35))
-        let bullet = d.bullets.first { $0.title == "Hold Steady" }
-        #expect(bullet?.detail == "Verdict action")
-        #expect(!d.bullets.map(\.title).contains("High Training Load"))
+    @Test("Without a verdict the load bullet is descriptive, never imperative")
+    func debriefDescriptiveWithoutVerdict() async {
+        let d = await debrief(verdict: nil, load: load(acwr: 1.7))
+        let bullet = d.bullets.first { $0.source == .acwr }
+        #expect(bullet?.title == "Training Load Very high")
+        #expect(bullet?.detail.lowercased().contains("reduce") == false)
+        #expect(d.verdict == nil)
     }
 
     @Test("Digest compares the last complete Monday-start week with the prior one")

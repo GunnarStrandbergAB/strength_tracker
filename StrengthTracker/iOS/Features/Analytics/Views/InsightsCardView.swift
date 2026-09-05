@@ -101,6 +101,11 @@ struct InsightsCardView: View {
     private var insightsContent: some View {
         let insights = viewModel.insights
 
+        // The one load/deload call, shared with every other screen
+        if let verdict = insights.verdict {
+            VerdictBanner(verdict: verdict, style: .inline)
+        }
+
         // Plateau warnings (the Analytics screen lists them all)
         if !insights.plateaus.isEmpty {
             let top = insights.plateaus.prefix(1)
@@ -169,26 +174,6 @@ struct InsightsCardView: View {
             }
 
             Spacer()
-        }
-    }
-
-    private func highlightIcon(_ type: HighlightType) -> String {
-        switch type {
-        case .personalRecord: return "trophy.fill"
-        case .streak: return "flame.fill"
-        case .milestone: return "flag.fill"
-        case .improvement: return "arrow.up.right"
-        case .warning: return "exclamationmark.triangle.fill"
-        }
-    }
-
-    private func highlightColor(_ type: HighlightType) -> Color {
-        switch type {
-        case .personalRecord: return STColors.primary
-        case .streak: return .orange
-        case .milestone: return STColors.primary
-        case .improvement: return STColors.success
-        case .warning: return STColors.danger
         }
     }
 

@@ -109,6 +109,11 @@ struct ExerciseCardView: View {
                 effortCreepBanner(warning)
             }
 
+            // Recovery note (fatigued group that was not just trained)
+            if let note = coachingData?.recoveryNote {
+                recoveryNoteBanner(note)
+            }
+
             Divider()
                 .background(STColors.border)
 
@@ -462,6 +467,22 @@ struct ExerciseCardView: View {
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.orange.opacity(0.08))
+    }
+
+    private func recoveryNoteBanner(_ note: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 11))
+                .foregroundStyle(STColors.info)
+            Text(note)
+                .font(.system(size: 11))
+                .foregroundStyle(STColors.textSecondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, STSpacing.cardPadding)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(STColors.info.opacity(0.08))
     }
 
     // MARK: - Helpers

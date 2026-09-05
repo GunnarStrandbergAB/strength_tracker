@@ -52,7 +52,15 @@ public final class WidgetRefreshService {
 
             // Highlights straight from the service (cached per data revision, so this
             // is cheap when a screen already computed them — and never pre-edit stale).
-            var highlights: [AnalyticsHighlight] = (try? await analyticsService.generateInsights().highlights) ?? []
+            let insights = try? await analyticsService.generateInsights()
+            var highlights: [AnalyticsHighlight] = insights?.highlights ?? []
+
+            // The coach verdict is always widget highlight #1 (the generator already
+            // leads with it for deload/hold; add the progress card when it is missing).
+            if let verdict = insights?.verdict, highlights.first?.title != verdict.headline {
+                highlights.removeAll { $0.title == verdict.headline }
+                highlights.insert(Self.verdictHighlight(verdict), at: 0)
+            }
 
             // Fetch active plan once — reused for next session + weekly goal
             let activePlan = try await progressionPlanRepository.fetchActive()
@@ -133,5 +141,19 @@ public final class WidgetRefreshService {
         } catch {
             print("[Widget] Failed to refresh widget data: \(error)")
         }
+    }
+
+    static func verdictHighlight(_ verdict: TrainingVerdict) -> AnalyticsHighlight {
+        let type: HighlightType
+        if verdict.isActiveDeload {
+            type = .improvement
+        } else {
+            switch verdict.kind {
+            case .deload: type = .warning
+            case .hold: type = .milestone
+            case .progress: type = .improvement
+            }
+        }
+        return AnalyticsHighlight(type: type, title: verdict.headline, detail: verdict.action)
     }
 }

@@ -11,6 +11,8 @@ public struct PostWorkoutDebrief: Sendable {
     public let prsHit: Int
     public let bullets: [CoachingInsight]       // 2-3 contextual coaching bullets
     public let similarSession: SessionComparison?
+    /// The shared coach verdict at the time of the debrief (shown as "NEXT SESSION").
+    public let verdict: TrainingVerdict?
 
     public init(
         workoutName: String,
@@ -21,7 +23,8 @@ public struct PostWorkoutDebrief: Sendable {
         qualityScore: WorkoutQualityScore?,
         prsHit: Int,
         bullets: [CoachingInsight],
-        similarSession: SessionComparison?
+        similarSession: SessionComparison?,
+        verdict: TrainingVerdict? = nil
     ) {
         self.workoutName = workoutName
         self.duration = duration
@@ -32,6 +35,7 @@ public struct PostWorkoutDebrief: Sendable {
         self.prsHit = prsHit
         self.bullets = bullets
         self.similarSession = similarSession
+        self.verdict = verdict
     }
 }
 

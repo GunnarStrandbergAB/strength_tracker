@@ -6,6 +6,7 @@ struct PreWorkoutContextCard: View {
     let recoveryPatterns: [RecoveryPattern]
     let trainingLoad: TrainingLoad?
     let adherence: AdherenceAnalysis?
+    var verdict: TrainingVerdict? = nil
     let onStartWorkout: () -> Void
     let onStartFromPlan: (() -> Void)?
 
@@ -22,6 +23,13 @@ struct PreWorkoutContextCard: View {
             .padding(.horizontal, STSpacing.cardPadding)
             .padding(.top, STSpacing.cardPadding)
             .padding(.bottom, 12)
+
+            // Coach verdict: the one load/deload call
+            if let verdict {
+                VerdictBanner(verdict: verdict, style: .inline)
+                    .padding(.horizontal, STSpacing.cardPadding)
+                    .padding(.bottom, 12)
+            }
 
             // Recovery status
             if !recoveryPatterns.isEmpty {
@@ -103,7 +111,7 @@ struct PreWorkoutContextCard: View {
                         .font(.system(size: 13))
                         .foregroundStyle(STColors.textPrimary)
                     Spacer()
-                    Text(statusLabel(pattern.recoveryStatus))
+                    Text(statusLabel(pattern))
                         .font(.system(size: 11))
                         .foregroundStyle(STColors.textSecondary)
                 }
@@ -200,13 +208,28 @@ struct PreWorkoutContextCard: View {
         AnalyticsColors.recovery(status)
     }
 
-    private func statusLabel(_ status: RecoveryStatus) -> String {
-        switch status {
+    private func statusLabel(_ pattern: RecoveryPattern) -> String {
+        switch pattern.recoveryStatus {
         case .ready: return "Ready"
-        case .recovering: return "Recovering"
-        case .fatigued: return "Fatigued"
+        case .recovering:
+            if let ready = pattern.readyToTrainDate, ready > Date() {
+                return "Ready \(Self.dayFormatter.string(from: ready))"
+            }
+            return "Recovering"
+        case .fatigued:
+            if pattern.isJustTrained { return "Trained recently" }
+            if let ready = pattern.readyToTrainDate, ready > Date() {
+                return "Ready \(Self.dayFormatter.string(from: ready))"
+            }
+            return "Fatigued"
         }
     }
+
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE"
+        return f
+    }()
 
 }
 

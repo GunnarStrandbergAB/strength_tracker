@@ -32,6 +32,11 @@ struct AnalyticsDashboardView: View {
                     // Workout count summary
                     workoutCountHeader
 
+                    // Coach verdict (the single deload / hold / progress call)
+                    if let verdict = viewModel.insights.verdict {
+                        VerdictBanner(verdict: verdict, style: .card, showReasons: true, kicker: "Coach Verdict")
+                    }
+
                     // Feature roadmap (shows locked features, hidden when all unlocked)
                     let roadmapFeatures: [AnalyticsFeatureGate.Feature] = [
                         .qualityScore, .plateauDetection, .muscleBalance, .advancedInsights

@@ -246,6 +246,22 @@ struct ActivePlanDetailView: View {
                 .foregroundStyle(STColors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if let note = VerdictConflictRules.conflictNote(for: adjustment, verdict: viewModel.coachVerdict) {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(STColors.warning)
+                    Text(note)
+                        .font(.system(size: 11))
+                        .foregroundStyle(STColors.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(STColors.warning.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: STRadius.input))
+            }
+
             HStack(spacing: 10) {
                 Button {
                     Task { await viewModel.acceptAdjustment(id: adjustment.id) }

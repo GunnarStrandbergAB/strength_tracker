@@ -71,6 +71,15 @@ enum AnalyticsColors {
         }
     }
 
+    static func verdict(_ verdict: TrainingVerdict) -> Color {
+        if verdict.isActiveDeload { return STColors.success }
+        switch verdict.kind {
+        case .deload: return STColors.danger
+        case .hold: return STColors.warning
+        case .progress: return STColors.success
+        }
+    }
+
     static func highlightIcon(_ type: HighlightType) -> String {
         switch type {
         case .personalRecord: return "trophy.fill"

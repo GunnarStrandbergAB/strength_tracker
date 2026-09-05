@@ -145,67 +145,31 @@ public final class CoachingInsightService: Sendable {
             }
         }
 
-        // Load direction (needs 19+ workouts): one bullet, derived from the shared
-        // verdict so it can never contradict the analytics screens.
-        if workoutCount >= AnalyticsFeatureGate.threshold(for: .advancedInsights) {
-            if let verdict {
-                switch verdict.kind {
-                case .deload where !verdict.isActiveDeload:
-                    candidates.append(CoachingInsight(
-                        priority: 2,
-                        title: "Deload Recommended",
-                        detail: verdict.action,
-                        icon: "exclamationmark.triangle.fill",
-                        color: .warning,
-                        source: .acwr
-                    ))
-                case .hold where !verdict.isActiveDeload:
-                    candidates.append(CoachingInsight(
-                        priority: 4,
-                        title: "Hold Steady",
-                        detail: verdict.action,
-                        icon: "pause.circle",
-                        color: .info,
-                        source: .acwr
-                    ))
-                case .progress:
-                    if let load = trainingLoad, load.loadZone == .underTraining {
-                        candidates.append(CoachingInsight(
-                            priority: 7,
-                            title: "Room to Push",
-                            detail: "Training load is below your baseline; add a set or a little weight next session",
-                            icon: "arrow.up.circle",
-                            color: .info,
-                            source: .acwr
-                        ))
-                    }
-                default:
-                    break
-                }
-            } else if let load = trainingLoad {
-                // No verdict available: descriptive load note only.
-                switch load.loadZone {
-                case .danger, .caution:
-                    candidates.append(CoachingInsight(
-                        priority: 2,
-                        title: "Training Load \(AnalyticsFormatting.loadZoneLabel(load.loadZone))",
-                        detail: AnalyticsFormatting.loadZoneDescription(load.loadZone, acwr: load.acwr, activeDeload: workout.isDeload),
-                        icon: "exclamationmark.triangle.fill",
-                        color: load.loadZone == .danger ? .danger : .warning,
-                        source: .acwr
-                    ))
-                case .underTraining:
-                    candidates.append(CoachingInsight(
-                        priority: 7,
-                        title: "Training Load Low",
-                        detail: AnalyticsFormatting.loadZoneDescription(load.loadZone, acwr: load.acwr, activeDeload: workout.isDeload),
-                        icon: "arrow.up.circle",
-                        color: .info,
-                        source: .acwr
-                    ))
-                case .optimal:
-                    break
-                }
+        // Load direction (needs 19+ workouts). When a verdict exists the debrief
+        // shows it as the "NEXT SESSION" banner, so no separate load bullet — the
+        // two could only ever disagree. Without a verdict, a descriptive note only.
+        if workoutCount >= AnalyticsFeatureGate.threshold(for: .advancedInsights), verdict == nil, let load = trainingLoad {
+            switch load.loadZone {
+            case .danger, .caution:
+                candidates.append(CoachingInsight(
+                    priority: 2,
+                    title: "Training Load \(AnalyticsFormatting.loadZoneLabel(load.loadZone))",
+                    detail: AnalyticsFormatting.loadZoneDescription(load.loadZone, acwr: load.acwr, activeDeload: workout.isDeload),
+                    icon: "exclamationmark.triangle.fill",
+                    color: load.loadZone == .danger ? .danger : .warning,
+                    source: .acwr
+                ))
+            case .underTraining:
+                candidates.append(CoachingInsight(
+                    priority: 7,
+                    title: "Training Load Low",
+                    detail: AnalyticsFormatting.loadZoneDescription(load.loadZone, acwr: load.acwr, activeDeload: workout.isDeload),
+                    icon: "arrow.up.circle",
+                    color: .info,
+                    source: .acwr
+                ))
+            case .optimal:
+                break
             }
         }
 
@@ -270,7 +234,8 @@ public final class CoachingInsightService: Sendable {
             qualityScore: qualityScore,
             prsHit: prsHit,
             bullets: enhancedBullets,
-            similarSession: similarSession
+            similarSession: similarSession,
+            verdict: verdict
         )
     }
 

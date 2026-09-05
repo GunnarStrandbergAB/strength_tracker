@@ -38,8 +38,8 @@ struct AdvancedInsightsView: View {
                 if let drift = viewModel.insights.trainingDrift {
                     driftSection(drift)
                 }
-                if let deload = viewModel.insights.deloadRecommendation {
-                    deloadSection(deload)
+                if let verdict = viewModel.insights.verdict {
+                    verdictSection(verdict, recommendation: viewModel.insights.deloadRecommendation)
                 }
                 if let comparison = viewModel.insights.blockComparison {
                     blockComparisonSection(comparison)
@@ -100,7 +100,7 @@ struct AdvancedInsightsView: View {
     @ViewBuilder
     private var trainingLoadSection: some View {
         if let load = viewModel.insights.trainingLoad {
-            let isDeload = viewModel.insights.highlights.contains { $0.title == "Deload In Progress" }
+            let isDeload = viewModel.insights.isActiveDeload
             VStack(alignment: .leading, spacing: 12) {
                 sectionHeader("Training Load")
 
@@ -428,25 +428,19 @@ struct AdvancedInsightsView: View {
     // MARK: - Deload
 
     @ViewBuilder
-    private func deloadSection(_ deload: DeloadRecommendation) -> some View {
+    private func verdictSection(_ verdict: TrainingVerdict, recommendation: DeloadRecommendation?) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Deload Recommendation")
+            sectionHeader("Coach Verdict")
 
-            HStack(spacing: 10) {
-                Image(systemName: "exclamationmark.shield.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(deload.urgencyScore > 0.5 ? STColors.danger : .orange)
+            VerdictBanner(verdict: verdict, style: .inline, showReasons: true)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(String(format: "Urgency: %.0f%%", deload.urgencyScore * 100))
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(STColors.textPrimary)
-
-                    Text(deload.suggestedAction)
-                        .font(.system(size: 12))
+            if let deload = recommendation {
+                HStack(spacing: 12) {
+                    Text(String(format: "Fatigue urgency %.0f%%", deload.urgencyScore * 100))
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(STColors.textSecondary)
-
-                    Text("\(deload.weeksSinceLastDeload) weeks since last deload")
+                    Spacer()
+                    Text("\(deload.weeksSinceLastDeload) weeks since a lighter week")
                         .font(.system(size: 11))
                         .foregroundStyle(STColors.textTertiary)
                 }
