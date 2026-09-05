@@ -63,7 +63,7 @@ struct PostWorkoutSummaryView: View {
                 statPill(label: "\(debrief.totalSets) sets", icon: "number")
             }
 
-            Text("Total: \(formatVolume(weightUnit.fromKg(debrief.totalVolume))) \(weightUnit.symbol)")
+            Text("Volume \(AnalyticsFormatting.compactVolume(kg: debrief.totalVolume, unit: weightUnit))")
                 .font(.subheadline)
                 .foregroundStyle(STColors.textSecondary)
 
@@ -202,29 +202,7 @@ struct PostWorkoutSummaryView: View {
         return "\(minutes) min"
     }
 
-    private func formatVolume(_ volume: Double) -> String {
-        if volume >= 1000 {
-            return String(format: "%.1fk", volume / 1000)
-        }
-        return String(format: "%.0f", volume)
-    }
-
-    private func scoreColor(_ score: Double) -> Color {
-        switch score {
-        case 80...: return STColors.success
-        case 60..<80: return STColors.primary
-        default: return STColors.danger
-        }
-    }
-
-    private func colorForCoaching(_ color: CoachingColor) -> Color {
-        switch color {
-        case .primary: return STColors.primary
-        case .success: return STColors.success
-        case .warning: return Color.orange
-        case .danger: return STColors.danger
-        case .info: return STColors.textSecondary
-        }
-    }
+    private func scoreColor(_ score: Double) -> Color { AnalyticsColors.score(score) }
+    private func colorForCoaching(_ color: CoachingColor) -> Color { AnalyticsColors.coaching(color) }
 }
 #endif

@@ -113,6 +113,7 @@ public final class AppContainer: Sendable {
 
         // Wire up services
         userPreferencesService = UserPreferencesService()
+        let unitPrefs = userPreferencesService
         // Platform-specific services
         #if canImport(HealthKit)
         healthKitService = DefaultHealthKitService()
@@ -188,9 +189,9 @@ public final class AppContainer: Sendable {
 
         let insightGen: any InsightTextGenerating
         if #available(iOS 26, macOS 26, *) {
-            insightGen = AppleIntelligenceInsightGenerator(fallback: TemplateInsightGenerator())
+            insightGen = AppleIntelligenceInsightGenerator(fallback: TemplateInsightGenerator(weightUnit: { unitPrefs.weightUnit }))
         } else {
-            insightGen = TemplateInsightGenerator()
+            insightGen = TemplateInsightGenerator(weightUnit: { unitPrefs.weightUnit })
         }
 
         workoutArchetypeService = WorkoutArchetypeService(searchService: searchService)

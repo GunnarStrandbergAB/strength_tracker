@@ -15,9 +15,10 @@ public struct PlateauAnalysis: Identifiable, Hashable, Sendable, Codable {
     /// Business rule: recommendation derived from analysis data.
     /// Computed properties are automatically excluded from Codable synthesis.
     public var recommendation: String {
+        // A stall is a stimulus problem; deload advice belongs to the coach verdict.
         guard let name = exerciseName else {
             if consecutiveWeeksStalled >= 4 {
-                return "Consider a deload week with reduced volume."
+                return "Stalled 4+ weeks: change the rep range or swap the variation."
             } else if consecutiveWeeksStalled >= 2 {
                 return "Try adjusting volume or technique to break through."
             } else {
@@ -25,7 +26,7 @@ public struct PlateauAnalysis: Identifiable, Hashable, Sendable, Codable {
             }
         }
         if consecutiveWeeksStalled >= 4 {
-            return "Consider a deload for \(name) by 10-20% and focus on form."
+            return "Stalled 4+ weeks: change the rep range or swap the variation for \(name)."
         } else if consecutiveWeeksStalled >= 2 {
             return "Try increasing volume or adding a technique variation for \(name)."
         } else {

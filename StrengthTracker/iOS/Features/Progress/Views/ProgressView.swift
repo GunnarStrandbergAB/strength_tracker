@@ -60,7 +60,7 @@ struct ExerciseProgressView: View {
                                 .foregroundStyle(.blue)
                         }
                     }
-                    LabeledContent("Total Volume") {
+                    LabeledContent("Volume (all time)") {
                         Text(viewModel.weightUnit.format(viewModel.totalVolume, decimals: 0))
                             .fontWeight(.semibold)
                     }

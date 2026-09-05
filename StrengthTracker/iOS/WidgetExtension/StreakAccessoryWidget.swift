@@ -36,7 +36,7 @@ struct StreakAccessoryWidget: Widget {
             StreakAccessoryView(entry: entry)
         }
         .configurationDisplayName("Streak")
-        .description("Your current workout streak")
+        .description("Weeks in a row with a workout")
         .supportedFamilies([.accessoryCircular, .accessoryRectangular])
     }
 }
@@ -74,7 +74,7 @@ struct StreakAccessoryView: View {
             Image(systemName: "flame.fill")
                 .font(.system(size: 20))
             VStack(alignment: .leading) {
-                Text("\(entry.data.currentStreak) day streak")
+                Text("\(entry.data.currentStreak)-week streak")
                     .font(.headline)
                 Text("\(entry.data.weeklyWorkoutCount)/\(entry.data.weeklyGoal) this week")
                     .font(.caption)

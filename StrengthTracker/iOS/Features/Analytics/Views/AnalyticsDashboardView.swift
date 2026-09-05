@@ -113,10 +113,10 @@ struct AnalyticsDashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader("Feature Roadmap")
 
-            featureRow(.qualityScore, threshold: 5, icon: "star.fill")
-            featureRow(.plateauDetection, threshold: 10, icon: "exclamationmark.triangle.fill")
-            featureRow(.muscleBalance, threshold: 20, icon: "arrow.left.arrow.right")
-            featureRow(.advancedInsights, threshold: 19, icon: "brain.head.profile")
+            featureRow(.qualityScore, threshold: AnalyticsFeatureGate.threshold(for: .qualityScore), icon: "star.fill")
+            featureRow(.plateauDetection, threshold: AnalyticsFeatureGate.threshold(for: .plateauDetection), icon: "exclamationmark.triangle.fill")
+            featureRow(.muscleBalance, threshold: AnalyticsFeatureGate.threshold(for: .muscleBalance), icon: "arrow.left.arrow.right")
+            featureRow(.advancedInsights, threshold: AnalyticsFeatureGate.threshold(for: .advancedInsights), icon: "brain.head.profile")
         }
         .padding(STSpacing.cardPadding)
         .background(STColors.surface)

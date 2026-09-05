@@ -4,7 +4,12 @@ import Foundation
 /// Generates natural-language insights from computed analytics data using templates.
 public final class TemplateInsightGenerator: InsightTextGenerating, @unchecked Sendable {
 
-    public init() {}
+    /// Display unit for slope strings (defaults to kg for tests).
+    private let weightUnit: @MainActor () -> WeightUnit
+
+    public init(weightUnit: @escaping @MainActor () -> WeightUnit = { .kg }) {
+        self.weightUnit = weightUnit
+    }
 
     @MainActor
     public func generateHighlights(
@@ -31,7 +36,7 @@ public final class TemplateInsightGenerator: InsightTextGenerating, @unchecked S
             highlights.append(AnalyticsHighlight(
                 type: .warning,
                 title: "High Training Load",
-                detail: String(format: "ACWR at %.2f — reduce volume to avoid overtraining", load.acwr)
+                detail: "ACWR \(AnalyticsFormatting.acwr(load.acwr)), far above your baseline"
             ))
         }
 
@@ -50,7 +55,7 @@ public final class TemplateInsightGenerator: InsightTextGenerating, @unchecked S
             highlights.append(AnalyticsHighlight(
                 type: .improvement,
                 title: "\(trend.exerciseName) Progressing",
-                detail: String(format: "+%.1f kg/week", trend.slopePerWeek)
+                detail: "\(AnalyticsFormatting.slope(kgPerWeek: trend.slopePerWeek, unit: weightUnit())) over recent weeks"
             ))
         }
 
@@ -58,7 +63,7 @@ public final class TemplateInsightGenerator: InsightTextGenerating, @unchecked S
             highlights.append(AnalyticsHighlight(
                 type: .improvement,
                 title: "Optimal Training Load",
-                detail: String(format: "ACWR at %.2f — sweet spot for progress", load.acwr)
+                detail: "ACWR \(AnalyticsFormatting.acwr(load.acwr)), in the optimal range"
             ))
         }
 
@@ -88,7 +93,7 @@ public final class TemplateInsightGenerator: InsightTextGenerating, @unchecked S
             highlights.append(AnalyticsHighlight(
                 type: .warning,
                 title: "Muscles Still Fatigued",
-                detail: "\(names) — consider extra rest before training again"
+                detail: "\(names) still fatigued"
             ))
         }
 
@@ -154,11 +159,10 @@ public final class TemplateInsightGenerator: InsightTextGenerating, @unchecked S
         if let balance = muscleBalance {
             let significant = balance.imbalances.filter { $0.severity != .mild }
             for imbalance in significant.prefix(1) {
-                let ratioStr = String(format: "%.1f", imbalance.ratio)
                 highlights.append(AnalyticsHighlight(
                     type: .warning,
                     title: "\(imbalance.primaryGroup.capitalized)/\(imbalance.comparisonGroup.capitalized) Imbalance",
-                    detail: "\(ratioStr)x ratio"
+                    detail: "\(AnalyticsFormatting.ratio(imbalance.ratio)) ratio"
                 ))
             }
         }

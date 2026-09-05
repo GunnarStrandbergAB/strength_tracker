@@ -61,14 +61,14 @@ public struct MuscleImbalance: Identifiable, Hashable, Sendable, Codable {
     /// Business rule: recommendation derived from imbalance data.
     /// Computed properties are automatically excluded from Codable synthesis.
     public var recommendation: String {
-        let ratioStr = String(format: "%.1f", ratio)
+        let ratioStr = AnalyticsFormatting.ratio(ratio)
         switch severity {
         case .severe:
-            return "Significantly reduce \(primaryGroup) volume and increase \(comparisonGroup) by 30-40% (\(ratioStr)x imbalance)."
+            return "Significantly reduce \(primaryGroup) volume and increase \(comparisonGroup) by 30-40% (\(ratioStr))."
         case .moderate:
-            return "Increase \(comparisonGroup) volume by 20-30% to balance \(primaryGroup) training (\(ratioStr)x imbalance)."
+            return "Increase \(comparisonGroup) volume by 20-30% to balance \(primaryGroup) training (\(ratioStr))."
         case .mild:
-            return "Consider adding 1-2 more sets for \(comparisonGroup) to improve balance with \(primaryGroup) (\(ratioStr)x imbalance)."
+            return "Consider adding 1-2 more sets for \(comparisonGroup) to improve balance with \(primaryGroup) (\(ratioStr))."
         }
     }
 

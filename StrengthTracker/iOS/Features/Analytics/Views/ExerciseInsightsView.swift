@@ -43,7 +43,7 @@ struct ExerciseInsightsView: View {
                             .foregroundStyle(STColors.textPrimary)
                     }
 
-                    Text("No progress for \(plateau.consecutiveWeeksStalled) week\(plateau.consecutiveWeeksStalled == 1 ? "" : "s")")
+                    Text(AnalyticsFormatting.weeksStalled(plateau.consecutiveWeeksStalled))
                         .font(.system(size: 12))
                         .foregroundStyle(STColors.textSecondary)
 

@@ -84,7 +84,7 @@ struct WeeklyProgressWidgetView: View {
                     .tracking(1.2)
                     .foregroundStyle(Color(red: 0.949, green: 0.800, blue: 0.051))
 
-                statRow(icon: "flame.fill", label: "Streak", value: "\(entry.data.currentStreak) days", color: .orange)
+                statRow(icon: "flame.fill", label: "Streak", value: "\(entry.data.currentStreak) wk", color: .orange)
                 statRow(icon: "trophy.fill", label: "Total", value: "\(entry.data.totalWorkoutsAllTime)", color: .yellow)
 
                 if let last = entry.data.lastWorkoutDate {

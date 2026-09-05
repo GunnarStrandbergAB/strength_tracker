@@ -262,7 +262,7 @@ public final class WorkoutAnalyticsViewModel {
     // MARK: - Advanced Insights Accessors
 
     public var advancedInsightsLoaded: Bool {
-        isFeatureUnlocked(.advancedInsights) && insights.workoutCount >= 19
+        isFeatureUnlocked(.advancedInsights) && insights.workoutCount >= AnalyticsFeatureGate.threshold(for: .advancedInsights)
     }
 
 
@@ -290,11 +290,11 @@ public final class WorkoutAnalyticsViewModel {
     }
 
     public func formatACWR(_ acwr: Double) -> String {
-        String(format: "%.2f", acwr)
+        AnalyticsFormatting.acwr(acwr)
     }
 
     public func formatSlope(_ slope: Double) -> String {
-        String(format: "%+.1f %@/wk", weightUnit.fromKg(slope), weightUnit.symbol)
+        AnalyticsFormatting.slope(kgPerWeek: slope, unit: weightUnit)
     }
 
     // MARK: - Feature Gate Helpers

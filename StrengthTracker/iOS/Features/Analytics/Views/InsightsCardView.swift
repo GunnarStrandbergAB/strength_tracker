@@ -101,15 +101,15 @@ struct InsightsCardView: View {
     private var insightsContent: some View {
         let insights = viewModel.insights
 
-        // Plateau warnings
+        // Plateau warnings (the Analytics screen lists them all)
         if !insights.plateaus.isEmpty {
-            let top = insights.plateaus.prefix(2)
+            let top = insights.plateaus.prefix(1)
             ForEach(Array(top)) { plateau in
                 insightRow(
                     icon: "exclamationmark.triangle.fill",
-                    iconColor: .orange,
+                    iconColor: STColors.warning,
                     title: plateau.exerciseName ?? "Exercise",
-                    detail: "Stalled \(plateau.consecutiveWeeksStalled) weeks"
+                    detail: AnalyticsFormatting.weeksStalled(plateau.consecutiveWeeksStalled)
                 )
             }
         }
@@ -120,9 +120,9 @@ struct InsightsCardView: View {
             ForEach(Array(top)) { imbalance in
                 insightRow(
                     icon: "arrow.left.arrow.right",
-                    iconColor: imbalance.severity == .severe ? .red : .orange,
+                    iconColor: AnalyticsColors.severity(imbalance.severity),
                     title: "\(imbalance.primaryGroup) / \(imbalance.comparisonGroup)",
-                    detail: "\(String(format: "%.1f", imbalance.ratio)):1 ratio"
+                    detail: "\(AnalyticsFormatting.ratio(imbalance.ratio)) ratio"
                 )
             }
         }
@@ -138,18 +138,11 @@ struct InsightsCardView: View {
             )
         }
 
-        // Advanced insights top highlight
-        if let highlight = insights.highlights.first {
-            insightRow(
-                icon: highlightIcon(highlight.type),
-                iconColor: highlightColor(highlight.type),
-                title: highlight.title,
-                detail: highlight.detail
-            )
-        }
+        // (The top highlight used to be repeated here; below 19 workouts it is built
+        // from the same plateau/imbalance data as the rows above, so it duplicated them.)
 
         // Fallback: show workout count if nothing notable
-        if insights.plateaus.isEmpty && (insights.muscleBalance?.imbalances.isEmpty ?? true) && insights.recommendations.isEmpty && insights.highlights.isEmpty {
+        if insights.plateaus.isEmpty && (insights.muscleBalance?.imbalances.isEmpty ?? true) && insights.recommendations.isEmpty {
             insightRow(
                 icon: "checkmark.circle.fill",
                 iconColor: STColors.success,

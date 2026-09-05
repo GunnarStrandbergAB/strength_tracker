@@ -14,7 +14,7 @@ struct WeeklyDigestCard: View {
                     .tracking(1.5)
                     .foregroundStyle(STColors.textTertiary)
                 Spacer()
-                Text(weekSummary)
+                Text(lastWeekRange)
                     .font(.system(size: 11))
                     .foregroundStyle(STColors.textSecondary)
             }
@@ -27,8 +27,8 @@ struct WeeklyDigestCard: View {
                 )
                 if abs(digest.volumeDeltaPercent) > 1 {
                     statBadge(
-                        value: String(format: "%+.0f%%", digest.volumeDeltaPercent),
-                        label: "volume"
+                        value: AnalyticsFormatting.percentDelta(digest.volumeDeltaPercent),
+                        label: "volume vs prior week"
                     )
                 }
                 if digest.prsThisWeek > 0 {
@@ -64,24 +64,18 @@ struct WeeklyDigestCard: View {
         )
     }
 
-    private var weekSummary: String {
-        let delta = digest.workoutsThisWeek - digest.workoutsLastWeek
-        if delta > 0 {
-            return "\(digest.workoutsThisWeek) so far this week (+\(delta))"
-        } else if delta < 0 {
-            return "\(digest.workoutsThisWeek) so far this week (\(delta))"
-        }
-        return "\(digest.workoutsThisWeek) so far this week"
+    /// "1–7 Sep": the completed week the digest describes (Monday-start).
+    private var lastWeekRange: String {
+        let window = WorkoutWeekWindow.split([], now: Date())
+        let start = window.previousWeekStart
+        let end = Calendar.mondayStart.date(byAdding: .day, value: 6, to: start) ?? start
+        let day = Date.FormatStyle().day()
+        let dayMonth = Date.FormatStyle().day().month(.abbreviated)
+        return "\(start.formatted(day))–\(end.formatted(dayMonth))"
     }
 
     private var insightColor: Color {
-        switch digest.topInsight.color {
-        case .primary: return STColors.primary
-        case .success: return STColors.success
-        case .warning: return Color.orange
-        case .danger: return STColors.danger
-        case .info: return .blue
-        }
+        AnalyticsColors.coaching(digest.topInsight.color)
     }
 
     private func statBadge(value: String, label: String) -> some View {

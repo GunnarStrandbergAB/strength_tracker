@@ -78,7 +78,8 @@ public final class WidgetDataService: Sendable {
         bodyWeightKg: Double,
         weeklyQualityScore: Double? = nil,
         qualityTrend: Double? = nil,
-        activeExerciseId: UUID? = nil
+        activeExerciseId: UUID? = nil,
+        weightUnitSymbol: String = "kg"
     ) -> WidgetData {
         let now = Date()
         let calendar = Calendar.mondayStart
@@ -136,7 +137,8 @@ public final class WidgetDataService: Sendable {
             weeklyVolume: weeklyVolume,
             previousWeekVolume: previousWeekVolume,
             weeklyQualityScore: weeklyQualityScore,
-            qualityTrend: qualityTrend
+            qualityTrend: qualityTrend,
+            weightUnitSymbol: weightUnitSymbol
         )
     }
 
