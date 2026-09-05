@@ -156,6 +156,68 @@ public struct SessionExecutionService: Sendable {
         return (updatedSession, adjustments, updatedExercises)
     }
 
+    // MARK: - Replay
+
+    /// Recomputes every completed session's contribution from scratch: resets each
+    /// PlanExercise.current1RM to its creation baseline (`estimated1RM`), strips the
+    /// engine's `.oneRMUpdate`/`.apre` adjustments, and replays `completeSession` over
+    /// the completed sessions in completion order. Deterministic, so editing or
+    /// unlinking any past session is "fix the link, replay" with no double-applied
+    /// EWMA steps. Explanations of adjustments that recur unchanged are carried over.
+    ///
+    /// Returns the replayed plan and the adjustments produced by the most recently
+    /// completed session (for propagation to future sessions).
+    public func replayCompletedSessions(
+        plan: ProgressionPlan,
+        workoutsById: [UUID: Workout],
+        bodyWeightKg: Double
+    ) -> (plan: ProgressionPlan, lastSessionAdjustments: [PlanAdjustment]) {
+        var replayed = plan
+        for i in replayed.exercises.indices {
+            replayed.exercises[i].current1RM = replayed.exercises[i].estimated1RM
+        }
+        let engineTriggers: Set<AdjustmentTrigger> = [.oneRMUpdate, .apre]
+        let previousEngineAdjustments = replayed.adjustments.filter { engineTriggers.contains($0.trigger) }
+        replayed.adjustments.removeAll { engineTriggers.contains($0.trigger) }
+
+        // Completed sessions in completion order.
+        var completed: [(bi: Int, wi: Int, si: Int, workout: Workout)] = []
+        for bi in replayed.blocks.indices {
+            for wi in replayed.blocks[bi].weeks.indices {
+                for si in replayed.blocks[bi].weeks[wi].sessions.indices {
+                    let session = replayed.blocks[bi].weeks[wi].sessions[si]
+                    guard let workoutId = session.completedWorkoutId, let workout = workoutsById[workoutId] else { continue }
+                    completed.append((bi, wi, si, workout))
+                }
+            }
+        }
+        completed.sort { ($0.workout.completedAt ?? $0.workout.startedAt) < ($1.workout.completedAt ?? $1.workout.startedAt) }
+
+        var lastAdjustments: [PlanAdjustment] = []
+        for entry in completed {
+            let session = replayed.blocks[entry.bi].weeks[entry.wi].sessions[entry.si]
+            let result = completeSession(session, workout: entry.workout, planExercises: replayed.exercises, bodyWeightKg: bodyWeightKg)
+            replayed.blocks[entry.bi].weeks[entry.wi].sessions[entry.si] = result.updatedSession
+            replayed.exercises = result.updatedExercises
+            let stamped = result.adjustments.map { adjustment -> PlanAdjustment in
+                var adjustment = adjustment
+                adjustment.wasAccepted = true
+                adjustment.appliedAt = entry.workout.completedAt ?? adjustment.appliedAt
+                if let previous = previousEngineAdjustments.first(where: {
+                    $0.trigger == adjustment.trigger
+                        && $0.adjustmentType == adjustment.adjustmentType
+                        && $0.description == adjustment.description
+                }) {
+                    adjustment.coachingExplanation = previous.coachingExplanation
+                }
+                return adjustment
+            }
+            replayed.adjustments.append(contentsOf: stamped)
+            lastAdjustments = stamped
+        }
+        return (replayed, lastAdjustments)
+    }
+
     // MARK: - Estimate 1RM
 
     /// Estimates the current 1RM from a set of completed exercise sets.

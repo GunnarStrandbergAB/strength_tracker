@@ -810,9 +810,14 @@ public final class ProgressionPlanViewModel {
             return
         }
 
-        // Step 2: idempotency — Watch transfers can retry the same completion.
-        guard plan.blocks[bi].weeks[wi].sessions[si].completedWorkoutId == nil else {
-            await loadActivePlan()
+        // Step 2: idempotency — Watch transfers can retry the same completion. A retry
+        // for the SAME workout means its contents may have changed: treat as an edit.
+        if let existing = plan.blocks[bi].weeks[wi].sessions[si].completedWorkoutId {
+            if existing == workoutId {
+                await handleSessionEdited(sessionId: sessionId, planId: planId, workoutId: workoutId)
+            } else {
+                await loadActivePlan()
+            }
             return
         }
 
@@ -889,6 +894,61 @@ public final class ProgressionPlanViewModel {
             print("[ProgressionPlanVM] Adaptive completion pipeline failed, falling back: \(error)")
             await fallbackMarkSessionCompleted(sessionId: sessionId, planId: planId, workoutId: workoutId)
         }
+    }
+
+    /// A completed, plan-linked workout was edited after the fact: replay every
+    /// completed session so 1RM estimates and future targets reflect the corrected
+    /// numbers without double-applying the EWMA/APRE steps.
+    public func handleSessionEdited(sessionId: UUID, planId: UUID, workoutId: UUID) async {
+        guard let workoutRepository,
+              var plan = try? await progressionPlanRepository.fetch(id: planId),
+              let (bi, wi, si) = Self.locateSession(sessionId, in: plan),
+              plan.blocks[bi].weeks[wi].sessions[si].completedWorkoutId == workoutId,
+              let workouts = try? await workoutRepository.fetchAll() else { return }
+        let workoutsById = Dictionary(workouts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let replay = sessionExecutionService.replayCompletedSessions(
+            plan: plan, workoutsById: workoutsById, bodyWeightKg: bodyWeightKg
+        )
+        plan = replay.plan
+        applyExerciseUpdatesToFutureSessions(plan: &plan, adjustments: replay.lastSessionAdjustments)
+        plan.updatedAt = Date()
+        do {
+            try await progressionPlanRepository.save(plan)
+            await loadActivePlan()
+        } catch {
+            errorMessage = "Failed to update plan after edit: \(error.localizedDescription)"
+        }
+    }
+
+    /// A plan-linked workout was deleted: clear the session's completion and replay
+    /// the rest so nothing keeps pointing at a missing workout.
+    public func handleWorkoutUnlinked(workoutId: UUID) async {
+        guard let workoutRepository,
+              let plans = try? await progressionPlanRepository.fetchAll() else { return }
+        for var plan in plans {
+            var cleared = false
+            for bi in plan.blocks.indices {
+                for wi in plan.blocks[bi].weeks.indices {
+                    for si in plan.blocks[bi].weeks[wi].sessions.indices
+                    where plan.blocks[bi].weeks[wi].sessions[si].completedWorkoutId == workoutId {
+                        plan.blocks[bi].weeks[wi].sessions[si].completedWorkoutId = nil
+                        plan.blocks[bi].weeks[wi].sessions[si].completedAt = nil
+                        plan.blocks[bi].weeks[wi].sessions[si].userWorkoutNotes = nil
+                        cleared = true
+                    }
+                }
+            }
+            guard cleared, let workouts = try? await workoutRepository.fetchAll() else { continue }
+            let workoutsById = Dictionary(workouts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let replay = sessionExecutionService.replayCompletedSessions(
+                plan: plan, workoutsById: workoutsById, bodyWeightKg: bodyWeightKg
+            )
+            plan = replay.plan
+            applyExerciseUpdatesToFutureSessions(plan: &plan, adjustments: replay.lastSessionAdjustments)
+            plan.updatedAt = Date()
+            try? await progressionPlanRepository.save(plan)
+        }
+        await loadActivePlan()
     }
 
     /// Pre-pipeline behavior: just mark the session completed and reload.

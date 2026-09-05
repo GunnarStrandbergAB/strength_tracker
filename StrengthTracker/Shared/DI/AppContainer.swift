@@ -590,6 +590,14 @@ public final class AppContainer: Sendable {
                 sessionId: sessionId, planId: planId, workoutId: workoutId
             )
         }
+        workoutFinalizer.onSessionEdited = { [weak planVM] sessionId, planId, workoutId in
+            await planVM?.handleSessionEdited(
+                sessionId: sessionId, planId: planId, workoutId: workoutId
+            )
+        }
+        workoutFinalizer.onWorkoutUnlinked = { [weak planVM] workoutId in
+            await planVM?.handleWorkoutUnlinked(workoutId: workoutId)
+        }
         // A material body-weight change shifts every effective-load number: rebuild once.
         let finalizerForRebuild = workoutFinalizer
         bodyWeightProvider.onMaterialChange = { _, _ in
