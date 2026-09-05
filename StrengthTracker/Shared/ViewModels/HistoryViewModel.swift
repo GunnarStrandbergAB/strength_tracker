@@ -241,6 +241,20 @@ public final class HistoryViewModel {
         await saveAndSync(workout)
     }
 
+    /// Swaps the exercise of a logged WorkoutExercise while keeping its id, order,
+    /// notes, superset group and every set. PR rows are rebuilt by endEditing();
+    /// per-set PR flags are cleared because they belonged to the old exercise.
+    public func replaceExercise(exerciseId: UUID, with exercise: Exercise) async {
+        guard var workout = selectedWorkout,
+              let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              workout.exercises[ei].exercise.id != exercise.id else { return }
+        workout.exercises[ei].exercise = exercise
+        for si in workout.exercises[ei].sets.indices {
+            workout.exercises[ei].sets[si].isPersonalRecord = false
+        }
+        await saveAndSync(workout)
+    }
+
     public func updateWorkoutName(_ name: String) async {
         guard var workout = selectedWorkout, !name.isEmpty, name != workout.name else { return }
         workout.name = name
