@@ -87,9 +87,9 @@ public final class HistoryViewModel {
             for workoutExercise in workout.exercises {
                 if workoutExercise.exercise.id == exerciseId {
                     let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: displayBodyWeightKg)
-                    for set in workoutExercise.sets where set.isCompleted {
+                    for set in workoutExercise.sets where set.isCompleted && set.setType != .warmup {
                         // One point per performed segment so drop-set parts feed the
-                        // charts like any other effort.
+                        // charts like any other effort (warm-ups are not performance data).
                         for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
                             results.append((date: workout.startedAt, weight: part.load, reps: part.reps))
                         }

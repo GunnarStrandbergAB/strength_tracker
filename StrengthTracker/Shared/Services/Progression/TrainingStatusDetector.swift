@@ -66,7 +66,7 @@ public final class TrainingStatusDetector: Sendable {
             ($0.completedAt ?? $0.startedAt) < ($1.completedAt ?? $1.startedAt)
         }
         guard let firstWorkout = sorted.first else { return .beginner }
-        let firstWorkoutDate = firstWorkout.completedAt ?? firstWorkout.startedAt
+        let firstWorkoutDate = firstWorkout.trainingDate
         let now = Date()
 
         let monthsTraining = Calendar.current.dateComponents(
@@ -120,7 +120,7 @@ public final class TrainingStatusDetector: Sendable {
         var bestExtendedEstimate: Double?
 
         for workout in completed {
-            let workoutDate = workout.completedAt ?? workout.startedAt
+            let workoutDate = workout.trainingDate
 
             // Skip data older than 12 months
             guard workoutDate >= twelveMonthsAgo else { continue }
@@ -132,9 +132,8 @@ public final class TrainingStatusDetector: Sendable {
                 let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
 
                 for set in workoutExercise.sets {
-                    guard set.isCompleted else { continue }
-                    for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) where part.reps <= 15 {
-                        let estimate = TrainingStatusDetector.calculateOneRM(weight: part.load, reps: part.reps)
+                    guard let estimate = AnalyticsCalculations.bestE1RM(for: set, baseLoadPerRep: baseLoad) else { continue }
+                    do {
 
                         if isRecent {
                             if let current = bestRecentEstimate {
@@ -180,7 +179,7 @@ public final class TrainingStatusDetector: Sendable {
         )!
 
         let recentWorkouts = workouts.filter { workout in
-            let date = workout.completedAt ?? workout.startedAt
+            let date = workout.trainingDate
             return date >= threeMonthsAgo
         }
 
@@ -194,20 +193,4 @@ public final class TrainingStatusDetector: Sendable {
         return Double(recentWorkouts.count) / weeks
     }
 
-    /// Estimates 1RM from a given weight and rep count.
-    ///
-    /// - reps == 1: weight itself
-    /// - reps <= 5: Epley-style: weight * (1 + reps/30)
-    /// - reps <= 15: Brzycki: weight * 36 / (37 - reps)
-    /// - reps > 15: capped at 15 for formula input (unreliable above)
-    static func calculateOneRM(weight: Double, reps: Int) -> Double {
-        if reps == 1 {
-            return weight
-        } else if reps <= 5 {
-            return weight * (1.0 + Double(reps) / 30.0)
-        } else {
-            // reps <= 15 (caller already filters out > 15)
-            return weight * 36.0 / (37.0 - Double(reps))
-        }
-    }
 }

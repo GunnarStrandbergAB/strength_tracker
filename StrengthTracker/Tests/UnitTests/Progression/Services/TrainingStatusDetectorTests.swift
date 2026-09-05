@@ -337,8 +337,8 @@ final class TrainingStatusDetectorTests: XCTestCase {
         XCTAssertNil(estimate)
     }
 
-    func testEstimateOneRM_highRepSets_ignored() async throws {
-        // Sets with reps > 15 should not be used for estimation
+    func testEstimateOneRM_highRepSets_clamped() async throws {
+        // Sets with reps > 15 are clamped to 15 for the formula (app-wide rule), not dropped.
         let exerciseId = UUID()
         let exercise = makeExercise(id: exerciseId)
         let highRepSet = makeSet(weight: 60, reps: 20)
@@ -356,7 +356,8 @@ final class TrainingStatusDetectorTests: XCTestCase {
 
         let sut = makeSUT(workouts: [workout])
         let estimate = try await sut.estimateOneRM(exerciseId: exerciseId)
-        XCTAssertNil(estimate)
+        let expected = AnalyticsCalculations.calculateOneRM(weight: 60, reps: 15).rounded(toNearest: 2.5)
+        XCTAssertEqual(estimate?.value, expected)
     }
 
     func testEstimateOneRM_roundsToNearest2_5() async throws {

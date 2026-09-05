@@ -89,12 +89,13 @@ public final class WidgetDataService: Sendable {
             .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
         let lastWorkout = completedWorkouts.first
 
-        // Weekly workout count (this calendar week)
-        let startOfWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
-        let weeklyCount = completedWorkouts.filter { ($0.completedAt ?? .distantPast) >= startOfWeek }.count
+        // Weekly workout count (Monday-start week, by training date) — the same
+        // definition the Dashboard chart uses.
+        let weeklyCount = WorkoutWeekWindow.split(completedWorkouts, now: now, calendar: calendar).current.count
 
-        // Streak calculation
-        let streak = calculateStreak(from: completedWorkouts, calendar: calendar, today: now)
+        // Streak = consecutive trained weeks (lifters train a few times a week; a
+        // day streak reads 0 or 1 almost always).
+        let streak = WorkoutWeekWindow.consecutiveWeeksTrained(completedWorkouts, now: now, calendar: calendar)
 
         // 7-day calendar (Mon=0 .. Sun=6)
         let weekDaysTrained = buildWeekCalendar(from: completedWorkouts, calendar: calendar, now: now)
@@ -141,37 +142,6 @@ public final class WidgetDataService: Sendable {
 
     // MARK: - Helpers
 
-    private func calculateStreak(from workouts: [Workout], calendar: Calendar, today: Date) -> Int {
-        guard !workouts.isEmpty else { return 0 }
-
-        // Get unique training dates
-        let trainingDays = Set(workouts.compactMap { workout -> DateComponents? in
-            guard let date = workout.completedAt else { return nil }
-            return calendar.dateComponents([.year, .month, .day], from: date)
-        })
-
-        var streak = 0
-        var checkDate = today
-
-        // Allow today or yesterday as the start
-        let todayComponents = calendar.dateComponents([.year, .month, .day], from: checkDate)
-        if !trainingDays.contains(todayComponents) {
-            checkDate = calendar.date(byAdding: .day, value: -1, to: checkDate) ?? checkDate
-        }
-
-        while true {
-            let components = calendar.dateComponents([.year, .month, .day], from: checkDate)
-            if trainingDays.contains(components) {
-                streak += 1
-                checkDate = calendar.date(byAdding: .day, value: -1, to: checkDate) ?? checkDate
-            } else {
-                break
-            }
-        }
-
-        return streak
-    }
-
     private func buildWeekCalendar(from workouts: [Workout], calendar: Calendar, now: Date) -> [Bool] {
         // Find Monday of the current week (calendar is already Monday-start)
         guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: now) else {
@@ -180,8 +150,9 @@ public final class WidgetDataService: Sendable {
         let monday = weekInterval.start
 
         var trained = Array(repeating: false, count: 7)
-        for workout in workouts {
-            guard let date = workout.completedAt, date >= monday else { continue }
+        for workout in workouts where workout.completedAt != nil {
+            let date = workout.trainingDate
+            guard date >= monday else { continue }
             let dayOfWeek = calendar.component(.weekday, from: date)
             // Convert: Sunday=1, Monday=2, ..., Saturday=7 -> Mon=0, ..., Sun=6
             let index = (dayOfWeek + 5) % 7
@@ -190,23 +161,13 @@ public final class WidgetDataService: Sendable {
         return trained
     }
 
-    /// Splits completed workouts into the current and previous calendar week
-    /// (Monday-start). Single source of truth for week-windowing shared by the
-    /// widget payload and app-side highlight generation.
+    /// Splits completed workouts into the current and previous calendar week.
+    /// Delegates to `WorkoutWeekWindow` — the one week definition in the app.
     public func weeklyWorkoutSplit(
         from workouts: [Workout], calendar: Calendar = .mondayStart, now: Date = Date()
     ) -> (current: [Workout], previous: [Workout]) {
-        guard let currentWeekInterval = calendar.dateInterval(of: .weekOfYear, for: now) else {
-            return ([], [])
-        }
-        let previousWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: currentWeekInterval.start)!
-        guard let previousWeekInterval = calendar.dateInterval(of: .weekOfYear, for: previousWeekStart) else {
-            return ([], [])
-        }
-
-        let current = workouts.filter { currentWeekInterval.contains($0.completedAt ?? .distantPast) }
-        let previous = workouts.filter { previousWeekInterval.contains($0.completedAt ?? .distantPast) }
-        return (current, previous)
+        let window = WorkoutWeekWindow.split(workouts, now: now, calendar: calendar)
+        return (window.current, window.previous)
     }
 
     /// Calendar-week (Monday-start) volume for the current and previous week.

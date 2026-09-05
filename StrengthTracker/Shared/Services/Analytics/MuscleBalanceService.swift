@@ -71,7 +71,7 @@ public final class MuscleBalanceService: Sendable {
         var muscleSets: [MuscleGroup: Int] = [:]
         for workout in recentWorkouts {
             for exercise in workout.exercises {
-                let completedSets = exercise.sets.filter(\.isCompleted).count
+                let completedSets = exercise.sets.filter { $0.isCompleted && $0.setType != .warmup }.count
                 muscleSets[exercise.exercise.primaryMuscleGroup, default: 0] += completedSets
             }
         }

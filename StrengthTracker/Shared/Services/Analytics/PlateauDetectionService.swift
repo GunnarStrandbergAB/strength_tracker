@@ -167,7 +167,7 @@ public final class PlateauDetectionService: Sendable {
         var groups: [Date: [(Workout, WorkoutExercise)]] = [:]
 
         for item in items {
-            let date = item.0.completedAt ?? item.0.startedAt
+            let date = item.0.trainingDate
             guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: date) else { continue }
             groups[weekInterval.start, default: []].append(item)
         }

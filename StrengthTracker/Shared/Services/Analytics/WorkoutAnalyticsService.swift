@@ -28,7 +28,8 @@ public final class WorkoutAnalyticsService: Sendable {
     // instead of vectorization wall-clock time — re-vectorize once so historical
     // vectors get correct dates.
     // v4: vectors are computed from effective load (bodyweight base + extra kg)
-    private static let currentVectorVersion = 4
+    /// v5: vectors are built with the resolved body weight (earlier ones used 70 kg).
+    private static let currentVectorVersion = 5
 
     // Advanced Insights services
     private let volumeLandmarkService: VolumeLandmarkService?
@@ -378,6 +379,14 @@ public final class WorkoutAnalyticsService: Sendable {
         // history-relative, so drop them all (cheap; recomputed lazily).
         qualityScoreService?.invalidateAll()
         invalidateDerivedCaches()
+    }
+
+    /// Deletes vectors whose workout no longer exists or is not completed.
+    public func sweepOrphanVectors() async throws {
+        let completedIds = Set(try await workoutRepository.fetchAll().filter { $0.completedAt != nil }.map(\.id))
+        for vector in try await analyticsRepository.fetchAllVectors() where !completedIds.contains(vector.workoutId) {
+            try await analyticsRepository.deleteVector(for: vector.workoutId)
+        }
     }
 
     /// Batch vectorize all workouts missing vectors

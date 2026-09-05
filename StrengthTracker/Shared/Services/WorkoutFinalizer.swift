@@ -181,6 +181,7 @@ public final class WorkoutFinalizer {
         await enqueue { [self] in
             try? await analyticsRepository.deleteAllVectors()
             try? await analyticsService?.vectorizeAllWorkouts()
+            try? await analyticsService?.sweepOrphanVectors()
             try? await personalRecordService?.recalculateAllPRs()
             invalidateCaches()
             dataRevision.bump()

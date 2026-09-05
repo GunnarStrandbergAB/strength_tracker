@@ -31,8 +31,7 @@ public enum AnalyticsCalculations {
                 let base = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
                 for set in we.sets {
                     guard set.isCompleted, set.setType != .warmup else { continue }
-                    for part in set.effectiveLoadParts(baseLoadPerRep: base) {
-                        let e1rm = calculateOneRM(weight: part.load, reps: min(part.reps, 15))
+                    if let e1rm = Self.bestE1RM(for: set, baseLoadPerRep: base) {
                         bestE1RM[we.exercise.id] = max(bestE1RM[we.exercise.id] ?? 0, e1rm)
                     }
                 }
@@ -75,11 +74,30 @@ public enum AnalyticsCalculations {
         }
     }
 
-    // MARK: - e1RM Calculation (nonisolated copy)
+    // MARK: - e1RM Calculation (the ONE formula)
 
-    /// Estimated 1RM using Brzycki formula — nonisolated mirror of
-    /// `TrainingStatusDetector.calculateOneRM` for use in analytics services
-    /// that run outside the main actor.
+    /// Reps above this are unreliable for the formula (and Brzycki divides by zero
+    /// at 37). Every caller clamps to it — never drops high-rep sets.
+    public static let maxRepsForE1RM = 15
+
+    /// Best estimated 1RM of a set across its effective-load parts (drop segments
+    /// included), reps clamped to `maxRepsForE1RM`. nil for warm-ups, incomplete
+    /// sets, or sets without a positive load.
+    public static func bestE1RM(for set: ExerciseSet, baseLoadPerRep: Double?) -> Double? {
+        guard set.isCompleted, set.setType != .warmup else { return nil }
+        let best = set.effectiveLoadParts(baseLoadPerRep: baseLoadPerRep)
+            .filter { $0.load > 0 && $0.reps > 0 }
+            .map { calculateOneRM(weight: $0.load, reps: min($0.reps, maxRepsForE1RM)) }
+            .max()
+        return best
+    }
+
+    /// Best estimated 1RM across several sets.
+    public static func bestE1RM(in sets: [ExerciseSet], baseLoadPerRep: Double?) -> Double? {
+        sets.compactMap { bestE1RM(for: $0, baseLoadPerRep: baseLoadPerRep) }.max()
+    }
+
+    /// Hybrid Epley (≤5 reps) / Brzycki (6–15 reps) estimate; callers clamp reps.
     public static func calculateOneRM(weight: Double, reps: Int) -> Double {
         if reps == 1 {
             return weight

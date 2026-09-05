@@ -62,7 +62,7 @@ public final class DashboardViewModel {
 
             let bw = resolvedBodyWeightKg
 
-            let calendar = Calendar.current
+            let calendar = Calendar.mondayStart
             let now = Date()
 
             // Determine start of current week (Monday-based)

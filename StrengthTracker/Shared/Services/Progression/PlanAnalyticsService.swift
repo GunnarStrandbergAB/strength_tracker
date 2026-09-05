@@ -252,7 +252,7 @@ public final class PlanAnalyticsService: Sendable {
                 for session in week.sessions {
                     guard let workout = resolvedWorkouts[session.id] else { continue }
                     for workoutExercise in workout.exercises {
-                        for set in workoutExercise.sets where set.isCompleted {
+                        for set in workoutExercise.sets where set.isCompleted && set.setType != .warmup {
                             if let rpe = set.rpe {
                                 totalRPE += rpe
                                 rpeCount += 1
@@ -295,7 +295,7 @@ public final class PlanAnalyticsService: Sendable {
 
                 // Average intensity from RPE values across sets
                 for workoutExercise in workout.exercises {
-                    for set in workoutExercise.sets where set.isCompleted {
+                    for set in workoutExercise.sets where set.isCompleted && set.setType != .warmup {
                         if let rpe = set.rpe {
                             totalIntensity += rpe
                             intensityCount += 1

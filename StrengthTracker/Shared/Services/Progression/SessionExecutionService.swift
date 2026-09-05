@@ -220,34 +220,12 @@ public struct SessionExecutionService: Sendable {
 
     // MARK: - Estimate 1RM
 
-    /// Estimates the current 1RM from a set of completed exercise sets.
-    ///
-    /// Uses Epley formula for low reps (2-5), Brzycki for moderate reps (6-15),
-    /// and direct weight for singles. Ignores sets with reps > 15, warmups,
-    /// and incomplete sets. Returns the highest estimate rounded to nearest 2.5.
+    /// Estimates the current 1RM from a set of completed exercise sets using the
+    /// app-wide formula (`AnalyticsCalculations.bestE1RM`: hybrid Epley/Brzycki,
+    /// warm-ups and incomplete sets ignored, every drop segment considered, reps
+    /// clamped to 15). Returns the highest estimate rounded to nearest 2.5.
     public func estimateCurrent1RM(from sets: [ExerciseSet], baseLoadPerRep: Double? = nil) -> Double? {
-        var bestEstimate: Double = 0
-
-        for set in sets where set.isCompleted && set.setType != .warmup {
-            for part in set.effectiveLoadParts(baseLoadPerRep: baseLoadPerRep) where part.reps <= 15 {
-                let weight = part.load
-                let reps = part.reps
-                let estimate: Double
-
-                if reps == 1 {
-                    estimate = weight
-                } else if reps <= 5 {
-                    // Epley formula
-                    estimate = weight * (1.0 + Double(reps) / 30.0)
-                } else {
-                    // Brzycki formula (6-15 reps)
-                    estimate = weight * 36.0 / (37.0 - Double(reps))
-                }
-
-                bestEstimate = max(bestEstimate, estimate)
-            }
-        }
-
-        return bestEstimate > 0 ? bestEstimate.rounded(toNearest: 2.5) : nil
+        guard let best = AnalyticsCalculations.bestE1RM(in: sets, baseLoadPerRep: baseLoadPerRep), best > 0 else { return nil }
+        return best.rounded(toNearest: 2.5)
     }
 }

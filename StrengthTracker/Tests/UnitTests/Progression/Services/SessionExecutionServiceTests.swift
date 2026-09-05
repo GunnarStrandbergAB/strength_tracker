@@ -256,11 +256,12 @@ struct SessionExecutionServiceTests {
         #expect(result == 107.5)
     }
 
-    @Test("estimateCurrent1RM: high reps (>15) are ignored, returns nil")
-    func testEstimateCurrent1RM_highReps_ignored() {
+    @Test("estimateCurrent1RM: high reps (>15) are clamped to 15, never dropped")
+    func testEstimateCurrent1RM_highReps_clamped() {
         let sets = [makeCompletedSet(weight: 50.0, reps: 20, order: 0)]
         let result = sut.estimateCurrent1RM(from: sets)
-        #expect(result == nil)
+        // Brzycki at 15 reps: 50 × 36 / 22 = 81.8 → 82.5
+        #expect(result == AnalyticsCalculations.calculateOneRM(weight: 50, reps: 15).rounded(toNearest: 2.5))
     }
 
     @Test("estimateCurrent1RM: no completed sets returns nil")

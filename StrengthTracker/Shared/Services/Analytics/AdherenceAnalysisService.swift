@@ -6,19 +6,18 @@ public final class AdherenceAnalysisService: Sendable {
 
     public func analyze(workouts: [Workout]) -> AdherenceAnalysis {
         let completed = workouts.filter { $0.completedAt != nil }
-            .sorted { ($0.completedAt ?? .distantPast) < ($1.completedAt ?? .distantPast) }
+            .sorted { $0.trainingDate < $1.trainingDate }
 
-        // Weekly frequency: count workouts per ISO week for last 8 weeks
-        let calendar = Calendar.current
+        // Weekly frequency over the last 8 Monday-start weeks, keyed by week-start
+        // date (a `.weekOfYear` integer collides across years).
+        let calendar = Calendar.mondayStart
         let now = Date()
         let eightWeeksAgo = calendar.date(byAdding: .weekOfYear, value: -8, to: now)!
-        let recent = completed.filter { ($0.completedAt ?? .distantPast) >= eightWeeksAgo }
+        let recent = completed.filter { $0.trainingDate >= eightWeeksAgo }
 
-        // Count per week
-        var weekCounts: [Int: Int] = [:]
+        var weekCounts: [Date: Int] = [:]
         for w in recent {
-            let week = calendar.component(.weekOfYear, from: w.completedAt ?? w.startedAt)
-            weekCounts[week, default: 0] += 1
+            weekCounts[calendar.weekStart(for: w.trainingDate), default: 0] += 1
         }
         let weeklyFrequency = weekCounts.isEmpty ? 0 : Double(weekCounts.values.reduce(0, +)) / Double(max(weekCounts.count, 1))
 
@@ -42,8 +41,8 @@ public final class AdherenceAnalysisService: Sendable {
         }
         let mostCommonDays = dayCounts.sorted { $0.value > $1.value }.prefix(3).map(\.key)
 
-        // Gap analysis
-        let dates = completed.compactMap(\.completedAt).sorted()
+        // Gap analysis (by training date)
+        let dates = completed.map(\.trainingDate).sorted()
         var gaps: [Double] = []
         // indices.dropFirst() — `1..<dates.count` traps on an empty history
         for i in dates.indices.dropFirst() {
@@ -57,24 +56,9 @@ public final class AdherenceAnalysisService: Sendable {
             currentGap = 0
         }
 
-        // Streaks (consecutive weeks with 1+ workout)
-        var maxStreak = 0
-        var currentStreak = 0
-        let checkWeeks = 52
-        for weekOffset in (0..<checkWeeks).reversed() {
-            guard let weekStart = calendar.date(byAdding: .weekOfYear, value: -weekOffset, to: now) else { continue }
-            let weekEnd = calendar.date(byAdding: .day, value: 7, to: weekStart)!
-            let hasWorkout = completed.contains { w in
-                guard let d = w.completedAt else { return false }
-                return d >= weekStart && d < weekEnd
-            }
-            if hasWorkout {
-                currentStreak += 1
-                maxStreak = max(maxStreak, currentStreak)
-            } else {
-                currentStreak = 0
-            }
-        }
+        // Streaks: consecutive Monday-start weeks with 1+ workout (shared definition).
+        let maxStreak = WorkoutWeekWindow.longestWeeklyStreak(completed, calendar: calendar)
+        let currentStreak = WorkoutWeekWindow.consecutiveWeeksTrained(completed, now: now, calendar: calendar)
 
         // Dropout risk
         let gapStdDev: Double

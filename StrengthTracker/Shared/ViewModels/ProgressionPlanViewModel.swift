@@ -864,10 +864,7 @@ public final class ProgressionPlanViewModel {
             // Step 7: adviser proposals over the last 8 weeks of completed workouts.
             if let adviser = adaptiveAdjustmentService {
                 let cutoff = Calendar.current.date(byAdding: .weekOfYear, value: -8, to: Date()) ?? .distantPast
-                let recentWorkouts = allWorkouts.filter {
-                    guard let completedAt = $0.completedAt else { return false }
-                    return completedAt >= cutoff
-                }
+                let recentWorkouts = allWorkouts.filter { $0.completedAt != nil && $0.trainingDate >= cutoff }
                 let proposals = try await adviser.analyzeAndPropose(plan: plan, recentWorkouts: recentWorkouts)
                 for proposal in proposals {
                     guard !Self.isDuplicateProposal(proposal.adjustment, existing: plan.adjustments) else { continue }

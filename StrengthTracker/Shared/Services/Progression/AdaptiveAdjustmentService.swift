@@ -335,38 +335,18 @@ public final class AdaptiveAdjustmentService: Sendable {
         }
     }
 
-    /// Simple 1RM estimation from workout sets using Epley/Brzycki.
+    /// Best recent 1RM estimate for an exercise (app-wide formula: warm-ups and
+    /// incomplete sets ignored, every drop segment considered, reps clamped to 15).
     private func estimateCurrent1RM(exerciseId: UUID, from workouts: [Workout]) -> Double? {
         var best: Double?
-
         for workout in workouts {
-            for workoutExercise in workout.exercises {
-                guard workoutExercise.exercise.id == exerciseId else { continue }
+            for workoutExercise in workout.exercises where workoutExercise.exercise.id == exerciseId {
                 let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
-                for set in workoutExercise.sets where set.isCompleted {
-                    guard let first = set.effectiveLoadParts(baseLoadPerRep: baseLoad).first,
-                          first.reps <= 15 else { continue }
-                    let weight = first.load
-                    let reps = first.reps
-
-                    let estimate: Double
-                    if reps == 1 {
-                        estimate = weight
-                    } else if reps <= 5 {
-                        estimate = weight * (1.0 + Double(reps) / 30.0)
-                    } else {
-                        estimate = weight * 36.0 / (37.0 - Double(reps))
-                    }
-
-                    if let current = best {
-                        best = max(current, estimate)
-                    } else {
-                        best = estimate
-                    }
+                if let estimate = AnalyticsCalculations.bestE1RM(in: workoutExercise.sets, baseLoadPerRep: baseLoad) {
+                    best = max(best ?? 0, estimate)
                 }
             }
         }
-
         return best
     }
 
