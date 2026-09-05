@@ -39,9 +39,10 @@ public enum ExerciseNameResolver {
 /// Resolves model-provided template names against the user's custom templates.
 @MainActor
 public enum TemplateNameResolver {
-    public static func resolve(name: String, in templates: [WorkoutTemplate]) throws -> WorkoutTemplate {
+    /// `includeLibrary` also matches the built-in library templates (custom ones win ties).
+    public static func resolve(name: String, in templates: [WorkoutTemplate], includeLibrary: Bool = false) throws -> WorkoutTemplate {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let userTemplates = templates.filter(\.isCustom)
+        let userTemplates = templates.filter(\.isCustom) + (includeLibrary ? templates.filter { !$0.isCustom } : [])
         if let match = userTemplates.first(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
             return match
         }

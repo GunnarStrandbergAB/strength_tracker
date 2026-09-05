@@ -27,14 +27,6 @@ func parseEnum<T: CaseIterable & RawRepresentable>(
     return value
 }
 
-private func proposalReceipt(kind: String, name: String) -> String {
-    AIJSON.string(.object([
-        "status": .string("proposal_presented"),
-        "kind": .string(kind),
-        "name": .string(name),
-        "note": .string("The user sees a card with Save/Discard. Do not claim it was saved.")
-    ]))
-}
 
 // MARK: - propose_exercise
 

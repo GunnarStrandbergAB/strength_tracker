@@ -100,7 +100,9 @@ struct AIChatView: View {
 
     @ViewBuilder
     private func messageView(_ message: ChatMessage) -> some View {
-        if message.kind == .draft, let draft = viewModel.decodeDraft(message) {
+        if message.kind == .receipt, let receipt = viewModel.decodeReceipt(message) {
+            ReceiptCardView(receipt: receipt)
+        } else if message.kind == .draft, let draft = viewModel.decodeDraft(message) {
             DraftCardView(
                 draft: draft,
                 status: message.draftStatus ?? .pending,

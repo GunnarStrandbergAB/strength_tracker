@@ -6,8 +6,14 @@ struct ActiveWorkoutView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel: WorkoutViewModel
     @State private var exerciseListViewModel: ExerciseListViewModel
+    /// Owns the tap side effects (rest timer, Live Activity, widget) and the
+    /// start/finish/cancel lifecycle, shared with the AI tools.
+    let coordinator: WorkoutSessionCoordinator
     let restTimerService: RestTimerService
     var analyticsViewModel: WorkoutAnalyticsViewModel?
+    /// Assistant entry point; nil when the AI feature is not configured.
+    var aiChat: AIChatEntry? = nil
+    @State private var showAIChat = false
     @State private var showingExercisePicker = false
     @State private var showingCancelConfirmation = false
     @State private var showingFinishError = false
@@ -20,10 +26,19 @@ struct ActiveWorkoutView: View {
     // ExerciseDragEffect modifiers — never this whole view's body.
     @State private var dragState = ExerciseDragState()
 
-    init(viewModel: WorkoutViewModel, exerciseListViewModel: ExerciseListViewModel, restTimerService: RestTimerService, analyticsViewModel: WorkoutAnalyticsViewModel? = nil) {
+    init(
+        viewModel: WorkoutViewModel,
+        coordinator: WorkoutSessionCoordinator,
+        exerciseListViewModel: ExerciseListViewModel,
+        restTimerService: RestTimerService,
+        analyticsViewModel: WorkoutAnalyticsViewModel? = nil,
+        aiChat: AIChatEntry? = nil
+    ) {
         self._viewModel = State(initialValue: viewModel)
         self._exerciseListViewModel = State(initialValue: exerciseListViewModel)
+        self.coordinator = coordinator
         self.restTimerService = restTimerService
+        self.aiChat = aiChat
         self.analyticsViewModel = analyticsViewModel
     }
 
@@ -41,6 +56,14 @@ struct ActiveWorkoutView: View {
             .navigationTitle(viewModel.currentWorkout?.name ?? "Workout")
             .navigationBarTitleDisplayMode(.inline)
             .stNavigationBarStyle()
+            .toolbar {
+                if let aiChat, aiChat.isAvailable {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        AIChatToolbarButton(isPresented: $showAIChat)
+                    }
+                }
+            }
+            .aiChatCover(aiChat, isPresented: $showAIChat)
             .sheet(isPresented: $showingExercisePicker) {
                 ExercisePickerView(viewModel: exerciseListViewModel) { exercise in
                     viewModel.addExercise(exercise)
@@ -52,13 +75,7 @@ struct ActiveWorkoutView: View {
                 titleVisibility: .visible
             ) {
                 Button("Cancel Workout", role: .destructive) {
-                    restTimerService.stop()
-                    Task {
-                        await viewModel.cancelWorkout()
-                        Task.detached(priority: .utility) {
-                            WidgetDataService().updateActiveWorkoutState(nil)
-                        }
-                    }
+                    Task { await coordinator.cancel() }
                 }
                 Button("Keep Going", role: .cancel) {}
             } message: {
@@ -144,10 +161,7 @@ struct ActiveWorkoutView: View {
                         trainingLoad: analytics.insights.trainingLoad,
                         adherence: analytics.adherenceAnalysis,
                         onStartWorkout: {
-                            Task {
-                                await viewModel.startWorkout(name: "Quick Workout", from: nil)
-                                updateWidgetWorkoutState()
-                            }
+                            Task { await startQuickWorkout() }
                         },
                         onStartFromPlan: nil
                     )
@@ -160,10 +174,7 @@ struct ActiveWorkoutView: View {
                         .font(.title2)
                         .foregroundStyle(STColors.textPrimary)
                     Button {
-                        Task {
-                            await viewModel.startWorkout(name: "Quick Workout", from: nil)
-                            updateWidgetWorkoutState()
-                        }
+                        Task { await startQuickWorkout() }
                     } label: {
                         Text("Start Workout")
                             .font(.system(size: 16, weight: .bold))
@@ -257,8 +268,7 @@ struct ActiveWorkoutView: View {
                     .simultaneousGesture(TapGesture().onEnded {
                         // Tapping anywhere on a card makes it the active exercise
                         guard viewModel.activeExerciseId != workoutExercise.id else { return }
-                        viewModel.activeExerciseId = workoutExercise.id
-                        updateWidgetWorkoutState()
+                        coordinator.setActiveExercise(workoutExercise.id)
                     })
                 }
                 notesCard
@@ -435,26 +445,15 @@ struct ActiveWorkoutView: View {
 
     private func handleSetToggle(workoutExercise: WorkoutExercise, setId: UUID) {
         Task {
-            await viewModel.toggleSetCompletion(
-                exerciseId: workoutExercise.id,
-                setId: setId
-            )
-            if let ex = viewModel.currentWorkout?.exercises.first(where: { $0.id == workoutExercise.id }),
-               let completedSet = ex.sets.first(where: { $0.id == setId }),
-               completedSet.isCompleted,
-               viewModel.userPreferencesService?.autoStartRestTimer ?? true {
-                var restSeconds = workoutExercise.restTimerSeconds ?? viewModel.userPreferencesService?.defaultRestSeconds ?? UserPreferencesService.defaultRestSecondsValue
-                if isDeload, let pct = viewModel.userPreferencesService?.deloadRestPercentage {
-                    restSeconds = max(15, restSeconds * pct / 100)
-                }
-                let setIndex = ex.sets.firstIndex(where: { $0.id == setId }) ?? 0
-                restTimerService.start(
-                    seconds: restSeconds,
-                    exerciseName: workoutExercise.exercise.name,
-                    setNumber: setIndex + 1
-                )
-            }
-            updateWidgetWorkoutState()
+            await coordinator.toggleSet(exerciseId: workoutExercise.id, setId: setId)
+        }
+    }
+
+    private func startQuickWorkout() async {
+        do {
+            try await coordinator.start(.init(name: "Quick Workout"))
+        } catch {
+            viewModel.errorMessage = error.localizedDescription
         }
     }
 
@@ -498,13 +497,9 @@ struct ActiveWorkoutView: View {
 
     private var finishButton: some View {
         Button {
-            restTimerService.stop()
             Task {
                 do {
-                    try await viewModel.completeWorkout()
-                    Task.detached(priority: .utility) {
-                        WidgetDataService().updateActiveWorkoutState(nil)
-                    }
+                    try await coordinator.finish()
                 } catch {
                     finishErrorMessage = error.localizedDescription
                     showingFinishError = true
@@ -674,8 +669,7 @@ struct ActiveWorkoutView: View {
                 .buttonStyle(.plain)
 
                 Button {
-                    restTimerService.stop()
-                    updateWidgetWorkoutState()
+                    coordinator.skipRest()
                 } label: {
                     Text("Skip")
                         .font(.system(size: 12, weight: .bold))
@@ -696,28 +690,6 @@ struct ActiveWorkoutView: View {
     }
 
     // MARK: - Helpers
-
-    // MARK: - Widget Data Updates
-
-    private func updateWidgetWorkoutState() {
-        let service = WidgetDataService()
-        let state: WidgetActiveWorkout?
-        if let workout = viewModel.currentWorkout, viewModel.isActive {
-            state = service.buildActiveWorkoutState(
-                workout: workout,
-                isResting: restTimerService.isRunning,
-                restEndDate: restTimerService.isRunning ? restTimerService.endDate : nil,
-                activeExerciseId: viewModel.activeExerciseId
-            )
-        } else {
-            state = nil
-        }
-        // App-Group JSON round-trip + WidgetCenter XPC — keep it off the main thread
-        // so taps and set toggles render without waiting on it.
-        Task.detached(priority: .utility) {
-            service.updateActiveWorkoutState(state)
-        }
-    }
 
     private func previousDataForExercise(_ exerciseId: UUID) -> [Int: String] {
         var result: [Int: String] = [:]

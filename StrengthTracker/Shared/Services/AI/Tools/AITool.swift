@@ -16,14 +16,17 @@ public protocol AITool: Sendable {
 public struct AIToolResult: Sendable {
     /// Compact JSON (or plain text) sent back to the model as function_call_output.
     public var outputForModel: String
-    /// Present only for propose_* tools: the draft to card in the chat.
+    /// Present only for propose_* tools and confirm-card actions: the draft to card in the chat.
     public var draft: AIDraft?
+    /// Present only for direct-write tools: what changed, carded in the chat.
+    public var receipt: AIReceipt?
     /// Short label for the activity chip, e.g. "Read 12 workouts".
     public var activityLabel: String
 
-    public init(outputForModel: String, draft: AIDraft? = nil, activityLabel: String) {
+    public init(outputForModel: String, draft: AIDraft? = nil, receipt: AIReceipt? = nil, activityLabel: String) {
         self.outputForModel = outputForModel
         self.draft = draft
+        self.receipt = receipt
         self.activityLabel = activityLabel
     }
 }
@@ -66,6 +69,17 @@ public enum AIJSON {
     /// Round to one decimal to keep payloads compact.
     public static func round1(_ value: Double) -> Double {
         (value * 10).rounded() / 10
+    }
+
+    /// Locale-independent "9.5" / "85" (the device locale may use a comma).
+    public static func compact(_ value: Double, maxFractionDigits: Int = 1) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = false
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = maxFractionDigits
+        return formatter.string(from: NSNumber(value: value)) ?? String(value)
     }
 }
 

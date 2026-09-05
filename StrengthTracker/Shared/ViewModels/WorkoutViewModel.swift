@@ -41,6 +41,10 @@ public final class WorkoutViewModel {
     public var postWorkoutDebrief: PostWorkoutDebrief? = nil
     public var showPostWorkoutSummary = false
     public var exerciseCoachingCache: [UUID: ExerciseCoachingData] = [:]
+    /// Message of the most recent failed persist, nil after a successful one.
+    /// Mutators keep the optimistic in-memory state on failure; callers that must
+    /// know whether the write landed (the AI editors) read this after each call.
+    public private(set) var lastSaveError: String? = nil
 
     /// Adaptive progression hook: when set, planned-session completions are routed through
     /// the full pipeline (ProgressionPlanViewModel.handleSessionCompleted) instead of the
@@ -126,14 +130,18 @@ public final class WorkoutViewModel {
         }
 
         workout.isDeload.toggle()
-        do {
-            currentWorkout = try await workoutRepository.save(workout)
+        await persist(workout)
+        if lastSaveError == nil {
             // Refresh coaching data — suppresses/restores "Try" text
             exerciseCoachingCache.removeAll()
             await loadCoachingData()
-        } catch {
-            currentWorkout = workout
         }
+    }
+
+    /// Idempotent deload flag setter (the UI toggle stays `toggleDeload`).
+    public func setDeload(_ isDeload: Bool) async {
+        guard let workout = currentWorkout, workout.isDeload != isDeload else { return }
+        await toggleDeload()
     }
 
     public func startWorkout(name: String, from template: WorkoutTemplate? = nil, isDeload: Bool = false) async {
@@ -170,32 +178,75 @@ public final class WorkoutViewModel {
         }
     }
 
+    /// UI entry point: optimistic append now, persisted in the background.
     public func addExercise(_ exercise: Exercise) {
-        guard var workout = currentWorkout else { return }
-        let order = workout.exercises.count + 1
+        guard let (workout, workoutExercise) = appendExerciseOptimistically(exercise, sets: [], restTimerSeconds: nil, notes: nil) else { return }
+        Task { [workout] in
+            // Persist right away — without this the new exercise lives only in memory
+            // until the next unrelated save and is lost if the app is killed.
+            await persist(workout)
+            await loadPreviousDataForExercise(workoutExercise.id)
+        }
+    }
+
+    /// Appends an exercise (optionally with pre-built sets, renumbered here) and
+    /// awaits the save so a following mutation cannot race a stale snapshot.
+    @discardableResult
+    public func addExercise(
+        _ exercise: Exercise,
+        sets: [ExerciseSet],
+        restTimerSeconds: Int? = nil,
+        notes: String? = nil
+    ) async -> WorkoutExercise? {
+        guard let (workout, workoutExercise) = appendExerciseOptimistically(
+            exercise, sets: sets, restTimerSeconds: restTimerSeconds, notes: notes
+        ) else { return nil }
+        await persist(workout)
+        await loadPreviousDataForExercise(workoutExercise.id)
+        return currentWorkout?.exercises.first { $0.id == workoutExercise.id }
+    }
+
+    private func appendExerciseOptimistically(
+        _ exercise: Exercise, sets: [ExerciseSet], restTimerSeconds: Int?, notes: String?
+    ) -> (Workout, WorkoutExercise)? {
+        guard var workout = currentWorkout else { return nil }
+        var numbered = sets
+        for i in numbered.indices { numbered[i].order = i + 1 }
         let workoutExercise = WorkoutExercise(
             id: UUID(),
             exercise: exercise,
-            order: order,
+            order: workout.exercises.count + 1,
             supersetGroup: nil,
-            notes: nil,
-            restTimerSeconds: nil,
-            sets: []
+            notes: notes,
+            restTimerSeconds: restTimerSeconds,
+            sets: numbered
         )
         workout.exercises.append(workoutExercise)
         currentWorkout = workout  // Immediate UI update (optimistic)
         activeExerciseId = workoutExercise.id
+        return (workout, workoutExercise)
+    }
 
-        Task { [workout] in
-            // Persist right away — without this the new exercise lives only in memory
-            // until the next unrelated save and is lost if the app is killed.
-            do {
-                currentWorkout = try await workoutRepository.save(workout)
-            } catch {
-                // Optimistic state already set; retry happens on the next mutation's save
-            }
-            await loadPreviousDataForExercise(workoutExercise.id)
+    /// Swaps the exercise of a logged WorkoutExercise while keeping its id, order,
+    /// notes and every set. Per-set PR flags are cleared (they belonged to the old exercise).
+    public func replaceExercise(exerciseId: UUID, with exercise: Exercise) async {
+        guard var workout = currentWorkout,
+              let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              workout.exercises[ei].exercise.id != exercise.id else { return }
+        workout.exercises[ei].exercise = exercise
+        for si in workout.exercises[ei].sets.indices {
+            workout.exercises[ei].sets[si].isPersonalRecord = false
         }
+        exerciseCoachingCache[exerciseId] = nil
+        await persist(workout)
+        await loadPreviousDataForExercise(exerciseId)
+    }
+
+    public func updateExerciseRestTimer(exerciseId: UUID, seconds: Int?) async {
+        guard var workout = currentWorkout,
+              let idx = workout.exercises.firstIndex(where: { $0.id == exerciseId }) else { return }
+        workout.exercises[idx].restTimerSeconds = seconds
+        await persist(workout)
     }
 
     /// Move an exercise card to a new position, renumbering the persisted 1-based
@@ -211,11 +262,7 @@ public final class WorkoutViewModel {
             workout.exercises[i].order = i + 1
         }
         currentWorkout = workout  // Immediate UI update (optimistic)
-        do {
-            currentWorkout = try await workoutRepository.save(workout)
-        } catch {
-            // Already set above; save failed but local state is correct
-        }
+        await persist(workout)
     }
 
     public func logSet(exerciseId: UUID, weight: Double?, reps: Int?, setType: SetType = .normal) async throws {
@@ -265,11 +312,7 @@ public final class WorkoutViewModel {
         for i in workout.exercises[exerciseIndex].sets.indices {
             workout.exercises[exerciseIndex].sets[i].order = i + 1
         }
-        do {
-            currentWorkout = try await workoutRepository.save(workout)
-        } catch {
-            currentWorkout = workout
-        }
+        await persist(workout)
     }
 
     public func removeExercise(exerciseId: UUID) async {
@@ -281,21 +324,13 @@ public final class WorkoutViewModel {
             workout.exercises[i].order = i + 1
         }
         currentWorkout = workout  // Immediate UI update (optimistic)
-        do {
-            currentWorkout = try await workoutRepository.save(workout)
-        } catch {
-            // Already set above; save failed but local state is correct
-        }
+        await persist(workout)
     }
 
     public func updateNotes(_ notes: String) async {
         guard var workout = currentWorkout else { return }
         workout.notes = notes.isEmpty ? nil : notes
-        do {
-            currentWorkout = try await workoutRepository.save(workout)
-        } catch {
-            currentWorkout = workout
-        }
+        await persist(workout)
     }
 
     public func completeWorkout() async throws {
@@ -579,11 +614,9 @@ public final class WorkoutViewModel {
         )
 
         workout.exercises[exerciseIndex].sets.append(newSet)
-        do {
-            currentWorkout = try await workoutRepository.save(workout)
+        await persist(workout)
+        if lastSaveError == nil {
             await loadPreviousDataForExercise(exerciseId)
-        } catch {
-            currentWorkout = workout
         }
     }
 
@@ -598,10 +631,56 @@ public final class WorkoutViewModel {
 
         activeExerciseId = exerciseId
         mutate(&workout.exercises[exerciseIndex].sets[setIndex])
+        await persist(workout)
+    }
+
+    /// Saves and publishes the result. On failure the optimistic copy stays in
+    /// memory (the UI never loses the edit) and `lastSaveError` records why.
+    private func persist(_ workout: Workout) async {
+        lastSaveError = nil
         do {
             currentWorkout = try await workoutRepository.save(workout)
         } catch {
             currentWorkout = workout
+            lastSaveError = error.localizedDescription
+        }
+    }
+
+    /// Replaces every drop-set segment of a set (`[]` reverts it to a plain set).
+    public func replaceDropSets(exerciseId: UUID, setId: UUID, entries: [DropSetEntry]) async {
+        await mutateSet(exerciseId: exerciseId, setId: setId) { set in
+            set.applyDropSets(entries)
+        }
+    }
+
+    /// Appends pre-built sets (renumbered here) in one save. Returns the saved sets.
+    @discardableResult
+    public func appendSets(exerciseId: UUID, sets: [ExerciseSet]) async -> [ExerciseSet] {
+        guard !sets.isEmpty,
+              var workout = currentWorkout,
+              let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }) else { return [] }
+        activeExerciseId = exerciseId
+        var numbered = sets
+        let base = workout.exercises[ei].sets.count
+        for i in numbered.indices { numbered[i].order = base + i + 1 }
+        workout.exercises[ei].sets.append(contentsOf: numbered)
+        await persist(workout)
+        if lastSaveError == nil {
+            await loadPreviousDataForExercise(exerciseId)
+        }
+        let ids = Set(numbered.map(\.id))
+        return currentWorkout?.exercises.first { $0.id == exerciseId }?.sets.filter { ids.contains($0.id) } ?? []
+    }
+
+    public func updateSetDuration(exerciseId: UUID, setId: UUID, seconds: Int?) async {
+        await mutateSet(exerciseId: exerciseId, setId: setId) { set in
+            set.durationSeconds = seconds
+        }
+    }
+
+    public func updateSetDistance(exerciseId: UUID, setId: UUID, meters: Double?) async {
+        await mutateSet(exerciseId: exerciseId, setId: setId) { set in
+            set.distanceMeters = meters
         }
     }
 
@@ -710,11 +789,7 @@ public final class WorkoutViewModel {
         guard var workout = currentWorkout else { return }
         guard workout.toggleSetCompletion(exerciseId: exerciseId, setId: setId) != nil else { return }
         activeExerciseId = exerciseId
-        do {
-            currentWorkout = try await workoutRepository.save(workout)
-        } catch {
-            currentWorkout = workout
-        }
+        await persist(workout)
     }
 
     public func moveSets(exerciseId: UUID, from source: Int, to destination: Int) async {
@@ -727,22 +802,14 @@ public final class WorkoutViewModel {
         for i in workout.exercises[exerciseIndex].sets.indices {
             workout.exercises[exerciseIndex].sets[i].order = i + 1
         }
-        do {
-            currentWorkout = try await workoutRepository.save(workout)
-        } catch {
-            currentWorkout = workout
-        }
+        await persist(workout)
     }
 
     public func updateExerciseNotes(exerciseId: UUID, notes: String) async {
         guard var workout = currentWorkout,
               let idx = workout.exercises.firstIndex(where: { $0.id == exerciseId }) else { return }
         workout.exercises[idx].notes = notes.isEmpty ? nil : notes
-        do {
-            currentWorkout = try await workoutRepository.save(workout)
-        } catch {
-            currentWorkout = workout
-        }
+        await persist(workout)
     }
 
     // MARK: - Restore & Template Sync

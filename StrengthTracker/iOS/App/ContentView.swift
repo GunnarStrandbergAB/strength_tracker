@@ -8,6 +8,7 @@ struct ContentView: View {
     let exerciseListViewModel: ExerciseListViewModel
     let progressViewModel: ProgressViewModel
     let workoutViewModel: WorkoutViewModel
+    let workoutSessionCoordinator: WorkoutSessionCoordinator
     let historyViewModel: HistoryViewModel
     let templateViewModel: TemplateViewModel
     let analyticsViewModel: WorkoutAnalyticsViewModel
@@ -28,6 +29,7 @@ struct ContentView: View {
         exerciseListViewModel: ExerciseListViewModel,
         progressViewModel: ProgressViewModel,
         workoutViewModel: WorkoutViewModel,
+        workoutSessionCoordinator: WorkoutSessionCoordinator,
         historyViewModel: HistoryViewModel,
         templateViewModel: TemplateViewModel,
         analyticsViewModel: WorkoutAnalyticsViewModel,
@@ -47,6 +49,7 @@ struct ContentView: View {
         self.exerciseListViewModel = exerciseListViewModel
         self.progressViewModel = progressViewModel
         self.workoutViewModel = workoutViewModel
+        self.workoutSessionCoordinator = workoutSessionCoordinator
         self.historyViewModel = historyViewModel
         self.templateViewModel = templateViewModel
         self.analyticsViewModel = analyticsViewModel
@@ -84,13 +87,17 @@ struct ContentView: View {
                 onStartWorkout: {
                     selectedTab = 1
                     Task {
-                        await workoutViewModel.startWorkout(name: "Quick Workout", from: nil)
+                        await startSession(.init(name: "Quick Workout"))
                     }
                 },
                 onStartSession: { template, sessionId, planId, isDeload in
-                    workoutViewModel.plannedSessionId = sessionId
-                    workoutViewModel.plannedPlanId = planId
-                    await workoutViewModel.startWorkout(name: template.name, from: template, isDeload: isDeload)
+                    await startSession(.init(
+                        name: template.name,
+                        template: template,
+                        isDeload: isDeload,
+                        plannedSessionId: sessionId,
+                        plannedPlanId: planId
+                    ))
                 },
                 onHistoryTapped: {
                     selectedTab = 4
@@ -104,9 +111,11 @@ struct ContentView: View {
 
             ActiveWorkoutView(
                 viewModel: workoutViewModel,
+                coordinator: workoutSessionCoordinator,
                 exerciseListViewModel: exerciseListViewModel,
                 restTimerService: restTimerService,
-                analyticsViewModel: analyticsViewModel
+                analyticsViewModel: analyticsViewModel,
+                aiChat: aiChatEntry
             )
             .tint(STColors.textSecondary)
             .tabItem {
@@ -168,6 +177,26 @@ struct ContentView: View {
         }
         .onOpenURL { url in
             handleDeepLink(url)
+        }
+    }
+
+    private var aiChatEntry: AIChatEntry? {
+        guard let aiChatViewModel, let aiCredentialsService else { return nil }
+        return AIChatEntry(
+            viewModel: aiChatViewModel,
+            userPreferencesService: userPreferencesService,
+            credentials: aiCredentialsService
+        )
+    }
+
+    /// The Dashboard's start buttons only appear when no workout is active, so the
+    /// coordinator's "already active" guard is a no-op here; a Watch-side workout
+    /// is the one case it can refuse.
+    private func startSession(_ request: WorkoutSessionCoordinator.StartRequest) async {
+        do {
+            try await workoutSessionCoordinator.start(request)
+        } catch {
+            workoutViewModel.errorMessage = error.localizedDescription
         }
     }
 

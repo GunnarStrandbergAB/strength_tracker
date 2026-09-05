@@ -60,9 +60,17 @@ struct DashboardView: View {
         self.onHistoryTapped = onHistoryTapped
     }
 
+    private var aiChatEntry: AIChatEntry? {
+        guard let aiCredentialsService, let aiChatViewModel else { return nil }
+        return AIChatEntry(
+            viewModel: aiChatViewModel,
+            userPreferencesService: userPreferencesService,
+            credentials: aiCredentialsService
+        )
+    }
+
     private var showAIChatButton: Bool {
-        guard let aiCredentialsService, aiChatViewModel != nil else { return false }
-        return userPreferencesService.aiChatEnabled && aiCredentialsService.hasKey
+        aiChatEntry?.isAvailable ?? false
     }
 
     var body: some View {
@@ -172,17 +180,7 @@ struct DashboardView: View {
             .toolbar {
                 if showAIChatButton {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            showAIChat = true
-                        } label: {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 16))
-                                .foregroundStyle(STColors.primary)
-                                .frame(width: 36, height: 36)
-                                .background(STColors.surface)
-                                .clipShape(Circle())
-                        }
-                        .buttonStyle(.plain)
+                        AIChatToolbarButton(isPresented: $showAIChat)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -199,14 +197,7 @@ struct DashboardView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .fullScreenCover(isPresented: $showAIChat) {
-                if let aiChatViewModel {
-                    AIChatView(
-                        viewModel: aiChatViewModel,
-                        userPreferencesService: userPreferencesService
-                    )
-                }
-            }
+            .aiChatCover(aiChatEntry, isPresented: $showAIChat)
             .task {
                 async let d: () = viewModel.loadDashboard()
                 async let a: () = analyticsViewModel.loadDashboardInsights()

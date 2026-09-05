@@ -8,6 +8,7 @@ public enum ChatRole: String, Codable, Sendable {
 public enum MessageKind: String, Codable, Sendable {
     case text
     case draft
+    case receipt
     case error
 }
 
@@ -39,6 +40,8 @@ public struct ChatMessage: Identifiable, Sendable, Equatable {
     /// JSON-encoded AIDraft for kind == .draft.
     public var draftJSON: String?
     public var draftStatus: DraftStatus?
+    /// JSON-encoded AIReceipt for kind == .receipt.
+    public var receiptJSON: String?
     /// Tool invocations that happened while producing this message.
     public var toolActivities: [ToolActivity]
 
@@ -50,6 +53,7 @@ public struct ChatMessage: Identifiable, Sendable, Equatable {
         createdAt: Date = Date(),
         draftJSON: String? = nil,
         draftStatus: DraftStatus? = nil,
+        receiptJSON: String? = nil,
         toolActivities: [ToolActivity] = []
     ) {
         self.id = id
@@ -59,6 +63,7 @@ public struct ChatMessage: Identifiable, Sendable, Equatable {
         self.createdAt = createdAt
         self.draftJSON = draftJSON
         self.draftStatus = draftStatus
+        self.receiptJSON = receiptJSON
         self.toolActivities = toolActivities
     }
 }

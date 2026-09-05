@@ -7,6 +7,7 @@ public enum AgentEvent: Sendable {
     case toolStarted(name: String)
     case toolFinished(ToolActivity)
     case draftProduced(AIDraft)
+    case receiptProduced(AIReceipt)
     case turnCompleted(responseID: String, text: String, activities: [ToolActivity])
     case failed(message: String, conversationExpired: Bool)
 }
@@ -187,6 +188,9 @@ public final class AIAgentService: AIAgentRunning {
                 continuation.yield(.toolFinished(activity))
                 if let draft = result.draft {
                     continuation.yield(.draftProduced(draft))
+                }
+                if let receipt = result.receipt {
+                    continuation.yield(.receiptProduced(receipt))
                 }
                 outputs.append(.functionCallOutput(callID: call.callID, output: result.outputForModel))
             }
