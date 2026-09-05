@@ -60,9 +60,9 @@ struct DropSetRowView: View {
         self.onToggleFailure = onToggleFailure
         self.onRemove = onRemove
 
-        let weight = entry.weight.map { weightUnit.formatValue($0) } ?? ""
-        let reps = entry.reps.map { String($0) } ?? ""
-        let intensity = entry.intensityValue(for: intensityMetric).map { String(format: "%g", $0) } ?? ""
+        let weight = Self.weightText(for: entry.weight, unit: weightUnit)
+        let reps = Self.repsText(for: entry.reps)
+        let intensity = Self.intensityText(for: entry.intensityValue(for: intensityMetric))
         _weightText = State(initialValue: weight)
         _repsText = State(initialValue: reps)
         _intensityText = State(initialValue: intensity)
@@ -106,6 +106,9 @@ struct DropSetRowView: View {
             .focused($focusedField, equals: .weight)
             .onChange(of: weightText) { _, newValue in
                 weightDebounceTask?.cancel()
+                // Equal to the seed: either a model→text resync or the user typed
+                // back the committed value. The model already holds it.
+                guard newValue != seededWeightText else { return }
                 weightDebounceTask = Task {
                     try? await Task.sleep(for: .milliseconds(400))
                     guard !Task.isCancelled else { return }
@@ -115,6 +118,7 @@ struct DropSetRowView: View {
                     } else if let value = Self.parseDouble(trimmed) {
                         onWeightChange(weightUnit.toKg(value))
                     }
+                    seededWeightText = newValue
                 }
             }
             .frame(width: 72)
@@ -128,6 +132,7 @@ struct DropSetRowView: View {
             .focused($focusedField, equals: .reps)
             .onChange(of: repsText) { _, newValue in
                 repsDebounceTask?.cancel()
+                guard newValue != seededRepsText else { return }
                 repsDebounceTask = Task {
                     try? await Task.sleep(for: .milliseconds(400))
                     guard !Task.isCancelled else { return }
@@ -137,6 +142,7 @@ struct DropSetRowView: View {
                     } else if let value = Int(trimmed) {
                         onRepsChange(value)
                     }
+                    seededRepsText = newValue
                 }
             }
             .frame(width: 60)
@@ -151,6 +157,7 @@ struct DropSetRowView: View {
                 .focused($focusedField, equals: .intensity)
                 .onChange(of: intensityText) { _, newValue in
                     intensityDebounceTask?.cancel()
+                    guard newValue != seededIntensityText else { return }
                     intensityDebounceTask = Task {
                         try? await Task.sleep(for: .milliseconds(400))
                         guard !Task.isCancelled else { return }
@@ -159,6 +166,7 @@ struct DropSetRowView: View {
                         } else {
                             onIntensityChange(nil)
                         }
+                        seededIntensityText = newValue
                     }
                 }
                 .frame(width: 44)
@@ -184,6 +192,53 @@ struct DropSetRowView: View {
         .padding(.vertical, STSpacing.setRowVertical)
         .onDisappear {
             flushPendingEdits()
+        }
+        // External writes (Grok log_set / update_set, Watch sync, …) change the
+        // model without touching the text fields. Re-seed them, unless the user
+        // is typing in that very field.
+        .onChange(of: entry.weight) { _, _ in resync(.weight) }
+        .onChange(of: entry.reps) { _, _ in resync(.reps) }
+        .onChange(of: modelIntensity) { _, _ in resync(.intensity) }
+    }
+
+    private var modelIntensity: Double? { entry.intensityValue(for: intensityMetric) }
+
+    // MARK: - Model → text sync
+
+    static func weightText(for weightKg: Double?, unit: WeightUnit) -> String {
+        weightKg.map { unit.formatValue($0) } ?? ""
+    }
+
+    static func repsText(for reps: Int?) -> String {
+        reps.map { String($0) } ?? ""
+    }
+
+    static func intensityText(for value: Double?) -> String {
+        value.map { String(format: "%g", $0) } ?? ""
+    }
+
+    /// Re-seed one field from the model. Skips the echo of the user's own commit
+    /// (text already equals the model) and never interrupts a field being edited.
+    private func resync(_ field: Field) {
+        switch field {
+        case .weight:
+            let text = Self.weightText(for: entry.weight, unit: weightUnit)
+            guard text != weightText, focusedField != .weight else { return }
+            weightDebounceTask?.cancel()
+            seededWeightText = text
+            weightText = text
+        case .reps:
+            let text = Self.repsText(for: entry.reps)
+            guard text != repsText, focusedField != .reps else { return }
+            repsDebounceTask?.cancel()
+            seededRepsText = text
+            repsText = text
+        case .intensity:
+            let text = Self.intensityText(for: modelIntensity)
+            guard text != intensityText, focusedField != .intensity else { return }
+            intensityDebounceTask?.cancel()
+            seededIntensityText = text
+            intensityText = text
         }
     }
 
