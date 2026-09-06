@@ -37,15 +37,8 @@ public final class AppleIntelligenceInsightGenerator: InsightTextGenerating, @un
             verdict: verdict
         )
 
-        #if canImport(FoundationModels)
-        do {
-            return try await enhanceHighlights(templateHighlights)
-        } catch {
-            return templateHighlights
-        }
-        #else
+        // Analytics facts and action wording are protected across app/widget/tool surfaces.
         return templateHighlights
-        #endif
     }
 
     @MainActor
@@ -81,58 +74,13 @@ public final class AppleIntelligenceInsightGenerator: InsightTextGenerating, @un
 
     @MainActor
     public func enhancePostWorkoutBullets(_ bullets: [CoachingInsight]) async -> [CoachingInsight] {
-        #if canImport(FoundationModels)
-        let session = LanguageModelSession()
-        var enhanced: [CoachingInsight] = []
-        for bullet in bullets {
-            let prompt = "Rewrite this post-workout coaching insight in a concise, motivating coach tone (max 15 words). Keep any numbers exact. Original: \(bullet.detail)"
-            do {
-                let response = try await session.respond(to: prompt)
-                let newDetail = String(response.content.trimmingCharacters(in: .whitespacesAndNewlines))
-                enhanced.append(CoachingInsight(
-                    id: bullet.id,
-                    priority: bullet.priority,
-                    title: bullet.title,
-                    detail: newDetail.isEmpty ? bullet.detail : newDetail,
-                    icon: bullet.icon,
-                    color: bullet.color,
-                    source: bullet.source
-                ))
-            } catch {
-                enhanced.append(bullet)
-            }
-        }
-        return enhanced
-        #else
-        return bullets
-        #endif
+        // Keep the shared numerical evidence and action context intact.
+        bullets
     }
 
     // MARK: - Private
 
     #if canImport(FoundationModels)
-    @MainActor
-    private func enhanceHighlights(_ highlights: [AnalyticsHighlight]) async throws -> [AnalyticsHighlight] {
-        let session = LanguageModelSession()
-        var enhanced: [AnalyticsHighlight] = []
-
-        for highlight in highlights {
-            let prompt = "Rewrite this training insight in a concise, motivating coach tone (max 15 words). Type: \(highlight.type.rawValue). Original: \(highlight.detail)"
-            do {
-                let response = try await session.respond(to: prompt)
-                let newDetail = String(response.content.trimmingCharacters(in: .whitespacesAndNewlines))
-                enhanced.append(AnalyticsHighlight(
-                    type: highlight.type,
-                    title: highlight.title,
-                    detail: newDetail.isEmpty ? highlight.detail : newDetail
-                ))
-            } catch {
-                enhanced.append(highlight)
-            }
-        }
-        return enhanced
-    }
-
     @MainActor
     private func generateWithModel(prompt: String) async throws -> String {
         let session = LanguageModelSession()

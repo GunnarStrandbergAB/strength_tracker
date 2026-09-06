@@ -93,11 +93,11 @@ struct TrainingAdvisorTests {
         #expect(v.reasons.first?.contains("days since") == true)
     }
 
-    @Test("ACWR in the danger zone → deload")
-    func dangerZoneIsDeload() {
+    @Test("High load alone → hold; corroboration is required for deload")
+    func highLoadAloneIsHold() {
         let now = date(2026, 9, 5)
         let v = advisor().evaluate(.init(workouts: recentHistory(now: now), trainingLoad: load(acwr: 1.6), now: now))
-        #expect(v.kind == .deload)
+        #expect(v.kind == .hold)
     }
 
     @Test("Two primary triggers → deload; one moderate trigger → hold")
@@ -166,7 +166,7 @@ struct TrainingAdvisorTests {
     func deloadPersists() {
         let adv = advisor()
         let day1 = date(2026, 9, 1)
-        let first = adv.evaluate(.init(workouts: recentHistory(now: day1), trainingLoad: load(acwr: 1.6), now: day1))
+        let first = adv.evaluate(.init(workouts: recentHistory(now: day1), trainingLoad: load(acwr: 1.6), deloadRecommendation: recommendation(urgency: 0.6, triggers: [.highACWR, .performanceDecline]), now: day1))
         #expect(first.kind == .deload)
 
         let day3 = date(2026, 9, 3)
@@ -180,7 +180,7 @@ struct TrainingAdvisorTests {
     func releaseNeedsTwoClearDays() {
         let adv = advisor()
         let day1 = date(2026, 9, 1)
-        adv.evaluate(.init(workouts: recentHistory(now: day1), trainingLoad: load(acwr: 1.6), now: day1))
+        adv.evaluate(.init(workouts: recentHistory(now: day1), trainingLoad: load(acwr: 1.6), deloadRecommendation: recommendation(urgency: 0.6, triggers: [.highACWR, .performanceDecline]), now: day1))
 
         // Day 7, two same-day recomputes: still deload (same-day debounced).
         let day7 = date(2026, 9, 7, 9)
@@ -199,12 +199,12 @@ struct TrainingAdvisorTests {
     func deloadWorkoutReleases() {
         let adv = advisor()
         let day1 = date(2026, 9, 1)
-        adv.evaluate(.init(workouts: recentHistory(now: day1), trainingLoad: load(acwr: 1.6), now: day1))
+        adv.evaluate(.init(workouts: recentHistory(now: day1), trainingLoad: load(acwr: 1.6), deloadRecommendation: recommendation(urgency: 0.6, triggers: [.highACWR, .performanceDecline]), now: day1))
 
         let day2 = date(2026, 9, 2, 18)
         var history = recentHistory(now: day2)
         history.append(workout(on: date(2026, 9, 2, 10), isDeload: true))
-        let v = adv.evaluate(.init(workouts: history, trainingLoad: load(acwr: 1.6), now: day2))
+        let v = adv.evaluate(.init(workouts: history, trainingLoad: load(acwr: 1.6), deloadRecommendation: recommendation(urgency: 0.6, triggers: [.highACWR, .performanceDecline]), now: day2))
         #expect(v.kind == .hold)
         #expect(v.isActiveDeload)
     }
@@ -222,7 +222,7 @@ struct TrainingAdvisorTests {
     func nonPersistingEvaluation() {
         let adv = advisor()
         let now = date(2026, 9, 5)
-        let v = adv.evaluate(.init(workouts: recentHistory(now: now), trainingLoad: load(acwr: 1.6), now: now), persist: false)
+        let v = adv.evaluate(.init(workouts: recentHistory(now: now), trainingLoad: load(acwr: 1.6), deloadRecommendation: recommendation(urgency: 0.6, triggers: [.highACWR, .performanceDecline]), now: now), persist: false)
         #expect(v.kind == .deload)
         #expect(adv.lastVerdict == nil)
     }
@@ -235,7 +235,7 @@ struct TrainingAdvisorTests {
         let store = UserDefaultsTrainingVerdictStore(defaults: defaults)
         let adv = TrainingAdvisor(store: store, calendar: calendar)
         let now = date(2026, 9, 5)
-        let v = adv.evaluate(.init(workouts: recentHistory(now: now), trainingLoad: load(acwr: 1.6), now: now))
+        let v = adv.evaluate(.init(workouts: recentHistory(now: now), trainingLoad: load(acwr: 1.6), deloadRecommendation: recommendation(urgency: 0.6, triggers: [.highACWR, .performanceDecline]), now: now))
         #expect(store.load()?.verdict == v)
         #expect(TrainingAdvisor(store: store, calendar: calendar).lastVerdict?.kind == .deload)
     }

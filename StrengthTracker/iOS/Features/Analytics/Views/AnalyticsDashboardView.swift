@@ -1,549 +1,304 @@
-#if canImport(SwiftUI)
 import SwiftUI
-import StrengthTrackerShared
-#if canImport(Charts)
 import Charts
-#endif
+import StrengthTrackerShared
 
-/// Full analytics dashboard pushed from the InsightsCard.
+struct AnalyticsPanel<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title).font(.headline).foregroundStyle(STColors.textPrimary)
+            content.fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18).background(STColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+    }
+}
+
 struct AnalyticsDashboardView: View {
     let viewModel: WorkoutAnalyticsViewModel
-    @Environment(DataRevision.self) private var dataRevision: DataRevision?
+    var initialTopic: String? = nil
+    @State private var linkedTrend: OverloadTrend?
+    @State private var didRouteTopic = false
+    @Environment(DataRevision.self) private var revision: DataRevision?
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                if viewModel.isInsightsLoading || viewModel.isMigrating {
-                    VStack(spacing: 12) {
-                        ProgressView()
-                            .tint(STColors.primary)
-                        Text(viewModel.isMigrating ? "Analyzing workout history..." : "Loading insights...")
-                            .font(.system(size: 13))
-                            .foregroundStyle(STColors.textSecondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 60)
-                } else {
-                    // Next unlock banner (if applicable)
-                    if let unlock = viewModel.nextFeatureUnlock {
-                        nextUnlockBanner(unlock)
-                    }
-
-                    // Workout count summary
-                    workoutCountHeader
-
-                    // Coach verdict (the single deload / hold / progress call)
-                    if let verdict = viewModel.insights.verdict {
-                        VerdictBanner(verdict: verdict, style: .card, showReasons: true, kicker: "Coach Verdict")
-                    }
-
-                    // Feature roadmap (shows locked features, hidden when all unlocked)
-                    let roadmapFeatures: [AnalyticsFeatureGate.Feature] = [
-                        .qualityScore, .plateauDetection, .muscleBalance, .advancedInsights
-                    ]
-                    if roadmapFeatures.contains(where: { !viewModel.isFeatureUnlocked($0) }) {
-                        featureRoadmap
-                    }
-
-                    // Quality Score overview (aggregate EWMA)
-                    if viewModel.isFeatureUnlocked(.qualityScore),
-                       let agg = viewModel.aggregateQuality, agg.workoutsIncluded > 0 {
-                        aggregateQualitySection(agg)
-                    }
-
-                    // Muscle Balance
-                    if viewModel.isFeatureUnlocked(.muscleBalance),
-                       let balance = viewModel.insights.muscleBalance {
-                        muscleBalanceSection(balance)
-                    }
-
-                    // Volume Response (per-muscle, data-shape gated)
-                    let visibleVolumeResponse = viewModel.volumeResponseAnalyses.filter { $0.confidence != .insufficient }
-                    if !visibleVolumeResponse.isEmpty {
-                        volumeResponseSection(visibleVolumeResponse)
-                    }
-
-                    // Plateau Warnings
-                    if viewModel.isFeatureUnlocked(.plateauDetection),
-                       !viewModel.insights.plateaus.isEmpty {
-                        plateauSection(viewModel.insights.plateaus)
-                    }
-
-                    // Recommendations
-                    if viewModel.isFeatureUnlocked(.exerciseRecommendations),
-                       !viewModel.insights.recommendations.isEmpty {
-                        recommendationsSection(viewModel.insights.recommendations)
-                    }
-
-                    // Advanced Insights card (50+ workouts)
-                    if viewModel.isFeatureUnlocked(.advancedInsights),
-                       viewModel.advancedInsightsLoaded {
-                        AdvancedInsightsCardView(viewModel: viewModel)
-                    }
-                }
-
-                Spacer().frame(height: 20)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-        }
-        .background(STColors.background)
-        .scrollIndicators(.hidden)
-        .navigationTitle("Analytics")
-        .navigationBarTitleDisplayMode(.inline)
-        .stNavigationBarStyle()
-        .task(id: dataRevision?.value ?? 0) {
-            await viewModel.loadDashboardInsights()
-        }
-    }
-
-    // MARK: - Header & Roadmap
-
-    private var workoutCountHeader: some View {
-        VStack(spacing: 4) {
-            Text("\(viewModel.insights.workoutCount)")
-                .font(.system(size: 36, weight: .bold, design: .rounded))
-                .foregroundStyle(STColors.textPrimary)
-            Text("workouts completed")
-                .font(.system(size: 13))
-                .foregroundStyle(STColors.textSecondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(STColors.surface)
-        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
-    }
-
-    private var featureRoadmap: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Feature Roadmap")
-
-            featureRow(.qualityScore, threshold: AnalyticsFeatureGate.threshold(for: .qualityScore), icon: "star.fill")
-            featureRow(.plateauDetection, threshold: AnalyticsFeatureGate.threshold(for: .plateauDetection), icon: "exclamationmark.triangle.fill")
-            featureRow(.muscleBalance, threshold: AnalyticsFeatureGate.threshold(for: .muscleBalance), icon: "arrow.left.arrow.right")
-            featureRow(.advancedInsights, threshold: AnalyticsFeatureGate.threshold(for: .advancedInsights), icon: "brain.head.profile")
-        }
-        .padding(STSpacing.cardPadding)
-        .background(STColors.surface)
-        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
-    }
-
-    private func featureRow(_ feature: AnalyticsFeatureGate.Feature, threshold: Int, icon: String) -> some View {
-        let unlocked = viewModel.isFeatureUnlocked(feature)
-        let count = viewModel.insights.workoutCount
-        let remaining = max(threshold - count, 0)
-        let progress = min(Double(count) / Double(threshold), 1.0)
-
-        return HStack(spacing: 10) {
-            Image(systemName: unlocked ? "checkmark.circle.fill" : icon)
-                .font(.system(size: 14))
-                .foregroundStyle(unlocked ? STColors.success : STColors.textTertiary)
-                .frame(width: 20)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(viewModel.featureDisplayName(feature))
-                    .font(.system(size: 13, weight: unlocked ? .semibold : .regular))
-                    .foregroundStyle(unlocked ? STColors.textPrimary : STColors.textSecondary)
-
-                Text(viewModel.featureDescription(feature))
-                    .font(.system(size: 11))
-                    .foregroundStyle(STColors.textTertiary)
-
-                if !unlocked {
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(STColors.background)
-                                .frame(height: 4)
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(STColors.primary.opacity(0.6))
-                                .frame(width: geo.size.width * CGFloat(progress), height: 4)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 14) {
+                    if let error = viewModel.errorMessage {
+                        AnalyticsPanel(title: "Unable to update analytics") {
+                            Text(error).font(.subheadline)
+                            Button("Retry") { Task { await viewModel.loadDashboardInsights(force: true) } }
                         }
                     }
-                    .frame(height: 4)
-                }
-            }
+                    if viewModel.isInsightsLoading && viewModel.insights.workoutCount == 0 { ProgressView("Analyzing your history…") }
+                    VStack(spacing: 2) {
+                        Text("\(viewModel.insights.workoutCount)").font(.system(.largeTitle, design: .rounded, weight: .bold))
+                        Text("workouts completed · all time").font(.subheadline).foregroundStyle(STColors.textSecondary)
+                    }.frame(maxWidth: .infinity).padding(18).background(STColors.surface).clipShape(RoundedRectangle(cornerRadius: 20))
 
-            Spacer()
-
-            if unlocked {
-                Text("Unlocked")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(STColors.success)
-            } else {
-                Text("\(remaining) more")
-                    .font(.system(size: 11))
-                    .foregroundStyle(STColors.textTertiary)
-            }
-        }
-    }
-
-    // MARK: - Sections
-
-    private func nextUnlockBanner(_ unlock: (feature: AnalyticsFeatureGate.Feature, workoutsNeeded: Int)) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 14))
-                .foregroundStyle(STColors.primary)
-
-            Text("\(unlock.workoutsNeeded) more workout\(unlock.workoutsNeeded == 1 ? "" : "s") to unlock **\(viewModel.featureDisplayName(unlock.feature))**")
-                .font(.system(size: 13))
-                .foregroundStyle(STColors.textSecondary)
-
-            Spacer()
-        }
-        .padding(12)
-        .background(STColors.primary.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
-    }
-
-    private func aggregateQualitySection(_ agg: AggregateQualityScore) -> some View {
-        let color = aggregateScoreColor(percentile: agg.percentileRank)
-
-        return VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Training Quality")
-
-            HStack(spacing: 20) {
-                // Large EWMA score
-                VStack(spacing: 4) {
-                    Text(String(format: "%.0f", agg.ewmaOverall))
-                        .font(.system(size: 42, weight: .bold, design: .rounded))
-                        .foregroundStyle(color)
-
-                    Text("/ 100")
-                        .font(.system(size: 12))
-                        .foregroundStyle(STColors.textTertiary)
-
-                    // Trend badge
-                    if abs(agg.trendVsPrior) >= 1 {
-                        HStack(spacing: 2) {
-                            Image(systemName: agg.trendVsPrior >= 0 ? "arrow.up.right" : "arrow.down.right")
-                                .font(.system(size: 9))
-                            Text(String(format: "%.0f%%", abs(agg.trendVsPrior)))
-                                .font(.system(size: 10, weight: .medium))
+                    AnalyticsPanel(title: "Coach verdict") {
+                        if let verdict = viewModel.insights.verdict {
+                            Text(verdict.headline).font(.title3.bold()).foregroundStyle(AnalyticsColors.verdict(verdict))
+                            Text(verdict.action).font(.subheadline)
+                            DisclosureGroup("Why this verdict?") {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ForEach(verdict.reasons, id: \.self) { Text($0) }
+                                    Text("Updated \(verdict.computedAt.formatted(date: .abbreviated, time: .shortened))")
+                                    Text("Possible verdicts: Clear to Progress, Hold Steady, Deload Recommended, Deload In Progress. These describe overall advice; individual exercise trends can differ.")
+                                }.font(.caption).foregroundStyle(STColors.textSecondary).padding(.top, 8)
+                            }
+                        } else { Text("Building baseline. More recent training evidence is needed before giving a direction.").font(.subheadline) }
+                    }.id("verdict")
+                    AnalyticsLoadCard(viewModel: viewModel).id("load")
+                    AnalyticsPanel(title: "Exercise progress") {
+                        Text("Recent 12 weeks · estimated strength").font(.caption).foregroundStyle(STColors.textSecondary)
+                        if viewModel.insights.overloadTrends.isEmpty { Text("At least four observed weeks per exercise are needed.").font(.subheadline) }
+                        ForEach(viewModel.insights.overloadTrends.prefix(4)) { trend in
+                            NavigationLink { AnalyticsExerciseTrendView(trend: trend, viewModel: viewModel) } label: { AnalyticsTrendRow(trend: trend, viewModel: viewModel) }
                         }
-                        .foregroundStyle(agg.trendVsPrior >= 0 ? STColors.success : .orange)
-                    }
-                }
-                .frame(width: 80)
-
-                // Dimension breakdown
-                VStack(spacing: 8) {
-                    aggregateDimensionRow("Volume", score: agg.ewmaVolume, percentile: agg.percentileRank)
-                    aggregateDimensionRow("Intensity", score: agg.ewmaIntensity, percentile: agg.percentileRank)
-                    aggregateDimensionRow("Balance", score: agg.ewmaBalance, percentile: agg.percentileRank)
-                    aggregateDimensionRow("Rest Rhythm", score: agg.ewmaConsistency, percentile: agg.percentileRank)
-                }
+                        NavigationLink("View all exercises") { AnalyticsProgressList(viewModel: viewModel) }
+                    }.id("progress")
+                    AnalyticsPanel(title: "Best training time") {
+                        if let time = viewModel.insights.timeOfDayAnalysis {
+                            Text(time.message).font(.subheadline)
+                            Text("\(time.bestWindow): \(time.bestCount) sessions · \(time.worstWindow): \(time.worstCount) sessions").font(.caption)
+                            Text(String(format: "%.0f vs %.0f points · prior 12 weeks", time.bestAvgQuality, time.worstAvgQuality)).font(.caption.monospacedDigit())
+                            DisclosureGroup("How this is compared") { Text("Only comparable routines with at least three measured sessions in each time window are compared. This is an association, not proof that changing your workout time will improve performance.").font(.caption) }
+                        } else { Text("No clear difference yet. We compare the same routines at different times, once enough scored sessions are available.").font(.subheadline) }
+                    }.id("time")
+                    AnalyticsQualityCard(viewModel: viewModel).id("quality")
+                    AnalyticsCoverageCard(viewModel: viewModel).id("coverage")
+                    AnalyticsRecoveryCard(viewModel: viewModel).id("recovery")
+                    AdvancedInsightsCardView(viewModel: viewModel).id("patterns")
+                    Text("Estimates from your logged history · updated \(viewModel.insights.generatedAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption).foregroundStyle(STColors.textSecondary)
+                }.padding(.horizontal, 18).padding(.vertical, 12)
             }
-
-            // Footer
-            Text("Based on \(agg.workoutsIncluded) recent workouts")
-                .font(.system(size: 11))
-                .foregroundStyle(STColors.textTertiary)
-        }
-        .padding(STSpacing.cardPadding)
-        .background(STColors.surface)
-        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
-    }
-
-    private func aggregateDimensionRow(_ label: String, score: Double, percentile: Double) -> some View {
-        HStack(spacing: 8) {
-            Text(label)
-                .font(.system(size: 12))
-                .foregroundStyle(STColors.textSecondary)
-                .frame(width: 80, alignment: .leading)
-
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(STColors.background)
-                        .frame(height: 6)
-
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(aggregateScoreColor(percentile: percentile))
-                        .frame(width: geo.size.width * CGFloat(score / 100.0), height: 6)
-                }
+            .onChange(of: viewModel.isInsightsLoading) { _, loading in
+                if !loading { routeTopic(using: proxy) }
             }
-            .frame(height: 6)
+            .onAppear { routeTopic(using: proxy) }
+            .onChange(of: initialTopic) { _, _ in didRouteTopic = false; routeTopic(using: proxy) }
 
-            Text(String(format: "%.0f", score))
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(STColors.textSecondary)
-                .frame(width: 28, alignment: .trailing)
         }
-    }
-
-    private func aggregateScoreColor(percentile: Double) -> Color {
-        switch percentile {
-        case 0.75...: return STColors.success      // green — top quartile
-        case 0.50..<0.75: return STColors.primary  // gold
-        case 0.25..<0.50: return .orange
-        default: return STColors.danger            // red — bottom quartile
-        }
-    }
-
-    private func muscleBalanceSection(_ balance: MuscleBalance) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Muscle Balance")
-
-            // Volume bars per muscle group
-            let maxVol = balance.muscleGroupVolumes.map(\.weeklyVolume).max() ?? 1.0
-            ForEach(balance.muscleGroupVolumes) { vol in
-                HStack(spacing: 8) {
-                    Text(vol.muscleGroup.capitalized)
-                        .font(.system(size: 12))
-                        .foregroundStyle(STColors.textSecondary)
-                        .frame(width: 80, alignment: .leading)
-
-                    GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(barColor(for: vol.muscleGroup, imbalances: balance.imbalances))
-                            .frame(width: geo.size.width * CGFloat(vol.weeklyVolume / max(maxVol, 1)), height: 12)
-                    }
-                    .frame(height: 12)
-
-                    Text("\(vol.weeklySetCount) sets")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(STColors.textTertiary)
-                        .frame(width: 50, alignment: .trailing)
-                }
-            }
-
-            // Imbalance warnings
-            if !balance.imbalances.isEmpty {
-                Divider().overlay(STColors.border)
-
-                ForEach(balance.imbalances) { imbalance in
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(severityColor(imbalance.severity))
-                            .frame(width: 8, height: 8)
-
-                        Text(imbalance.recommendation)
-                            .font(.system(size: 12))
-                            .foregroundStyle(STColors.textSecondary)
-                    }
-                }
+        .background(STColors.background).foregroundStyle(STColors.textPrimary)
+        .safeAreaPadding(.bottom, 24)
+        .navigationDestination(item: $linkedTrend) { AnalyticsExerciseTrendView(trend: $0, viewModel: viewModel) }
+        .navigationTitle("Analytics").navigationBarTitleDisplayMode(.inline).stNavigationBarStyle()
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { NavigationLink("Patterns") { AdvancedInsightsView(viewModel: viewModel) } } }
+        .task(id: revision?.value ?? 0) { await viewModel.loadDashboardInsights() }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(60)) } catch { return }
+                await viewModel.loadDashboardInsights()
             }
         }
-        .padding(STSpacing.cardPadding)
-        .background(STColors.surface)
-        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+        .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await viewModel.loadDashboardInsights(force: true) } } }
+        .refreshable { await viewModel.loadDashboardInsights(force: true) }
     }
-
-    private func volumeResponseSection(_ analyses: [VolumeResponseAnalysis]) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            sectionHeader("Volume Response")
-
-            Text("Your personal response curve per muscle. More muscle groups appear as your training builds varied weekly volume history.")
-                .font(.system(size: 11))
-                .foregroundStyle(STColors.textSecondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            ForEach(analyses, id: \.muscleGroup) { analysis in
-                volumeResponseSubcard(analysis)
+    private func routeTopic(using proxy: ScrollViewProxy) {
+        guard !didRouteTopic, let initialTopic else { return }
+        if initialTopic.hasPrefix("progress-"), let id = UUID(uuidString: String(initialTopic.dropFirst(9))) {
+            if let trend = viewModel.insights.overloadTrends.first(where: { $0.exerciseId == id }) {
+                linkedTrend = trend
+                didRouteTopic = true
+            } else if viewModel.insights.workoutCount > 0 && !viewModel.isInsightsLoading {
+                didRouteTopic = true
             }
-        }
-        .padding(STSpacing.cardPadding)
-        .background(STColors.surface)
-        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
-    }
-
-    private func volumeResponseSubcard(_ analysis: VolumeResponseAnalysis) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(analysis.muscleGroup.capitalized)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(STColors.textPrimary)
-
-                Spacer()
-
-                confidencePill(analysis.confidence)
-            }
-
-            if analysis.confidence != .insufficient {
-                volumeResponseChart(analysis)
-                    .frame(height: 140)
-            }
-
-            Text(analysis.sentence)
-                .font(.system(size: 11))
-                .foregroundStyle(STColors.textSecondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private func confidencePill(_ confidence: Confidence) -> some View {
-        let label: String
-        let color: Color
-        switch confidence {
-        case .high: label = "high"; color = STColors.success
-        case .medium: label = "medium"; color = STColors.primary
-        case .low: label = "low"; color = STColors.textTertiary
-        case .insufficient: label = "building"; color = STColors.textTertiary
-        }
-        return Text(label)
-            .font(.system(size: 9, weight: .medium))
-            .tracking(0.5)
-            .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.12))
-            .clipShape(Capsule())
-    }
-
-    @ViewBuilder
-    private func volumeResponseChart(_ analysis: VolumeResponseAnalysis) -> some View {
-        #if canImport(Charts)
-        let bestBin = bestBin(analysis.best)
-        Chart {
-            ForEach(analysis.bins, id: \.bin) { bin in
-                let isBest = bin.bin == bestBin
-                if let smoothed = bin.smoothed {
-                    BarMark(
-                        x: .value("Volume", bin.bin.label),
-                        y: .value("Response", smoothed * 100)
-                    )
-                    .foregroundStyle(isBest ? STColors.success : STColors.primary.opacity(0.7))
-                    .cornerRadius(4)
-                } else {
-                    BarMark(
-                        x: .value("Volume", bin.bin.label),
-                        y: .value("Response", 0)
-                    )
-                    .foregroundStyle(STColors.background)
-                }
-
-                if let q1 = bin.q1, let q3 = bin.q3, bin.observationCount >= 5 {
-                    RectangleMark(
-                        x: .value("Volume", bin.bin.label),
-                        yStart: .value("Q1", q1 * 100),
-                        yEnd: .value("Q3", q3 * 100),
-                        width: .fixed(2)
-                    )
-                    .foregroundStyle(STColors.textTertiary)
-                }
-            }
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading) { _ in
-                AxisGridLine()
-                AxisValueLabel()
-            }
-        }
-        .chartYAxisLabel("% change")
-        #else
-        Text("Charts unavailable on this platform")
-            .font(.system(size: 11))
-            .foregroundStyle(STColors.textTertiary)
-        #endif
-    }
-
-    private func bestBin(_ status: BestRangeStatus) -> VolumeBin? {
-        switch status {
-        case .observedPeak(let bin), .bestObservedSoFar(let bin):
-            return bin
-        case .unclear(let bins):
-            return bins.first
-        case .insufficient:
-            return nil
-        }
-    }
-
-    private func plateauSection(_ plateaus: [PlateauAnalysis]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Plateau Warnings")
-
-            ForEach(plateaus) { plateau in
-                HStack(spacing: 10) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.orange)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(plateau.exerciseName ?? "Unknown Exercise")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(STColors.textPrimary)
-
-                        Text("Stalled for \(plateau.consecutiveWeeksStalled) week\(plateau.consecutiveWeeksStalled == 1 ? "" : "s")")
-                            .font(.system(size: 11))
-                            .foregroundStyle(STColors.textSecondary)
-
-                        Text(plateau.recommendation)
-                            .font(.system(size: 11))
-                            .foregroundStyle(STColors.textTertiary)
-                    }
-
-                    Spacer()
-                }
-            }
-        }
-        .padding(STSpacing.cardPadding)
-        .background(STColors.surface)
-        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
-    }
-
-    private func recommendationsSection(_ recommendations: [ExerciseRecommendation]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Recommendations")
-
-            ForEach(recommendations) { rec in
-                HStack(spacing: 10) {
-                    Image(systemName: "lightbulb.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(STColors.primary)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(rec.exerciseName)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(STColors.textPrimary)
-
-                        Text(rec.reason.displayText(targetMuscleGroup: rec.targetMuscleGroup))
-                            .font(.system(size: 11))
-                            .foregroundStyle(STColors.textSecondary)
-                    }
-
-                    Spacer()
-                }
-            }
-        }
-        .padding(STSpacing.cardPadding)
-        .background(STColors.surface)
-        .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
-    }
-
-    // MARK: - Helpers
-
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(.system(size: 10, weight: .bold))
-            .tracking(1.5)
-            .foregroundStyle(STColors.textSecondary)
-    }
-
-    private func scoreColor(_ score: Double) -> Color {
-        switch score {
-        case 80...: return STColors.success
-        case 60..<80: return STColors.primary
-        case 40..<60: return .orange
-        default: return STColors.danger
-        }
-    }
-
-    private func barColor(for muscleGroup: String, imbalances: [MuscleImbalance]) -> Color {
-        if imbalances.contains(where: { $0.primaryGroup == muscleGroup }) {
-            return .orange
-        }
-        return STColors.primary.opacity(0.8)
-    }
-
-    private func severityColor(_ severity: ImbalanceSeverity) -> Color {
-        switch severity {
-        case .mild: return .yellow
-        case .moderate: return .orange
-        case .severe: return STColors.danger
+            proxy.scrollTo("progress", anchor: .top)
+        } else {
+            proxy.scrollTo(initialTopic, anchor: .top)
+            didRouteTopic = true
         }
     }
 }
 
-#endif
+struct AnalyticsLoadCard: View {
+    let viewModel: WorkoutAnalyticsViewModel
+    var body: some View {
+        AnalyticsPanel(title: "Training load") {
+            if let load = viewModel.insights.trainingLoad {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 18) {
+                        loadRing(load.acwr)
+                        Text(AnalyticsFormatting.loadZoneLabel(load.loadZone)).font(.headline).fixedSize(horizontal: false, vertical: true)
+                    }
+                    VStack(alignment: .leading, spacing: 12) {
+                        loadRing(load.acwr)
+                        Text(AnalyticsFormatting.loadZoneLabel(load.loadZone)).font(.headline)
+                    }
+                }
+                Text(String(format: "Recent load is %.0f%% %@ your smoothed baseline", abs(load.acwr - 1) * 100, load.acwr < 1 ? "below" : "above")).font(.subheadline)
+                LabeledContent("Load indices", value: String(format: "%.1f / %.1f", load.acuteLoad, load.chronicLoad)).font(.caption.monospacedDigit())
+                DisclosureGroup("Load history · 8 weeks") {
+                    Chart(load.history ?? []) { day in
+                        LineMark(x: .value("Date", day.date), y: .value("Index", day.recent)).foregroundStyle(by: .value("Series", "Recent"))
+                        LineMark(x: .value("Date", day.date), y: .value("Index", day.baseline)).foregroundStyle(by: .value("Series", "Baseline"))
+                    }.chartForegroundStyleScale(["Recent": STColors.primary, "Baseline": STColors.textSecondary]).frame(height: 180)
+                    Text("Retrospectively standardized using current exercise bests and resolved bodyweight.").font(.caption)
+                }
+                DisclosureGroup("How to read this") {
+                    Text("Short and long smoothed daily load (7/28-day spans), including rest days. Today's load is partial. Each working set contributes reps × relative load; RPE is reported separately. This describes logged training, not readiness or a safety boundary. Bodyweight exercises use your currently resolved bodyweight retrospectively. Missing exercise baselines use an estimated 75% relative load.")
+                        .font(.caption).foregroundStyle(STColors.textSecondary).padding(.top, 8)
+                }
+            } else { Text("Building baseline: eight sessions spanning at least two weeks are needed.").font(.subheadline) }
+        }
+    }
+    private func loadRing(_ ratio: Double) -> some View {
+        Text(AnalyticsFormatting.acwr(ratio))
+            .font(.system(.title, design: .rounded, weight: .bold)).monospacedDigit()
+            .padding(22).background { Circle().stroke(STColors.primary.opacity(0.65), lineWidth: 4) }
+            .accessibilityLabel("Load ratio \(AnalyticsFormatting.acwr(ratio))")
+    }
+}
+
+struct AnalyticsTrendRow: View {
+    let trend: OverloadTrend
+    let viewModel: WorkoutAnalyticsViewModel
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(trend.exerciseName).fixedSize(horizontal: false, vertical: true).font(.subheadline.weight(.semibold)).foregroundStyle(STColors.textPrimary)
+            HStack {
+                Text(trend.statusLabel).foregroundStyle(AnalyticsColors.trend(trend.trendStatus))
+                Spacer()
+                Text(String(format: "%+.2f%%/wk", trend.percentPerWeek)).monospacedDigit().foregroundStyle(STColors.textSecondary)
+            }.font(.caption)
+        }.padding(.vertical, 6)
+    }
+}
+struct AnalyticsProgressList: View {
+    let viewModel: WorkoutAnalyticsViewModel
+    @State private var query = ""
+    var body: some View {
+        List(viewModel.insights.overloadTrends.filter { query.isEmpty || $0.exerciseName.localizedCaseInsensitiveContains(query) }) { trend in
+            NavigationLink { AnalyticsExerciseTrendView(trend: trend, viewModel: viewModel) } label: { AnalyticsTrendRow(trend: trend, viewModel: viewModel) }
+        }.searchable(text: $query, prompt: "Find an exercise").navigationTitle("Exercise progress").stNavigationBarStyle()
+    }
+}
+struct AnalyticsExerciseTrendView: View {
+    let trend: OverloadTrend
+    let viewModel: WorkoutAnalyticsViewModel
+    @State private var fullHistory = false
+    var body: some View {
+        ScrollView {
+            AnalyticsPanel(title: trend.exerciseName) {
+                Text(trend.statusLabel).foregroundStyle(AnalyticsColors.trend(trend.trendStatus)).font(.title3)
+                Text("\(viewModel.formatSlope(trend.slopePerWeek)) · recent 12-week estimate").font(.subheadline)
+                if let margin = trend.slopeMargin {
+                    Text("Slope uncertainty: \(viewModel.formatSlope(trend.slopePerWeek - margin)) to \(viewModel.formatSlope(trend.slopePerWeek + margin)) · \(trend.observationCount ?? 0) recent observed weeks").font(.caption)
+                }
+                Toggle("Show full history", isOn: $fullHistory)
+                Chart(fullHistory ? trend.weeklyE1RMs : trend.recentWeeklyE1RMs, id: \.weekStart) { point in
+                    LineMark(x: .value("Week", point.weekStart), y: .value("Estimated 1RM", viewModel.weightUnit.fromKg(point.e1rm)))
+                        .foregroundStyle(STColors.primary)
+                    PointMark(x: .value("Week", point.weekStart), y: .value("Estimated 1RM", viewModel.weightUnit.fromKg(point.e1rm))).foregroundStyle(STColors.primary)
+                }.chartYAxisLabel("Estimated 1RM (\(viewModel.weightUnit.symbol))").frame(height: 220)
+                if let last = trend.weeklyE1RMs.last { Text("Last observed week: \(last.weekStart.formatted(date: .abbreviated, time: .omitted))").font(.caption) }
+                Text("Classification uses actual elapsed weeks, a relative meaningful-change floor and regression uncertainty. Maintaining is neutral; unclear means the data cannot establish a direction. Estimates above 15 reps and movements where technique, leverage or speed changes are limited proxies. An e1RM trend does not measure jump power.").font(.subheadline).foregroundStyle(STColors.textSecondary)
+            }.padding(18)
+        }.background(STColors.background).navigationTitle("Progress detail").stNavigationBarStyle()
+    }
+}
+
+struct AnalyticsQualityCard: View {
+    let viewModel: WorkoutAnalyticsViewModel
+    var body: some View {
+        AnalyticsPanel(title: "Training quality") {
+            if let score = viewModel.aggregateQuality, score.workoutsIncluded > 0 {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(String(format: "%.0f", score.ewmaOverall)).font(.system(.largeTitle, design: .rounded, weight: .bold)).foregroundStyle(AnalyticsColors.score(score.ewmaOverall))
+                    Text("/ 100").font(.subheadline)
+                    Spacer()
+                    if !score.provisional { Text(String(format: "%+.0f pts", score.trendVsPrior)).font(.caption.monospacedDigit()) }
+                }
+                qualityRow("Volume", score.ewmaVolume)
+                qualityRow("Intensity", score.ewmaIntensity)
+                qualityRow("Rest Rhythm", score.ewmaConsistency)
+                qualityRow("Program balance", score.ewmaBalance)
+                Text(score.provisional ? "Provisional · building a measured baseline" : "\(score.workoutsIncluded) measured sessions. Recent sessions carry more weight.").font(.caption).foregroundStyle(STColors.textSecondary)
+                DisclosureGroup("How this is scored") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Four equal components. Volume meets its benchmark at 80% of comparable historical muscle volume; intensity compares set e1RM with prior exercise bests. Rest Rhythm measures regularity within an exercise, not whether a rest was long enough. Program balance describes the prior 12 weeks including that session.")
+                        Text("The aggregate gives each new session 30% weight and the previous aggregate 70%. Provisional sessions are excluded when measured sessions exist. Changes are score points versus four weeks ago. Version \(WorkoutQualityScore.modelVersion); historical scores use information available at the session date.")
+                        if let latest = viewModel.qualityScore {
+                            Text("Latest session: \(Int(latest.overallScore))/100\(latest.isProvisional ? " · provisional" : "")")
+                            ForEach(latest.provisionalReasons ?? [], id: \.self) { Text($0) }
+                        }
+                    }.font(.caption).foregroundStyle(STColors.textSecondary).padding(.top, 8)
+                }
+            } else { Text("Complete more sessions to establish your quality baseline.").font(.subheadline) }
+        }
+    }
+    private func qualityRow(_ label: String, _ score: Double) -> some View {
+        VStack(spacing: 4) {
+            LabeledContent(label, value: String(format: "%.0f", score)).font(.subheadline.monospacedDigit())
+            ProgressView(value: min(100, max(0, score)), total: 100).tint(AnalyticsColors.score(score))
+        }
+    }
+}
+
+struct AnalyticsCoverageCard: View {
+    let viewModel: WorkoutAnalyticsViewModel
+    var body: some View {
+        AnalyticsPanel(title: "Muscle coverage") {
+            Text("Weekly average · last 4 weeks").font(.caption).foregroundStyle(STColors.textSecondary)
+            if let balance = viewModel.insights.muscleBalance {
+                let groups = balance.muscleGroupVolumes
+                let largest = groups.map { ($0.directWeeklySets ?? 0) + ($0.indirectWeeklySets ?? 0) }.max() ?? 1
+                ForEach(groups.prefix(5)) { group in coverageRow(group, largest: largest) }
+                DisclosureGroup("All muscles and attribution") {
+                    ForEach(groups.dropFirst(5)) { group in coverageRow(group, largest: largest) }
+                    Text("Solid = direct working sets. Muted = estimated indirect credits (0.5 divided among secondary muscles per set). These are exposure estimates, not equal muscle stimulus. Compare with your own program; no universal balance ratio is prescribed.").font(.caption).foregroundStyle(STColors.textSecondary)
+                }
+            } else { Text("No working-set coverage yet.").font(.subheadline) }
+        }
+    }
+    private func coverageRow(_ group: MuscleGroupVolume, largest: Double) -> some View {
+        let direct = group.directWeeklySets ?? 0, indirect = group.indirectWeeklySets ?? 0
+        return VStack(alignment: .leading, spacing: 5) {
+            LabeledContent(group.muscleGroup.capitalized, value: String(format: "%.1f + %.1f sets", direct, indirect)).font(.caption.monospacedDigit())
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    Rectangle().fill(STColors.primary).frame(width: geo.size.width * direct / max(1, largest))
+                    Rectangle().fill(STColors.textSecondary.opacity(0.45)).frame(width: geo.size.width * indirect / max(1, largest))
+                }.clipShape(Capsule())
+            }.frame(height: 8).accessibilityHidden(true)
+        }.padding(.vertical, 4)
+    }
+}
+
+struct AnalyticsRecoveryCard: View {
+    let viewModel: WorkoutAnalyticsViewModel
+    var body: some View {
+        AnalyticsPanel(title: "Recovery estimate") {
+            Text("Exposure-based estimate · optional check-ins personalize the prior").font(.caption).foregroundStyle(STColors.textSecondary)
+            if viewModel.insights.recoveryPatterns.isEmpty { Text("No recent muscle exposure logged.").font(.subheadline) }
+            ForEach(viewModel.insights.recoveryPatterns.prefix(3)) { pattern in recoveryRow(pattern) }
+            DisclosureGroup("All muscles and check-ins") {
+                ForEach(viewModel.insights.recoveryPatterns.dropFirst(3)) { pattern in recoveryRow(pattern) }
+                Text("A readiness check-in adjusts a bounded prior gradually; it is not a measured recovery time. Earlier session exposure can overlap. Estimates use current workload relative to your usual session dose. No logged exposure does not prove readiness.").font(.caption).foregroundStyle(STColors.textSecondary)
+            }
+        }
+    }
+    private func recoveryRow(_ pattern: RecoveryPattern) -> some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 8) {
+                if let last = pattern.lastTrainedDate { Text("Last trained \(last.formatted(date: .abbreviated, time: .shortened))") }
+                let remaining = max(0, (pattern.readyToTrainDate ?? Date()).timeIntervalSinceNow / 3600)
+                Text(String(format: "Estimated remaining: %.0f–%.0f hours · %d check-ins", remaining * 0.75, remaining * 1.25, pattern.feedbackCount ?? 0))
+                HStack {
+                    Button("Feels ready") { Task { await viewModel.recordRecovery(pattern, feelsReady: true) } }
+                    Button("Still sore") { Task { await viewModel.recordRecovery(pattern, feelsReady: false) } }
+                }.buttonStyle(.bordered)
+            }.font(.caption).padding(.vertical, 8)
+        } label: {
+            LabeledContent(pattern.muscleGroup.capitalized, value: pattern.recoveryStatus == .ready ? "Likely ready" : pattern.isJustTrained ? "Recently trained" : "Recovering")
+                .font(.subheadline).foregroundStyle(STColors.textPrimary)
+        }
+    }
+}

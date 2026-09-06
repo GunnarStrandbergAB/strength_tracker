@@ -29,110 +29,27 @@ public final class TemplateInsightGenerator: InsightTextGenerating, @unchecked S
         verdict: TrainingVerdict?
     ) async -> [AnalyticsHighlight] {
         var highlights: [AnalyticsHighlight] = []
-        let activeDeload = verdict?.isActiveDeload ?? false
-        // Without a verdict (older callers/tests) fall back to the raw recommendation.
-        let kind: TrainingVerdict.Kind = verdict?.kind ?? (deloadRecommendation == nil ? .progress : .deload)
-
-        // Priority 0: the verdict's own card
-        if activeDeload {
-            highlights.append(AnalyticsHighlight(
-                type: .improvement,
-                title: "Deload In Progress",
-                detail: "Intentional recovery week: reduced volume and intensity as planned"
-            ))
-        } else {
-            switch kind {
-            case .deload:
-                highlights.append(AnalyticsHighlight(
-                    type: .warning,
-                    title: "Deload Recommended",
-                    detail: verdict?.action ?? deloadRecommendation?.suggestedAction ?? "Take a lighter week"
-                ))
-            case .hold:
-                highlights.append(AnalyticsHighlight(
-                    type: .milestone,
-                    title: "Hold Steady",
-                    detail: verdict?.action ?? "Keep loads where they are this week"
-                ))
-            case .progress:
-                break
+        if let verdict, verdict.kind != .progress || verdict.isActiveDeload {
+            highlights.append(AnalyticsHighlight(type: verdict.kind == .deload ? .warning : .milestone,
+                title: verdict.headline, detail: verdict.action, topic: "verdict", computedAt: verdict.computedAt, isAction: true))
+        }
+        // Observations must never turn a hold/deload action into encouragement to push.
+        if verdict?.kind != .hold && verdict?.kind != .deload {
+            for trend in overloadTrends.filter({ $0.trendStatus == .progressing }).prefix(2) {
+                highlights.append(AnalyticsHighlight(type: .improvement, title: "\(trend.exerciseName) Progressing",
+                    detail: "\(AnalyticsFormatting.slope(kgPerWeek: trend.slopePerWeek, unit: weightUnit())) · recent 12-week estimate",
+                    topic: "progress-\(trend.exerciseId.uuidString)"))
             }
         }
-
-        // Priority 1: Warnings (never during an active deload)
-        if !activeDeload {
-            // The ACWR story is already in a deload/hold card; only a progress
-            // verdict with a danger zone (advisor disagreement) shows it separately.
-            if kind == .progress, let load = trainingLoad, load.loadZone == .danger {
-                highlights.append(AnalyticsHighlight(
-                    type: .warning,
-                    title: "High Training Load",
-                    detail: "ACWR \(AnalyticsFormatting.acwr(load.acwr)), far above your baseline"
-                ))
-            }
-
-            let overVolume = optimalVolumes.filter { $0.volumeStatus == .overVolume }
-            for vol in overVolume.prefix(2) {
-                highlights.append(AnalyticsHighlight(
-                    type: .warning,
-                    title: "\(vol.muscleGroup.capitalized) Over Volume",
-                    detail: "\(vol.currentWeeklySets) sets/week exceeds MRV of \(vol.maximumWeeklySets)"
-                ))
-            }
+        if let load = trainingLoad, highlights.count < 3 {
+            highlights.append(AnalyticsHighlight(type: .milestone, title: "Training load",
+                detail: "\(AnalyticsFormatting.acwr(load.acwr)) × baseline · smoothed daily load", topic: "load"))
         }
-
-        // Priority 2: Improvements
-        let progressing = overloadTrends.filter { $0.trendStatus == .progressing }
-        for trend in progressing.prefix(2) {
-            highlights.append(AnalyticsHighlight(
-                type: .improvement,
-                title: "\(trend.exerciseName) Progressing",
-                detail: "\(AnalyticsFormatting.slope(kgPerWeek: trend.slopePerWeek, unit: weightUnit())) over recent weeks"
-            ))
+        if highlights.isEmpty, let verdict {
+            highlights.append(AnalyticsHighlight(type: .milestone, title: verdict.headline,
+                detail: verdict.action, topic: "verdict", computedAt: verdict.computedAt, isAction: true))
         }
-
-        if kind == .progress, !activeDeload, let load = trainingLoad, load.loadZone == .optimal {
-            highlights.append(AnalyticsHighlight(
-                type: .improvement,
-                title: "Optimal Training Load",
-                detail: "ACWR \(AnalyticsFormatting.acwr(load.acwr)), in a sustainable range"
-            ))
-        }
-
-        // Priority 3: Milestones / Info
-        if let phase = trainingPhase {
-            highlights.append(AnalyticsHighlight(
-                type: .milestone,
-                title: "Training Phase: \(phaseDisplayName(phase.currentPhase))",
-                detail: phaseDescription(phase.currentPhase)
-            ))
-        }
-
-        if !activeDeload, let drift = trainingDrift, drift.overallDriftScore > 0.15 {
-            let topDrift = drift.driftingDimensions.first
-            let driftDetail = topDrift.map { "\($0.featureName.replacingOccurrences(of: "_", with: " ")) shifted \($0.delta > 0 ? "up" : "down")" }
-                ?? "Training pattern has shifted"
-            highlights.append(AnalyticsHighlight(
-                type: .milestone,
-                title: "Training Drift Detected",
-                detail: driftDetail
-            ))
-        }
-
-        // Systemic fatigue only: a group trained yesterday is trivially "fatigued".
-        if !activeDeload {
-            let fatigued = recoveryPatterns.filter { $0.recoveryStatus == .fatigued }
-            if fatigued.count >= TrainingAdvisor.systemicFatigueGroups, !fatigued.contains(where: \.isJustTrained) {
-                let names = fatigued.prefix(3).map { $0.muscleGroup.capitalized }.joined(separator: ", ")
-                highlights.append(AnalyticsHighlight(
-                    type: .warning,
-                    title: "Recovery Lagging",
-                    detail: "\(names) still fatigued"
-                ))
-            }
-        }
-
-        return Array(highlights.prefix(5))
+        return highlights
     }
 
     @MainActor
@@ -173,57 +90,8 @@ public final class TemplateInsightGenerator: InsightTextGenerating, @unchecked S
         recommendations: [ExerciseRecommendation],
         workoutCount: Int
     ) async -> [AnalyticsHighlight] {
-        var highlights: [AnalyticsHighlight] = []
-
-        // Priority 1 (Warning): Plateau warnings — top 2 by weeks stalled (need 3+ weeks)
-        if workoutCount >= AnalyticsFeatureGate.threshold(for: .plateauDetection) {
-            let stalledExercises = plateaus
-                .filter { $0.consecutiveWeeksStalled >= 3 }
-                .sorted { $0.consecutiveWeeksStalled > $1.consecutiveWeeksStalled }
-            for plateau in stalledExercises.prefix(2) {
-                let name = plateau.exerciseName ?? "Exercise"
-                highlights.append(AnalyticsHighlight(
-                    type: .warning,
-                    title: "\(name) Stalled",
-                    detail: "\(plateau.consecutiveWeeksStalled) weeks no progress"
-                ))
-            }
-        }
-
-        // Priority 2 (Warning): Muscle imbalances — moderate+ severity
-        if let balance = muscleBalance {
-            let significant = balance.imbalances.filter { $0.severity != .mild }
-            for imbalance in significant.prefix(1) {
-                highlights.append(AnalyticsHighlight(
-                    type: .warning,
-                    title: "\(imbalance.primaryGroup.capitalized)/\(imbalance.comparisonGroup.capitalized) Imbalance",
-                    detail: "\(AnalyticsFormatting.ratio(imbalance.ratio)) ratio"
-                ))
-            }
-        }
-
-        // Priority 3 (Improvement): Top recommendation by confidence
-        if let top = recommendations.sorted(by: { $0.confidence > $1.confidence }).first {
-            let reasonText: String
-            switch top.reason {
-            case .fillsMuscleGap:
-                let muscle = top.targetMuscleGroup ?? "a gap"
-                reasonText = "fills \(muscle) gap"
-            case .plateauBreaker:
-                reasonText = "plateau breaker"
-            case .similarToFavorites:
-                reasonText = "matches your favorites"
-            case .recoveryAppropriate:
-                reasonText = "good for recovery"
-            }
-            highlights.append(AnalyticsHighlight(
-                type: .improvement,
-                title: "Try \(top.exerciseName)",
-                detail: reasonText.prefix(1).uppercased() + reasonText.dropFirst()
-            ))
-        }
-
-        return Array(highlights.prefix(3))
+        // Legacy plateau/recommendation heuristics no longer publish independent advice.
+        return []
     }
 
     @MainActor

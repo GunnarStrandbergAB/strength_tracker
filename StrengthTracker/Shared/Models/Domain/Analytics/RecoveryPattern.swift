@@ -9,6 +9,8 @@ public struct RecoveryPattern: Identifiable, Hashable, Sendable, Codable {
     public let lastTrainedDate: Date?
     public let readyToTrainDate: Date?
     public let recoveryStatus: RecoveryStatus
+    public let exposureCredits: Double?
+    public let feedbackCount: Int?
 
     public init(
         id: UUID = UUID(),
@@ -17,7 +19,8 @@ public struct RecoveryPattern: Identifiable, Hashable, Sendable, Codable {
         optimalRestDays: Int,
         lastTrainedDate: Date?,
         readyToTrainDate: Date?,
-        recoveryStatus: RecoveryStatus = .ready
+        recoveryStatus: RecoveryStatus = .ready,
+        exposureCredits: Double? = nil, feedbackCount: Int? = nil
     ) {
         self.id = id
         self.muscleGroup = muscleGroup
@@ -26,6 +29,8 @@ public struct RecoveryPattern: Identifiable, Hashable, Sendable, Codable {
         self.lastTrainedDate = lastTrainedDate
         self.readyToTrainDate = readyToTrainDate
         self.recoveryStatus = recoveryStatus
+        self.exposureCredits = exposureCredits
+        self.feedbackCount = feedbackCount
     }
 
     /// Trained within the last 36 hours. A just-trained group is trivially

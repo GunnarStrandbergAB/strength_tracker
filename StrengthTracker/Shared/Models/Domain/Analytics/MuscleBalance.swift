@@ -27,19 +27,24 @@ public struct MuscleGroupVolume: Identifiable, Hashable, Sendable, Codable {
     public let weeklyVolume: Double
     public let weeklySetCount: Int
     public let trend: VolumeTrend
+    public let directWeeklySets: Double?
+    public let indirectWeeklySets: Double?
 
     public init(
         id: UUID = UUID(),
         muscleGroup: String,
         weeklyVolume: Double,
         weeklySetCount: Int,
-        trend: VolumeTrend
+        trend: VolumeTrend,
+        directWeeklySets: Double? = nil, indirectWeeklySets: Double? = nil
     ) {
         self.id = id
         self.muscleGroup = muscleGroup
         self.weeklyVolume = weeklyVolume
         self.weeklySetCount = weeklySetCount
         self.trend = trend
+        self.directWeeklySets = directWeeklySets
+        self.indirectWeeklySets = indirectWeeklySets
     }
 }
 

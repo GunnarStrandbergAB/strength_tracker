@@ -18,7 +18,7 @@ struct WorkoutQualityScoreView: View {
                         .font(.system(size: 12))
                         .foregroundStyle(STColors.textSecondary)
                 }
-            } else if let score = viewModel.qualityScore {
+            } else if let score = viewModel.qualityScore, score.workoutId == workout.id {
                 HStack(spacing: 16) {
                     // Score circle
                     ZStack {
@@ -37,13 +37,23 @@ struct WorkoutQualityScoreView: View {
                             .foregroundStyle(STColors.textPrimary)
                     }
 
-                    // 3-dimension mini bars (balance excluded — it reflects
-                    // 12-week program balance, not this single session)
+                    // Every component contributing to the headline is visible.
                     VStack(spacing: 6) {
                         miniScoreBar("Volume", score: score.volumeScore)
                         miniScoreBar("Intensity", score: score.intensityScore)
                         miniScoreBar("Rest Rhythm", score: score.consistencyScore)
+                        miniScoreBar("Program balance", score: score.balanceScore)
                     }
+                }
+                Text("Four equal components · program balance covers the prior 12 weeks")
+                    .font(.caption).foregroundStyle(STColors.textSecondary)
+                DisclosureGroup("Score and baseline details") {
+                    ForEach(score.baselineNotes ?? [], id: \.self) { Text($0).font(.caption) }
+                    Text("Each component contributes 25%. Volume reaches 100 at 80% of baseline and earns no extra points above that. Rest Rhythm uses 15–600-second completion gaps within an exercise; these include lifting time. Model version \(score.scoredModelVersion ?? 1).").font(.caption)
+                }
+                if score.isProvisional {
+                    Text("Provisional: " + (score.provisionalReasons ?? []).joined(separator: "; "))
+                        .font(.caption).foregroundStyle(STColors.textSecondary)
                 }
             }
         }
@@ -61,9 +71,9 @@ struct WorkoutQualityScoreView: View {
     private func miniScoreBar(_ label: String, score: Double) -> some View {
         HStack(spacing: 6) {
             Text(label)
-                .font(.system(size: 10))
+                .font(.caption2)
                 .foregroundStyle(STColors.textTertiary)
-                .frame(width: 56, alignment: .leading)
+                .frame(width: 100, alignment: .leading)
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -81,12 +91,7 @@ struct WorkoutQualityScoreView: View {
     }
 
     private func scoreColor(_ score: Double) -> Color {
-        switch score {
-        case 80...: return STColors.success
-        case 60..<80: return STColors.primary
-        case 40..<60: return .orange
-        default: return STColors.danger
-        }
+        AnalyticsColors.score(score)
     }
 }
 

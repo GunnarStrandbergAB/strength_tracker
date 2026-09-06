@@ -7,14 +7,20 @@ public struct WidgetHighlight: Codable, Sendable, Identifiable {
     public let icon: String        // SF Symbol name
     public let title: String
     public let detail: String
+    public let destination: String?
+    public let validUntil: Date?
+    public let isAction: Bool?
     public let color: String       // "yellow", "orange", "green", "red", "blue"
 
-    public init(id: UUID = UUID(), icon: String, title: String, detail: String, color: String) {
+    public init(id: UUID = UUID(), icon: String, title: String, detail: String, color: String, destination: String? = nil, validUntil: Date? = nil, isAction: Bool = false) {
         self.id = id
         self.icon = icon
         self.title = title
         self.detail = detail
         self.color = color
+        self.destination = destination
+        self.validUntil = validUntil
+        self.isAction = isAction
     }
 }
 
@@ -83,6 +89,7 @@ public struct WidgetData: Codable, Sendable {
     public let currentStreak: Int
     public let totalWorkoutsAllTime: Int
     public let updatedAt: Date
+    public let analyticsGeneratedAt: Date?
 
     // Analytics highlights (top 3, pre-computed by the app)
     public let highlights: [WidgetHighlight]
@@ -126,6 +133,15 @@ public struct WidgetData: Codable, Sendable {
         qualityTrend: nil
     )
 
+    public func visibleHighlights(at date: Date) -> [WidgetHighlight] {
+        highlights.filter { ($0.validUntil ?? .distantPast) > date }
+    }
+
+    public func measuredQuality(at date: Date) -> Double? {
+        guard let generated = analyticsGeneratedAt, date >= generated, date.timeIntervalSince(generated) < 6 * 3600 else { return nil }
+        return weeklyQualityScore
+    }
+
     /// Key used for App Group UserDefaults
     public static let userDefaultsKey = "widget_data"
 
@@ -147,7 +163,8 @@ public struct WidgetData: Codable, Sendable {
         previousWeekVolume: Double? = nil,
         weeklyQualityScore: Double? = nil,
         qualityTrend: Double? = nil,
-        weightUnitSymbol: String? = nil
+        weightUnitSymbol: String? = nil,
+        analyticsGeneratedAt: Date? = nil
     ) {
         self.lastWorkoutDate = lastWorkoutDate
         self.lastWorkoutName = lastWorkoutName
@@ -158,6 +175,7 @@ public struct WidgetData: Codable, Sendable {
         self.currentStreak = currentStreak
         self.totalWorkoutsAllTime = totalWorkoutsAllTime
         self.updatedAt = updatedAt
+        self.analyticsGeneratedAt = analyticsGeneratedAt
         self.highlights = highlights
         self.weekDaysTrained = weekDaysTrained
         self.activeWorkout = activeWorkout
@@ -181,6 +199,7 @@ public struct WidgetData: Codable, Sendable {
         currentStreak = try container.decode(Int.self, forKey: .currentStreak)
         totalWorkoutsAllTime = try container.decode(Int.self, forKey: .totalWorkoutsAllTime)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        analyticsGeneratedAt = try container.decodeIfPresent(Date.self, forKey: .analyticsGeneratedAt)
         highlights = (try? container.decode([WidgetHighlight].self, forKey: .highlights)) ?? []
         weekDaysTrained = (try? container.decode([Bool].self, forKey: .weekDaysTrained)) ?? Array(repeating: false, count: 7)
         activeWorkout = try? container.decodeIfPresent(WidgetActiveWorkout.self, forKey: .activeWorkout)

@@ -57,7 +57,7 @@ enum AnalyticsColors {
     static func trend(_ status: TrendStatus) -> Color {
         switch status {
         case .progressing: return STColors.success
-        case .plateau: return STColors.warning
+        case .plateau, .uncertain, .inactive: return STColors.textSecondary
         case .regressing: return STColors.danger
         }
     }

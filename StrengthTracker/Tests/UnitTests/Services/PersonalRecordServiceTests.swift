@@ -59,8 +59,8 @@ struct PersonalRecordServiceTests {
     func testE1RMFromLighterSegment() async throws {
         let (service, prRepo, _) = makeService()
         let exercise = makeExercise()
-        // 100×5 → e1RM 116.7 (Epley); 80×13 → e1RM 120 (Brzycki).
-        let set = AnalyticsTestHelpers.makeDropSet(parts: [(100, 5), (80, 13)])
+        // 100×5 → e1RM 116.7 (Epley); 80×15 → e1RM 120 (Epley).
+        let set = AnalyticsTestHelpers.makeDropSet(parts: [(100, 5), (80, 15)])
         _ = try await service.checkForPR(exercise: exercise, set: set)
 
         let e1rms = try await records(prRepo, exercise.id, .estimatedOneRepMax)
@@ -118,7 +118,7 @@ struct PersonalRecordServiceTests {
 
         let e1rms = try await records(prRepo, exercise.id, .estimatedOneRepMax)
         #expect(e1rms.count == 1)
-        // Best candidate: 100×8 → 100 × 36/29 ≈ 124.14
-        #expect(abs(e1rms[0] - 100.0 * 36.0 / 29.0) < 0.01)
+        // Best candidate: 100×8 → 100 × (1 + 8/30) ≈ 126.67
+        #expect(abs(e1rms[0] - 100.0 * (1.0 + 8.0 / 30.0)) < 0.01)
     }
 }

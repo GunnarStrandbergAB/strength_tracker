@@ -12,7 +12,7 @@ public final class WorkoutQualityScoreService: Sendable {
     private let bodyWeightProvider: BodyWeightProvider?
 
     /// Cache keyed by workout ID to avoid recomputing scores
-    private var cache: [UUID: WorkoutQualityScore] = [:]
+    private var cache: [UUID: (key: Int, score: WorkoutQualityScore)] = [:]
 
     public init(
         workoutRepository: any WorkoutRepository,
@@ -42,19 +42,25 @@ public final class WorkoutQualityScoreService: Sendable {
 
     /// Compute quality score for a completed workout (fetches history internally)
     public func computeScore(for workout: Workout) async throws -> WorkoutQualityScore {
-        if let cached = cache[workout.id] { return cached }
-
         let recentWorkouts = try await workoutRepository.fetchAll()
-        return computeScoreInternal(for: workout, history: recentWorkouts)
+        return computeScore(for: workout, history: recentWorkouts)
     }
 
     /// Compute quality score with pre-fetched history (avoids N+1 fetchAll calls)
     public func computeScore(for workout: Workout, history: [Workout]) -> WorkoutQualityScore {
-        if let cached = cache[workout.id] { return cached }
-        return computeScoreInternal(for: workout, history: history)
+        var hasher = Hasher()
+        hasher.combine(workout); hasher.combine(resolvedBodyWeightKg); hasher.combine(WorkoutQualityScore.modelVersion)
+        for prior in history.filter({ $0.trainingDate <= workout.trainingDate }).sorted(by: { $0.id.uuidString < $1.id.uuidString }) { hasher.combine(prior) }
+        let key = hasher.finalize()
+        if let cached = cache[workout.id], cached.key == key { return cached.score }
+        let score = computeScoreInternal(for: workout, history: history)
+        cache[workout.id] = (key, score)
+        return score
     }
 
     private func computeScoreInternal(for workout: Workout, history: [Workout]) -> WorkoutQualityScore {
+        // Historical scores use only information available at the session date.
+        let history = history.filter { $0.id == workout.id || $0.trainingDate < workout.trainingDate }
         let bodyWeightKg = resolvedBodyWeightKg
 
         let volumeScore: Double
@@ -73,6 +79,18 @@ public final class WorkoutQualityScoreService: Sendable {
 
         let overall = (volumeScore + intensityScore + consistencyScore + balanceScore) / 4.0
 
+        var provisional: [String] = []
+        if !workout.exercises.flatMap(\.sets).contains(where: { $0.isCompleted && $0.setType != .warmup }) { provisional.append("No completed working sets") }
+        let prior = history.filter { $0.id != workout.id && $0.completedAt != nil && workout.trainingDate.timeIntervalSince($0.trainingDate) <= 12 * 7 * 86400 }
+        let activeMuscles = Set((prior + [workout]).flatMap(\.exercises).flatMap { [$0.exercise.primaryMuscleGroup] + $0.exercise.secondaryMuscleGroups })
+        let pairs: [(MuscleGroup, MuscleGroup)] = [(.chest, .back), (.quadriceps, .hamstrings), (.biceps, .triceps), (.shoulders, .lats), (.core, .lowerBack), (.glutes, .hipFlexors)]
+        if pairs.filter({ activeMuscles.contains($0.0) || activeMuscles.contains($0.1) }).count < 2 { provisional.append("Too few muscle pairs for program balance") }
+        if prior.count < 3 { provisional.append("Volume and balance baseline is building") }
+        let bests = buildBestE1RMMap(excluding: workout.id, from: history, asOf: workout.trainingDate)
+        if workout.exercises.contains(where: { bests[$0.exercise.id] == nil }) {
+            provisional.append("Some exercises have no intensity baseline")
+        }
+        if restIntervals(workout).count < 2 { provisional.append("Too few comparable set intervals for rest rhythm") }
         let score = WorkoutQualityScore(
             id: UUID(),
             workoutId: workout.id,
@@ -80,9 +98,9 @@ public final class WorkoutQualityScoreService: Sendable {
             volumeScore: volumeScore,
             intensityScore: intensityScore,
             balanceScore: balanceScore,
-            consistencyScore: consistencyScore
+            consistencyScore: consistencyScore,
+            provisionalReasons: provisional, baselineNotes: baselineNotes(workout, history: history, bodyWeightKg: bodyWeightKg)
         )
-        cache[workout.id] = score
         return score
     }
 
@@ -92,7 +110,7 @@ public final class WorkoutQualityScoreService: Sendable {
     public func computeAggregateScore(workouts: [Workout]) -> AggregateQualityScore {
         let completed = workouts
             .filter { $0.completedAt != nil }
-            .sorted { ($0.completedAt ?? .distantPast) < ($1.completedAt ?? .distantPast) }
+            .sorted { $0.trainingDate < $1.trainingDate }
 
         let now = Date()
 
@@ -106,7 +124,10 @@ public final class WorkoutQualityScoreService: Sendable {
         }
 
         // Compute per-workout scores (using pre-fetched history via cache-aware overload)
-        let scores = completed.map { computeScore(for: $0, history: workouts) }
+        let allScores = completed.map { computeScore(for: $0, history: workouts) }
+        let measured = zip(completed, allScores).filter { !$0.1.isProvisional }
+        let includedWorkouts = measured.isEmpty ? completed : measured.map(\.0)
+        let scores = measured.isEmpty ? allScores : measured.map(\.1)
 
         let overallValues = scores.map(\.overallScore)
         let volumeValues = scores.map(\.volumeScore)
@@ -115,7 +136,7 @@ public final class WorkoutQualityScoreService: Sendable {
         let consistencyValues = scores.map(\.consistencyScore)
 
         // Cold start: < 3 workouts → simple average (EWMA with 1-2 points is meaningless)
-        let useColdStart = completed.count < 3
+        let useColdStart = scores.count < 3
 
         let lambda = 0.3
         let ewmaOverall: [Double]
@@ -136,7 +157,7 @@ public final class WorkoutQualityScoreService: Sendable {
                 ewmaIntensity: avgIntensity, ewmaBalance: avgBalance,
                 ewmaConsistency: avgConsistency,
                 trendVsPrior: 0, percentileRank: 0.5,
-                workoutsIncluded: completed.count, computedAt: now
+                workoutsIncluded: scores.count, computedAt: now, provisional: measured.isEmpty, sessionsScored: completed.count
             )
         } else {
             ewmaOverall = AnalyticsCalculations.ewma(values: overallValues, lambda: lambda)
@@ -150,11 +171,11 @@ public final class WorkoutQualityScoreService: Sendable {
 
         // Trend: compare current EWMA vs EWMA ~4 weeks ago
         let fourWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -4, to: now)!
-        let priorIndex = completed.firstIndex { ($0.completedAt ?? .distantPast) >= fourWeeksAgo } ?? 0
-        let priorOverall = ewmaOverall[priorIndex]
+        let priorIndex = includedWorkouts.lastIndex { $0.trainingDate <= fourWeeksAgo }
+        let priorOverall = priorIndex.map { ewmaOverall[$0] } ?? 0
         let trend: Double
-        if priorOverall > 0 && priorIndex < ewmaOverall.count - 1 {
-            trend = ((currentOverall - priorOverall) / priorOverall) * 100
+        if priorOverall > 0 && (priorIndex ?? 0) < ewmaOverall.count - 1 && !measured.isEmpty {
+            trend = currentOverall - priorOverall
         } else {
             trend = 0
         }
@@ -172,8 +193,8 @@ public final class WorkoutQualityScoreService: Sendable {
             ewmaConsistency: ewmaConsistency.last!,
             trendVsPrior: trend,
             percentileRank: percentile,
-            workoutsIncluded: completed.count,
-            computedAt: now
+            workoutsIncluded: scores.count,
+            computedAt: now, provisional: measured.isEmpty, sessionsScored: completed.count
         )
     }
 
@@ -184,8 +205,8 @@ public final class WorkoutQualityScoreService: Sendable {
         bodyWeightProvider?.current ?? userPreferencesService.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
 
-    private func buildBestE1RMMap(excluding workoutId: UUID, from history: [Workout]) -> [UUID: Double] {
-        AnalyticsCalculations.buildBestE1RMMap(excluding: workoutId, from: history, bodyWeightKg: resolvedBodyWeightKg)
+    private func buildBestE1RMMap(excluding workoutId: UUID, from history: [Workout], asOf: Date) -> [UUID: Double] {
+        AnalyticsCalculations.buildBestE1RMMap(excluding: workoutId, from: history, bodyWeightKg: resolvedBodyWeightKg, asOf: asOf)
     }
 
     /// Compute Intensity-Weighted Volume per muscle group for a set of workouts.
@@ -215,6 +236,24 @@ public final class WorkoutQualityScoreService: Sendable {
         return iwv
     }
 
+    private func exerciseMix(_ workout: Workout) -> Set<UUID> {
+        Set(workout.exercises.filter { $0.sets.contains { $0.isCompleted && $0.setType != .warmup } }.map { $0.exercise.id })
+    }
+
+    private func baselineNotes(_ workout: Workout, history: [Workout], bodyWeightKg: Double) -> [String] {
+        let prior = history.filter { $0.id != workout.id && $0.completedAt != nil && !$0.isDeload && workout.trainingDate.timeIntervalSince($0.trainingDate) <= 12 * 7 * 86400 }
+        let matched = prior.filter { exerciseMix($0) == exerciseMix(workout) }
+        let comparison = matched.count >= 3 ? matched : prior
+        var notes = [matched.count >= 3 ? "Volume: same exercise/equipment mix (\(matched.count) prior sessions)" : "Volume: per-muscle fallback; routine comparability is limited (\(prior.count) prior sessions)"]
+        if matched.count >= 3 {
+            let average = comparison.reduce(0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) } / Double(comparison.count)
+            notes.append(String(format: "Session tonnage %.0f kg vs %.0f kg matched average; the score averages individual muscle ratios", workout.totalVolume(bodyWeightKg: bodyWeightKg), average))
+        }
+        notes.append("Intensity is estimated performance relative to prior exercise bests, not RPE. Bodyweight movements use current resolved bodyweight retrospectively.")
+        notes.append("Program balance is an app-defined six-pair distribution benchmark, not a prescription for identical muscle work.")
+        return notes
+    }
+
     // MARK: - Scoring Components (0-100 scale each)
 
     /// Per-muscle-group volume comparison against 12-week per-session averages.
@@ -223,14 +262,17 @@ public final class WorkoutQualityScoreService: Sendable {
     /// rolling baseline down, making every regular workout look like an overshoot.
     /// They're excluded from the baseline here, mirroring `computeDeloadVolumeScore`.
     private func computeVolumeScore(_ workout: Workout, history: [Workout], bodyWeightKg: Double) -> Double {
-        let twelveWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -12, to: Date())!
+        let twelveWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -12, to: workout.trainingDate)!
 
-        let historyWorkouts = history.filter {
+        var historyWorkouts = history.filter {
             $0.id != workout.id &&
             !$0.isDeload &&
             $0.completedAt != nil &&
             $0.trainingDate >= twelveWeeksAgo
         }
+
+        let matching = historyWorkouts.filter { exerciseMix($0) == exerciseMix(workout) }
+        if matching.count >= 3 { historyWorkouts = matching }
 
         // Per-muscle-group raw volume for current workout (70/30 split)
         var currentMuscleVol: [MuscleGroup: Double] = [:]
@@ -312,7 +354,7 @@ public final class WorkoutQualityScoreService: Sendable {
     /// Effort-ratio intensity: compares each set's e1RM to the historical best
     /// for that exercise (last 6 months, excluding current workout). Returns 0-100.
     private func computeIntensityScore(_ workout: Workout, history: [Workout]) -> Double {
-        let bestE1RM = buildBestE1RMMap(excluding: workout.id, from: history)
+        let bestE1RM = buildBestE1RMMap(excluding: workout.id, from: history, asOf: workout.trainingDate)
 
         var ratios: [Double] = []
         for we in workout.exercises {
@@ -332,22 +374,22 @@ public final class WorkoutQualityScoreService: Sendable {
         return min(max(mean * 100.0, 0), 100)
     }
 
-    private func computeConsistencyScore(_ workout: Workout) -> Double {
-        let completedSets = workout.exercises
-            .flatMap { $0.sets }
-            .filter { $0.isCompleted && $0.setType != .warmup && $0.completedAt != nil }
-            .sorted { $0.completedAt! < $1.completedAt! }
-
-        guard completedSets.count >= 2 else { return 72.0 }
-
-        var intervals: [TimeInterval] = []
-        for i in 1..<completedSets.count {
-            let interval = completedSets[i].completedAt!.timeIntervalSince(completedSets[i - 1].completedAt!)
-            if interval <= 600 && interval > 15 { // Filter out superset/drop-set transitions
-                intervals.append(interval)
-            }
+    /// Completion gaps within an exercise block; never compare transitions across exercises.
+    private func restIntervals(_ workout: Workout) -> [Double] {
+        workout.exercises.filter { $0.supersetGroup == nil }.flatMap { exercise -> [Double] in
+            let sets = exercise.sets.filter { $0.isCompleted && $0.setType == .normal && $0.completedAt != nil }
+                .sorted { $0.completedAt! < $1.completedAt! }
+            guard sets.count >= 3 else { return [] }
+            let intervals = zip(sets.dropFirst(), sets).map { $0.0.completedAt!.timeIntervalSince($0.1.completedAt!) }
+                .filter { $0 > 15 && $0 <= 600 }
+            guard intervals.count >= 2 else { return [] }
+            let mean = intervals.reduce(0, +) / Double(intervals.count)
+            return intervals.map { $0 / mean }
         }
+    }
 
+    private func computeConsistencyScore(_ workout: Workout) -> Double {
+        let intervals = restIntervals(workout)
         guard intervals.count >= 2 else { return 80.0 }
 
         let mean = intervals.reduce(0, +) / Double(intervals.count)
@@ -367,7 +409,7 @@ public final class WorkoutQualityScoreService: Sendable {
 
     /// IWV-based balance score over 12-week window with 6 antagonist pairs.
     private func computeBalanceScore(_ workout: Workout, history: [Workout]) -> Double {
-        let twelveWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -12, to: Date())!
+        let twelveWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -12, to: workout.trainingDate)!
 
         // All completed workouts from last 12 weeks (including current)
         var recentWorkouts = history.filter {
@@ -377,7 +419,7 @@ public final class WorkoutQualityScoreService: Sendable {
             recentWorkouts.append(workout)
         }
 
-        let bestE1RM = buildBestE1RMMap(excluding: workout.id, from: history)
+        let bestE1RM = buildBestE1RMMap(excluding: workout.id, from: history, asOf: workout.trainingDate)
         let iwv = computeMuscleGroupIWV(workouts: recentWorkouts, bestE1RM: bestE1RM)
 
         let antagonistPairs: [(MuscleGroup, MuscleGroup)] = [
@@ -414,7 +456,7 @@ public final class WorkoutQualityScoreService: Sendable {
 
     /// Deload volume: rewards ~50% of historical average. Too high (>70%) or too low (<30%) scores drop.
     private func computeDeloadVolumeScore(_ workout: Workout, history: [Workout], bodyWeightKg: Double) -> Double {
-        let twelveWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -12, to: Date())!
+        let twelveWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -12, to: workout.trainingDate)!
         let historyWorkouts = history.filter {
             $0.id != workout.id && !$0.isDeload && $0.completedAt != nil
             && $0.trainingDate >= twelveWeeksAgo
@@ -441,7 +483,7 @@ public final class WorkoutQualityScoreService: Sendable {
     /// Deload intensity: rewards ~60-80% of historical best e1RM. ~70% = 100.
     private func computeDeloadIntensityScore(_ workout: Workout, history: [Workout]) -> Double {
         let nonDeloadHistory = history.filter { !$0.isDeload }
-        let bestE1RM = buildBestE1RMMap(excluding: workout.id, from: nonDeloadHistory)
+        let bestE1RM = buildBestE1RMMap(excluding: workout.id, from: nonDeloadHistory, asOf: workout.trainingDate)
 
         var ratios: [Double] = []
         for we in workout.exercises {

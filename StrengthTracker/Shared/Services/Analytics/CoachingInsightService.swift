@@ -76,10 +76,10 @@ public final class CoachingInsightService: Sendable {
         }
 
         // Quality score delta vs EWMA (needs 5+ workouts)
-        if workoutCount >= AnalyticsFeatureGate.threshold(for: .qualityScore), let score = qualityScore, let qService = qualityScoreService {
-            let aggregate = qService.computeAggregateScore(workouts: allWorkouts)
+        if workoutCount >= AnalyticsFeatureGate.threshold(for: .qualityScore), let score = qualityScore, !score.isProvisional, let qService = qualityScoreService {
+            let aggregate = qService.computeAggregateScore(workouts: completedWorkouts)
             let delta = score.overallScore - aggregate.ewmaOverall
-            if abs(delta) > 5 {
+            if abs(delta) > 5 && !aggregate.provisional {
                 let direction = delta > 0 ? "above" : "below"
                 candidates.append(CoachingInsight(
                     priority: 3,

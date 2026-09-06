@@ -17,6 +17,8 @@ public final class WorkoutAnalyticsViewModel {
 
     public var qualityScore: WorkoutQualityScore?
     public var aggregateQuality: AggregateQualityScore?
+    public var trainingState: TrainingStateSummary?
+    public var completedHistory: [Workout] = []
     public var isQualityScoreLoading = false
 
     /// Feature gating
@@ -95,7 +97,7 @@ public final class WorkoutAnalyticsViewModel {
         if !force, insights.workoutCount > 0 {
             if let targetRevision {
                 // Revision-gated: reload only when a completed mutation bumped it.
-                if lastLoadedRevision == targetRevision { return }
+                if lastLoadedRevision == targetRevision, let last = lastInsightsLoadTime, Date().timeIntervalSince(last) < 60 { return }
             } else if let lastLoad = lastInsightsLoadTime, Date().timeIntervalSince(lastLoad) < 60 {
                 // No revision source injected (tests): keep the time-based gate.
                 return
@@ -142,6 +144,8 @@ public final class WorkoutAnalyticsViewModel {
                let repo = workoutRepository {
                 let allCompleted = try await repo.fetchAll()
                 let completedWorkouts = allCompleted.filter { $0.completedAt != nil }
+                completedHistory = completedWorkouts
+                trainingState = TrainingStateService.summarize(workouts: completedWorkouts)
 
                 // Per-workout score for the latest workout (used in detail views);
                 // always rescored — baselines are history-relative.
@@ -155,10 +159,7 @@ public final class WorkoutAnalyticsViewModel {
                 aggregateQuality = qualityScoreService.computeAggregateScore(workouts: allCompleted)
 
                 // Per-muscle volume-response analyses (data-shape gated per muscle).
-                volumeResponseAnalyses = VolumeResponseService.computeAnalyses(
-                    workouts: allCompleted,
-                    overloadTrends: rawInsights.overloadTrends
-                )
+                volumeResponseAnalyses = try await analyticsService.volumeResponse()
             } else {
                 volumeResponseAnalyses = []
             }
@@ -198,7 +199,7 @@ public final class WorkoutAnalyticsViewModel {
             generatedAt: raw.generatedAt,
             workoutCount: raw.workoutCount,
             plateaus: quality && unlockedFeatures.contains(.plateauDetection) ? raw.plateaus : [],
-            muscleBalance: quality && unlockedFeatures.contains(.muscleBalance) ? raw.muscleBalance : nil,
+            muscleBalance: quality ? raw.muscleBalance : nil,
             recommendations: quality ? raw.recommendations : [],
             recoveryPatterns: raw.recoveryPatterns,
             optimalVolumes: raw.optimalVolumes,
@@ -210,9 +211,9 @@ public final class WorkoutAnalyticsViewModel {
             blockComparison: quality ? raw.blockComparison : nil,
             anomalies: quality ? raw.anomalies : [],
             highlights: quality ? raw.highlights : [],
-            archetypes: unlockedFeatures.contains(.archetypeClustering) ? raw.archetypes : [],
+            archetypes: raw.archetypes,
             trainingFingerprint: unlockedFeatures.contains(.trainingFingerprint) ? raw.trainingFingerprint : nil,
-            timeOfDayAnalysis: unlockedFeatures.contains(.timeOfDayAnalysis) ? raw.timeOfDayAnalysis : nil,
+            timeOfDayAnalysis: raw.timeOfDayAnalysis,
             verdict: quality ? raw.verdict : nil
         )
     }
@@ -220,6 +221,14 @@ public final class WorkoutAnalyticsViewModel {
     /// First archetype not performed in 14+ days — surfaced as a "neglected workout type" nudge.
     public var staleArchetype: WorkoutArchetype? {
         insights.archetypes.first { ($0.daysSinceLastPerformed ?? 0) >= 14 }
+    }
+
+    public func recordRecovery(_ pattern: RecoveryPattern, feelsReady: Bool) async {
+        guard let last = pattern.lastTrainedDate else { return }
+        RecoveryFeedbackStore().record(muscle: pattern.muscleGroup, feelsReady: feelsReady,
+            hoursSince: max(0, Date().timeIntervalSince(last) / 3600), predictedHours: pattern.averageRecoveryHours)
+        analyticsService.invalidateDerivedCaches()
+        await loadDashboardInsights(force: true)
     }
 
     // MARK: - Per-Workout (outside aggregate)
@@ -255,7 +264,7 @@ public final class WorkoutAnalyticsViewModel {
     // MARK: - Advanced Insights Accessors
 
     public var advancedInsightsLoaded: Bool {
-        isFeatureUnlocked(.advancedInsights) && insights.workoutCount >= AnalyticsFeatureGate.threshold(for: .advancedInsights)
+        trainingState != nil
     }
 
 

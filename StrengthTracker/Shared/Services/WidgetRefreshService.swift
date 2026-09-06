@@ -53,14 +53,7 @@ public final class WidgetRefreshService {
             // Highlights straight from the service (cached per data revision, so this
             // is cheap when a screen already computed them — and never pre-edit stale).
             let insights = try? await analyticsService.generateInsights()
-            var highlights: [AnalyticsHighlight] = insights?.highlights ?? []
-
-            // The coach verdict is always widget highlight #1 (the generator already
-            // leads with it for deload/hold; add the progress card when it is missing).
-            if let verdict = insights?.verdict, highlights.first?.title != verdict.headline {
-                highlights.removeAll { $0.title == verdict.headline }
-                highlights.insert(Self.verdictHighlight(verdict), at: 0)
-            }
+            let highlights: [AnalyticsHighlight] = insights?.highlights ?? []
 
             // Fetch active plan once — reused for next session + weekly goal
             let activePlan = try await progressionPlanRepository.fetchActive()
@@ -76,49 +69,10 @@ public final class WidgetRefreshService {
                 )
             }
 
-            // Supplement with volume trend if room remains (calendar-week, bodyweight-aware).
-            // Uses the same week-split as the widget payload so the numbers always agree.
-            if highlights.count < 3 {
-                let completedWorkouts = workouts.filter { $0.completedAt != nil }
-                let (thisWeekWorkouts, lastWeekWorkouts) = widgetService.weeklyWorkoutSplit(from: completedWorkouts)
-
-                let thisWeekVol = thisWeekWorkouts.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
-                let lastWeekVol = lastWeekWorkouts.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
-
-                // Compare per-session averages to avoid misleading partial-week comparisons
-                if !thisWeekWorkouts.isEmpty && !lastWeekWorkouts.isEmpty {
-                    let thisAvg = thisWeekVol / Double(thisWeekWorkouts.count)
-                    let lastAvg = lastWeekVol / Double(lastWeekWorkouts.count)
-                    let pct = ((thisAvg - lastAvg) / lastAvg) * 100
-                    if pct > 0 {
-                        highlights.append(AnalyticsHighlight(
-                            type: .improvement,
-                            title: "Volume Up",
-                            detail: "+\(Int(pct))% avg/session vs last week"
-                        ))
-                    } else if pct < -5 {
-                        highlights.append(AnalyticsHighlight(
-                            type: .warning,
-                            title: "Volume Down",
-                            detail: "\(Int(pct))% avg/session vs last week"
-                        ))
-                    }
-                }
-            }
-
             // Compute aggregate quality for widget
             let agg = qualityScoreService.computeAggregateScore(workouts: workouts)
-            let qualityScore: Double? = agg.workoutsIncluded > 0 ? agg.ewmaOverall : nil
-            let qualityTrend: Double? = agg.workoutsIncluded > 0 ? agg.trendVsPrior : nil
-
-            // Supplement with quality score highlight if room remains
-            if highlights.count < 3, let qs = qualityScore {
-                highlights.append(AnalyticsHighlight(
-                    type: .improvement,
-                    title: "Quality",
-                    detail: "\(Int(qs))/100"
-                ))
-            }
+            let qualityScore: Double? = agg.workoutsIncluded > 0 && !agg.provisional ? agg.ewmaOverall : nil
+            let qualityTrend: Double? = agg.workoutsIncluded > 0 && !agg.provisional ? agg.trendVsPrior : nil
 
             // Weekly goal from plan's frequency (0 = no active plan)
             let weeklyGoal = activePlan?.weeklyFrequency ?? 0
@@ -135,7 +89,8 @@ public final class WidgetRefreshService {
                 weeklyQualityScore: qualityScore,
                 qualityTrend: qualityTrend,
                 activeExerciseId: workoutViewModel.activeExerciseId,
-                weightUnitSymbol: userPreferencesService.weightUnit.symbol
+                weightUnitSymbol: userPreferencesService.weightUnit.symbol,
+                analyticsGeneratedAt: insights?.generatedAt
             )
             widgetService.updateWidgetData(data)
         } catch {

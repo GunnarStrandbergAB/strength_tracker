@@ -42,8 +42,8 @@ struct DropSetAnalyticsTests {
     @Test("buildBestE1RMMap considers every drop segment")
     func testBestE1RMMapIncludesSegments() {
         let exercise = AnalyticsTestHelpers.makeExercise(name: "Row", primaryMuscleGroup: .back, secondaryMuscleGroups: [])
-        // 80×13 → Brzycki 120; the 100×1 single is only 100.
-        let drop = AnalyticsTestHelpers.makeDropSet(order: 1, parts: [(80, 13)])
+        // 80×15 → Epley 120; the 100×1 single is only 100.
+        let drop = AnalyticsTestHelpers.makeDropSet(order: 1, parts: [(80, 15)])
         let single = AnalyticsTestHelpers.makeCompletedSet(order: 2, weight: 100, reps: 1)
         let we = AnalyticsTestHelpers.makeWorkoutExercise(exercise: exercise, sets: [drop, single])
         let workout = AnalyticsTestHelpers.makeWorkout(exercises: [we])

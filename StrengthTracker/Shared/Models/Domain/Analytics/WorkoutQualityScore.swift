@@ -10,6 +10,11 @@ public struct WorkoutQualityScore: Identifiable, Hashable, Sendable, Codable {
     public let balanceScore: Double
     public let consistencyScore: Double
     public let scoredAt: Date
+    public let provisionalReasons: [String]?
+    public let baselineNotes: [String]?
+    public let scoredModelVersion: Int?
+    public var isProvisional: Bool { !(provisionalReasons ?? []).isEmpty }
+    public static let modelVersion = 2
 
     public init(
         id: UUID = UUID(),
@@ -19,7 +24,8 @@ public struct WorkoutQualityScore: Identifiable, Hashable, Sendable, Codable {
         intensityScore: Double,
         balanceScore: Double,
         consistencyScore: Double,
-        scoredAt: Date = Date()
+        scoredAt: Date = Date(),
+        provisionalReasons: [String]? = nil, baselineNotes: [String]? = nil
     ) {
         self.id = id
         self.workoutId = workoutId
@@ -29,6 +35,9 @@ public struct WorkoutQualityScore: Identifiable, Hashable, Sendable, Codable {
         self.balanceScore = balanceScore
         self.consistencyScore = consistencyScore
         self.scoredAt = scoredAt
+        self.provisionalReasons = provisionalReasons
+        self.baselineNotes = baselineNotes
+        self.scoredModelVersion = Self.modelVersion
     }
 }
 
@@ -44,7 +53,7 @@ public struct AggregateQualityScore: Sendable {
     public let ewmaBalance: Double
     /// 0-100 EWMA-smoothed consistency pillar
     public let ewmaConsistency: Double
-    /// Percentage change vs EWMA ~4 weeks ago
+    /// Score-point change vs EWMA ~4 weeks ago
     public let trendVsPrior: Double
     /// 0-1 where current EWMA sits in user's EWMA history
     public let percentileRank: Double
@@ -52,4 +61,6 @@ public struct AggregateQualityScore: Sendable {
     public let workoutsIncluded: Int
     /// When this aggregate was computed
     public let computedAt: Date
+    public var provisional: Bool = false
+    public var sessionsScored: Int = 0
 }

@@ -63,6 +63,7 @@ struct StrengthTrackeriOSApp: App {
             Task { [container] in
                 await container.exerciseSeeder.ensureSeeded()
                 await container.effectiveLoadMigrationService.migrateIfNeeded()
+                await container.workoutFinalizer.migrateAnalyticsModelIfNeeded()
             }
 
             // Request notification permission for rest timer background alerts

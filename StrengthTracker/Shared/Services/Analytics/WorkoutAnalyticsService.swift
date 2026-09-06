@@ -47,7 +47,7 @@ public final class WorkoutAnalyticsService: Sendable {
     // Caches, all keyed on the data revision so any completed mutation drops them.
     private let dataRevision: DataRevision?
     private var cachedInsights: (revision: Int, window: TimeInterval, insights: WorkoutInsights)?
-    // Archetype cache: k-means is expensive — recompute only when data changed.
+    // Stable routine membership; included in the time-limited analytics snapshot.
     private var cachedArchetypes: [WorkoutArchetype] = []
     private var archetypeCacheRevision: Int = -1
     // Quality scores memoized per workout (completed workouts are immutable).
@@ -164,12 +164,12 @@ public final class WorkoutAnalyticsService: Sendable {
     // MARK: - Dashboard Aggregate
 
     /// Generate a consistent WorkoutInsights snapshot for the dashboard
-    public func generateInsights(timeWindow: TimeInterval = 2_592_000) async throws -> WorkoutInsights {
+    public func generateInsights(timeWindow: TimeInterval = 2_592_000, now: Date = Date()) async throws -> WorkoutInsights {
         if let dataRevision, let cached = cachedInsights,
-           cached.revision == dataRevision.value, cached.window == timeWindow {
+           cached.revision == dataRevision.value, cached.window == timeWindow, now >= cached.insights.generatedAt, now.timeIntervalSince(cached.insights.generatedAt) < 60 {
             return cached.insights
         }
-        let insights = try await computeInsights(timeWindow: timeWindow)
+        let insights = try await computeInsights(timeWindow: timeWindow, now: now)
         if let dataRevision {
             cachedInsights = (dataRevision.value, timeWindow, insights)
         }
@@ -185,31 +185,23 @@ public final class WorkoutAnalyticsService: Sendable {
         archetypeCacheRevision = -1
     }
 
-    private func computeInsights(timeWindow: TimeInterval) async throws -> WorkoutInsights {
+    private func computeInsights(timeWindow: TimeInterval, now: Date) async throws -> WorkoutInsights {
         // Migrate vectors if normalization constants changed
         let bodyWeightKg = resolvedBodyWeightKg
         try await migrateVectorsIfNeeded(bodyWeightKg: bodyWeightKg)
 
         let workouts = try await workoutRepository.fetchAll()
-        let completedWorkouts = workouts.filter { $0.completedAt != nil }
+        let completedWorkouts = workouts.filter { $0.completedAt != nil && $0.trainingDate <= now }
         let nonDeloadWorkouts = completedWorkouts.filter { !$0.isDeload }
 
-        let trainingStatus = try await trainingStatusDetector?.detect() ?? .intermediate
-        let plateausResult = plateauService.analyzePlateaus(bodyWeightKg: bodyWeightKg, workouts: nonDeloadWorkouts, trainingStatus: trainingStatus)
-        let muscleBalanceResult = muscleBalanceService.analyze(workouts: nonDeloadWorkouts, timeWindow: timeWindow, bodyWeightKg: bodyWeightKg)
-
-        // Generate recommendations using plateau and balance data
-        let availableExercises = try await exerciseRepository.fetchAll()
-        let recommendationsResult = recommendationService.generateRecommendations(
-            workouts: nonDeloadWorkouts,
-            availableExercises: availableExercises,
-            muscleBalance: muscleBalanceResult,
-            plateaus: plateausResult,
-            limit: 5
-        )
+        // One canonical exercise-progress result. Legacy plateau/recommendation fields remain
+        // empty for backwards-compatible decoding, not as a second source of advice.
+        let plateausResult: [PlateauAnalysis] = []
+        let recommendationsResult: [ExerciseRecommendation] = []
+        let muscleBalanceResult = muscleBalanceService.analyze(workouts: completedWorkouts, timeWindow: timeWindow, bodyWeightKg: bodyWeightKg, now: now)
 
         // Recovery patterns (Phase 3) — include deloads (affects recovery timelines)
-        let recoveryPatterns = try await recoveryEstimationService?.computeRecoveryPatterns(workouts: completedWorkouts, bodyWeightKg: bodyWeightKg) ?? []
+        let recoveryPatterns = try await recoveryEstimationService?.computeRecoveryPatterns(workouts: completedWorkouts, bodyWeightKg: bodyWeightKg, now: now) ?? []
 
         // Volume landmarks (Phase 4) — exclude deloads (don't lower averages)
         let optimalVolumes = try await volumeLandmarkService?.computeVolumeLandmarks(workouts: nonDeloadWorkouts) ?? []
@@ -228,30 +220,30 @@ public final class WorkoutAnalyticsService: Sendable {
         var timeOfDayAnalysis: TimeOfDayAnalysis?
         var verdict: TrainingVerdict?
 
-        if completedWorkouts.count >= AnalyticsFeatureGate.threshold(for: .advancedInsights) {
-            let bestE1RM = AnalyticsCalculations.buildBestE1RMMap(from: nonDeloadWorkouts, bodyWeightKg: bodyWeightKg)
+        if completedWorkouts.count >= AnalyticsFeatureGate.threshold(for: .qualityScore) {
+            let bestE1RM = AnalyticsCalculations.buildBestE1RMMap(from: nonDeloadWorkouts, bodyWeightKg: bodyWeightKg, asOf: now)
 
             // Core services: ACWR needs all workouts (must see load drop), others exclude deloads
             trainingLoad = TrainingLoadService.computeTrainingLoad(
-                bodyWeightKg: bodyWeightKg, workouts: completedWorkouts, bestE1RM: bestE1RM
+                bodyWeightKg: bodyWeightKg, workouts: completedWorkouts, bestE1RM: bestE1RM, now: now
             )
-            overloadTrends = OverloadTrackingService.computeOverloadTrends(workouts: nonDeloadWorkouts, bodyWeightKg: bodyWeightKg)
+            overloadTrends = OverloadTrackingService.computeOverloadTrends(workouts: nonDeloadWorkouts, bodyWeightKg: bodyWeightKg, now: now)
             deloadRecommendation = DeloadDetectionService.detectDeload(
                 bodyWeightKg: bodyWeightKg,
                 workouts: completedWorkouts,
                 overloadTrends: overloadTrends,
                 trainingLoad: trainingLoad,
-                bestE1RM: bestE1RM
+                bestE1RM: bestE1RM, now: now
             )
 
             // The one deload / hold / progress call every surface consults.
-            verdict = trainingAdvisor?.evaluate(TrainingAdvisor.Input(
+            verdict = (trainingLoad != nil || overloadTrends.contains { $0.trendStatus != .inactive && $0.trendStatus != .uncertain }) ? trainingAdvisor?.evaluate(TrainingAdvisor.Input(
                 workouts: completedWorkouts,
                 trainingLoad: trainingLoad,
                 overloadTrends: overloadTrends,
                 deloadRecommendation: deloadRecommendation,
-                recoveryPatterns: recoveryPatterns
-            ))
+                recoveryPatterns: recoveryPatterns, now: now
+            )) : nil
             let activeDeload = verdict?.isActiveDeload ?? false
 
             // Vector-powered services — filter deload vectors for drift/anomaly/block
@@ -265,11 +257,10 @@ public final class WorkoutAnalyticsService: Sendable {
             anomalies = anomalyDetectionService?.detectAnomalies(vectors: nonDeloadVectors) ?? []
 
             // Workout archetypes + training fingerprint.
-            // K-means clusters are recomputed only when the vector set grows; the
-            // fingerprint is cheap and its 4-week windows shift daily, so it always runs.
+            // Frequencies and comparison windows advance without requiring a workout edit.
             if let archetypeService {
                 let revision = dataRevision?.value ?? nonDeloadVectors.count
-                if revision != archetypeCacheRevision {
+                do { // Refresh time-dependent frequencies even when history is unchanged.
                     cachedArchetypes = archetypeService.cluster(
                         vectors: nonDeloadVectors, workouts: nonDeloadWorkouts, bodyWeightKg: bodyWeightKg
                     )
@@ -291,7 +282,7 @@ public final class WorkoutAnalyticsService: Sendable {
                     )
                 }
                 timeOfDayAnalysis = changePointService.analyzeTimeOfDay(
-                    workouts: completedWorkouts, qualityScores: qualityScores
+                    workouts: completedWorkouts, qualityScores: qualityScores, now: now
                 )
             }
 
@@ -309,18 +300,10 @@ public final class WorkoutAnalyticsService: Sendable {
                     verdict: verdict
                 )
             }
-        } else if completedWorkouts.count >= AnalyticsFeatureGate.threshold(for: .qualityScore), let generator = insightGenerator {
-            // Early highlights from Phase 2/3 data (plateaus, balance, recommendations)
-            highlights = await generator.generateEarlyHighlights(
-                plateaus: plateausResult,
-                muscleBalance: muscleBalanceResult,
-                recommendations: recommendationsResult,
-                workoutCount: completedWorkouts.count
-            )
         }
 
         return WorkoutInsights(
-            generatedAt: Date(),
+            generatedAt: now,
             workoutCount: completedWorkouts.count,
             plateaus: plateausResult,
             muscleBalance: muscleBalanceResult,
@@ -340,6 +323,15 @@ public final class WorkoutAnalyticsService: Sendable {
             timeOfDayAnalysis: timeOfDayAnalysis,
             verdict: verdict
         )
+    }
+
+    public func volumeResponse(muscle: String? = nil, lookbackWeeks: Int = 104, now: Date = Date()) async throws -> [VolumeResponseAnalysis] {
+        let weeks = min(260, max(8, lookbackWeeks))
+        let cutoff = Calendar.mondayStart.date(byAdding: .weekOfYear, value: -weeks, to: now)!
+        let workouts = try await workoutRepository.fetchAll().filter { $0.trainingDate >= cutoff && $0.trainingDate <= now }
+        let series = OverloadTrackingService.computeOverloadTrends(workouts: workouts, bodyWeightKg: resolvedBodyWeightKg, now: now)
+        return VolumeResponseService.computeAnalyses(workouts: workouts, overloadTrends: series, now: now)
+            .filter { muscle == nil || $0.muscleGroup.caseInsensitiveCompare(muscle!) == .orderedSame }
     }
 
     // MARK: - Vector Access

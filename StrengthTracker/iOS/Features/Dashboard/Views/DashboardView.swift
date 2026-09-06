@@ -3,6 +3,8 @@ import SwiftUI
 import StrengthTrackerShared
 
 struct DashboardView: View {
+    @State private var showLinkedAnalytics = false
+    @State private var analyticsTopic: String?
     @State private var viewModel: DashboardViewModel
     let analyticsViewModel: WorkoutAnalyticsViewModel
     let historyViewModel: HistoryViewModel
@@ -175,6 +177,14 @@ struct DashboardView: View {
             }
             .background(STColors.background)
             .scrollIndicators(.hidden)
+            .navigationDestination(isPresented: $showLinkedAnalytics) {
+                AnalyticsDashboardView(viewModel: analyticsViewModel, initialTopic: analyticsTopic)
+            }
+            .onOpenURL { url in
+                guard url.host == "analytics", analyticsViewModel.hasProAccess else { return }
+                analyticsTopic = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "topic" })?.value
+                showLinkedAnalytics = true
+            }
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.inline)
             .stNavigationBarStyle()

@@ -205,7 +205,7 @@ struct ContentView: View {
         switch url.host {
         case "workout":
             selectedTab = 1
-        case "dashboard":
+        case "dashboard", "analytics":
             selectedTab = 0
         case "history":
             selectedTab = 4
