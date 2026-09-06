@@ -140,26 +140,31 @@ public final class WorkoutAnalyticsViewModel {
             lastLoadedRevision = revision
 
             // Auto-load quality score and aggregate using the same workouts
-            if unlockedFeatures.contains(.qualityScore),
-               let repo = workoutRepository {
+            if let repo = workoutRepository {
                 let allCompleted = try await repo.fetchAll()
                 let completedWorkouts = allCompleted.filter { $0.completedAt != nil }
                 completedHistory = completedWorkouts
                 trainingState = TrainingStateService.summarize(workouts: completedWorkouts)
 
-                // Per-workout score for the latest workout (used in detail views);
-                // always rescored — baselines are history-relative.
-                if let latest = completedWorkouts
-                    .sorted(by: { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) })
-                    .first {
-                    qualityScore = qualityScoreService.computeScore(for: latest, history: allCompleted)
+                if unlockedFeatures.contains(.qualityScore) {
+                    // Per-workout score for the latest workout (used in detail views);
+                    // always rescored — baselines are history-relative.
+                    if let latest = completedWorkouts
+                        .sorted(by: { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) })
+                        .first {
+                        qualityScore = qualityScoreService.computeScore(for: latest, history: allCompleted)
+                    }
+
+                    // Aggregate EWMA quality across all workouts
+                    aggregateQuality = qualityScoreService.computeAggregateScore(workouts: allCompleted)
+
+                    // Per-muscle volume-response analyses (data-shape gated per muscle).
+                    volumeResponseAnalyses = try await analyticsService.volumeResponse()
+                } else {
+                    qualityScore = nil
+                    aggregateQuality = nil
+                    volumeResponseAnalyses = []
                 }
-
-                // Aggregate EWMA quality across all workouts
-                aggregateQuality = qualityScoreService.computeAggregateScore(workouts: allCompleted)
-
-                // Per-muscle volume-response analyses (data-shape gated per muscle).
-                volumeResponseAnalyses = try await analyticsService.volumeResponse()
             } else {
                 volumeResponseAnalyses = []
             }
@@ -246,6 +251,26 @@ public final class WorkoutAnalyticsViewModel {
             errorMessage = "Failed to load similar workouts: \(error.localizedDescription)"
             similarWorkouts = []
         }
+    }
+
+    public var resolvedBodyWeightKg: Double {
+        bodyWeightProvider?.current ?? userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
+    }
+
+    public func historicalQuality() -> [QualityHistoryObservation] {
+        qualityScoreService.computeHistory(workouts: completedHistory)
+    }
+
+    public func historicalLoad() -> TrainingLoad? {
+        let now = Date()
+        let bests = AnalyticsCalculations.buildBestE1RMMap(from: completedHistory.filter { !$0.isDeload }, bodyWeightKg: resolvedBodyWeightKg, asOf: now)
+        return TrainingLoadService.computeTrainingLoad(bodyWeightKg: resolvedBodyWeightKg, workouts: completedHistory, bestE1RM: bests, now: now, historyDays: nil)
+    }
+
+    public var loggedExercises: [Exercise] {
+        var seen = Set<UUID>()
+        return completedHistory.sorted { $0.trainingDate > $1.trainingDate }.flatMap(\.exercises).map(\.exercise)
+            .filter { seen.insert($0.id).inserted }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     public func loadQualityScore(for workout: Workout) async {

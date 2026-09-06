@@ -41,4 +41,33 @@ final class AnalyticsViewRenderingTests: XCTestCase {
             window.isHidden = true
         }
     }
+    func testSharedExerciseHistoryAtPhoneAndAccessibilitySizes() async throws {
+        let exercise = AnalyticsTestHelpers.makeExercise(name: "Weighted hanging knee raise with a long name")
+        let workouts = (0..<14).map { index in
+            let date = Date().addingTimeInterval(Double(index - 14) * 7 * 86400)
+            return AnalyticsTestHelpers.makeWorkout(exercises: [AnalyticsTestHelpers.makeWorkoutExercise(exercise: exercise,
+                sets: [AnalyticsTestHelpers.makeCompletedSet(weight: 20 + Double(index) * 0.2, reps: 8)])], startedAt: date, completedAt: date.addingTimeInterval(3600))
+        }
+        for (name, width, typeSize) in [("compact", 375.0, DynamicTypeSize.large), ("accessibility", 430.0, DynamicTypeSize.accessibility2)] {
+            let content = NavigationStack {
+                ExerciseHistoryDetailView(exercise: exercise, workouts: workouts, bodyWeightKg: 70, weightUnit: .kg)
+            }.environment(\.dynamicTypeSize, typeSize)
+            let host = UIHostingController(rootView: content)
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: width, height: 950))
+            window.rootViewController = host
+            window.isHidden = false
+            host.view.frame = window.bounds
+            host.view.layoutIfNeeded()
+            await Task.yield()
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in host.view.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "complement-exercise-\(name)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            XCTAssertEqual(image.size.width, width)
+            XCTAssertNotNil(image.pngData())
+            window.isHidden = true
+        }
+    }
+
 }
