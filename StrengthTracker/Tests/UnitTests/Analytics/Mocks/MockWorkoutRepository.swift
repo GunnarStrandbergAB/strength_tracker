@@ -26,6 +26,7 @@ final class MockWorkoutRepository: WorkoutRepository {
 
     var shouldThrowOnFetchAll = false
     var shouldThrowOnSave = false
+    var beforeSave: (@MainActor () async -> Void)?
     var customError: Error?
 
     private var errorToThrow: Error {
@@ -54,6 +55,7 @@ final class MockWorkoutRepository: WorkoutRepository {
     func save(_ workout: Workout) async throws -> Workout {
         saveCallCount += 1
         saveArguments.append(workout)
+        await beforeSave?()
         if shouldThrowOnSave { throw errorToThrow }
         workouts[workout.id] = workout
         return workout

@@ -13,6 +13,7 @@ struct SetRowGroupView: View {
     let showIntensity: Bool
     let intensityMetric: IntensityMetric
     let weightUnit: WeightUnit
+    let weightLabel: String?
     // Parent-row callbacks (threaded straight into SetRowGridView)
     let onWeightChange: (Double?) -> Void
     let onRepsChange: (Int?) -> Void
@@ -36,6 +37,7 @@ struct SetRowGroupView: View {
         showIntensity: Bool = false,
         intensityMetric: IntensityMetric = .rpe,
         weightUnit: WeightUnit = .kg,
+        weightLabel: String? = nil,
         onWeightChange: @escaping (Double?) -> Void,
         onRepsChange: @escaping (Int?) -> Void,
         onIntensityChange: ((Double?) -> Void)? = nil,
@@ -56,6 +58,7 @@ struct SetRowGroupView: View {
         self.showIntensity = showIntensity
         self.intensityMetric = intensityMetric
         self.weightUnit = weightUnit
+        self.weightLabel = weightLabel
         self.onWeightChange = onWeightChange
         self.onRepsChange = onRepsChange
         self.onIntensityChange = onIntensityChange
@@ -82,7 +85,7 @@ struct SetRowGroupView: View {
                 showRPE: showIntensity,
                 intensityMetric: intensityMetric,
                 weightUnit: weightUnit,
-                onWeightChange: onWeightChange,
+                weightLabel: weightLabel,                onWeightChange: onWeightChange,
                 onRepsChange: onRepsChange,
                 onIntensityChange: onIntensityChange,
                 onToggleComplete: onToggleComplete,
@@ -102,7 +105,7 @@ struct SetRowGroupView: View {
                     showIntensity: showIntensity,
                     intensityMetric: intensityMetric,
                     weightUnit: weightUnit,
-                    onWeightChange: { onDropEntryWeightChange?(entry.id, $0) },
+                weightLabel: weightLabel,                    onWeightChange: { onDropEntryWeightChange?(entry.id, $0) },
                     onRepsChange: { onDropEntryRepsChange?(entry.id, $0) },
                     onIntensityChange: { onDropEntryIntensityChange?(entry.id, $0) },
                     onToggleFailure: { onDropEntryToggleFailure?(entry.id) },

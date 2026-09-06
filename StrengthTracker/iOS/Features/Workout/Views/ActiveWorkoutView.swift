@@ -18,10 +18,12 @@ struct ActiveWorkoutView: View {
     @State private var showingExercisePicker = false
     @State private var showingCancelConfirmation = false
     @State private var showingFinishError = false
+    @State private var isFinishing = false
     @State private var finishErrorMessage = ""
     @State private var showingNotes = false
     @State private var showingRestTimer = false
     @State private var notesText = ""
+    @State private var seededNotesText = ""
 
     // Drag-to-reorder state, isolated so per-frame updates only invalidate the
     // ExerciseDragEffect modifiers — never this whole view's body.
@@ -86,11 +88,17 @@ struct ActiveWorkoutView: View {
                 get: { viewModel.errorMessage != nil },
                 set: { if !$0 { viewModel.errorMessage = nil } }
             )) {
+                if viewModel.lastSaveError != nil {
+                    Button("Retry Save") { Task { await viewModel.retryPendingSave(); viewModel.errorMessage = viewModel.lastSaveError } }
+                }
                 Button("OK") { viewModel.errorMessage = nil }
             } message: {
                 Text(viewModel.errorMessage ?? "")
             }
             .alert("Failed to Save Workout", isPresented: $showingFinishError) {
+                if viewModel.lastSaveError != nil {
+                    Button("Retry Save") { Task { await viewModel.retryPendingSave(); viewModel.errorMessage = viewModel.lastSaveError } }
+                }
                 Button("OK") {}
             } message: {
                 Text(finishErrorMessage)
@@ -204,7 +212,7 @@ struct ActiveWorkoutView: View {
 
     private func workoutContent(_ workout: Workout) -> some View {
         ScrollViewReader { proxy in
-            workoutScrollView(workout: workout, proxy: proxy)
+            workoutScrollView(workout: workout, proxy: proxy).allowsHitTesting(!isFinishing)
         }
         .task {
             await viewModel.loadPreviousData()
@@ -213,6 +221,7 @@ struct ActiveWorkoutView: View {
         .onAppear {
             if let notes = workout.notes, !notes.isEmpty {
                 notesText = notes
+                seededNotesText = notes
                 showingNotes = true
             }
         }
@@ -225,16 +234,6 @@ struct ActiveWorkoutView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 finishButton
             }
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    UIApplication.shared.sendAction(
-                        #selector(UIResponder.resignFirstResponder),
-                        to: nil, from: nil, for: nil
-                    )
-                }
-                .fontWeight(.semibold)
-            }
         }
         .sheet(isPresented: $showingRestTimer) {
             RestTimerView(service: restTimerService)
@@ -242,6 +241,8 @@ struct ActiveWorkoutView: View {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 restTimerService.handleForegroundReturn()
+            } else {
+                STNumericTextField.commitActiveInput()
             }
         }
     }
@@ -294,7 +295,9 @@ struct ActiveWorkoutView: View {
             }
         }
         .background(STColors.background)
-        .scrollDismissesKeyboard(.immediately)
+        .scrollDismissesKeyboard(.interactively)
+        .preferredColorScheme(.dark)
+        .onDisappear { STNumericTextField.commitActiveInput() }
     }
 
     private func exerciseCard(for workoutExercise: WorkoutExercise, reorderable: Bool) -> some View {
@@ -302,7 +305,7 @@ struct ActiveWorkoutView: View {
             workoutExercise: workoutExercise,
             previousSetData: previousDataForExercise(workoutExercise.id),
             onWeightChange: { setId, weight in
-                Task {
+                enqueueEdit {
                     await viewModel.updateSetWeight(
                         exerciseId: workoutExercise.id,
                         setId: setId,
@@ -311,7 +314,7 @@ struct ActiveWorkoutView: View {
                 }
             },
             onRepsChange: { setId, reps in
-                Task {
+                enqueueEdit {
                     await viewModel.updateSetReps(
                         exerciseId: workoutExercise.id,
                         setId: setId,
@@ -320,7 +323,7 @@ struct ActiveWorkoutView: View {
                 }
             },
             onIntensityChange: { setId, value in
-                Task {
+                enqueueEdit {
                     await viewModel.updateSetIntensity(
                         exerciseId: workoutExercise.id,
                         setId: setId,
@@ -333,12 +336,14 @@ struct ActiveWorkoutView: View {
                 handleSetToggle(workoutExercise: workoutExercise, setId: setId)
             },
             onAddSet: {
-                Task {
+                guard STNumericTextField.commitActiveInput() else { return }
+                enqueueEdit {
                     await viewModel.addEmptySet(exerciseId: workoutExercise.id)
                 }
             },
             onRemoveSet: { setId in
-                Task {
+                guard STNumericTextField.commitActiveInput() else { return }
+                enqueueEdit {
                     await viewModel.removeSet(
                         exerciseId: workoutExercise.id,
                         setId: setId
@@ -346,12 +351,14 @@ struct ActiveWorkoutView: View {
                 }
             },
             onRemoveExercise: {
-                Task {
+                guard STNumericTextField.commitActiveInput() else { return }
+                enqueueEdit {
                     await viewModel.removeExercise(exerciseId: workoutExercise.id)
                 }
             },
             onSetTypeChange: { setId, setType in
-                Task {
+                guard STNumericTextField.commitActiveInput() else { return }
+                enqueueEdit {
                     await viewModel.updateSetType(
                         exerciseId: workoutExercise.id,
                         setId: setId,
@@ -360,52 +367,55 @@ struct ActiveWorkoutView: View {
                 }
             },
             onAddDropEntry: { setId in
-                Task {
+                guard STNumericTextField.commitActiveInput() else { return }
+                enqueueEdit {
                     await viewModel.addDropEntry(exerciseId: workoutExercise.id, setId: setId)
                 }
             },
             onToggleFailure: { setId in
-                Task {
+                guard STNumericTextField.commitActiveInput() else { return }
+                enqueueEdit {
                     await viewModel.toggleSetFailure(exerciseId: workoutExercise.id, setId: setId)
                 }
             },
             onDropEntryWeightChange: { setId, entryId, weight in
-                Task {
+                enqueueEdit {
                     await viewModel.updateDropEntryWeight(
                         exerciseId: workoutExercise.id, setId: setId, entryId: entryId, weight: weight
                     )
                 }
             },
             onDropEntryRepsChange: { setId, entryId, reps in
-                Task {
+                enqueueEdit {
                     await viewModel.updateDropEntryReps(
                         exerciseId: workoutExercise.id, setId: setId, entryId: entryId, reps: reps
                     )
                 }
             },
             onDropEntryIntensityChange: { setId, entryId, value in
-                Task {
+                enqueueEdit {
                     await viewModel.updateDropEntryIntensity(
                         exerciseId: workoutExercise.id, setId: setId, entryId: entryId, value: value, metric: intensityMetric
                     )
                 }
             },
             onDropEntryToggleFailure: { setId, entryId in
-                Task {
+                enqueueEdit {
                     await viewModel.toggleDropEntryFailure(
                         exerciseId: workoutExercise.id, setId: setId, entryId: entryId
                     )
                 }
             },
             onRemoveDropEntry: { setId, entryId in
-                Task {
+                guard STNumericTextField.commitActiveInput() else { return }
+                enqueueEdit {
                     await viewModel.removeDropEntry(
                         exerciseId: workoutExercise.id, setId: setId, entryId: entryId
                     )
                 }
             },
             onNoteChange: { notes in
-                Task {
+                enqueueEdit {
                     await viewModel.updateExerciseNotes(
                         exerciseId: workoutExercise.id,
                         notes: notes
@@ -413,7 +423,8 @@ struct ActiveWorkoutView: View {
                 }
             },
             onMoveSet: { fromIndex, toIndex in
-                Task {
+                guard STNumericTextField.commitActiveInput() else { return }
+                enqueueEdit {
                     await viewModel.moveSets(
                         exerciseId: workoutExercise.id,
                         from: fromIndex,
@@ -422,7 +433,7 @@ struct ActiveWorkoutView: View {
                 }
             },
             onDragChanged: reorderable ? { translation in
-                guard let workout = viewModel.currentWorkout else { return }
+                guard STNumericTextField.commitActiveInput(), let workout = viewModel.currentWorkout else { return }
                 dragState.dragChanged(
                     id: workoutExercise.id,
                     translation: translation,
@@ -431,7 +442,7 @@ struct ActiveWorkoutView: View {
             } : nil,
             onDragEnded: reorderable ? {
                 if let (from, to) = dragState.dragEnded() {
-                    Task { await viewModel.moveExercise(from: from, to: to) }
+                    enqueueEdit { await viewModel.moveExercise(from: from, to: to) }
                 }
             } : nil,
             coachingData: viewModel.exerciseCoachingCache[workoutExercise.id],
@@ -445,8 +456,17 @@ struct ActiveWorkoutView: View {
         viewModel.userPreferencesService?.intensityMetric ?? .rpe
     }
 
+    private func enqueueEdit(_ operation: @escaping @MainActor () async -> Void) {
+        viewModel.inputEdits.enqueue {
+            await operation()
+            if let error = viewModel.lastSaveError { viewModel.errorMessage = error }
+        }
+    }
+
     private func handleSetToggle(workoutExercise: WorkoutExercise, setId: UUID) {
-        Task {
+        guard STNumericTextField.commitActiveInput() else { return }
+        enqueueEdit {
+            guard viewModel.lastSaveError == nil else { return }
             await coordinator.toggleSet(exerciseId: workoutExercise.id, setId: setId)
         }
     }
@@ -499,7 +519,10 @@ struct ActiveWorkoutView: View {
 
     private var finishButton: some View {
         Button {
+            guard !isFinishing, STNumericTextField.commitActiveInput() else { return }
+            isFinishing = true
             Task {
+                defer { isFinishing = false }
                 do {
                     try await coordinator.finish()
                 } catch {
@@ -516,12 +539,14 @@ struct ActiveWorkoutView: View {
                 .background(STColors.primary)
                 .clipShape(Capsule())
         }
+        .disabled(isFinishing)
     }
 
     // MARK: - Add Exercise Button
 
     private var addExerciseButton: some View {
         Button {
+            guard STNumericTextField.commitActiveInput() else { return }
             showingExercisePicker = true
         } label: {
             HStack(spacing: 8) {
@@ -569,7 +594,10 @@ struct ActiveWorkoutView: View {
                         .tracking(1.5)
                         .foregroundStyle(STColors.textSecondary)
                     Spacer()
+                    Button("Done") { STNumericTextField.commitActiveInput() }
+                        .font(.subheadline.weight(.semibold)).frame(minHeight: 44).foregroundStyle(STColors.primary)
                     Button {
+                        STNumericTextField.commitActiveInput()
                         showingNotes = false
                     } label: {
                         Image(systemName: "xmark")
@@ -582,9 +610,9 @@ struct ActiveWorkoutView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(STColors.textPrimary)
                     .onChange(of: notesText) { _, newValue in
-                        Task {
-                            await viewModel.updateNotes(newValue)
-                        }
+                        guard newValue != seededNotesText else { return }
+                        enqueueEdit { await viewModel.updateNotes(newValue) }
+                        seededNotesText = newValue
                     }
             } else {
                 Button {
@@ -607,6 +635,12 @@ struct ActiveWorkoutView: View {
             RoundedRectangle(cornerRadius: STRadius.card)
                 .stroke(STColors.border, lineWidth: 1)
         )
+        .onReceive(NotificationCenter.default.publisher(for: .commitWorkoutNotes)) { _ in
+            guard notesText != seededNotesText else { return }
+            let committedNotes = notesText
+            enqueueEdit { await viewModel.updateNotes(committedNotes) }
+            seededNotesText = notesText
+        }
     }
 
     // MARK: - Sticky Rest Timer
