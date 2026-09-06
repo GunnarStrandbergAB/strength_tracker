@@ -75,12 +75,12 @@ struct AnalyticsSmallView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .widgetURL(URL(string: "strengthtracker://analytics"))
+        .widgetURL(URL(string: currentHighlight?.destination ?? "strengthtracker://analytics"))
     }
 
     private var currentHighlight: WidgetHighlight? {
-        guard !entry.data.highlights.isEmpty else { return nil }
-        return entry.data.highlights[entry.highlightIndex % entry.data.highlights.count]
+        guard !entry.visibleHighlights.isEmpty else { return nil }
+        return entry.visibleHighlights.first(where: { $0.isAction == true }) ?? entry.visibleHighlights[entry.highlightIndex % entry.visibleHighlights.count]
     }
 }
 
@@ -117,16 +117,16 @@ struct AnalyticsMediumView: View {
 
             // Right: Highlights
             VStack(alignment: .leading, spacing: 6) {
-                ForEach(Array(entry.data.highlights.prefix(2))) { highlight in
-                    highlightRow(highlight)
+                ForEach(Array(entry.visibleHighlights.prefix(2))) { highlight in
+                    Link(destination: URL(string: highlight.destination ?? "strengthtracker://analytics")!) { highlightRow(highlight) }
                 }
 
-                if entry.data.highlights.count < 2 {
+                if entry.visibleHighlights.count < 2 {
                     // Fill with stats
                     if entry.data.currentStreak > 0 {
                         statRow(icon: "flame.fill", text: "\(entry.data.currentStreak)-week streak", color: .orange)
                     }
-                    if let quality = entry.data.weeklyQualityScore {
+                    if let quality = entry.measuredQuality {
                         statRow(icon: "star.fill", text: "\(Int(quality))/100 quality", color: WidgetColors.accent)
                     }
                     if let volume = entry.data.weeklyVolume {
@@ -154,7 +154,7 @@ struct AnalyticsMediumView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .widgetURL(URL(string: "strengthtracker://analytics"))
+        .widgetURL(URL(string: entry.visibleHighlights.first?.destination ?? "strengthtracker://analytics"))
     }
 
     private var calendarStrip: some View {
@@ -245,10 +245,10 @@ struct AnalyticsLargeView: View {
 
             // Middle: Highlights
             VStack(alignment: .leading, spacing: 6) {
-                ForEach(Array(entry.data.highlights.prefix(3))) { highlight in
-                    highlightRow(highlight)
+                ForEach(Array(entry.visibleHighlights.prefix(3))) { highlight in
+                    Link(destination: URL(string: highlight.destination ?? "strengthtracker://analytics")!) { highlightRow(highlight) }
                 }
-                if entry.data.highlights.isEmpty {
+                if entry.visibleHighlights.isEmpty {
                     emptyHighlightsView
                 }
             }

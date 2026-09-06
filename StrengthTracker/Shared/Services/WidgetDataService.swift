@@ -58,7 +58,9 @@ public final class WidgetDataService: Sendable {
             weeklyVolume: current.weeklyVolume,
             previousWeekVolume: current.previousWeekVolume,
             weeklyQualityScore: current.weeklyQualityScore,
-            qualityTrend: current.qualityTrend
+            qualityTrend: current.qualityTrend,
+            weightUnitSymbol: current.weightUnitSymbol,
+            analyticsGeneratedAt: current.analyticsGeneratedAt
         )
         updateWidgetData(updated)
     }
@@ -79,7 +81,8 @@ public final class WidgetDataService: Sendable {
         weeklyQualityScore: Double? = nil,
         qualityTrend: Double? = nil,
         activeExerciseId: UUID? = nil,
-        weightUnitSymbol: String = "kg"
+        weightUnitSymbol: String = "kg",
+        analyticsGeneratedAt: Date? = nil
     ) -> WidgetData {
         let now = Date()
         let calendar = Calendar.mondayStart
@@ -138,7 +141,8 @@ public final class WidgetDataService: Sendable {
             previousWeekVolume: previousWeekVolume,
             weeklyQualityScore: weeklyQualityScore,
             qualityTrend: qualityTrend,
-            weightUnitSymbol: weightUnitSymbol
+            weightUnitSymbol: weightUnitSymbol,
+            analyticsGeneratedAt: analyticsGeneratedAt
         )
     }
 
@@ -195,7 +199,7 @@ public final class WidgetDataService: Sendable {
         case .improvement: ("arrow.up.right", "green")
         case .warning: ("exclamationmark.triangle.fill", "red")
         }
-        return WidgetHighlight(icon: icon, title: highlight.title, detail: highlight.detail, color: color)
+        return WidgetHighlight(id: highlight.id, icon: icon, title: highlight.title, detail: highlight.detail, color: color, destination: highlight.destination, validUntil: highlight.validUntil, isAction: highlight.isAction ?? false)
     }
 
     public func buildActiveWorkoutState(

@@ -8,7 +8,9 @@ import StrengthTrackerShared
 struct TrainingHubEntry: TimelineEntry {
     let date: Date
     let data: WidgetData
-    let highlightIndex: Int  // which highlight to show in small widget rotation
+    let highlightIndex: Int
+    var measuredQuality: Double? { data.measuredQuality(at: date) }
+    var visibleHighlights: [WidgetHighlight] { data.visibleHighlights(at: date) }
 }
 
 // MARK: - Timeline Provider
@@ -52,6 +54,12 @@ struct TrainingHubProvider: TimelineProvider {
             let nextUpdate = Calendar.current.date(
                 byAdding: .minute, value: 30 * max(highlightCount, 1), to: now
             ) ?? now
+            // An explicit expiry entry removes advice even if the system delays the next reload.
+            let expiries = data.highlights.compactMap(\.validUntil) + [data.analyticsGeneratedAt?.addingTimeInterval(6 * 3600)].compactMap { $0 }
+            for expiry in Set(expiries) where expiry > now {
+                entries.append(TrainingHubEntry(date: expiry, data: data, highlightIndex: 0))
+            }
+            entries.sort { $0.date < $1.date }
             let timeline = Timeline(entries: entries, policy: .after(nextUpdate))
             completion(timeline)
         }

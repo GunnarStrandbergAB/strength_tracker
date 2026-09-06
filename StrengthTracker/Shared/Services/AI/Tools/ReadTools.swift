@@ -342,8 +342,8 @@ public final class GetAnalyticsInsightsTool: AITool {
 
     public let name = "get_analytics_insights"
     public let description = """
-    Aggregated training analytics: plateaus, muscle balance, training load (ACWR), \
-    the coach verdict (deload / hold / progress), deload recommendation, and notable \
+    Aggregated training analytics: exercise progress, muscle coverage, training load (ACWR), \
+    the shared coach verdict (deload / hold / progress), and notable \
     highlights for a recent time window.
     """
 
@@ -364,36 +364,29 @@ public final class GetAnalyticsInsightsTool: AITool {
 
         var payload: [String: JSONValue] = [
             "window_days": .number(Double(days)),
+            "window_note": .string("Requested window applies to coverage; load uses smoothed 7/28-day spans, progression recent 12 weeks, workout count all time"),
+            "model_version": .number(2),
+            "generated_at": .string(AIJSON.dateString(insights.generatedAt)),
             "workout_count": .number(Double(insights.workoutCount))
         ]
 
-        if !insights.plateaus.isEmpty {
-            payload["plateaus"] = .array(insights.plateaus.map { plateau in
-                .object([
-                    "exercise": .string(plateau.exerciseName ?? "unknown"),
-                    "weeks_stalled": .number(Double(plateau.consecutiveWeeksStalled))
-                ])
+        payload["exercise_progress"] = .array(insights.overloadTrends.map { trend in
+            .object(["exercise": .string(trend.exerciseName), "status": .string(trend.statusLabel),
+                "slope_margin_kg_per_week": .number(trend.slopeMargin ?? 0),
+                "observed_weeks": .number(Double(trend.observationCount ?? 0)),
+                "kg_per_week": .number(trend.slopePerWeek), "percent_per_week": .number(trend.percentPerWeek),
+                "last_observed_week": .string(trend.weeklyE1RMs.last.map { AIJSON.dateString($0.weekStart) } ?? "unknown")])
+        })
+        if let coverage = insights.muscleBalance {
+            payload["muscle_coverage"] = .array(coverage.muscleGroupVolumes.map {
+                .object(["muscle": .string($0.muscleGroup), "direct_sets_per_week": .number($0.directWeeklySets ?? 0),
+                    "estimated_indirect_sets_per_week": .number($0.indirectWeeklySets ?? 0)])
             })
         }
-
-        if let balance = insights.muscleBalance {
-            payload["muscle_balance"] = .object([
-                "score": .number(AIJSON.round1(balance.overallBalanceScore)),
-                "imbalances": .array(balance.imbalances.map { imbalance in
-                    .object([
-                        "high": .string(imbalance.primaryGroup),
-                        "low": .string(imbalance.comparisonGroup),
-                        "ratio": .number(AIJSON.round1(imbalance.ratio)),
-                        "severity": .string(String(describing: imbalance.severity))
-                    ])
-                })
-            ])
-        }
-
         if let load = insights.trainingLoad {
             payload["training_load"] = .object([
                 "acwr": .number(AIJSON.round1(load.acwr)),
-                "zone": .string(load.loadZone.rawValue)
+                "zone": .string(AnalyticsFormatting.loadZoneLabel(load.loadZone))
             ])
         }
 
@@ -404,13 +397,6 @@ public final class GetAnalyticsInsightsTool: AITool {
                 "action": .string(verdict.action),
                 "reasons": .array(verdict.reasons.map { .string($0) }),
                 "active_deload": .bool(verdict.isActiveDeload)
-            ])
-        }
-
-        if let deload = insights.deloadRecommendation {
-            payload["deload"] = .object([
-                "urgency": .number(AIJSON.round1(deload.urgencyScore)),
-                "action": .string(deload.suggestedAction)
             ])
         }
 
@@ -562,5 +548,36 @@ public final class GetActivePlanTool: AITool {
             outputForModel: AIJSON.string(.object(["active_plan": .object(payload)])),
             activityLabel: "Checked plan '\(plan.name)'"
         )
+    }
+}
+
+// MARK: - get_volume_response
+@MainActor
+public final class GetVolumeResponseTool: AITool {
+    private let analyticsService: WorkoutAnalyticsService
+    public init(analyticsService: WorkoutAnalyticsService) { self.analyticsService = analyticsService }
+    public let name = "get_volume_response"
+    public let description = "Observed volume-response associations per muscle. Includes dose bins, spread, independent-block coverage and confidence. Not causal evidence, a hypertrophy measurement or a recovery limit."
+    public var parametersSchema: JSONValue {
+        AIToolRegistry.objectSchema(properties: [
+            "muscle_group": AIToolRegistry.stringSchema("Optional muscle name, e.g. chest"),
+            "lookback_weeks": AIToolRegistry.integerSchema("8–260 weeks; default 104")
+        ])
+    }
+    private struct Arguments: Decodable { var muscle_group: String?; var lookback_weeks: Int? }
+    public func call(argumentsJSON: String) async throws -> AIToolResult {
+        let args = try decodeArguments(Arguments.self, from: argumentsJSON)
+        let analyses = try await analyticsService.volumeResponse(muscle: args.muscle_group, lookbackWeeks: args.lookback_weeks ?? 104)
+        struct Output: Encodable {
+            let interpretation = "observational"
+            let dose = "Weekly working sets: primary 1.0, indirect 0.5 divided among secondary muscles"
+            let response = "Change in estimated strength proxy across surrounding windows; IQR describes spread, not a confidence interval"
+            let missingness = "Unlogged weeks remain unknown; weeks with other logged training can be observed zero-dose weeks"
+            let bodyweightProvenance = "Current resolved bodyweight applied retrospectively, not dated measurements"
+            let status: String
+            let analyses: [VolumeResponseAnalysis]
+        }
+        let data = try JSONEncoder().encode(Output(status: analyses.isEmpty ? "insufficient_data" : "available", analyses: analyses))
+        return AIToolResult(outputForModel: String(decoding: data, as: UTF8.self), activityLabel: "Checked observed volume response")
     }
 }

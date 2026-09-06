@@ -23,8 +23,8 @@ struct E1RMConsolidationTests {
         let warmup = AnalyticsTestHelpers.makeCompletedSet(weight: 200, reps: 1, setType: .warmup)
         var incomplete = AnalyticsTestHelpers.makeCompletedSet(weight: 200, reps: 1)
         incomplete.isCompleted = false
-        // Top segment 100×5 (116.7) but the second segment 80×13 → Brzycki 120.
-        let drop = AnalyticsTestHelpers.makeDropSet(parts: [(100, 5), (80, 13)])
+        // Top segment 100×5 (116.7) but the second segment 80×15 → Epley 120.
+        let drop = AnalyticsTestHelpers.makeDropSet(parts: [(100, 5), (80, 15)])
         #expect(AnalyticsCalculations.bestE1RM(for: warmup, baseLoadPerRep: nil) == nil)
         #expect(AnalyticsCalculations.bestE1RM(for: incomplete, baseLoadPerRep: nil) == nil)
         let best = try! #require(AnalyticsCalculations.bestE1RM(for: drop, baseLoadPerRep: nil))
@@ -34,7 +34,7 @@ struct E1RMConsolidationTests {
     @Test("SessionExecutionService, PR service and the best-e1RM map agree on the same set")
     func consumersAgree() async throws {
         let ex = exercise()
-        let set = AnalyticsTestHelpers.makeDropSet(parts: [(100, 5), (80, 13)])
+        let set = AnalyticsTestHelpers.makeDropSet(parts: [(100, 5), (80, 15)])
         let canonical = AnalyticsCalculations.bestE1RM(for: set, baseLoadPerRep: nil)!
 
         let session = SessionExecutionService().estimateCurrent1RM(from: [set])

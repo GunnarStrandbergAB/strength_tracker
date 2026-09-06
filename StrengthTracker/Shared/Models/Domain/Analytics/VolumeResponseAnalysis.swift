@@ -3,7 +3,7 @@ import Foundation
 /// Per-muscle volume-response analysis.
 /// Observation-only: every reported landmark is grounded in the user's logged history.
 /// Nothing is extrapolated outside the user's tested volume range.
-public struct VolumeResponseAnalysis: Sendable, Equatable {
+public struct VolumeResponseAnalysis: Sendable, Equatable, Codable {
     public let muscleGroup: String
     public let bins: [BinResponse]
     public let best: BestRangeStatus
@@ -12,6 +12,10 @@ public struct VolumeResponseAnalysis: Sendable, Equatable {
     public let confidence: Confidence
     public let testedRange: ClosedRange<Int>?
     public let sentence: String
+    public let independentBlocks: Int
+    public let windowStart: Date?
+    public let windowEnd: Date?
+    public let modelVersion: Int
 
     public init(
         muscleGroup: String,
@@ -21,7 +25,7 @@ public struct VolumeResponseAnalysis: Sendable, Equatable {
         upper: UpperBoundStatus,
         confidence: Confidence,
         testedRange: ClosedRange<Int>?,
-        sentence: String
+        sentence: String, independentBlocks: Int = 0, windowStart: Date? = nil, windowEnd: Date? = nil
     ) {
         self.muscleGroup = muscleGroup
         self.bins = bins
@@ -31,10 +35,14 @@ public struct VolumeResponseAnalysis: Sendable, Equatable {
         self.confidence = confidence
         self.testedRange = testedRange
         self.sentence = sentence
+        self.independentBlocks = independentBlocks
+        self.windowStart = windowStart
+        self.windowEnd = windowEnd
+        self.modelVersion = 2
     }
 }
 
-public struct BinResponse: Sendable, Equatable {
+public struct BinResponse: Sendable, Equatable, Codable {
     public let bin: VolumeBin
     public let observationCount: Int
     public let median: Double?
@@ -61,7 +69,7 @@ public struct BinResponse: Sendable, Equatable {
     public var isPopulated: Bool { observationCount >= 3 }
 }
 
-public enum VolumeBin: String, CaseIterable, Sendable, Equatable {
+public enum VolumeBin: String, CaseIterable, Sendable, Equatable, Codable {
     case zeroToFour       = "0-4"
     case fiveToEight      = "5-8"
     case nineToTwelve     = "9-12"
@@ -83,7 +91,7 @@ public enum VolumeBin: String, CaseIterable, Sendable, Equatable {
     public var label: String { rawValue }
 }
 
-public enum BestRangeStatus: Sendable, Equatable {
+public enum BestRangeStatus: Sendable, Equatable, Codable {
     /// Populated bins exist both below and above the best bin.
     case observedPeak(VolumeBin)
     /// Best bin is the highest tested — true upper limit unknown.
@@ -93,21 +101,22 @@ public enum BestRangeStatus: Sendable, Equatable {
     case insufficient
 }
 
-public enum LowerBoundStatus: Sendable, Equatable {
+public enum LowerBoundStatus: Sendable, Equatable, Codable {
     /// Lowest bin whose response IQR is strictly above 0.
     case likelyProductiveFrom(VolumeBin)
     case noMeaningfulFloorYet
 }
 
-public enum UpperBoundStatus: Sendable, Equatable {
+public enum UpperBoundStatus: Sendable, Equatable, Codable {
     /// Higher bin's response drops ≥ 30% relative to best.
     case diminishingReturnsObserved(VolumeBin)
     /// Diminishing returns + recovery degradation signal. Not emitted in v1.
     case recoveryLimitObserved(VolumeBin)
     /// No higher bin has been trained.
     case notYetTestedAbove(maxObservedDose: Double)
+    case noClearLimit
 }
 
-public enum Confidence: String, Sendable, Equatable {
+public enum Confidence: String, Sendable, Equatable, Codable {
     case high, medium, low, insufficient
 }

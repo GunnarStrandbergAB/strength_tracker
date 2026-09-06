@@ -95,9 +95,10 @@ public enum DeloadDetectionService {
         }
 
         // 2. Performance decline: ≥2 exercises regressing and ≥40% of tracked lifts.
-        let regressing = overloadTrends.filter { $0.trendStatus == .regressing }.count
-        if !overloadTrends.isEmpty, regressing >= declineMinimumExercises {
-            let ratio = Double(regressing) / Double(overloadTrends.count)
+        let assessed = overloadTrends.filter { $0.trendStatus != .inactive && $0.trendStatus != .uncertain }
+        let regressing = assessed.filter { $0.trendStatus == .regressing }.count
+        if !assessed.isEmpty, regressing >= declineMinimumExercises {
+            let ratio = Double(regressing) / Double(assessed.count)
             if ratio >= declineRatioThreshold {
                 analysis.triggers.append(.performanceDecline)
                 analysis.weights[.performanceDecline] = 0.35 * ratio

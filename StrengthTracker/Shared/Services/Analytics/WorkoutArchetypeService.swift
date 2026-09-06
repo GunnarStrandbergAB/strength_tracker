@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 @MainActor
 public final class WorkoutArchetypeService: Sendable {
@@ -12,89 +13,64 @@ public final class WorkoutArchetypeService: Sendable {
     // MARK: - Archetype Clustering (A1)
 
     public func cluster(vectors: [WorkoutVector], workouts: [Workout], bodyWeightKg: Double) -> [WorkoutArchetype] {
-        guard vectors.count >= 10 else { return [] }
-
-        // L2 normalize vectors for cosine distance
-        let normalized = vectors.map { normalize($0.dimensions) }
-
-        // Auto-select k: try 2..min(8, n/3), pick best silhouette
-        let maxK = min(8, vectors.count / 3)
-        guard maxK >= 2 else { return [] }
-
-        var bestK = 2
-        var bestScore = -1.0
-        var bestAssignments: [Int] = []
-        var bestCentroids: [[Double]] = []
-
-        for k in 2...maxK {
-            let (assignments, centroids) = kMeans(data: normalized, k: k, maxIterations: 50)
-            let score = silhouetteScore(data: normalized, assignments: assignments, k: k)
-            if score > bestScore {
-                bestScore = score
-                bestK = k
-                bestAssignments = assignments
-                bestCentroids = centroids
-            }
+        let completed = workouts.filter { $0.completedAt != nil && !$0.isDeload }.sorted { $0.id.uuidString < $1.id.uuidString }
+        guard !completed.isEmpty else { return [] }
+        // Explicit templates first; otherwise exact exercise composition. Stable across input order.
+        let groups = Dictionary(grouping: completed) { workout in
+            workout.templateId?.uuidString ?? workout.exercises.map { $0.exercise.id.uuidString }.sorted().joined(separator: ":")
         }
-
-        // Build archetypes
-        let workoutMap = Dictionary(workouts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let now = Date()
-        let calendar = Calendar.current
+        let cutoff = now.addingTimeInterval(-12 * 7 * 86400)
+        let first = completed.map(\.trainingDate).min() ?? cutoff
+        let weeks = max(1, now.timeIntervalSince(max(first, cutoff)) / (7 * 86400))
+        return groups.keys.sorted().compactMap { key in
+            guard let members = groups[key], let representative = members.first else { return nil }
+            let ordered = members.sorted { $0.trainingDate > $1.trainingDate }
+            let recent = members.filter { $0.trainingDate >= cutoff }
+            let names = representative.exercises.sorted { $0.order < $1.order }.map { $0.exercise.name }
+            let label = representative.templateId != nil ? (ordered.first?.name ?? representative.name) : names.prefix(2).joined(separator: " + ")
+            let memberIds = Set(members.map(\.id))
+            let matchingVectors = vectors.filter { memberIds.contains($0.workoutId) }
+            let centroid = matchingVectors.isEmpty ? [] : searchService.computeCentroid(vectors: matchingVectors)
+            let last = ordered.first!.trainingDate
+            return WorkoutArchetype(id: representative.templateId ?? Self.stableID(key), label: label.isEmpty ? "Other sessions" : label,
+                centroid: centroid, memberWorkoutIds: ordered.map(\.id), dominantFeatures: names,
+                avgVolume: members.reduce(0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) } / Double(members.count),
+                avgDuration: members.compactMap(\.duration).reduce(0, +) / Double(members.count),
+                frequency: Double(recent.count) / weeks, lastPerformed: last,
+                daysSinceLastPerformed: Calendar.current.dateComponents([.day], from: last, to: now).day)
+        }.sorted { ($0.lastPerformed ?? .distantPast) > ($1.lastPerformed ?? .distantPast) }
+    }
 
-        var archetypes: [WorkoutArchetype] = []
-        for cluster in 0..<bestK {
-            let memberIndices = bestAssignments.enumerated().filter { $0.element == cluster }.map(\.offset)
-            guard !memberIndices.isEmpty else { continue }
-
-            let memberVectors = memberIndices.map { vectors[$0] }
-            let memberWorkoutIds = memberVectors.map(\.workoutId)
-            let memberWorkouts = memberWorkoutIds.compactMap { workoutMap[$0] }
-
-            let centroid = bestCentroids[cluster]
-            let label = labelFromCentroid(centroid)
-
-            let avgVolume = memberWorkouts.isEmpty ? 0 :
-                memberWorkouts.reduce(0.0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) } / Double(memberWorkouts.count)
-            let durations = memberWorkouts.compactMap(\.duration)
-            let avgDuration = durations.isEmpty ? 0 :
-                durations.reduce(0, +) / Double(durations.count)
-
-            // Frequency: sessions per week over the span of this cluster
-            let dates = memberWorkouts.compactMap(\.completedAt).sorted()
-            let frequency: Double
-            if let first = dates.first, let last = dates.last, first != last {
-                let weeks = max(1, calendar.dateComponents([.weekOfYear], from: first, to: last).weekOfYear ?? 1)
-                frequency = Double(dates.count) / Double(weeks)
-            } else {
-                frequency = 0
+    /// A compact display summary, separate from exact routine identities used for comparisons.
+    public static func summarizeWorkoutTypes(workouts: [Workout], now: Date = Date()) -> [WorkoutArchetype] {
+        let cutoff = Calendar.current.date(byAdding: .weekOfYear, value: -12, to: now)!
+        let completed = workouts.filter { $0.completedAt != nil && $0.trainingDate >= cutoff && $0.trainingDate <= now }
+        let lower: Set<MuscleGroup> = [.quadriceps, .hamstrings, .glutes, .calves, .adductors, .abductors, .hipFlexors]
+        let push: Set<MuscleGroup> = [.chest, .shoulders, .triceps]
+        let pull: Set<MuscleGroup> = [.back, .lats, .traps, .biceps, .forearms]
+        func focus(_ workout: Workout) -> String {
+            var counts: [String: Int] = [:]
+            for exercise in workout.exercises {
+                let muscle = exercise.exercise.primaryMuscleGroup
+                let key = lower.contains(muscle) ? "Lower body" : push.contains(muscle) ? "Push" : pull.contains(muscle) ? "Pull" : [.core, .obliques, .lowerBack].contains(muscle) ? "Core" : "Mixed / other"
+                counts[key, default: 0] += exercise.sets.filter { $0.isCompleted && $0.setType != .warmup }.count
             }
-
-            let lastPerformed = dates.last
-            let daysSince = lastPerformed.map { calendar.dateComponents([.day], from: $0, to: now).day ?? 0 }
-
-            // Top features by centroid magnitude
-            let featureNames = WorkoutVector.featureNames
-            let topFeatures = centroid.enumerated()
-                .filter { $0.offset < featureNames.count }
-                .sorted { abs($0.element) > abs($1.element) }
-                .prefix(3)
-                .map { featureNames[$0.offset] }
-
-            archetypes.append(WorkoutArchetype(
-                label: label,
-                centroid: centroid,
-                memberWorkoutIds: memberWorkoutIds,
-                dominantFeatures: topFeatures,
-                avgVolume: avgVolume,
-                avgDuration: avgDuration,
-                frequency: frequency,
-                lastPerformed: lastPerformed,
-                daysSinceLastPerformed: daysSince
-            ))
+            let total = Double(counts.values.reduce(0, +))
+            guard total > 0 else { return "Mixed / other" }
+            for key in ["Lower body", "Push", "Pull", "Core"] where Double(counts[key, default: 0]) / total >= 0.7 { return key }
+            let upper = Double(counts["Push", default: 0] + counts["Pull", default: 0]) / total
+            if upper >= 0.7 { return "Upper body" }
+            if upper >= 0.25 && Double(counts["Lower body", default: 0]) / total >= 0.25 { return "Full body" }
+            return "Mixed / other"
         }
-
-        return archetypes.sorted { $0.memberWorkoutIds.count > $1.memberWorkoutIds.count }
+        return Dictionary(grouping: completed, by: focus).map { label, members in
+            let ordered = members.sorted { $0.trainingDate > $1.trainingDate }
+            return WorkoutArchetype(id: stableID("focus:" + label), label: label, centroid: [],
+                memberWorkoutIds: ordered.map(\.id), dominantFeatures: [], avgVolume: 0, avgDuration: 0,
+                frequency: Double(members.count) / 12, lastPerformed: ordered.first?.trainingDate,
+                daysSinceLastPerformed: ordered.first.map { Calendar.current.dateComponents([.day], from: $0.trainingDate, to: now).day ?? 0 })
+        }.sorted { $0.memberWorkoutIds.count == $1.memberWorkoutIds.count ? $0.label < $1.label : $0.memberWorkoutIds.count > $1.memberWorkoutIds.count }
     }
 
     // MARK: - Training Fingerprint (A6 + A7)
@@ -119,8 +95,8 @@ public final class WorkoutArchetypeService: Sendable {
         for archetype in archetypes {
             let recentCount = Double(archetype.memberWorkoutIds.filter { recentVectorIds.contains($0) }.count)
             let priorCount = Double(archetype.memberWorkoutIds.filter { priorVectorIds.contains($0) }.count)
-            currentDist[archetype.label] = recentCount
-            priorDist[archetype.label] = priorCount
+            currentDist[archetype.id.uuidString] = recentCount
+            priorDist[archetype.id.uuidString] = priorCount
         }
 
         // Normalize to proportions
@@ -182,96 +158,9 @@ public final class WorkoutArchetypeService: Sendable {
         )
     }
 
-    // MARK: - K-Means
-
-    private func kMeans(data: [[Double]], k: Int, maxIterations: Int) -> ([Int], [[Double]]) {
-        guard !data.isEmpty else { return ([], []) }
-        let n = data.count
-        let d = data[0].count
-
-        // Initialize centroids using k-means++
-        var centroids: [[Double]] = []
-        centroids.append(data[Int.random(in: 0..<n)])
-
-        for _ in 1..<k {
-            var distances = data.map { point -> Double in
-                centroids.map { cosineDistance(point, $0) }.min() ?? Double.infinity
-            }
-            let total = distances.reduce(0, +)
-            if total <= 0 {
-                centroids.append(data[Int.random(in: 0..<n)])
-                continue
-            }
-            distances = distances.map { $0 / total }
-
-            var rand = Double.random(in: 0..<1)
-            var chosen = 0
-            for (i, p) in distances.enumerated() {
-                rand -= p
-                if rand <= 0 { chosen = i; break }
-            }
-            centroids.append(data[chosen])
-        }
-
-        var assignments = [Int](repeating: 0, count: n)
-
-        for _ in 0..<maxIterations {
-            // Assign
-            var changed = false
-            for i in 0..<n {
-                let nearest = centroids.enumerated().min(by: {
-                    cosineDistance(data[i], $0.element) < cosineDistance(data[i], $1.element)
-                })?.offset ?? 0
-                if assignments[i] != nearest { changed = true }
-                assignments[i] = nearest
-            }
-
-            if !changed { break }
-
-            // Update centroids
-            for c in 0..<k {
-                let members = assignments.enumerated().filter { $0.element == c }.map { data[$0.offset] }
-                if members.isEmpty { continue }
-                var newCentroid = [Double](repeating: 0, count: d)
-                for m in members {
-                    for j in 0..<d { newCentroid[j] += m[j] }
-                }
-                let count = Double(members.count)
-                centroids[c] = newCentroid.map { $0 / count }
-            }
-        }
-
-        return (assignments, centroids)
-    }
-
-    private func silhouetteScore(data: [[Double]], assignments: [Int], k: Int) -> Double {
-        guard data.count > k else { return 0 }
-        var scores: [Double] = []
-
-        for i in 0..<data.count {
-            let cluster = assignments[i]
-            let same = assignments.enumerated().filter { $0.element == cluster && $0.offset != i }
-            let a: Double
-            if same.isEmpty {
-                a = 0
-            } else {
-                a = same.map { cosineDistance(data[i], data[$0.offset]) }.reduce(0, +) / Double(same.count)
-            }
-
-            var minB = Double.infinity
-            for c in 0..<k where c != cluster {
-                let others = assignments.enumerated().filter { $0.element == c }
-                guard !others.isEmpty else { continue }
-                let b = others.map { cosineDistance(data[i], data[$0.offset]) }.reduce(0, +) / Double(others.count)
-                minB = min(minB, b)
-            }
-
-            if minB == .infinity { continue }
-            let s = (minB - a) / max(a, minB)
-            scores.append(s)
-        }
-
-        return scores.isEmpty ? 0 : scores.reduce(0, +) / Double(scores.count)
+    private static func stableID(_ key: String) -> UUID {
+        let bytes = Array(SHA256.hash(data: Data(key.utf8)).prefix(16))
+        return bytes.withUnsafeBufferPointer { NSUUID(uuidBytes: $0.baseAddress!) as UUID }
     }
 
     // MARK: - Helpers

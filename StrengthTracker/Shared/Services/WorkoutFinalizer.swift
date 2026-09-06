@@ -189,6 +189,27 @@ public final class WorkoutFinalizer {
         }
     }
 
+    /// Re-elect automatic records after the shared e1RM formula changes. Manual records are preserved.
+    /// Mark success only after the rebuild completes, so interrupted migrations retry next launch.
+    @discardableResult
+    public func migrateAnalyticsModelIfNeeded(defaults: UserDefaults = .standard) async -> Bool {
+        await enqueue { [self] in
+            let key = "analytics_derived_model_version"
+            guard defaults.integer(forKey: key) < WorkoutQualityScore.modelVersion else { return false }
+            guard let personalRecordService else { return false }
+            do {
+                try await personalRecordService.recalculateAllPRs()
+                invalidateCaches()
+                dataRevision.bump()
+                defaults.set(WorkoutQualityScore.modelVersion, forKey: key)
+                await widgetRefresh?.refresh()
+                return true
+            } catch {
+                return false
+            }
+        }
+    }
+
     // MARK: - Steps
 
     private func rebuildRecords(for workout: Workout, exerciseIds: Set<UUID>) async -> Workout {

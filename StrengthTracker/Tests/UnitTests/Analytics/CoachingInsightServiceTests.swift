@@ -68,7 +68,7 @@ struct CoachingInsightServiceTests {
     func debriefDescriptiveWithoutVerdict() async {
         let d = await debrief(verdict: nil, load: load(acwr: 1.7))
         let bullet = d.bullets.first { $0.source == .acwr }
-        #expect(bullet?.title == "Training Load Very high")
+        #expect(bullet?.title == "Training Load Well above baseline")
         #expect(bullet?.detail.lowercased().contains("reduce") == false)
         #expect(d.verdict == nil)
     }

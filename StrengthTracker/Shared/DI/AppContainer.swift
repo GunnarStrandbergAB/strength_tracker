@@ -416,6 +416,7 @@ public final class AppContainer: Sendable {
             bodyWeightProvider: bodyWeightProvider
             ),
             GetAnalyticsInsightsTool(analyticsService: analyticsService),
+            GetVolumeResponseTool(analyticsService: analyticsService),
             GetPersonalRecordsTool(
                 personalRecordRepository: personalRecordRepository,
                 exerciseRepository: exerciseRepository

@@ -64,10 +64,10 @@ public enum AnalyticsFormatting {
     /// Non-alarmist zone labels. Advice lives in the coach verdict, not here.
     public static func loadZoneLabel(_ zone: LoadZone) -> String {
         switch zone {
-        case .underTraining: return "Low"
-        case .optimal: return "Optimal"
-        case .caution: return "High"
-        case .danger: return "Very high"
+        case .underTraining: return "Below baseline"
+        case .optimal: return "Near baseline"
+        case .caution: return "Above baseline"
+        case .danger: return "Well above baseline"
         }
     }
 
@@ -78,8 +78,8 @@ public enum AnalyticsFormatting {
         }
         switch zone {
         case .underTraining: return "Load is well below your 28-day baseline"
-        case .optimal where acwr < 1.0: return "Load is slightly below baseline, within a sustainable range"
-        case .optimal: return "Load is slightly above baseline, within a sustainable range"
+        case .optimal where acwr < 1.0: return "Recent load is below your smoothed baseline"
+        case .optimal: return "Recent load is near or above your smoothed baseline"
         case .caution: return "Load is rising faster than your baseline"
         case .danger: return "Load is far above your baseline"
         }

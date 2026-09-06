@@ -1,0 +1,99 @@
+<div id="st-analytics-proposal" aria-label="Analytics layout proposal">
+  <style>
+    #st-analytics-proposal{--st-bg:light-dark(#f4f4ef,#111210);--st-surface:light-dark(#ffffff,#20211d);--st-ink:light-dark(#181b15,#f5f6ee);--st-muted:light-dark(#596150,#afb7a3);--st-line:light-dark(#dedfd6,#383b31);--st-accent:light-dark(#756600,#f4de2c);--st-positive:light-dark(#14664a,#5cdbb0);--st-radius:20px;color:var(--st-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:420px;margin:auto}
+    #st-analytics-proposal *{box-sizing:border-box}
+    #st-analytics-proposal .st-phone{background:var(--st-bg);border-radius:28px;padding:22px 16px 14px;border:1px solid var(--st-line)}
+    #st-analytics-proposal .st-head{display:flex;align-items:center;gap:12px;margin:8px 4px 20px}
+    #st-analytics-proposal h2,#st-analytics-proposal h3,#st-analytics-proposal p{margin:0}
+    #st-analytics-proposal h2{font-size:24px;font-weight:600;letter-spacing:-.5px}
+    #st-analytics-proposal h3{font-size:16px;font-weight:600}
+    #st-analytics-proposal p{color:var(--st-muted);font-size:13px;line-height:1.5}
+    #st-analytics-proposal button{font:inherit;color:inherit;cursor:pointer;min-height:44px}
+    #st-analytics-proposal .st-switch{display:flex;gap:4px;background:var(--st-surface);border-radius:12px;padding:4px;margin-bottom:16px}
+    #st-analytics-proposal .st-switch button{flex:1;border:0;border-radius:9px;background:transparent;font-size:13px}
+    #st-analytics-proposal .st-switch button[aria-pressed=true]{background:var(--st-line);color:var(--st-accent)}
+    #st-analytics-proposal .st-panel{display:grid;gap:12px}
+    #st-analytics-proposal [hidden]{display:none!important}
+    #st-analytics-proposal .st-block{background:var(--st-surface);border-radius:var(--st-radius);padding:18px}
+    #st-analytics-proposal .st-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    #st-analytics-proposal .st-count{text-align:center;padding:15px}
+    #st-analytics-proposal .st-count strong{font-size:38px;font-weight:600;letter-spacing:-1px}
+    #st-analytics-proposal .st-kicker{font-size:11px;color:var(--st-muted);margin-bottom:10px}
+    #st-analytics-proposal .st-good{color:var(--st-positive)}
+    #st-analytics-proposal .st-verdict{border-left:3px solid var(--st-positive)}
+    #st-analytics-proposal .st-verdict p{margin-top:8px}
+    #st-analytics-proposal .st-metric{font-size:36px;letter-spacing:-1px;font-variant-numeric:tabular-nums}
+    #st-analytics-proposal .st-note{font-size:12px;color:var(--st-muted)}
+    #st-analytics-proposal .st-load{display:flex;gap:20px;align-items:center;margin:14px 0}
+    #st-analytics-proposal .st-load-ring{flex-shrink:0;display:grid;place-items:center;min-width:94px;min-height:94px;border-radius:50%;border:5px solid var(--st-line);border-top-color:var(--st-positive);border-right-color:var(--st-positive)}
+    #st-analytics-proposal .st-lift{padding:13px 0;border-bottom:1px solid var(--st-line)}
+    #st-analytics-proposal .st-lift:last-child{border:0}
+    #st-analytics-proposal .st-lift strong{font-size:14px;font-weight:500}
+    #st-analytics-proposal .st-lift span{font-size:12px;font-variant-numeric:tabular-nums}
+    #st-analytics-proposal details{font-size:13px}
+    #st-analytics-proposal summary{cursor:pointer;min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--st-accent)}
+    #st-analytics-proposal summary::after{content:'＋'}
+    #st-analytics-proposal details[open]>summary::after{content:'−'}
+    #st-analytics-proposal details p{padding:4px 0 12px}
+    #st-analytics-proposal .st-link{width:100%;text-align:left;padding:18px;background:var(--st-surface);border:0;border-radius:var(--st-radius);display:flex;align-items:center;justify-content:space-between;gap:12px}
+    #st-analytics-proposal .st-link strong{font-size:15px;font-weight:500}
+    #st-analytics-proposal .st-link p{margin-top:4px}
+    #st-analytics-proposal .st-bottom{display:flex;justify-content:space-around;gap:6px;margin-top:18px;padding-top:14px;border-top:1px solid var(--st-line);color:var(--st-muted);font-size:10px}
+    #st-analytics-proposal .st-bottom span{display:grid;justify-items:center;gap:5px}
+    #st-analytics-proposal .st-bottom span:first-child{color:var(--st-accent)}
+    #st-analytics-proposal .st-states{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0}
+    #st-analytics-proposal .st-states span{padding:7px 9px;border:1px solid var(--st-line);border-radius:8px;font-size:12px;color:var(--st-muted)}
+    #st-analytics-proposal .st-states span:first-child{color:var(--st-accent)}
+    #st-analytics-proposal .st-legend{margin-top:12px;font-size:11px;color:var(--st-muted);text-align:center}
+  </style>
+  <div class="st-phone">
+    <div class="st-head"><i data-lucide="activity" aria-hidden="true"></i><h2>Analytics</h2></div>
+    <div class="st-switch" aria-label="Preview destination">
+      <button type="button" data-screen="overview" aria-pressed="true">Overview</button>
+      <button type="button" data-screen="patterns" aria-pressed="false">Training patterns</button>
+    </div>
+    <div class="st-panel" data-panel="overview">
+      <div class="st-block st-count"><strong>115</strong><p>workouts completed · all time</p></div>
+      <div class="st-block st-verdict">
+        <div class="st-kicker">Coach verdict</div><h3>Continue your planned progression</h3><p>Add weight or reps when your target reps feel solid.</p>
+        <details><summary>Why this verdict?</summary><p>One shared recommendation, with dated load and exercise evidence. Missing information is shown explicitly.</p></details>
+      </div>
+      <div class="st-block"><h3>Training load</h3><div class="st-load"><div class="st-load-ring"><span class="st-metric">0.77</span></div><div><h3>Below your baseline</h3><p>Recent load is about<br>23% lower.</p></div></div><div class="st-row st-note"><span>Recent / baseline index</span><span>27 / 35</span></div><details><summary>How to read this</summary><p>A comparison of short- and longer-term smoothed load. The ratio describes your logged training; it does not measure readiness.</p></details></div>
+      <div class="st-block"><h3>Exercise progress</h3><p>Preview · original screenshot estimates</p>
+        <div class="st-lift st-row"><strong>Hip Thrust</strong><span class="st-good">↗ +1.4 kg/wk</span></div>
+        <div class="st-lift st-row"><strong>Ring Pull-Up</strong><span class="st-good">↗ +1.3 kg/wk</span></div>
+        <div class="st-lift st-row"><strong>Seated Leg Curl</strong><span>↗ +0.4 kg/wk</span></div>
+        <details><summary>More exercises</summary><div class="st-lift st-row"><strong>Seated Cable Row</strong><span class="st-good">↗ +0.8 kg/wk</span></div><div class="st-lift st-row"><strong>Barbell Back Squat</strong><span class="st-good">↗ +0.6 kg/wk</span></div><p>Final labels will use the corrected recent-window calculation and its uncertainty.</p></details>
+      </div>
+      <div class="st-block"><div class="st-kicker">Best training time</div><h3>Morning sessions scored higher</h3><p>79 vs 72 · a difference of 7 points</p><details><summary>Comparison details</summary><p>The proposed view adds dates, sample counts and comparable workout types before interpreting this difference.</p></details></div>
+      <details class="st-block"><summary><h3>Training quality</h3><span class="st-note">73 · experimental</span></summary><p>Keep the familiar breakdown, with a transparent revised scoring method and explicit missing data.</p></details>
+      <details class="st-block"><summary><h3>Muscle coverage</h3></summary><p>Weekly direct sets and estimated indirect work, compared with your own history or plan. Bars and numbers use the same units.</p></details>
+      <details class="st-block"><summary><h3>Recovery estimate</h3></summary><p>Recently trained muscles, last exposure and estimated recovery ranges. An optional check-in helps personalize the estimate.</p></details>
+      <button class="st-link" type="button" data-open-patterns><span><strong>Explore training patterns</strong><p>Your routine and how it changes</p></span><i data-lucide="chevron-right" aria-hidden="true"></i></button>
+    </div>
+    <div class="st-panel" data-panel="patterns" hidden>
+      <div class="st-block"><div class="st-kicker">Training state · illustrative state</div><h3>Usual pattern</h3><p>Your routine is broadly consistent with your recent baseline.</p><div class="st-states"><span>Usual pattern</span><span>More volume</span><span>Heavier work</span><span>Lighter week</span><span>Returning</span><span>Mixed changes</span></div><details><summary>What do these states mean?</summary><p>States describe observed changes in sets, reps, loads and frequency. They are separate from your planned training phase. Insufficient history appears as “Building baseline.”</p></details></div>
+      <div class="st-block"><h3>Workout types</h3><p>Shared comparison window · stable groups</p><details><summary>Leg sessions</summary><p>Open the actual workouts and their exercises. Frequency uses the same date range for every type.</p></details><details><summary>Full-body sessions</summary><p>Equivalent groups are merged; different routines have descriptive names and exercise subtitles.</p></details><details><summary>Other routines</summary><p>Previous routines remain accessible without a red warning that you have neglected them.</p></details></div>
+      <div class="st-block"><h3>What changed</h3><details><summary>Compare recent periods</summary><p>Show actual changes in weekly sets, frequency, rep ranges and effort, with both date ranges. Replace abstract similarity percentages.</p></details><details><summary>Notable sessions</summary><p>Named, dated sessions compared with similar earlier workouts. Shorter or lighter sessions are described neutrally.</p></details></div>
+      <button class="st-link" type="button" data-open-overview><span>Back to overview</span><i data-lucide="arrow-left" aria-hidden="true"></i></button>
+    </div>
+    <div class="st-bottom" aria-label="Existing app navigation"><span><i data-lucide="layout-grid" aria-hidden="true"></i>Dashboard</span><span><i data-lucide="dumbbell" aria-hidden="true"></i>Workout</span><span><i data-lucide="clipboard-list" aria-hidden="true"></i>Templates</span><span><i data-lucide="list" aria-hidden="true"></i>Exercises</span><span><i data-lucide="history" aria-hidden="true"></i>History</span></div>
+  </div>
+  <div class="st-legend">Layout study · screenshot values are not recalculated results</div>
+  <script>
+    (()=>{
+      const root=document.getElementById('st-analytics-proposal');
+      const select=(screen)=>{
+        root.querySelectorAll('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==screen);
+        root.querySelectorAll('[data-screen]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.screen===screen)));
+      };
+      root.querySelectorAll('[data-screen]').forEach(b=>b.addEventListener('click',()=>select(b.dataset.screen)));
+      root.querySelector('[data-open-patterns]').addEventListener('click',()=>select('patterns'));
+      root.querySelector('[data-open-overview]').addEventListener('click',()=>select('overview'));
+      const options={radius:20,compact:false};
+      const render=()=>{root.style.setProperty('--st-radius',options.radius+'px');root.querySelectorAll('.st-block').forEach(b=>b.style.padding=options.compact?'14px':'18px');};
+      render();
+      if(globalThis.Tweak){const tweak=new Tweak({container:root,onChange:render});tweak.addSlider(options,'radius',{label:'Card corners',min:10,max:26,unit:'px'});tweak.addToggle(options,'compact',{label:'Compact spacing'});}
+    })();
+  </script>
+</div>

@@ -109,10 +109,10 @@ public final class TrainingAdvisor {
         }
 
         // 3. Load spike far above baseline.
-        if let load = input.trainingLoad, load.loadZone == .danger {
-            return make(.deload,
+        if let load = input.trainingLoad, load.loadZone == .danger, (rec?.primaryTriggers.count ?? 0) < 2, urgency < Self.deloadUrgencyThreshold {
+            return make(.hold,
                         ["Training load is far above your 28-day baseline (ACWR \(AnalyticsFormatting.acwr(load.acwr)))"] + reasonList(rec),
-                        rec?.suggestedAction ?? "Reduce this week's volume by about 30% to bring load back toward baseline")
+                        "Review recent load and how you feel before increasing work")
         }
 
         // 4. Fatigue signals strong enough for a deload.
@@ -135,18 +135,19 @@ public final class TrainingAdvisor {
         }
 
         // 7. Broad regression across lifts.
-        let regressing = input.overloadTrends.filter { $0.trendStatus == .regressing }
-        if !input.overloadTrends.isEmpty, regressing.count >= 2,
-           Double(regressing.count) / Double(input.overloadTrends.count) >= 0.5 {
+        let eligibleTrends = input.overloadTrends.filter { $0.trendStatus != .inactive && $0.trendStatus != .uncertain }
+        let regressing = eligibleTrends.filter { $0.trendStatus == .regressing }
+        if !eligibleTrends.isEmpty, regressing.count >= 2,
+           Double(regressing.count) / Double(eligibleTrends.count) >= 0.5 {
             let names = regressing.prefix(3).map(\.exerciseName).joined(separator: ", ")
             return make(.hold,
-                        ["\(regressing.count) of \(input.overloadTrends.count) tracked lifts are regressing (\(names))"],
+                        ["\(regressing.count) of \(eligibleTrends.count) assessed lifts are regressing (\(names))"],
                         "Repeat last session's loads and focus on clean reps before pushing again")
         }
 
         // 8. Systemic fatigue: several groups still fatigued that were not just trained.
-        let fatigued = input.recoveryPatterns.filter { $0.recoveryStatus == .fatigued }
-        if fatigued.count >= Self.systemicFatigueGroups, !fatigued.contains(where: { $0.isJustTrained(asOf: now) }) {
+        let fatigued = input.recoveryPatterns.filter { $0.recoveryStatus == .fatigued && !$0.isJustTrained(asOf: now) }
+        if fatigued.count >= Self.systemicFatigueGroups {
             let names = fatigued.prefix(3).map { $0.muscleGroup.capitalized }.joined(separator: ", ")
             return make(.hold,
                         ["\(fatigued.count) muscle groups are still fatigued (\(names))"],
@@ -157,14 +158,14 @@ public final class TrainingAdvisor {
         var reasons: [String] = []
         if let load = input.trainingLoad {
             switch load.loadZone {
-            case .underTraining: reasons.append("Training load is below your baseline; there is room to add work")
-            case .optimal: reasons.append("Training load is in a sustainable range")
+            case .underTraining: reasons.append("Training load is below your smoothed baseline")
+            case .optimal: reasons.append("Training load is near your smoothed baseline")
             default: break
             }
         }
         let progressing = input.overloadTrends.filter { $0.trendStatus == .progressing }
         if !progressing.isEmpty {
-            reasons.append("\(progressing.count) of \(input.overloadTrends.count) tracked lifts are progressing")
+            reasons.append("\(progressing.count) of \(eligibleTrends.count) assessed lifts are progressing")
         }
         if reasons.isEmpty { reasons.append("No fatigue signals") }
         return make(.progress, reasons, "Keep progressing: add weight or reps when the target reps feel solid")
@@ -212,7 +213,9 @@ public final class TrainingAdvisor {
             if persistedLongEnough, clearDays.count >= Self.clearDaysToRelease {
                 return TrainingVerdictState(verdict: raw)
             }
-            let held = previous.carrying(computedAt: now)
+            let held = TrainingVerdict(kind: previous.kind, urgency: raw.urgency,
+                reasons: ["Keeping the lighter-week recommendation while the signal settles"] + raw.reasons,
+                signals: raw.signals, action: previous.action, since: previous.since, computedAt: now, isActiveDeload: false)
             return TrainingVerdictState(verdict: held, clearDays: clearDays)
         }
 

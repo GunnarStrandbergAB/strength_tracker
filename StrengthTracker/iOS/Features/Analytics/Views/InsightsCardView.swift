@@ -100,60 +100,13 @@ struct InsightsCardView: View {
     @ViewBuilder
     private var insightsContent: some View {
         let insights = viewModel.insights
-
-        // The one load/deload call, shared with every other screen
-        if let verdict = insights.verdict {
-            VerdictBanner(verdict: verdict, style: .inline)
+        ForEach(insights.highlights.prefix(2)) { highlight in
+            insightRow(icon: AnalyticsColors.highlightIcon(highlight.type), iconColor: AnalyticsColors.highlight(highlight.type),
+                title: highlight.title, detail: highlight.detail)
         }
-
-        // Plateau warnings (the Analytics screen lists them all)
-        if !insights.plateaus.isEmpty {
-            let top = insights.plateaus.prefix(1)
-            ForEach(Array(top)) { plateau in
-                insightRow(
-                    icon: "exclamationmark.triangle.fill",
-                    iconColor: STColors.warning,
-                    title: plateau.exerciseName ?? "Exercise",
-                    detail: AnalyticsFormatting.weeksStalled(plateau.consecutiveWeeksStalled)
-                )
-            }
-        }
-
-        // Muscle imbalance warnings
-        if let balance = insights.muscleBalance, !balance.imbalances.isEmpty {
-            let top = balance.imbalances.filter { $0.severity != .mild }.prefix(1)
-            ForEach(Array(top)) { imbalance in
-                insightRow(
-                    icon: "arrow.left.arrow.right",
-                    iconColor: AnalyticsColors.severity(imbalance.severity),
-                    title: "\(imbalance.primaryGroup) / \(imbalance.comparisonGroup)",
-                    detail: "\(AnalyticsFormatting.ratio(imbalance.ratio)) ratio"
-                )
-            }
-        }
-
-        // Recommendations
-        if !insights.recommendations.isEmpty && insights.plateaus.isEmpty {
-            let rec = insights.recommendations[0]
-            insightRow(
-                icon: "lightbulb.fill",
-                iconColor: STColors.primary,
-                title: rec.exerciseName,
-                detail: rec.reason.displayText(targetMuscleGroup: rec.targetMuscleGroup)
-            )
-        }
-
-        // (The top highlight used to be repeated here; below 19 workouts it is built
-        // from the same plateau/imbalance data as the rows above, so it duplicated them.)
-
-        // Fallback: show workout count if nothing notable
-        if insights.plateaus.isEmpty && (insights.muscleBalance?.imbalances.isEmpty ?? true) && insights.recommendations.isEmpty {
-            insightRow(
-                icon: "checkmark.circle.fill",
-                iconColor: STColors.success,
-                title: "On Track",
-                detail: "\(insights.workoutCount) workouts analyzed"
-            )
+        if insights.highlights.isEmpty {
+            insightRow(icon: "chart.bar", iconColor: STColors.textSecondary,
+                title: "Your training history", detail: "\(insights.workoutCount) completed workouts · open Analytics to explore")
         }
     }
 

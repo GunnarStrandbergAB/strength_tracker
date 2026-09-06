@@ -19,14 +19,15 @@ public enum AnalyticsCalculations {
         excluding excludingWorkoutId: UUID? = nil,
         from workouts: [Workout],
         windowMonths: Int = 6,
-        bodyWeightKg: Double
+        bodyWeightKg: Double,
+        asOf: Date = Date()
     ) -> [UUID: Double] {
-        let cutoff = Calendar.mondayStart.date(byAdding: .month, value: -windowMonths, to: Date())!
+        let cutoff = Calendar.mondayStart.date(byAdding: .month, value: -windowMonths, to: asOf)!
         var bestE1RM: [UUID: Double] = [:]
         for past in workouts {
             guard past.id != excludingWorkoutId,
                   past.completedAt != nil,
-                  (past.completedAt ?? past.startedAt) >= cutoff else { continue }
+                  past.trainingDate >= cutoff, past.trainingDate <= asOf else { continue }
             for we in past.exercises {
                 let base = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
                 for set in we.sets {
@@ -59,7 +60,7 @@ public enum AnalyticsCalculations {
     /// pct1RM = min(load / bestE1RM, 1.5), falling back to 0.75 when no e1RM is
     /// known — identical to the historical per-set loops this replaces.
     /// Returns 0 for incomplete or warmup sets.
-    public static func setIWV(for set: ExerciseSet, bestE1RM: Double?, baseLoadPerRep: Double?) -> Double {
+    public static func setIWV(for set: ExerciseSet, bestE1RM: Double?, baseLoadPerRep: Double?, modulateRPE: Bool = true) -> Double {
         guard set.isCompleted, set.setType != .warmup else { return 0 }
         return set.effectiveParts.reduce(0) { sum, part in
             guard let load = part.effectiveLoad(baseLoadPerRep: baseLoadPerRep), load > 0,
@@ -70,7 +71,7 @@ public enum AnalyticsCalculations {
             } else {
                 pct1RM = 0.75
             }
-            return sum + setIWV(reps: reps, pct1RM: pct1RM, rpe: part.rpe)
+            return sum + setIWV(reps: reps, pct1RM: pct1RM, rpe: modulateRPE ? part.rpe : nil)
         }
     }
 
@@ -97,15 +98,11 @@ public enum AnalyticsCalculations {
         sets.compactMap { bestE1RM(for: $0, baseLoadPerRep: baseLoadPerRep) }.max()
     }
 
-    /// Hybrid Epley (≤5 reps) / Brzycki (6–15 reps) estimate; callers clamp reps.
+    /// Epley estimate for 2–15 reps; high-rep observations require separate interpretation.
     public static func calculateOneRM(weight: Double, reps: Int) -> Double {
-        if reps == 1 {
-            return weight
-        } else if reps <= 5 {
-            return weight * (1.0 + Double(reps) / 30.0)
-        } else {
-            return weight * 36.0 / (37.0 - Double(reps))
-        }
+        guard weight > 0, reps > 0 else { return 0 }
+        // A single monotonic formula avoids a lower estimate when going from 5 to 6 reps.
+        return reps == 1 ? weight : weight * (1.0 + Double(min(reps, maxRepsForE1RM)) / 30.0)
     }
 
     // MARK: - Time Windows

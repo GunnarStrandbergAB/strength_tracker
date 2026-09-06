@@ -2,6 +2,13 @@ import Foundation
 
 /// Training load metrics based on EWMA acute/chronic workload ratio.
 public struct TrainingLoad: Identifiable, Hashable, Sendable, Codable {
+    public struct Day: Hashable, Sendable, Codable, Identifiable {
+        public var id: Date { date }
+        public let date: Date
+        public let recent: Double
+        public let baseline: Double
+    }
+    public let history: [Day]?
     public let id: UUID
     public let acuteLoad: Double
     public let chronicLoad: Double
@@ -15,8 +22,10 @@ public struct TrainingLoad: Identifiable, Hashable, Sendable, Codable {
         chronicLoad: Double,
         acwr: Double,
         loadZone: LoadZone,
-        perMuscleGroupACWR: [String: Double] = [:]
+        perMuscleGroupACWR: [String: Double] = [:],
+        history: [Day]? = nil
     ) {
+        self.history = history
         self.id = id
         self.acuteLoad = acuteLoad
         self.chronicLoad = chronicLoad

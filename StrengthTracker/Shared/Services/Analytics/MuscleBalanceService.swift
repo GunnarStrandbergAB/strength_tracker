@@ -32,14 +32,14 @@ public final class MuscleBalanceService: Sendable {
     public func analyzeBalance(
         workouts: [Workout],
         windowWeeks: Int = 4,
-        bodyWeightKg: Double = UserPreferencesService.defaultBodyWeightKg
+        bodyWeightKg: Double = UserPreferencesService.defaultBodyWeightKg,
+        now: Date = Date()
     ) -> MuscleBalance {
         let calendar = Calendar.mondayStart
-        let now = Date()
         let windowStart = calendar.date(byAdding: .weekOfYear, value: -windowWeeks, to: now)!
         let previousWindowStart = calendar.date(byAdding: .weekOfYear, value: -windowWeeks, to: windowStart)!
 
-        let completed = workouts.filter { $0.completedAt != nil }
+        let completed = workouts.filter { $0.completedAt != nil && $0.trainingDate <= now }
         let recentWorkouts = completed.filter { $0.trainingDate >= windowStart }
         let previousWorkouts = completed.filter { $0.trainingDate >= previousWindowStart && $0.trainingDate < windowStart }
 
@@ -49,7 +49,7 @@ public final class MuscleBalanceService: Sendable {
 
         // If total volume is zero, return a zero score rather than misleading perfect score
         let totalVol = muscleVolumes.values.reduce(0, +)
-        guard totalVol > 0 else {
+        guard totalVol > 0 || recentWorkouts.flatMap(\.exercises).flatMap(\.sets).contains(where: { $0.isCompleted && $0.setType != .warmup }) else {
             return MuscleBalance(
                 analyzedAt: Date(),
                 muscleGroupVolumes: [],
@@ -67,21 +67,29 @@ public final class MuscleBalanceService: Sendable {
             }
         }
 
-        // Build MuscleGroupVolume array
-        let groupVolumes: [MuscleGroupVolume] = muscleVolumes.map { group, volume in
-            MuscleGroupVolume(
-                muscleGroup: group.rawValue,
-                weeklyVolume: volume,
-                weeklySetCount: muscleSets[group] ?? 0,
-                trend: trend(current: volume, previous: previousVolumes[group])
-            )
+        var indirect: [MuscleGroup: Double] = [:]
+        for workout in recentWorkouts {
+            for we in workout.exercises {
+                let sets = we.sets.filter { $0.isCompleted && $0.setType != .warmup }.count
+                let credits = AnalyticsCalculations.attributeHardSetCredits(hardSets: sets, primaryMuscle: we.exercise.primaryMuscleGroup, secondaryMuscles: we.exercise.secondaryMuscleGroups)
+                for muscle in we.exercise.secondaryMuscleGroups { indirect[muscle, default: 0] += credits[muscle] ?? 0 }
+            }
         }
+        let weeks = Double(max(windowWeeks, 1))
+        let groups = Set(muscleSets.keys).union(indirect.keys)
+        let groupVolumes: [MuscleGroupVolume] = groups.map { group in
+            MuscleGroupVolume(muscleGroup: group.rawValue, weeklyVolume: muscleVolumes[group] ?? 0,
+                weeklySetCount: muscleSets[group] ?? 0,
+                trend: trend(current: muscleVolumes[group] ?? 0, previous: previousVolumes[group]),
+                directWeeklySets: Double(muscleSets[group] ?? 0) / weeks,
+                indirectWeeklySets: indirect[group, default: 0] / weeks)
+        }.sorted { $0.muscleGroup < $1.muscleGroup }
 
         // Identify imbalances
         let imbalances = identifyImbalances(muscleVolumes: muscleVolumes)
 
         // Calculate overall balance score
-        let overallScore = calculateBalanceScore(imbalances: imbalances)
+        let overallScore = totalVol > 0 ? calculateBalanceScore(imbalances: imbalances) : 0
 
         return MuscleBalance(
             analyzedAt: Date(),
@@ -92,9 +100,9 @@ public final class MuscleBalanceService: Sendable {
     }
 
     /// Overload matching architecture doc's `analyze(workouts:timeWindow:)` signature
-    public func analyze(workouts: [Workout], timeWindow: TimeInterval, bodyWeightKg: Double = UserPreferencesService.defaultBodyWeightKg) -> MuscleBalance {
+    public func analyze(workouts: [Workout], timeWindow: TimeInterval, bodyWeightKg: Double = UserPreferencesService.defaultBodyWeightKg, now: Date = Date()) -> MuscleBalance {
         let windowWeeks = max(1, Int(timeWindow / (7 * 24 * 3600)))
-        return analyzeBalance(workouts: workouts, windowWeeks: windowWeeks, bodyWeightKg: bodyWeightKg)
+        return analyzeBalance(workouts: workouts, windowWeeks: windowWeeks, bodyWeightKg: bodyWeightKg, now: now)
     }
 
     // MARK: - Private

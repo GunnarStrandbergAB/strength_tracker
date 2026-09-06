@@ -32,11 +32,18 @@ public enum VolumeResponseService {
         var exercisesPerMuscleWeek: [String: [Date: Set<UUID>]] = [:]
 
         // Step 1 — effectiveHardSets(M, week) for every (muscle, week) in history.
-        let effectiveSets = computeEffectiveHardSetsPerWeek(
+        var effectiveSets = computeEffectiveHardSetsPerWeek(
             completed: completed,
             calendar: calendar,
             exercisesPerMuscleWeek: &exercisesPerMuscleWeek
         )
+
+        // A week with other logged training is an observed zero for this muscle.
+        // Entirely unlogged weeks remain unknown; do not manufacture rest history.
+        let loggedWeeks = Set(completed.filter { !$0.isDeload }.map { calendar.weekStart(for: $0.trainingDate) })
+        for muscle in Array(effectiveSets.keys) {
+            for week in loggedWeeks where effectiveSets[muscle]?[week] == nil { effectiveSets[muscle]?[week] = 0 }
+        }
 
         // Index per-exercise weekly e1RM by exerciseId for fast lookup.
         let e1rmByExercise: [UUID: [Date: Double]] = overloadTrends.reduce(into: [:]) { acc, trend in
@@ -51,7 +58,7 @@ public enum VolumeResponseService {
 
         // Maturity cutoff: only weeks W where W+3 has elapsed are mature.
         let thisWeekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
-        let maturityCutoff = calendar.date(byAdding: .weekOfYear, value: -3, to: thisWeekStart)!
+        let maturityCutoff = calendar.date(byAdding: .weekOfYear, value: -4, to: thisWeekStart)!
 
         // Per-muscle data shaping.
         var analyses: [VolumeResponseAnalysis] = []
@@ -83,7 +90,7 @@ public enum VolumeResponseService {
         for workout in completed {
             // Exclude deload weeks.
             guard !workout.isDeload else { continue }
-            let workoutDate = workout.completedAt ?? workout.startedAt
+            let workoutDate = workout.trainingDate
             guard let weekStart = calendar.dateInterval(of: .weekOfYear, for: workoutDate)?.start else { continue }
 
             for we in workout.exercises {
@@ -167,10 +174,10 @@ public enum VolumeResponseService {
             // Step 2 — dose = mean over [W-2, W-1, W] of effective sets. Skip if < 2 of 3 weeks have data.
             let dosePresent = (-2...0).compactMap { offset -> Double? in
                 guard let date = calendar.date(byAdding: .weekOfYear, value: offset, to: week),
-                      let v = effectiveSetsForMuscle[date], v > 0 else { return nil }
+                      let v = effectiveSetsForMuscle[date] else { return nil }
                 return v
             }
-            guard dosePresent.count >= 2 else { continue }
+            guard dosePresent.count == 3 else { continue }
             let dose = dosePresent.reduce(0, +) / Double(dosePresent.count)
 
             // Step 3-4 — response: per-exercise normalised, then contribution-weighted median.
@@ -220,7 +227,15 @@ public enum VolumeResponseService {
         // Step 10 — confidence
         let testedRange = computeTestedRange(observations: observations)
         let continuity = computeContinuity(exercisesPerWeek: exercisesPerWeekForMuscle, calendar: calendar)
-        let confidence = computeConfidence(bins: smoothed, best: best, continuity: continuity)
+        var lastIndependent: Date?
+        var independentBlocks = 0
+        for observation in observations.sorted(by: { $0.weekStart < $1.weekStart }) {
+            if lastIndependent == nil || observation.weekStart.timeIntervalSince(lastIndependent!) >= 7 * 7 * 86400 {
+                independentBlocks += 1; lastIndependent = observation.weekStart
+            }
+        }
+        let shaped = computeConfidence(bins: smoothed, best: best, continuity: continuity)
+        let confidence: Confidence = shaped == .insufficient ? .insufficient : independentBlocks < 3 ? .low : shaped
 
         let sentence = buildSentence(
             muscle: muscle,
@@ -240,7 +255,8 @@ public enum VolumeResponseService {
             upper: upper,
             confidence: confidence,
             testedRange: testedRange,
-            sentence: sentence
+            sentence: sentence, independentBlocks: independentBlocks,
+            windowStart: observations.first?.weekStart, windowEnd: observations.last?.weekStart
         )
     }
 
@@ -393,7 +409,7 @@ public enum VolumeResponseService {
         if !anyHigherPopulated {
             return .notYetTestedAbove(maxObservedDose: maxDose)
         }
-        return .notYetTestedAbove(maxObservedDose: maxDose)
+        return .noClearLimit
     }
 
     private static func bestBinFromStatus(_ status: BestRangeStatus) -> VolumeBin? {
@@ -516,7 +532,7 @@ public enum VolumeResponseService {
         case .observedPeak(let bin):
             parts.append("Based on \(observations) training weeks, \(muscleCap.lowercased()) progress was strongest when recent volume averaged \(bin.label) hard sets/week.")
         case .bestObservedSoFar(let bin):
-            parts.append("Best observed range so far for \(muscleCap.lowercased()): \(bin.label) hard sets/week. This is your highest tested range, so an upper limit isn't established.")
+            parts.append("Best observed range so far for \(muscleCap.lowercased()): \(bin.label) hard sets/week. A clear interior peak is not established.")
         case .unclear(let bs):
             let labels = bs.map(\.label).joined(separator: " and ")
             parts.append("Top volume ranges for \(muscleCap.lowercased()) (\(labels)) gave similar progress and overlap in uncertainty.")
@@ -532,6 +548,8 @@ public enum VolumeResponseService {
         }
 
         switch upper {
+        case .noClearLimit:
+            parts.append("Higher volumes have been logged, but no clear upper limit was observed.")
         case .diminishingReturnsObserved(let bin):
             parts.append("Diminishing returns observed at \(bin.label) sets/week.")
         case .recoveryLimitObserved(let bin):

@@ -51,7 +51,7 @@ struct TemplateInsightGeneratorTests {
         let hs = await highlights(load: load(acwr: 1.0), rec: recommendation(), verdict: verdict(.progress))
         let titles = hs.map(\.title)
         #expect(!titles.contains("Deload Recommended"))
-        #expect(titles.contains("Optimal Training Load"))
+        #expect(titles.contains("Training load"))
     }
 
     @Test("Hold verdict shows 'Hold Steady' and no load-zone praise")
@@ -77,7 +77,7 @@ struct TemplateInsightGeneratorTests {
         #expect(!hs.contains { $0.type == .warning })
     }
 
-    @Test("Fatigue highlight only for systemic fatigue, and never for just-trained groups")
+    @Test("Recovery observations never override the shared advisor verdict")
     func fatigueIsSystemicOnly() async {
         let old = Date().addingTimeInterval(-5 * 86_400)
         let justNow = Date().addingTimeInterval(-3600)
@@ -87,18 +87,18 @@ struct TemplateInsightGeneratorTests {
 
         let three = await highlights(load: nil, verdict: verdict(.progress),
                                      recovery: [pattern("chest", lastTrained: old), pattern("back", lastTrained: old), pattern("quads", lastTrained: old)])
-        #expect(three.map(\.title).contains("Recovery Lagging"))
+        #expect(three.first?.title == "Clear to Progress")
 
         let mixed = await highlights(load: nil, verdict: verdict(.progress),
                                      recovery: [pattern("chest", lastTrained: justNow), pattern("back", lastTrained: old), pattern("quads", lastTrained: old)])
         #expect(!mixed.map(\.title).contains("Recovery Lagging"))
     }
 
-    @Test("Without a verdict the raw recommendation still suppresses load-zone praise")
+    @Test("Without a verdict only descriptive observations are published")
     func noVerdictFallback() async {
         let hs = await highlights(load: load(acwr: 1.0), rec: recommendation(), verdict: nil)
         let titles = hs.map(\.title)
-        #expect(titles.contains("Deload Recommended"))
+        #expect(titles == ["Training load"])
         #expect(!titles.contains("Optimal Training Load"))
     }
 }

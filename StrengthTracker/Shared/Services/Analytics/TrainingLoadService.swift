@@ -12,10 +12,11 @@ public enum TrainingLoadService {
     public static func computeTrainingLoad(
         bodyWeightKg: Double,
         workouts: [Workout],
-        bestE1RM: [UUID: Double]
+        bestE1RM: [UUID: Double],
+        now: Date = Date()
     ) -> TrainingLoad? {
         let completed = workouts
-            .filter { $0.completedAt != nil }
+            .filter { $0.completedAt != nil && $0.trainingDate <= now }
             .sorted { $0.trainingDate < $1.trainingDate }
 
         // Cold-start: require 8+ workouts spanning at least 14 calendar days
@@ -31,7 +32,7 @@ public enum TrainingLoadService {
         }
 
         // Build daily load array (rest days = 0)
-        let dailyLoads = buildDailyLoads(workoutLoads: workoutLoads)
+        let dailyLoads = buildDailyLoads(workoutLoads: workoutLoads, now: now)
         guard !dailyLoads.isEmpty else { return nil }
 
         // EWMA on daily array: acute (lambda=0.25), chronic (lambda=0.069)
@@ -46,26 +47,30 @@ public enum TrainingLoadService {
         let loadZone = LoadZone.from(acwr: acwr)
 
         // Per-muscle-group ACWR (rolling sum method for sparse per-muscle data)
-        let perMuscle = computePerMuscleGroupACWR(workouts: completed, bestE1RM: bestE1RM, bodyWeightKg: bodyWeightKg)
+        let perMuscle = computePerMuscleGroupACWR(workouts: completed, bestE1RM: bestE1RM, bodyWeightKg: bodyWeightKg, now: now)
 
+        let startDay = Calendar.current.startOfDay(for: firstDate)
+        let history = dailyLoads.indices.suffix(56).map { index in
+            TrainingLoad.Day(date: Calendar.current.date(byAdding: .day, value: index, to: startDay)!, recent: acuteEWMA[index], baseline: chronicEWMA[index])
+        }
         return TrainingLoad(
             acuteLoad: acuteLoad,
             chronicLoad: chronicLoad,
             acwr: acwr,
             loadZone: loadZone,
-            perMuscleGroupACWR: perMuscle
+            perMuscleGroupACWR: perMuscle, history: history
         )
     }
 
     // MARK: - Private
 
     /// Build a daily load array from first workout to today, with 0 for rest days.
-    private static func buildDailyLoads(workoutLoads: [(workout: Workout, load: Double)]) -> [Double] {
+    private static func buildDailyLoads(workoutLoads: [(workout: Workout, load: Double)], now: Date) -> [Double] {
         let calendar = Calendar.current
         guard let firstWorkout = workoutLoads.first else { return [] }
 
         let startDay = calendar.startOfDay(for: firstWorkout.workout.trainingDate)
-        let endDay = calendar.startOfDay(for: Date())
+        let endDay = calendar.startOfDay(for: now)
         guard let totalDays = calendar.dateComponents([.day], from: startDay, to: endDay).day else { return [] }
         let dayCount = totalDays + 1
         guard dayCount > 0 else { return [] }
@@ -82,13 +87,13 @@ public enum TrainingLoadService {
     }
 
     /// Session load = sum of IWV per working set (drop-set segments included),
-    /// optionally RPE-modulated.
+    /// independent of optional RPE recording.
     private static func computeSessionLoad(workout: Workout, bestE1RM: [UUID: Double], bodyWeightKg: Double) -> Double {
         var load = 0.0
         for we in workout.exercises {
             let base = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
             for set in we.sets {
-                load += AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id], baseLoadPerRep: base)
+                load += AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id], baseLoadPerRep: base, modulateRPE: false)
             }
         }
         return load
@@ -99,9 +104,8 @@ public enum TrainingLoadService {
     private static func computePerMuscleGroupACWR(
         workouts: [Workout],
         bestE1RM: [UUID: Double],
-        bodyWeightKg: Double
+        bodyWeightKg: Double, now: Date
     ) -> [String: Double] {
-        let now = Date()
         let calendar = Calendar.current
         guard let sevenDaysAgo = calendar.date(byAdding: .day, value: -AnalyticsCalculations.Windows.acuteLoadDays, to: now),
               let twentyEightDaysAgo = calendar.date(byAdding: .day, value: -AnalyticsCalculations.Windows.chronicLoadDays, to: now) else {
@@ -118,7 +122,7 @@ public enum TrainingLoadService {
                 var muscleLoad = 0.0
                 let base = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
                 for set in we.sets {
-                    muscleLoad += AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id], baseLoadPerRep: base)
+                    muscleLoad += AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id], baseLoadPerRep: base, modulateRPE: false)
                 }
 
                 let muscle = we.exercise.primaryMuscleGroup.rawValue
