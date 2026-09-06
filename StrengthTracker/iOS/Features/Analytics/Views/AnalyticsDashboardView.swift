@@ -175,9 +175,23 @@ struct AnalyticsProgressList: View {
     let viewModel: WorkoutAnalyticsViewModel
     @State private var query = ""
     var body: some View {
-        List(viewModel.insights.overloadTrends.filter { query.isEmpty || $0.exerciseName.localizedCaseInsensitiveContains(query) }) { trend in
-            NavigationLink { AnalyticsExerciseTrendView(trend: trend, viewModel: viewModel) } label: { AnalyticsTrendRow(trend: trend, viewModel: viewModel) }
-        }.searchable(text: $query, prompt: "Find an exercise").navigationTitle("Exercise progress").stNavigationBarStyle()
+        let trends = viewModel.insights.overloadTrends.filter { query.isEmpty || $0.exerciseName.localizedCaseInsensitiveContains(query) }
+        List {
+            Section {
+                ForEach(trends) { trend in
+                    NavigationLink { AnalyticsExerciseTrendView(trend: trend, viewModel: viewModel) } label: {
+                        AnalyticsTrendRow(trend: trend, viewModel: viewModel).padding(.vertical, 4)
+                    }
+                    .listRowBackground(STColors.surface)
+                    .listRowSeparatorTint(STColors.textSecondary.opacity(0.2))
+                }
+                if trends.isEmpty { Text("No matching exercises").foregroundStyle(STColors.textSecondary).listRowBackground(STColors.surface) }
+            } header: { Text("Estimated strength · recent 12 weeks").foregroundStyle(STColors.textSecondary) }
+        }
+        .scrollContentBackground(.hidden).background(STColors.background.ignoresSafeArea())
+        .preferredColorScheme(.dark).tint(STColors.primary)
+        .safeAreaPadding(.bottom, 24)
+        .searchable(text: $query, prompt: "Find an exercise").navigationTitle("Exercise progress").stNavigationBarStyle()
     }
 }
 struct AnalyticsExerciseTrendView: View {
@@ -199,9 +213,16 @@ struct AnalyticsExerciseTrendView: View {
                     PointMark(x: .value("Week", point.weekStart), y: .value("Estimated 1RM", viewModel.weightUnit.fromKg(point.e1rm))).foregroundStyle(STColors.primary)
                 }.chartYAxisLabel("Estimated 1RM (\(viewModel.weightUnit.symbol))").frame(height: 220)
                 if let last = trend.weeklyE1RMs.last { Text("Last observed week: \(last.weekStart.formatted(date: .abbreviated, time: .omitted))").font(.caption) }
-                Text("Classification uses actual elapsed weeks, a relative meaningful-change floor and regression uncertainty. Maintaining is neutral; unclear means the data cannot establish a direction. Estimates above 15 reps and movements where technique, leverage or speed changes are limited proxies. An e1RM trend does not measure jump power.").font(.subheadline).foregroundStyle(STColors.textSecondary)
+                DisclosureGroup("Understanding this estimate") {
+                    Text("Classification uses actual elapsed weeks, a relative meaningful-change floor and regression uncertainty. Maintaining is neutral; unclear means the data cannot establish a direction. Estimates above 15 reps and movements where technique, leverage or speed changes are limited proxies. An e1RM trend does not measure jump power.").font(.subheadline).foregroundStyle(STColors.textSecondary)
+                }
             }.padding(18)
-        }.background(STColors.background).navigationTitle("Progress detail").stNavigationBarStyle()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(STColors.background.ignoresSafeArea()).foregroundStyle(STColors.textPrimary)
+        .preferredColorScheme(.dark).tint(STColors.primary)
+        .safeAreaPadding(.bottom, 24)
+        .navigationTitle("Progress detail").navigationBarTitleDisplayMode(.inline).stNavigationBarStyle()
     }
 }
 

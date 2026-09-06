@@ -42,6 +42,37 @@ public final class WorkoutArchetypeService: Sendable {
         }.sorted { ($0.lastPerformed ?? .distantPast) > ($1.lastPerformed ?? .distantPast) }
     }
 
+    /// A compact display summary, separate from exact routine identities used for comparisons.
+    public static func summarizeWorkoutTypes(workouts: [Workout], now: Date = Date()) -> [WorkoutArchetype] {
+        let cutoff = Calendar.current.date(byAdding: .weekOfYear, value: -12, to: now)!
+        let completed = workouts.filter { $0.completedAt != nil && $0.trainingDate >= cutoff && $0.trainingDate <= now }
+        let lower: Set<MuscleGroup> = [.quadriceps, .hamstrings, .glutes, .calves, .adductors, .abductors, .hipFlexors]
+        let push: Set<MuscleGroup> = [.chest, .shoulders, .triceps]
+        let pull: Set<MuscleGroup> = [.back, .lats, .traps, .biceps, .forearms]
+        func focus(_ workout: Workout) -> String {
+            var counts: [String: Int] = [:]
+            for exercise in workout.exercises {
+                let muscle = exercise.exercise.primaryMuscleGroup
+                let key = lower.contains(muscle) ? "Lower body" : push.contains(muscle) ? "Push" : pull.contains(muscle) ? "Pull" : [.core, .obliques, .lowerBack].contains(muscle) ? "Core" : "Mixed / other"
+                counts[key, default: 0] += exercise.sets.filter { $0.isCompleted && $0.setType != .warmup }.count
+            }
+            let total = Double(counts.values.reduce(0, +))
+            guard total > 0 else { return "Mixed / other" }
+            for key in ["Lower body", "Push", "Pull", "Core"] where Double(counts[key, default: 0]) / total >= 0.7 { return key }
+            let upper = Double(counts["Push", default: 0] + counts["Pull", default: 0]) / total
+            if upper >= 0.7 { return "Upper body" }
+            if upper >= 0.25 && Double(counts["Lower body", default: 0]) / total >= 0.25 { return "Full body" }
+            return "Mixed / other"
+        }
+        return Dictionary(grouping: completed, by: focus).map { label, members in
+            let ordered = members.sorted { $0.trainingDate > $1.trainingDate }
+            return WorkoutArchetype(id: stableID("focus:" + label), label: label, centroid: [],
+                memberWorkoutIds: ordered.map(\.id), dominantFeatures: [], avgVolume: 0, avgDuration: 0,
+                frequency: Double(members.count) / 12, lastPerformed: ordered.first?.trainingDate,
+                daysSinceLastPerformed: ordered.first.map { Calendar.current.dateComponents([.day], from: $0.trainingDate, to: now).day ?? 0 })
+        }.sorted { $0.memberWorkoutIds.count == $1.memberWorkoutIds.count ? $0.label < $1.label : $0.memberWorkoutIds.count > $1.memberWorkoutIds.count }
+    }
+
     // MARK: - Training Fingerprint (A6 + A7)
 
     public func fingerprint(archetypes: [WorkoutArchetype], vectors: [WorkoutVector], recentWeeks: Int = 4) -> TrainingFingerprint? {

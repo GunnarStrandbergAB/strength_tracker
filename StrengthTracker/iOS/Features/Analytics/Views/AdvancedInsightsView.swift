@@ -29,24 +29,20 @@ struct AdvancedInsightsView: View {
                     } else { Text("Log more sessions to establish your baseline.") }
                 }
                 AnalyticsPanel(title: "Workout types") {
-                    Text("Frequency over the same trailing 12-week window · session counts are all time").font(.caption).foregroundStyle(STColors.textSecondary)
-                    ForEach(viewModel.insights.archetypes) { type in
-                        NavigationLink {
-                            List(viewModel.completedHistory.filter { type.memberWorkoutIds.contains($0.id) }.sorted { $0.trainingDate > $1.trainingDate }) { workout in
-                                NavigationLink { WorkoutDetailView(workout: workout, analyticsViewModel: viewModel) } label: {
-                                    VStack(alignment: .leading) { Text(workout.name); Text(workout.trainingDate.formatted(date: .abbreviated, time: .omitted)).font(.caption) }
-                                }
-                            }.navigationTitle(type.label).stNavigationBarStyle()
-                        } label: {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(type.label).fixedSize(horizontal: false, vertical: true).font(.subheadline.weight(.semibold)).foregroundStyle(STColors.textPrimary)
-                                Text(type.dominantFeatures.prefix(2).joined(separator: " + ")).font(.caption).foregroundStyle(STColors.textSecondary)
-                                Text(String(format: "%d sessions · %.1f/week", type.memberWorkoutIds.count, type.frequency)).font(.caption).foregroundStyle(STColors.textSecondary)
-                                if let last = type.lastPerformed { Text("Last: \(last.formatted(date: .abbreviated, time: .omitted))").font(.caption).foregroundStyle(STColors.textSecondary) }
-                            }.padding(.vertical, 6)
+                    let types = WorkoutArchetypeService.summarizeWorkoutTypes(workouts: viewModel.completedHistory)
+                    Text("Training focus · last 12 weeks").font(.caption).foregroundStyle(STColors.textSecondary)
+                    if types.isEmpty { Text("No sessions logged in this period.").font(.subheadline) }
+                    ForEach(types.prefix(4)) { type in workoutTypeRow(type) }
+                    if types.count > 4 {
+                        DisclosureGroup("More types (\(types.count - 4))") {
+                            ForEach(types.dropFirst(4)) { type in workoutTypeRow(type) }
                         }
                     }
+                    DisclosureGroup("How sessions are grouped") {
+                        Text("Each session is counted once using completed working sets and each exercise's primary muscle. A focus needs 70% of sets; full body needs at least 25% upper and 25% lower. Other combinations are mixed. Routine names, template copies and exercise substitutions do not create extra types. Frequency is sessions divided by 12 weeks, including weeks without logs.").font(.caption).foregroundStyle(STColors.textSecondary)
+                    }
                 }
+
                 AnalyticsPanel(title: "What changed") {
                     if let state = viewModel.trainingState {
                         Text("\(state.previous.start.formatted(date: .abbreviated, time: .omitted)) – \(state.previous.end.formatted(date: .abbreviated, time: .omitted)) versus \(state.current.start.formatted(date: .abbreviated, time: .omitted)) – \(state.current.end.formatted(date: .abbreviated, time: .omitted))").font(.caption)
@@ -75,8 +71,35 @@ struct AdvancedInsightsView: View {
                 }
             }.padding(18)
         }.background(STColors.background).foregroundStyle(STColors.textPrimary)
+        .preferredColorScheme(.dark)
         .safeAreaPadding(.bottom, 24).navigationTitle("Training patterns").navigationBarTitleDisplayMode(.inline).stNavigationBarStyle()
         .task { await viewModel.loadDashboardInsights() }
         .refreshable { await viewModel.loadDashboardInsights(force: true) }
     }
+    private func workoutTypeRow(_ type: WorkoutArchetype) -> some View {
+        NavigationLink {
+            List(viewModel.completedHistory.filter { type.memberWorkoutIds.contains($0.id) }.sorted { $0.trainingDate > $1.trainingDate }) { workout in
+                NavigationLink { WorkoutDetailView(workout: workout, analyticsViewModel: viewModel) } label: {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(workout.name).font(.headline).foregroundStyle(STColors.textPrimary)
+                        Text(workout.trainingDate.formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(STColors.textSecondary)
+                    }.padding(.vertical, 6)
+                }.listRowBackground(STColors.surface)
+            }
+            .scrollContentBackground(.hidden).background(STColors.background.ignoresSafeArea())
+            .preferredColorScheme(.dark).tint(STColors.primary)
+            .navigationTitle(type.label).stNavigationBarStyle()
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(type.label).font(.headline).foregroundStyle(STColors.textPrimary)
+                    Text("\(type.memberWorkoutIds.count) \(type.memberWorkoutIds.count == 1 ? "session" : "sessions") · \(String(format: "%.1f", type.frequency))/week")
+                        .font(.caption).foregroundStyle(STColors.textSecondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(STColors.textSecondary)
+            }.padding(.vertical, 8).contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+
 }
