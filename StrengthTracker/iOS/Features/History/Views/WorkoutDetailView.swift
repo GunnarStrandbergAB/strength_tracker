@@ -8,6 +8,7 @@ struct WorkoutDetailView: View {
     var exerciseListViewModel: ExerciseListViewModel? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var showingDeleteConfirmation = false
+    @State private var inputEdits = WorkoutInputQueue()
     @State private var showingExercisePicker = false
     @State private var exerciseToRemove: WorkoutExercise? = nil
     @State private var exerciseToReplace: WorkoutExercise? = nil
@@ -78,41 +79,42 @@ struct WorkoutDetailView: View {
             showIntensity: showIntensity,
             intensityMetric: metric,
             weightUnit: hvm.userPreferencesService?.weightUnit ?? .kg,
+            weightLabel: workoutExercise.exercise.exerciseType == .bodyweightReps ? "+\(weightUnit.symbol)" : weightUnit.symbol,
             onWeightChange: { weight in
-                Task { await hvm.updateSetWeight(exerciseId: exerciseId, setId: setId, weight: weight) }
+                inputEdits.enqueue { await hvm.updateSetWeight(exerciseId: exerciseId, setId: setId, weight: weight) }
             },
             onRepsChange: { reps in
-                Task { await hvm.updateSetReps(exerciseId: exerciseId, setId: setId, reps: reps) }
+                inputEdits.enqueue { await hvm.updateSetReps(exerciseId: exerciseId, setId: setId, reps: reps) }
             },
             onIntensityChange: { value in
-                Task { await hvm.updateSetIntensity(exerciseId: exerciseId, setId: setId, value: value, metric: metric) }
+                inputEdits.enqueue { await hvm.updateSetIntensity(exerciseId: exerciseId, setId: setId, value: value, metric: metric) }
             },
             onToggleComplete: {
-                Task { await hvm.toggleSetCompletion(exerciseId: exerciseId, setId: setId) }
+                inputEdits.enqueue { await hvm.toggleSetCompletion(exerciseId: exerciseId, setId: setId) }
             },
             onSetTypeChange: { setType in
-                Task { await hvm.updateSetType(exerciseId: exerciseId, setId: setId, setType: setType) }
+                inputEdits.enqueue { await hvm.updateSetType(exerciseId: exerciseId, setId: setId, setType: setType) }
             },
             onAddDropEntry: {
-                Task { await hvm.addDropEntry(exerciseId: exerciseId, setId: setId) }
+                inputEdits.enqueue { await hvm.addDropEntry(exerciseId: exerciseId, setId: setId) }
             },
             onToggleFailure: {
-                Task { await hvm.toggleSetFailure(exerciseId: exerciseId, setId: setId) }
+                inputEdits.enqueue { await hvm.toggleSetFailure(exerciseId: exerciseId, setId: setId) }
             },
             onDropEntryWeightChange: { entryId, weight in
-                Task { await hvm.updateDropEntryWeight(exerciseId: exerciseId, setId: setId, entryId: entryId, weight: weight) }
+                inputEdits.enqueue { await hvm.updateDropEntryWeight(exerciseId: exerciseId, setId: setId, entryId: entryId, weight: weight) }
             },
             onDropEntryRepsChange: { entryId, reps in
-                Task { await hvm.updateDropEntryReps(exerciseId: exerciseId, setId: setId, entryId: entryId, reps: reps) }
+                inputEdits.enqueue { await hvm.updateDropEntryReps(exerciseId: exerciseId, setId: setId, entryId: entryId, reps: reps) }
             },
             onDropEntryIntensityChange: { entryId, value in
-                Task { await hvm.updateDropEntryIntensity(exerciseId: exerciseId, setId: setId, entryId: entryId, value: value, metric: metric) }
+                inputEdits.enqueue { await hvm.updateDropEntryIntensity(exerciseId: exerciseId, setId: setId, entryId: entryId, value: value, metric: metric) }
             },
             onDropEntryToggleFailure: { entryId in
-                Task { await hvm.toggleDropEntryFailure(exerciseId: exerciseId, setId: setId, entryId: entryId) }
+                inputEdits.enqueue { await hvm.toggleDropEntryFailure(exerciseId: exerciseId, setId: setId, entryId: entryId) }
             },
             onRemoveDropEntry: { entryId in
-                Task { await hvm.removeDropEntry(exerciseId: exerciseId, setId: setId, entryId: entryId) }
+                inputEdits.enqueue { await hvm.removeDropEntry(exerciseId: exerciseId, setId: setId, entryId: entryId) }
             }
         )
     }
@@ -125,7 +127,8 @@ struct WorkoutDetailView: View {
         let intensityShown = showsIntensity(for: workoutExercise)
         HStack(spacing: 12) {
             Button {
-                Task { await hvm.addEmptySet(exerciseId: workoutExercise.id) }
+                guard STNumericTextField.commitActiveInput() else { return }
+                inputEdits.enqueue { await hvm.addEmptySet(exerciseId: workoutExercise.id) }
             } label: {
                 Label("Add Set", systemImage: "plus.circle")
                     .font(.system(size: 13))
@@ -134,7 +137,8 @@ struct WorkoutDetailView: View {
 
             if !workoutExercise.sets.isEmpty {
                 Button(role: .destructive) {
-                    Task { await hvm.removeLastSet(exerciseId: workoutExercise.id) }
+                    guard STNumericTextField.commitActiveInput() else { return }
+                    inputEdits.enqueue { await hvm.removeLastSet(exerciseId: workoutExercise.id) }
                 } label: {
                     Label("Remove Last", systemImage: "minus.circle")
                         .font(.system(size: 13))
@@ -145,6 +149,7 @@ struct WorkoutDetailView: View {
             Spacer()
 
             Button {
+                guard STNumericTextField.commitActiveInput() else { return }
                 intensityOverrides[workoutExercise.id] = !intensityShown
             } label: {
                 Image(systemName: "gauge.with.needle")
@@ -158,6 +163,7 @@ struct WorkoutDetailView: View {
 
             if exerciseListViewModel != nil {
                 Button {
+                    guard STNumericTextField.commitActiveInput() else { return }
                     exerciseToReplace = workoutExercise
                 } label: {
                     Image(systemName: "arrow.left.arrow.right")
@@ -168,6 +174,7 @@ struct WorkoutDetailView: View {
             }
 
             Button(role: .destructive) {
+                guard STNumericTextField.commitActiveInput() else { return }
                 exerciseToRemove = workoutExercise
             } label: {
                 Image(systemName: "trash")
@@ -235,6 +242,7 @@ struct WorkoutDetailView: View {
                 Section {
                     if exerciseListViewModel != nil {
                         Button {
+                            guard STNumericTextField.commitActiveInput() else { return }
                             showingExercisePicker = true
                         } label: {
                             Label("Add Exercise", systemImage: "plus.circle")
@@ -270,22 +278,14 @@ struct WorkoutDetailView: View {
         }
         .navigationTitle(displayedWorkout.name)
         .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    UIApplication.shared.sendAction(
-                        #selector(UIResponder.resignFirstResponder),
-                        to: nil, from: nil, for: nil
-                    )
-                }
-                .fontWeight(.semibold)
-            }
             if let hvm = historyViewModel {
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 12) {
                         Button(hvm.isEditing ? "Done" : "Edit") {
                             if hvm.isEditing {
+                                guard STNumericTextField.commitActiveInput() else { return }
                                 Task {
+                                    await inputEdits.drain()
                                     await hvm.endEditing()
                                     // The finalizer bumped the data revision, which
                                     // reloads every analytics view; refresh this
@@ -316,6 +316,8 @@ struct WorkoutDetailView: View {
             Button("Delete", role: .destructive) {
                 if let hvm = historyViewModel {
                     Task {
+                        STNumericTextField.commitActiveInput()
+                        await inputEdits.drain()
                         await hvm.deleteWorkout(workout)
                         dismiss()
                     }
@@ -328,14 +330,14 @@ struct WorkoutDetailView: View {
         .sheet(isPresented: $showingExercisePicker) {
             if let exerciseListViewModel, let hvm = historyViewModel {
                 ExercisePickerView(viewModel: exerciseListViewModel) { exercise in
-                    Task { await hvm.addExercise(exercise) }
+                    inputEdits.enqueue { await hvm.addExercise(exercise) }
                 }
             }
         }
         .sheet(item: $exerciseToReplace) { target in
             if let exerciseListViewModel, let hvm = historyViewModel {
                 ExercisePickerView(viewModel: exerciseListViewModel, title: "Change Exercise") { exercise in
-                    Task { await hvm.replaceExercise(exerciseId: target.id, with: exercise) }
+                    inputEdits.enqueue { await hvm.replaceExercise(exerciseId: target.id, with: exercise) }
                 }
             }
         }
@@ -349,7 +351,7 @@ struct WorkoutDetailView: View {
         ) {
             Button("Remove \(exerciseToRemove?.exercise.name ?? "Exercise")", role: .destructive) {
                 if let target = exerciseToRemove, let hvm = historyViewModel {
-                    Task { await hvm.removeExercise(exerciseId: target.id) }
+                    inputEdits.enqueue { await hvm.removeExercise(exerciseId: target.id) }
                 }
                 exerciseToRemove = nil
             }
@@ -362,7 +364,9 @@ struct WorkoutDetailView: View {
         }
         .onDisappear {
             if let hvm = historyViewModel, hvm.isEditing {
+                STNumericTextField.commitActiveInput()
                 Task {
+                    await inputEdits.drain()
                     await hvm.endEditing()
                 }
             }

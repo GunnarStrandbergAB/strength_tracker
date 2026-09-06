@@ -5,268 +5,57 @@ import StrengthTrackerShared
 struct SetRowGridView: View {
     let setNumber: Int
     let exerciseSet: ExerciseSet
-    let previousText: String?
-    let weightSuggestion: WeightSuggestion?
-    /// Shows the intensity column (RPE or RIR depending on `intensityMetric`).
-    let showRPE: Bool
-    let intensityMetric: IntensityMetric
-    /// Display/input unit. Stored weights are always kg; text fields show and accept this unit.
-    let weightUnit: WeightUnit
+    var previousText: String? = nil
+    var weightSuggestion: WeightSuggestion? = nil
+    var showRPE = false
+    var intensityMetric: IntensityMetric = .rpe
+    var weightUnit: WeightUnit = .kg
+    var weightLabel: String? = nil
     let onWeightChange: (Double?) -> Void
     let onRepsChange: (Int?) -> Void
-    /// Value is in the selected metric's scale (RPE 1–10 / RIR 0–9).
-    let onIntensityChange: ((Double?) -> Void)?
+    var onIntensityChange: ((Double?) -> Void)? = nil
     let onToggleComplete: () -> Void
-    /// Only ever invoked with .normal/.warmup/.restPause — drop set and failure are
-    /// managed through `onAddDropEntry`/`onToggleFailure`.
-    let onSetTypeChange: (SetType) -> Void
-    let onAddDropEntry: (() -> Void)?
-    let onToggleFailure: (() -> Void)?
+    var onSetTypeChange: (SetType) -> Void = { _ in }
+    var onAddDropEntry: (() -> Void)? = nil
+    var onToggleFailure: (() -> Void)? = nil
 
-    @State private var weightText: String
-    @State private var repsText: String
-    @State private var intensityText: String
-    // Seed snapshots captured once per row identity — flushes only fire for fields
-    // the user actually edited, so stale @State text can never overwrite the model.
-    @State private var seededWeightText: String
-    @State private var seededRepsText: String
-    @State private var seededIntensityText: String
-    @FocusState private var focusedField: Field?
-    @State private var weightDebounceTask: Task<Void, Never>?
-    @State private var repsDebounceTask: Task<Void, Never>?
-    @State private var intensityDebounceTask: Task<Void, Never>?
-
-    private enum Field: Hashable {
-        case weight
-        case reps
-        case intensity
-    }
-
-    init(
-        setNumber: Int,
-        exerciseSet: ExerciseSet,
-        previousText: String? = nil,
-        weightSuggestion: WeightSuggestion? = nil,
-        showRPE: Bool = false,
-        intensityMetric: IntensityMetric = .rpe,
-        weightUnit: WeightUnit = .kg,
-        onWeightChange: @escaping (Double?) -> Void,
-        onRepsChange: @escaping (Int?) -> Void,
-        onIntensityChange: ((Double?) -> Void)? = nil,
-        onToggleComplete: @escaping () -> Void,
-        onSetTypeChange: @escaping (SetType) -> Void = { _ in },
-        onAddDropEntry: (() -> Void)? = nil,
-        onToggleFailure: (() -> Void)? = nil
-    ) {
-        self.setNumber = setNumber
-        self.exerciseSet = exerciseSet
-        self.previousText = previousText
-        self.weightSuggestion = weightSuggestion
-        self.showRPE = showRPE
-        self.intensityMetric = intensityMetric
-        self.weightUnit = weightUnit
-        self.onWeightChange = onWeightChange
-        self.onRepsChange = onRepsChange
-        self.onIntensityChange = onIntensityChange
-        self.onToggleComplete = onToggleComplete
-        self.onSetTypeChange = onSetTypeChange
-        self.onAddDropEntry = onAddDropEntry
-        self.onToggleFailure = onToggleFailure
-
-        let weight = Self.weightText(for: exerciseSet.weight, unit: weightUnit)
-        let reps = Self.repsText(for: exerciseSet.reps)
-        let intensity = Self.intensityText(for: exerciseSet.intensityValue(for: intensityMetric))
-        _weightText = State(initialValue: weight)
-        _repsText = State(initialValue: reps)
-        _intensityText = State(initialValue: intensity)
-        _seededWeightText = State(initialValue: weight)
-        _seededRepsText = State(initialValue: reps)
-        _seededIntensityText = State(initialValue: intensity)
-    }
-
-    /// Grouped drop set with real segments. Legacy single-row `.dropset` history
-    /// (empty `dropSets`) keeps the plain editable row.
     private var hasDropEntries: Bool { !exerciseSet.dropSets.isEmpty }
-
     private var isFailureOn: Bool { exerciseSet.isFailure || exerciseSet.setType == .failure }
 
-    // 12-column grid: SET(1) PREVIOUS(4) KG(3) REPS(2) DONE(2)
     var body: some View {
-        HStack(spacing: 8) {
-            // SET column (1fr) — menu for set type / drop set / failure
-            setBadgeMenu
-
-            // PREVIOUS column (4fr)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(previousText ?? "--")
-                    .font(.system(size: 12))
-                    .italic()
-                    .foregroundStyle(STColors.textTertiary)
-                    .lineLimit(1)
-
-                if let suggestion = weightSuggestion,
-                   !exerciseSet.isCompleted {
-                    Text("Try \(weightUnit.format(suggestion.weight))")
-                        .font(.system(size: 10))
-                        .foregroundStyle(STColors.primary.opacity(0.8))
-                        .lineLimit(1)
-                }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                setBadgeMenu
+                VStack(alignment: .leading, spacing: 2) {
+                    if let previousText { Text("Previous: \(previousText)").foregroundStyle(STColors.textSecondary) }
+                    if let suggestion = weightSuggestion, !exerciseSet.isCompleted {
+                        Text("Try \(weightUnit.format(suggestion.weight))").foregroundStyle(STColors.primary)
+                    }
+                }.font(.caption).frame(maxWidth: .infinity, alignment: .leading)
+                STCheckbox(isChecked: exerciseSet.isCompleted) {
+                    guard STNumericTextField.commitActiveInput() else { return }
+                    onToggleComplete()
+                }.accessibilityLabel("\(exerciseSet.isCompleted ? "Uncomplete" : "Complete") set \(setNumber)")
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
             if hasDropEntries {
-                // The segments own weight/reps/intensity — the parent just summarizes.
-                Text("\(exerciseSet.dropSets.count) drops")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.purple)
-                    .frame(width: fieldsWidth, alignment: .center)
+                Text("\(exerciseSet.dropSets.count) drop segments").font(.caption).foregroundStyle(.purple)
             } else {
-                // KG column (3fr)
-                STNumberField(
-                    placeholder: exerciseSet.weight.map { weightUnit.formatValue($0) } ?? "0",
-                    text: $weightText,
-                    keyboardType: .decimalPad
-                )
-                .focused($focusedField, equals: .weight)
-                .onChange(of: weightText) { _, newValue in
-                    weightDebounceTask?.cancel()
-                    // Equal to the seed: either a model→text resync or the user typed
-                    // back the committed value. The model already holds it.
-                    guard newValue != seededWeightText else { return }
-                    weightDebounceTask = Task {
-                        try? await Task.sleep(for: .milliseconds(400))
-                        guard !Task.isCancelled else { return }
-                        let trimmed = newValue.trimmingCharacters(in: .whitespaces)
-                        if trimmed.isEmpty {
-                            onWeightChange(nil)
-                        } else if let value = Self.parseDouble(trimmed) {
-                            onWeightChange(weightUnit.toKg(value))
-                        }
-                        seededWeightText = newValue
-                    }
-                }
-                .frame(width: 72)
-
-                // REPS column (2fr)
-                STNumberField(
-                    placeholder: exerciseSet.reps.map { String($0) } ?? "0",
-                    text: $repsText,
-                    keyboardType: .numberPad
-                )
-                .focused($focusedField, equals: .reps)
-                .onChange(of: repsText) { _, newValue in
-                    repsDebounceTask?.cancel()
-                    guard newValue != seededRepsText else { return }
-                    repsDebounceTask = Task {
-                        try? await Task.sleep(for: .milliseconds(400))
-                        guard !Task.isCancelled else { return }
-                        let trimmed = newValue.trimmingCharacters(in: .whitespaces)
-                        if trimmed.isEmpty {
-                            onRepsChange(nil)
-                        } else if let value = Int(trimmed) {
-                            onRepsChange(value)
-                        }
-                        seededRepsText = newValue
-                    }
-                }
-                .frame(width: 60)
-
-                // Intensity column (optional; RPE or RIR)
-                if showRPE {
-                    STNumberField(
-                        placeholder: intensityMetric.displayName,
-                        text: $intensityText,
-                        keyboardType: .decimalPad
-                    )
-                    .focused($focusedField, equals: .intensity)
-                    .onChange(of: intensityText) { _, newValue in
-                        intensityDebounceTask?.cancel()
-                        guard newValue != seededIntensityText else { return }
-                        intensityDebounceTask = Task {
-                            try? await Task.sleep(for: .milliseconds(400))
-                            guard !Task.isCancelled else { return }
-                            if let val = Self.parseDouble(newValue) {
-                                onIntensityChange?(clampIntensity(val))
-                            } else {
-                                onIntensityChange?(nil)
-                            }
-                            seededIntensityText = newValue
-                        }
-                    }
-                    .frame(width: 44)
-                }
+                STSetValuesEditor(weight: exerciseSet.weight, reps: exerciseSet.reps,
+                    intensity: exerciseSet.intensityValue(for: intensityMetric), showIntensity: showRPE,
+                    intensityMetric: intensityMetric, weightUnit: weightUnit, weightLabel: weightLabel, context: "Set \(setNumber)",
+                    onWeightChange: onWeightChange, onRepsChange: onRepsChange, onIntensityChange: { onIntensityChange?($0) })
             }
-
-            // DONE column (2fr) — the single completion control for the whole set,
-            // drop segments included.
-            STCheckbox(isChecked: exerciseSet.isCompleted) {
-                // Flush pending edits so the toggle save includes latest values
-                flushPendingEdits()
-                onToggleComplete()
-            }
-            .frame(width: 48, alignment: .trailing)
         }
         .padding(.horizontal, STSpacing.setRowHorizontal)
         .padding(.vertical, STSpacing.setRowVertical)
         .background(setRowBackground)
-        .onDisappear {
-            flushPendingEdits()
-        }
-        // External writes (Grok log_set / update_set, Watch sync, …) change the
-        // model without touching the text fields. Re-seed them, unless the user
-        // is typing in that very field.
-        .onChange(of: exerciseSet.weight) { _, _ in resync(.weight) }
-        .onChange(of: exerciseSet.reps) { _, _ in resync(.reps) }
-        .onChange(of: modelIntensity) { _, _ in resync(.intensity) }
     }
-
-    private var modelIntensity: Double? { exerciseSet.intensityValue(for: intensityMetric) }
-
-    // MARK: - Model → text sync
-
-    static func weightText(for weightKg: Double?, unit: WeightUnit) -> String {
-        weightKg.map { unit.formatValue($0) } ?? ""
-    }
-
-    static func repsText(for reps: Int?) -> String {
-        reps.map { String($0) } ?? ""
-    }
-
-    static func intensityText(for value: Double?) -> String {
-        value.map { String(format: "%g", $0) } ?? ""
-    }
-
-    /// Re-seed one field from the model. Skips the echo of the user's own commit
-    /// (text already equals the model) and never interrupts a field being edited.
-    private func resync(_ field: Field) {
-        switch field {
-        case .weight:
-            let text = Self.weightText(for: exerciseSet.weight, unit: weightUnit)
-            guard text != weightText, focusedField != .weight else { return }
-            weightDebounceTask?.cancel()
-            seededWeightText = text
-            weightText = text
-        case .reps:
-            let text = Self.repsText(for: exerciseSet.reps)
-            guard text != repsText, focusedField != .reps else { return }
-            repsDebounceTask?.cancel()
-            seededRepsText = text
-            repsText = text
-        case .intensity:
-            let text = Self.intensityText(for: modelIntensity)
-            guard text != intensityText, focusedField != .intensity else { return }
-            intensityDebounceTask?.cancel()
-            seededIntensityText = text
-            intensityText = text
-        }
-    }
-
-    // MARK: - Set Badge Menu
 
     private var setBadgeMenu: some View {
         Menu {
             ForEach([SetType.normal, SetType.warmup, SetType.restPause], id: \.self) { type in
                 Button {
+                    guard STNumericTextField.commitActiveInput() else { return }
                     onSetTypeChange(type)
                 } label: {
                     if exerciseSet.setType == type {
@@ -285,6 +74,7 @@ struct SetRowGridView: View {
 
             if let onAddDropEntry {
                 Button {
+                    guard STNumericTextField.commitActiveInput() else { return }
                     onAddDropEntry()
                 } label: {
                     Label(hasDropEntries ? "Add Drop" : "Make Drop Set", systemImage: "arrow.down.right")
@@ -293,15 +83,15 @@ struct SetRowGridView: View {
 
             // For grouped drop sets, failure lives on each segment row instead.
             if let onToggleFailure, !hasDropEntries {
-                Toggle(isOn: Binding(get: { isFailureOn }, set: { _ in onToggleFailure() })) {
+                Toggle(isOn: Binding(get: { isFailureOn }, set: { _ in if STNumericTextField.commitActiveInput() { onToggleFailure() } })) {
                     Label("To Failure", systemImage: "flame")
                 }
             }
         } label: {
-            Text(setTypeLabel)
-                .font(.system(size: 14, weight: .bold))
+            Text("Set \(setTypeLabel)")
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(setTypeLabelColor)
-                .frame(width: 28, alignment: .center)
+                .frame(minWidth: 44, minHeight: 44, alignment: .leading)
                 .overlay(alignment: .topTrailing) {
                     if isFailureOn && !hasDropEntries {
                         Image(systemName: "flame.fill")
@@ -313,51 +103,6 @@ struct SetRowGridView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    // MARK: - Helpers
-
-    private var fieldsWidth: CGFloat {
-        // weight(72) + spacing(8) + reps(60) [+ spacing(8) + intensity(44)]
-        showRPE ? 192 : 140
-    }
-
-    private func clampIntensity(_ value: Double) -> Double {
-        switch intensityMetric {
-        case .rpe: return min(max(value, 1), 10)
-        case .rir: return min(max(value, 0), 9)
-        }
-    }
-
-    /// Push any user-edited field values through the callbacks. Fields the user never
-    /// touched are skipped (dirty check against the seed snapshot) so stale text can't
-    /// overwrite model changes — critical when a set converts to/from a drop set.
-    private func flushPendingEdits() {
-        weightDebounceTask?.cancel()
-        repsDebounceTask?.cancel()
-        intensityDebounceTask?.cancel()
-
-        // A drop-set parent mirrors its top segment; its own fields are hidden and
-        // must never be written from this row.
-        guard !hasDropEntries else { return }
-
-        if weightText != seededWeightText {
-            let tw = weightText.trimmingCharacters(in: .whitespaces)
-            if tw.isEmpty { onWeightChange(nil) }
-            else if let w = Self.parseDouble(tw) { onWeightChange(weightUnit.toKg(w)) }
-        }
-
-        if repsText != seededRepsText {
-            let tr = repsText.trimmingCharacters(in: .whitespaces)
-            if tr.isEmpty { onRepsChange(nil) }
-            else if let r = Int(tr) { onRepsChange(r) }
-        }
-
-        if intensityText != seededIntensityText {
-            let tp = intensityText.trimmingCharacters(in: .whitespaces)
-            if tp.isEmpty { onIntensityChange?(nil) }
-            else if let val = Self.parseDouble(tp) { onIntensityChange?(clampIntensity(val)) }
-        }
     }
 
     // MARK: - Set Type Helpers
@@ -383,11 +128,6 @@ struct SetRowGridView: View {
         case .failure: return STColors.danger
         case .restPause: return .blue
         }
-    }
-
-    private static func parseDouble(_ text: String) -> Double? {
-        let normalized = text.replacingOccurrences(of: ",", with: ".")
-        return Double(normalized)
     }
 
     private var setRowBackground: Color {

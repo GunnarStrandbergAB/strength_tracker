@@ -36,6 +36,7 @@ struct ExerciseCardView: View {
     @State private var isReorderingSets: Bool = false
     @State private var isEditingNote: Bool = false
     @State private var showRPE: Bool
+    @State private var seededNoteText: String
     @State private var noteText: String = ""
     @State private var noteDebounceTask: Task<Void, Never>?
 
@@ -92,6 +93,7 @@ struct ExerciseCardView: View {
         self.intensityMetric = intensityMetric
         self.weightUnit = weightUnit
         self._noteText = State(initialValue: workoutExercise.notes ?? "")
+        self._seededNoteText = State(initialValue: workoutExercise.notes ?? "")
         self._isEditingNote = State(initialValue: workoutExercise.notes != nil && !workoutExercise.notes!.isEmpty)
         // Show intensity column if the setting is on or any set/segment already has data
         self._showRPE = State(initialValue: alwaysShowRPE || workoutExercise.sets.contains { set in
@@ -149,9 +151,6 @@ struct ExerciseCardView: View {
                     alignment: .top
                 )
             } else {
-                // Column headers
-                columnHeaders
-
                 // Sets
                 ForEach(Array(workoutExercise.sets.enumerated()), id: \.element.id) { index, exerciseSet in
                     SetRowGroupView(
@@ -162,6 +161,7 @@ struct ExerciseCardView: View {
                         showIntensity: showRPE,
                         intensityMetric: intensityMetric,
                         weightUnit: weightUnit,
+                        weightLabel: workoutExercise.exercise.exerciseType == .bodyweightReps ? "+\(weightUnit.symbol)" : weightUnit.symbol,
                         onWeightChange: { weight in
                             onWeightChange(exerciseSet.id, weight)
                         },
@@ -244,10 +244,12 @@ struct ExerciseCardView: View {
             HStack(spacing: 4) {
                 Menu {
                     Button("Reorder Sets", systemImage: "arrow.up.arrow.down") {
+                        guard STNumericTextField.commitActiveInput() else { return }
                         isReorderingSets = true
                     }
                     .disabled(workoutExercise.sets.count < 2)
                     Button(showRPE ? "Hide \(intensityMetric.displayName)" : "Show \(intensityMetric.displayName)", systemImage: "gauge.with.needle") {
+                        guard STNumericTextField.commitActiveInput() else { return }
                         showRPE.toggle()
                     }
                     Button(
@@ -294,38 +296,6 @@ struct ExerciseCardView: View {
             .accessibilityLabel("Reorder exercise")
     }
 
-    // MARK: - Column Headers
-
-    private var columnHeaders: some View {
-        HStack(spacing: 8) {
-            STColumnHeader(title: "SET")
-                .frame(width: 28)
-
-            STColumnHeader(title: "PREVIOUS", alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            STColumnHeader(
-                title: workoutExercise.exercise.exerciseType == .bodyweightReps
-                    ? "+\(weightUnit.symbol.uppercased())"
-                    : weightUnit.symbol.uppercased()
-            )
-            .frame(width: 72)
-
-            STColumnHeader(title: "REPS")
-                .frame(width: 60)
-
-            if showRPE {
-                STColumnHeader(title: intensityMetric.displayName)
-                    .frame(width: 44)
-            }
-
-            STColumnHeader(title: "")
-                .frame(width: 48)
-        }
-        .padding(.horizontal, STSpacing.setRowHorizontal)
-        .padding(.vertical, 8)
-    }
-
     // MARK: - Add Set Button
 
     private var addSetButton: some View {
@@ -360,15 +330,21 @@ struct ExerciseCardView: View {
                 .foregroundStyle(STColors.textPrimary)
                 .onChange(of: noteText) { _, newValue in
                     noteDebounceTask?.cancel()
+                    guard newValue != seededNoteText else { return }
                     noteDebounceTask = Task {
                         try? await Task.sleep(for: .milliseconds(500))
                         guard !Task.isCancelled else { return }
                         onNoteChange?(newValue)
+                        seededNoteText = newValue
                     }
                 }
 
+            Button("Done") { STNumericTextField.commitActiveInput() }
+                .font(.subheadline.weight(.semibold)).frame(minHeight: 44).foregroundStyle(STColors.primary)
             Button {
+                noteDebounceTask?.cancel()
                 noteText = ""
+                seededNoteText = ""
                 isEditingNote = false
                 onNoteChange?("")
             } label: {
@@ -381,6 +357,12 @@ struct ExerciseCardView: View {
         .padding(.horizontal, STSpacing.cardPadding)
         .padding(.vertical, 8)
         .background(STColors.background.opacity(0.3))
+        .onReceive(NotificationCenter.default.publisher(for: .commitWorkoutNotes)) { _ in
+            guard noteText != seededNoteText else { return }
+            noteDebounceTask?.cancel()
+            onNoteChange?(noteText)
+            seededNoteText = noteText
+        }
     }
 
     // MARK: - Reorder Sets

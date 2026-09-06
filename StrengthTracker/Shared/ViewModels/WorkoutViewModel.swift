@@ -4,6 +4,7 @@ import Observation
 public enum WorkoutError: Error, Sendable {
     case noActiveWorkout
     case exerciseNotFound
+    case saveFailed(String)
 }
 
 @MainActor
@@ -17,6 +18,10 @@ public final class WorkoutViewModel {
         get { UserDefaults.standard.bool(forKey: pendingActiveWorkoutKey) }
         set { UserDefaults.standard.set(newValue, forKey: pendingActiveWorkoutKey) }
     }
+
+    public let inputEdits = WorkoutInputQueue()
+    @ObservationIgnored private var pendingPersistence: Task<Void, Never>?
+    @ObservationIgnored private var persistenceRevision = 0
 
     public var currentWorkout: Workout? = nil
     public var isActive = false
@@ -196,10 +201,10 @@ public final class WorkoutViewModel {
     /// UI entry point: optimistic append now, persisted in the background.
     public func addExercise(_ exercise: Exercise) {
         guard let (workout, workoutExercise) = appendExerciseOptimistically(exercise, sets: [], restTimerSeconds: nil, notes: nil) else { return }
-        Task { [workout] in
-            // Persist right away — without this the new exercise lives only in memory
-            // until the next unrelated save and is lost if the app is killed.
-            await persist(workout)
+        // Enqueue synchronously, before another exercise or set can be added.
+        let save = enqueuePersistence(workout)
+        Task {
+            await save.value
             await loadPreviousDataForExercise(workoutExercise.id)
         }
     }
@@ -343,9 +348,9 @@ public final class WorkoutViewModel {
     }
 
     public func completeWorkout() async throws {
-        // Allow pending UI debounces (400ms) to flush before finalizing
-        try? await Task.sleep(for: .milliseconds(500))
-
+        await inputEdits.drain()
+        await pendingPersistence?.value
+        if let lastSaveError { throw WorkoutError.saveFailed(lastSaveError) }
         guard var workout = currentWorkout else {
             throw WorkoutError.noActiveWorkout
         }
@@ -679,13 +684,40 @@ public final class WorkoutViewModel {
     /// Saves and publishes the result. On failure the optimistic copy stays in
     /// memory (the UI never loses the edit) and `lastSaveError` records why.
     private func persist(_ workout: Workout) async {
-        lastSaveError = nil
-        do {
-            currentWorkout = try await workoutRepository.save(workout)
-        } catch {
-            currentWorkout = workout
-            lastSaveError = error.localizedDescription
+        await enqueuePersistence(workout).value
+    }
+
+    @discardableResult
+    private func enqueuePersistence(_ workout: Workout) -> Task<Void, Never> {
+        // Publish before suspending so another field/AI mutation sees the latest draft.
+        currentWorkout = workout
+        persistenceRevision += 1
+        let revision = persistenceRevision
+        let previous = pendingPersistence
+        let save = Task { @MainActor [self] in
+            await previous?.value
+            do {
+                let saved = try await workoutRepository.save(workout)
+                if persistenceRevision == revision {
+                    if currentWorkout == workout { currentWorkout = saved }
+                    lastSaveError = nil
+                }
+            } catch {
+                // Never replace a newer optimistic draft with an earlier failed snapshot.
+                lastSaveError = error.localizedDescription
+            }
+            if persistenceRevision == revision { pendingPersistence = nil }
         }
+        pendingPersistence = save
+        return save
+    }
+
+    /// Retry the latest optimistic draft after a failed save, without changing any value.
+    public func retryPendingSave() async {
+        await inputEdits.drain()
+        await pendingPersistence?.value
+        guard let workout = currentWorkout, workout.completedAt == nil else { return }
+        await persist(workout)
     }
 
     /// Replaces every drop-set segment of a set (`[]` reverts it to a plain set).
@@ -954,6 +986,9 @@ public final class WorkoutViewModel {
 
     /// Cancel the current workout without saving completion.
     public func cancelWorkout() async {
+        // Let any saves already in flight finish before deleting their workout.
+        await inputEdits.drain()
+        await pendingPersistence?.value
         let cancelledExerciseIds = Set(currentWorkout?.exercises.map(\.exercise.id) ?? [])
         try? await workoutRepository.deleteAllIncomplete()
         // Live PRs from the discarded session must not linger.
@@ -966,5 +1001,36 @@ public final class WorkoutViewModel {
         plannedSessionId = nil
         plannedPlanId = nil
         Self.hasPendingActiveWorkout = false
+    }
+}
+
+/// FIFO UI edits; callers enqueue synchronously before starting a completion action.
+@MainActor
+public final class WorkoutInputQueue {
+    private var tail: Task<Void, Never>?
+    private var revision = 0
+    public init() {}
+    public func enqueue(_ operation: @escaping @MainActor () async -> Void) {
+        let previous = tail
+        revision += 1
+        let current = revision
+        tail = Task { @MainActor [weak self] in
+            await previous?.value
+            await operation()
+            if self?.revision == current { self?.tail = nil }
+        }
+    }
+    public func drain() async {
+        while let pending = tail { await pending.value }
+    }
+}
+
+extension WorkoutError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .noActiveWorkout: return "There is no active workout."
+        case .exerciseNotFound: return "The exercise could not be found."
+        case .saveFailed(let message): return "Your latest edit could not be saved. \(message)"
+        }
     }
 }

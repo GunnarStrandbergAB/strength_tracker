@@ -382,3 +382,113 @@ struct WorkoutViewModelTests {
         #expect(savedCount == 1)
     }
 }
+
+@Suite("Workout input save ordering")
+@MainActor
+struct WorkoutInputSaveTests {
+    private func model(_ repo: MockWorkoutRepository, drop: Bool = false) -> (WorkoutViewModel, WorkoutExercise, ExerciseSet) {
+        let set = drop ? AnalyticsTestHelpers.makeDropSet(parts: [(100, 10), (80, 8)]) : AnalyticsTestHelpers.makeCompletedSet(weight: 100, reps: 10)
+        let entry = AnalyticsTestHelpers.makeWorkoutExercise(sets: [set])
+        var workout = AnalyticsTestHelpers.makeWorkout(exercises: [entry])
+        workout.completedAt = nil
+        let vm = WorkoutViewModel(workoutRepository: repo, templateRepository: InMemoryTemplateRepository(), healthKitService: NoOpHealthKitService())
+        vm.currentWorkout = workout; vm.isActive = true
+        repo.seed([workout])
+        return (vm, entry, set)
+    }
+    private func waitUntil(_ predicate: () -> Bool) async {
+        for _ in 0..<1000 { if predicate() { return }; await Task.yield() }
+        Issue.record("Expected asynchronous operation did not start")
+    }
+
+    @Test("Overlapping weight and reps writes preserve both edits with a suspended repository")
+    func overlappingFields() async throws {
+        let repo = MockWorkoutRepository()
+        let (vm, exercise, set) = model(repo)
+        var release: CheckedContinuation<Void, Never>?
+        repo.beforeSave = {
+            if repo.saveCallCount == 1 { await withCheckedContinuation { release = $0 } }
+        }
+        let first = Task { await vm.updateSetWeight(exerciseId: exercise.id, setId: set.id, weight: 102.5) }
+        await waitUntil { release != nil }
+        let second = Task { await vm.updateSetReps(exerciseId: exercise.id, setId: set.id, reps: 8) }
+        await waitUntil { vm.currentWorkout?.exercises[0].sets[0].reps == 8 }
+        #expect(vm.currentWorkout?.exercises[0].sets[0].weight == 102.5)
+        release?.resume(); await first.value; await second.value
+        let saved = try #require(repo.workouts[vm.currentWorkout!.id])
+        #expect(saved.exercises[0].sets[0].weight == 102.5)
+        #expect(saved.exercises[0].sets[0].reps == 8)
+        #expect(vm.currentWorkout?.exercises[0].sets[0].weight == 102.5)
+    }
+
+    @Test("Finish waits for a just-enqueued input commit before finalizing")
+    func immediateFinish() async throws {
+        let repo = MockWorkoutRepository()
+        let (vm, exercise, set) = model(repo)
+        var release: CheckedContinuation<Void, Never>?
+        repo.beforeSave = { if repo.saveCallCount == 1 { await withCheckedContinuation { release = $0 } } }
+        vm.inputEdits.enqueue { await vm.updateSetWeight(exerciseId: exercise.id, setId: set.id, weight: 102.5) }
+        vm.inputEdits.enqueue { await vm.updateSetReps(exerciseId: exercise.id, setId: set.id, reps: 8) }
+        vm.inputEdits.enqueue { await vm.updateNotes("Latest workout note") }
+        let finish = Task { try await vm.completeWorkout() }
+        await waitUntil { release != nil }
+        #expect(vm.isActive)
+        #expect(repo.completeCallCount == 0)
+        release?.resume(); try await finish.value
+        let saved = try #require(repo.workouts.values.first(where: { $0.completedAt != nil }))
+        #expect(saved.exercises[0].sets[0].weight == 102.5)
+        #expect(saved.exercises[0].sets[0].reps == 8)
+        #expect(saved.notes == "Latest workout note")
+        #expect(!vm.isActive)
+    }
+
+    @Test("Failed input saves keep the draft, block Finish and can be retried unchanged")
+    func failedSaveRetry() async throws {
+        let repo = MockWorkoutRepository()
+        let (vm, exercise, set) = model(repo)
+        repo.shouldThrowOnSave = true
+        await vm.updateSetWeight(exerciseId: exercise.id, setId: set.id, weight: 102.5)
+        #expect(vm.lastSaveError != nil)
+        #expect(vm.currentWorkout?.exercises[0].sets[0].weight == 102.5)
+        await #expect(throws: WorkoutError.self) { try await vm.completeWorkout() }
+        #expect(vm.isActive)
+        #expect(vm.currentWorkout?.completedAt == nil)
+        repo.shouldThrowOnSave = false
+        await vm.retryPendingSave()
+        #expect(vm.lastSaveError == nil)
+        try await vm.completeWorkout()
+        #expect(repo.workouts.values.first?.exercises[0].sets[0].weight == 102.5)
+    }
+
+    @Test("Cancel waits for an in-flight input save so it cannot recreate the workout")
+    func cancelDuringSave() async throws {
+        let repo = MockWorkoutRepository()
+        let (vm, exercise, set) = model(repo)
+        var release: CheckedContinuation<Void, Never>?
+        repo.beforeSave = { if repo.saveCallCount == 1 { await withCheckedContinuation { release = $0 } } }
+        vm.inputEdits.enqueue { await vm.updateSetWeight(exerciseId: exercise.id, setId: set.id, weight: 102.5) }
+        let cancel = Task { await vm.cancelWorkout() }
+        await waitUntil { release != nil }
+        #expect(vm.isActive)
+        release?.resume(); await cancel.value
+        #expect(repo.workouts.isEmpty)
+        #expect(vm.currentWorkout == nil)
+        #expect(!vm.isActive)
+    }
+
+    @Test("Queued drop edits finish before set completion and preserve parent mirrors")
+    func dropCommitBeforeCompletion() async throws {
+        let repo = MockWorkoutRepository()
+        let (vm, exercise, set) = model(repo, drop: true)
+        let top = set.dropSets[0].id
+        vm.inputEdits.enqueue { await vm.updateDropEntryWeight(exerciseId: exercise.id, setId: set.id, entryId: top, weight: 102.5) }
+        vm.inputEdits.enqueue { await vm.updateDropEntryReps(exerciseId: exercise.id, setId: set.id, entryId: top, reps: 8) }
+        vm.inputEdits.enqueue { await vm.toggleSetCompletion(exerciseId: exercise.id, setId: set.id) }
+        await vm.inputEdits.drain()
+        let saved = try #require(vm.currentWorkout?.exercises[0].sets[0])
+        #expect(saved.weight == 102.5 && saved.reps == 8)
+        #expect(saved.dropSets[0].weight == 102.5 && saved.dropSets[0].reps == 8)
+        #expect(saved.dropSets[1].weight == 80)
+        #expect(!saved.isCompleted) // fixture started completed: exactly one toggle
+    }
+}
