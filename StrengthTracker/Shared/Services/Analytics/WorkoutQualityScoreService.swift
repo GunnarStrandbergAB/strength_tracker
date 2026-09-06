@@ -198,6 +198,28 @@ public final class WorkoutQualityScoreService: Sendable {
         )
     }
 
+    /// Full-history smoothing, filtered only by the view afterwards. Uses the same
+    /// measured-session policy, cold start and lambda as the dashboard aggregate.
+    public func computeHistory(workouts: [Workout]) -> [QualityHistoryObservation] {
+        let completed = workouts.filter { $0.completedAt != nil }.sorted { $0.trainingDate < $1.trainingDate }
+        let scores = completed.map { computeScore(for: $0, history: workouts) }
+        let hasMeasured = scores.contains { !$0.isProvisional }
+        var count = 0, sums = Array(repeating: 0.0, count: 5), smoothed = Array(repeating: 0.0, count: 5)
+        return zip(completed, scores).map { workout, score in
+            let values = [score.overallScore, score.volumeScore, score.intensityScore, score.consistencyScore, score.balanceScore]
+            let included = !hasMeasured || !score.isProvisional
+            if included {
+                count += 1
+                for index in values.indices {
+                    sums[index] += values[index]
+                    smoothed[index] = count == 1 ? values[index] : 0.3 * values[index] + 0.7 * smoothed[index]
+                }
+            }
+            let aggregate: [Double]? = included ? (count < 3 ? sums.map { $0 / Double(count) } : smoothed) : nil
+            return QualityHistoryObservation(workout: workout, score: score, aggregate: aggregate)
+        }
+    }
+
     // MARK: - Shared Helpers
 
     /// Build per-exercise best e1RM map from history, excluding a specific workout.
@@ -509,4 +531,12 @@ public final class WorkoutQualityScoreService: Sendable {
             return max(0, 100.0 * (1.0 - mean) / 0.2)
         }
     }
+}
+
+public struct QualityHistoryObservation: Identifiable, Sendable {
+    public var id: UUID { workout.id }
+    public let workout: Workout
+    public let score: WorkoutQualityScore
+    /// Overall, volume, intensity, rest rhythm, program balance; nil for excluded provisional sessions.
+    public let aggregate: [Double]?
 }

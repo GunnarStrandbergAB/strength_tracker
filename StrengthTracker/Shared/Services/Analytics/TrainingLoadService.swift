@@ -13,7 +13,8 @@ public enum TrainingLoadService {
         bodyWeightKg: Double,
         workouts: [Workout],
         bestE1RM: [UUID: Double],
-        now: Date = Date()
+        now: Date = Date(),
+        historyDays: Int? = 56
     ) -> TrainingLoad? {
         let completed = workouts
             .filter { $0.completedAt != nil && $0.trainingDate <= now }
@@ -50,7 +51,7 @@ public enum TrainingLoadService {
         let perMuscle = computePerMuscleGroupACWR(workouts: completed, bestE1RM: bestE1RM, bodyWeightKg: bodyWeightKg, now: now)
 
         let startDay = Calendar.current.startOfDay(for: firstDate)
-        let history = dailyLoads.indices.suffix(56).map { index in
+        let history = dailyLoads.indices.suffix(max(0, historyDays ?? dailyLoads.count)).map { index in
             TrainingLoad.Day(date: Calendar.current.date(byAdding: .day, value: index, to: startDay)!, recent: acuteEWMA[index], baseline: chronicEWMA[index])
         }
         return TrainingLoad(

@@ -301,3 +301,150 @@ struct AnalyticsMakeoverTests {
     }
 
 }
+
+@Suite("Complementary statistics")
+@MainActor
+struct ComplementStatsTests {
+    let now = Calendar.mondayStart.date(from: DateComponents(year: 2026, month: 8, day: 31, hour: 12))!
+    func workout(_ exercise: Exercise, day: Int = 0, sets: [ExerciseSet]) -> Workout {
+        let date = now.addingTimeInterval(Double(day) * 86400)
+        return AnalyticsTestHelpers.makeWorkout(exercises: [AnalyticsTestHelpers.makeWorkoutExercise(exercise: exercise, sets: sets)], startedAt: date, completedAt: date.addingTimeInterval(3600))
+    }
+    @Test("Session observations exclude warmups/incomplete work, merge exercise blocks and count drops once")
+    func sessionEvidence() throws {
+        let ex = AnalyticsTestHelpers.makeExercise()
+        let drop = AnalyticsTestHelpers.makeDropSet(parts: [(80, 5), (60, 8)])
+        var session = workout(ex, sets: [drop, AnalyticsTestHelpers.makeCompletedSet(weight: 200, setType: .warmup), AnalyticsTestHelpers.makeIncompleteSet()])
+        session.exercises.append(AnalyticsTestHelpers.makeWorkoutExercise(exercise: ex, sets: [AnalyticsTestHelpers.makeCompletedSet(weight: 70, reps: 5)]))
+        let history = ExerciseHistoryCalculator.sessions(exerciseId: ex.id, workouts: [session], bodyWeightKg: 70, now: now)
+        let point = try #require(history.first)
+        #expect(history.count == 1)
+        #expect(point.sets.count == 2)
+        #expect(point.recordedVolume == 1230)
+        #expect(point.recordedReps == 18)
+        #expect(point.value(for: .weightAtReps, targetReps: 5) == 80)
+        #expect(point.value(for: .repsAtWeight, targetWeightKg: 60) == 8)
+        #expect(point.value(for: .weightAtReps, targetReps: 6) == nil)
+        #expect(point.value(for: .repsAtWeight, targetWeightKg: 61) == nil)
+        #expect(ExerciseHistoryCalculator.points(sessions: history, metric: .volume).count == 1)
+    }
+    @Test("Missing weighted evidence stays missing; bodyweight and assistance use effective load")
+    func missingAndBodyweight() throws {
+        let weighted = AnalyticsTestHelpers.makeExercise()
+        var missing = AnalyticsTestHelpers.makeCompletedSet(reps: 8)
+        missing.weight = nil
+        let empty = try #require(ExerciseHistoryCalculator.sessions(exerciseId: weighted.id, workouts: [workout(weighted, sets: [missing])], bodyWeightKg: 80, now: now).first)
+        #expect(empty.value(for: .strength) == nil)
+        #expect(empty.value(for: .volume) == nil)
+        #expect(empty.completeLoadSets.isEmpty)
+        let bodyweight = AnalyticsTestHelpers.makeExercise(exerciseType: .bodyweightReps, bodyweightFactor: 0.5)
+        let bw = try #require(ExerciseHistoryCalculator.sessions(exerciseId: bodyweight.id, workouts: [workout(bodyweight, sets: [missing, AnalyticsTestHelpers.makeCompletedSet(weight: -10, reps: 5)])], bodyWeightKg: 80, now: now).first)
+        #expect(bw.value(for: .volume) == 470)
+        #expect(bw.value(for: .repsAtWeight, targetWeightKg: 30) == 5)
+    }
+    @Test("Duration and distance keep their own metrics and omit missing values")
+    func typedMetrics() throws {
+        let ex = AnalyticsTestHelpers.makeExercise(exerciseType: .duration)
+        var set = AnalyticsTestHelpers.makeCompletedSet()
+        set.weight = nil; set.reps = nil; set.durationSeconds = 90; set.distanceMeters = nil
+        let session = try #require(ExerciseHistoryCalculator.sessions(exerciseId: ex.id, workouts: [workout(ex, sets: [set])], bodyWeightKg: 70, now: now).first)
+        #expect(ExerciseHistoryMetric.available(for: .duration) == [.duration, .sets])
+        #expect(!ExerciseHistoryMetric.available(for: .cardio).contains(.strength))
+        #expect(session.value(for: .duration) == 90)
+        #expect(session.value(for: .distance) == nil)
+    }
+    @Test("Median excludes deload performance, leaves raw evidence and restarts at gaps")
+    func medianAndGaps() throws {
+        let ex = AnalyticsTestHelpers.makeExercise()
+        var history = [-40, -39, -38, -37, -1, 0].enumerated().map { index, day in workout(ex, day: day, sets: [AnalyticsTestHelpers.makeCompletedSet(weight: Double(index + 1) * 10, reps: 5)]) }
+        history[1].isDeload = true
+        let sessions = ExerciseHistoryCalculator.sessions(exerciseId: ex.id, workouts: history, bodyWeightKg: 70, now: now)
+        let points = ExerciseHistoryCalculator.points(sessions: sessions, metric: .weightAtReps)
+        #expect(points.count == 6)
+        #expect(points[1].isDeload && points[1].median == nil)
+        #expect(points[2].median == nil)
+        #expect(points[3].median == 30)
+        #expect(points[4].segment != points[3].segment)
+        #expect(points[4].median == nil && points[5].median == nil)
+        #expect(ExerciseHistoryCalculator.points(sessions: sessions, metric: .volume)[2].median != nil)
+    }
+    @Test("Representative change needs nonoverlapping observations near both boundaries")
+    func representativeChange() throws {
+        let ex = AnalyticsTestHelpers.makeExercise()
+        let history = [-28, -27, -26, -2, -1, 0].enumerated().map { index, day in workout(ex, day: day, sets: [AnalyticsTestHelpers.makeCompletedSet(weight: index < 3 ? 50 : 55, reps: 5)]) }
+        let points = ExerciseHistoryCalculator.points(sessions: ExerciseHistoryCalculator.sessions(exerciseId: ex.id, workouts: history, bodyWeightKg: 70, now: now), metric: .weightAtReps)
+        let range = DateInterval(start: now.addingTimeInterval(-28 * 86400), end: now)
+        #expect(abs(try #require(ExerciseHistoryCalculator.performanceChange(points: points, interval: range)) - 10) < 0.00001)
+        #expect(ExerciseHistoryCalculator.performanceChange(points: Array(points.prefix(5)), interval: range) == nil)
+        #expect(ExerciseHistoryCalculator.performanceChange(points: points, interval: DateInterval(start: now.addingTimeInterval(-365 * 86400), end: now)) == nil)
+    }
+    @Test("Activity comparison requires observed history for preceding equal period")
+    func activityComparison() throws {
+        let ex = AnalyticsTestHelpers.makeExercise()
+        let history = [-56, -40, -28, -1].map { workout(ex, day: $0, sets: [AnalyticsTestHelpers.makeCompletedSet(weight: 50, reps: 5)]) }
+        let points = ExerciseHistoryCalculator.points(sessions: ExerciseHistoryCalculator.sessions(exerciseId: ex.id, workouts: history, bodyWeightKg: 70, now: now), metric: .sets)
+        let range = DateInterval(start: now.addingTimeInterval(-28 * 86400), end: now)
+        #expect(ExerciseHistoryCalculator.activityChange(points: points, interval: range, firstLoggedDate: history.first!.trainingDate) == 0)
+        #expect(ExerciseHistoryCalculator.activityChange(points: points, interval: range, firstLoggedDate: range.start) == nil)
+    }
+    @Test("Periods use calendar months and custom end includes the whole selected day")
+    func periods() {
+        let calendar = Calendar.mondayStart
+        let range = HistoryPeriod.threeMonths.interval(now: now, firstDate: nil, customStart: now, customEnd: now, calendar: calendar)
+        #expect(range.start == calendar.date(byAdding: .month, value: -3, to: now))
+        let day = now.addingTimeInterval(-5 * 86400)
+        let custom = HistoryPeriod.custom.interval(now: now, firstDate: nil, customStart: day, customEnd: day, calendar: calendar)
+        #expect(custom.start == calendar.startOfDay(for: day))
+        #expect(custom.end > day && custom.end < calendar.date(byAdding: .day, value: 1, to: custom.start)!)
+        #expect(HistoryPeriod.all.interval(now: now, firstDate: day, customStart: now, customEnd: now).start == day)
+    }
+    @Test("Pins stay unique, bounded, removable and exercise metric keys are isolated")
+    func preferences() {
+        let ids = (0..<5).map { _ in UUID() }
+        var value = "bad,\(ids[0]),\(ids[0])"
+        for id in ids.dropFirst() { value = ExerciseHistoryPreferences.toggling(id, in: value) }
+        #expect(ExerciseHistoryPreferences.pins(from: value) == Array(ids.prefix(4)))
+        value = ExerciseHistoryPreferences.toggling(ids[1], in: value)
+        #expect(!ExerciseHistoryPreferences.pins(from: value).contains(ids[1]))
+        #expect(ExerciseHistoryPreferences.metricKey(ids[0]) != ExerciseHistoryPreferences.metricKey(ids[1]))
+    }
+    @Test("Quality history endpoint reconciles all five values with the existing aggregate")
+    func qualityReconciliation() throws {
+        let ex = AnalyticsTestHelpers.makeExercise()
+        let service = WorkoutQualityScoreService(workoutRepository: MockWorkoutRepository(), muscleBalanceService: MuscleBalanceService(), healthKitService: MockHealthKitService(), userPreferencesService: UserPreferencesService())
+        let history = (0..<12).map { workout(ex, day: ($0 - 12) * 3, sets: (0..<4).map { index in AnalyticsTestHelpers.makeCompletedSet(order: index + 1, weight: 50, reps: 5, completedAt: now.addingTimeInterval(Double(index) * 120)) }) }
+        for count in [1, 2, 5, 12] {
+            let workouts = Array(history.prefix(count))
+            let current = service.computeAggregateScore(workouts: workouts)
+            let series = service.computeHistory(workouts: workouts)
+            let last = try #require(series.last(where: { $0.aggregate != nil })?.aggregate)
+            let expected = [current.ewmaOverall, current.ewmaVolume, current.ewmaIntensity, current.ewmaConsistency, current.ewmaBalance]
+            for index in expected.indices { #expect(abs(last[index] - expected[index]) < 0.00001) }
+            #expect(series.count == count)
+        }
+    }
+    @Test("Full load history preserves the final dashboard result and includes rest days")
+    func fullLoad() throws {
+        let ex = AnalyticsTestHelpers.makeExercise()
+        let history = (0..<12).map { workout(ex, day: ($0 - 12) * 7, sets: [AnalyticsTestHelpers.makeCompletedSet()]) }
+        let bests = AnalyticsCalculations.buildBestE1RMMap(from: history, bodyWeightKg: 70, asOf: now)
+        let original = try #require(TrainingLoadService.computeTrainingLoad(bodyWeightKg: 70, workouts: history, bestE1RM: bests, now: now))
+        let full = try #require(TrainingLoadService.computeTrainingLoad(bodyWeightKg: 70, workouts: history, bestE1RM: bests, now: now, historyDays: nil))
+        #expect(full.acwr == original.acwr)
+        #expect(full.acuteLoad == original.acuteLoad && full.chronicLoad == original.chronicLoad)
+        #expect(full.history?.count == 85)
+        #expect(Array(full.history!.suffix(56)) == original.history)
+    }
+    @Test("Coverage conserves direct and secondary credits and emits empty weeks")
+    func coverage() {
+        let ex = AnalyticsTestHelpers.makeExercise(primaryMuscleGroup: .chest, secondaryMuscleGroups: [.triceps, .shoulders])
+        let history = [workout(ex, day: -21, sets: [AnalyticsTestHelpers.makeCompletedSet(), AnalyticsTestHelpers.makeCompletedSet(setType: .warmup)]), workout(ex, sets: [AnalyticsTestHelpers.makeCompletedSet()])]
+        let range = DateInterval(start: now.addingTimeInterval(-28 * 86400), end: now)
+        let direct = MuscleHistoryCalculator.weeks(workouts: history, muscle: .chest, interval: range)
+        let indirect = MuscleHistoryCalculator.weeks(workouts: history, muscle: .triceps, interval: range)
+        #expect(direct.reduce(0) { $0 + $1.direct } == 2)
+        #expect(indirect.reduce(0) { $0 + $1.indirect } == 0.5)
+        #expect(direct.contains { $0.direct == 0 })
+        #expect(direct.count == 5)
+    }
+}
