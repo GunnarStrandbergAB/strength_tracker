@@ -417,6 +417,8 @@ public final class AppContainer: Sendable {
             ),
             GetAnalyticsInsightsTool(analyticsService: analyticsService),
             GetVolumeResponseTool(analyticsService: analyticsService),
+            GetTrainingPreferencesTool(preferences: userPreferencesService),
+            ProposePlanEditTool(viewModel: progressionPlanViewModel),
             GetPersonalRecordsTool(
                 personalRecordRepository: personalRecordRepository,
                 exerciseRepository: exerciseRepository
@@ -459,7 +461,11 @@ public final class AppContainer: Sendable {
             StartWorkoutTool(session: sessionController, userPreferencesService: userPreferencesService),
             FinishWorkoutTool(session: sessionController, userPreferencesService: userPreferencesService, bodyWeightProvider: bodyWeightProvider),
             CancelWorkoutTool(session: sessionController)
-        ])
+        ] + DetailedAnalyticsTool.Kind.allCases.map { [workoutRepository, exerciseRepository, progressionPlanRepository, analyticsService, qualityScoreService, planAnalyticsService, bodyWeightProvider] in
+            DetailedAnalyticsTool(kind: $0, workouts: workoutRepository, exercises: exerciseRepository,
+                plans: progressionPlanRepository, analytics: analyticsService, quality: qualityScoreService,
+                planAnalytics: planAnalyticsService, bodyWeight: bodyWeightProvider)
+        })
         let prefs = userPreferencesService
         let memoryService = aiMemoryService
         aiAgentService = AIAgentService(
@@ -580,7 +586,7 @@ public final class AppContainer: Sendable {
                     startDate: parameters.startDate,
                     exercises: exercises,
                     daySchedule: daySchedule,
-                    creationSource: .naturalLanguage
+                    creationSource: .naturalLanguage, durationWeeks: parameters.durationWeeks
                 ))
             }
         }
@@ -607,11 +613,52 @@ public final class AppContainer: Sendable {
         workoutFinalizer.onWorkoutUnlinked = { [weak planVM] workoutId in
             await planVM?.handleWorkoutUnlinked(workoutId: workoutId)
         }
+        planVM.canEditPlan = { proGate.hasProAccess }
+        let workoutForProtection = workoutViewModel
+        planVM.protectedPlanSessions = { [weak workoutForProtection] in
+            Set([workoutForProtection?.currentWorkout?.plannedSessionId,
+                 workoutForProtection?.plannedSessionId, workoutForProtection?.watchActiveWorkout?.plannedSessionId].compactMap { $0 })
+        }
+        planVM.onPlanChanged = { [weak self] in
+            guard let self else { return }
+            self.dataRevision.bump()
+            await self.syncActivePlanToWatch()
+            await self.widgetRefreshService.refresh()
+        }
+        activeWorkoutContextNoteProvider.planNote = { [weak planVM] in
+            guard let plan = planVM?.activePlan else { return "Active plan: none loaded; query get_active_plan before plan edits." }
+            return "Active plan: \(plan.name), ID \(plan.id), current calendar week \(plan.currentWeek?.absoluteWeekNumber ?? 0), total \(plan.totalWeeks), version \(PlanEditingService.version(plan)). Query get_active_plan for fresh session targets."
+        }
         // A material body-weight change shifts every effective-load number: rebuild once.
         let finalizerForRebuild = workoutFinalizer
         bodyWeightProvider.onMaterialChange = { _, _ in
             await finalizerForRebuild.rebuildAll(reason: .bodyWeightChanged)
         }
+    }
+
+    /// Called after plan edits and foregrounding; include every block bucket of the current calendar week.
+    public func syncActivePlanToWatch() async {
+        do {
+            guard let plan = try await progressionPlanRepository.fetchActive(), let current = plan.currentWeek else {
+                connectivityManager.syncPlannedSessions([]); return
+            }
+            let exercises = try await exerciseRepository.fetchAll()
+            let templates = try await templateRepository.fetchAll()
+            var sync: [PlannedSessionSync] = []
+            for block in plan.blocks {
+                for week in block.weeks where week.absoluteWeekNumber == current.absoluteWeekNumber {
+                    for session in week.sessions where !session.isClosed {
+                        let template: WorkoutTemplate
+                        if let linked = templates.first(where: { $0.id == session.templateId }) {
+                            template = progressionPlanViewModel.mergeSessionIntoTemplate(session: session, template: linked, exercises: exercises)
+                        } else { template = session.toWorkoutTemplate(exercises: exercises) }
+                        sync.append(.init(id: session.id, planId: plan.id, planName: plan.name, sessionLabel: session.sessionLabel,
+                            weekLabel: "Week \(week.absoluteWeekNumber)", blockName: block.name, isDeload: session.isDeload, template: template))
+                    }
+                }
+            }
+            connectivityManager.syncPlannedSessions(sync)
+        } catch { print("[Plan Sync] \(error.localizedDescription)") }
     }
 
     // Factory methods for ViewModels

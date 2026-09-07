@@ -1,6 +1,6 @@
 import Foundation
 
-public struct WorkoutArchetype: Identifiable, Sendable {
+public struct WorkoutArchetype: Identifiable, Sendable, Encodable {
     public let id: UUID
     public let label: String
     public let centroid: [Double]

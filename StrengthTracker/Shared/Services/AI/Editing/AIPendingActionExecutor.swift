@@ -44,11 +44,10 @@ public final class AIPendingActionExecutor {
             }
             var template: WorkoutTemplate?
             if let plannedSessionID {
-                if progressionPlanViewModel.activePlan == nil {
-                    await progressionPlanViewModel.loadActivePlan()
-                }
+                await progressionPlanViewModel.loadActivePlan()
                 guard let plan = progressionPlanViewModel.activePlan,
-                      let located = plan.locateSession(id: plannedSessionID) else {
+                      let located = plan.locateSession(id: plannedSessionID), !located.session.isClosed,
+                      plan.id == plannedPlanID, located.session.isDeload == isDeload else {
                     throw AIToolError("The planned session no longer exists.")
                 }
                 template = await progressionPlanViewModel.prepareSessionTemplate(for: located.session)
@@ -66,6 +65,9 @@ public final class AIPendingActionExecutor {
                 ),
                 replacingActive: true
             )
+
+        case .editPlan(let preview):
+            try await progressionPlanViewModel.applyPlanEdit(preview)
 
         case .cancelWorkout(let workoutID):
             guard vm.isActive, vm.currentWorkout?.id == workoutID else {

@@ -8,6 +8,7 @@ public struct Workout: Identifiable, Hashable, Sendable, Codable {
     public var notes: String?
     public var templateId: UUID?
     public var healthKitWorkoutId: UUID?
+    public var deloadRestPercentage: Int?
     public var isDeload: Bool
     public var plannedSessionId: UUID?
     public var plannedPlanId: UUID?
@@ -26,7 +27,7 @@ public struct Workout: Identifiable, Hashable, Sendable, Codable {
         exercises.reduce(0) { $0 + $1.exerciseVolume(bodyWeightKg: bodyWeightKg) }
     }
 
-    public init(id: UUID, name: String, startedAt: Date, completedAt: Date?, notes: String?, templateId: UUID?, healthKitWorkoutId: UUID? = nil, isDeload: Bool = false, plannedSessionId: UUID? = nil, plannedPlanId: UUID? = nil, exercises: [WorkoutExercise]) {
+    public init(id: UUID, name: String, startedAt: Date, completedAt: Date?, notes: String?, templateId: UUID?, healthKitWorkoutId: UUID? = nil, isDeload: Bool = false, plannedSessionId: UUID? = nil, plannedPlanId: UUID? = nil, exercises: [WorkoutExercise], deloadRestPercentage: Int? = nil) {
         self.id = id
         self.name = name
         self.startedAt = startedAt
@@ -34,6 +35,7 @@ public struct Workout: Identifiable, Hashable, Sendable, Codable {
         self.notes = notes
         self.templateId = templateId
         self.healthKitWorkoutId = healthKitWorkoutId
+        self.deloadRestPercentage = deloadRestPercentage
         self.isDeload = isDeload
         self.plannedSessionId = plannedSessionId
         self.plannedPlanId = plannedPlanId
@@ -42,7 +44,7 @@ public struct Workout: Identifiable, Hashable, Sendable, Codable {
 
     // Custom decoding for backward compatibility — existing JSON without isDeload decodes as false
     private enum CodingKeys: String, CodingKey {
-        case id, name, startedAt, completedAt, notes, templateId, healthKitWorkoutId, isDeload, plannedSessionId, plannedPlanId, exercises
+        case deloadRestPercentage, id, name, startedAt, completedAt, notes, templateId, healthKitWorkoutId, isDeload, plannedSessionId, plannedPlanId, exercises
     }
 
     public init(from decoder: Decoder) throws {
@@ -54,6 +56,7 @@ public struct Workout: Identifiable, Hashable, Sendable, Codable {
         notes = try container.decodeIfPresent(String.self, forKey: .notes)
         templateId = try container.decodeIfPresent(UUID.self, forKey: .templateId)
         healthKitWorkoutId = try container.decodeIfPresent(UUID.self, forKey: .healthKitWorkoutId)
+        deloadRestPercentage = try container.decodeIfPresent(Int.self, forKey: .deloadRestPercentage)
         isDeload = try container.decodeIfPresent(Bool.self, forKey: .isDeload) ?? false
         plannedSessionId = try container.decodeIfPresent(UUID.self, forKey: .plannedSessionId)
         plannedPlanId = try container.decodeIfPresent(UUID.self, forKey: .plannedPlanId)

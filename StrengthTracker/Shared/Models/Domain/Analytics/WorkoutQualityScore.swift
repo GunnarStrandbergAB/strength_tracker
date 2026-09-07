@@ -42,7 +42,7 @@ public struct WorkoutQualityScore: Identifiable, Hashable, Sendable, Codable {
 }
 
 /// Aggregate quality score across multiple workouts, smoothed via EWMA.
-public struct AggregateQualityScore: Sendable {
+public struct AggregateQualityScore: Sendable, Encodable {
     /// 0-100 EWMA-smoothed overall quality
     public let ewmaOverall: Double
     /// 0-100 EWMA-smoothed volume pillar

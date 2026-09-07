@@ -28,6 +28,7 @@ public final class ProgressionPlanEntity {
     public var updatedAt: Date
     public var notes: String?
     public var creationSource: String?     // PlanCreationSource raw value
+    public var configurationJSON: Data? = nil
     public var schemaVersion: Int          // For future migrations
 
     public init(

@@ -16,7 +16,8 @@ public enum WorkoutMapper {
             isDeload: entity.isDeload,
             plannedSessionId: entity.plannedSessionId,
             plannedPlanId: entity.plannedPlanId,
-            exercises: entity.exercises.sorted(by: { $0.order < $1.order }).map { WorkoutExerciseMapper.toDomain($0) }
+            exercises: entity.exercises.sorted(by: { $0.order < $1.order }).map { WorkoutExerciseMapper.toDomain($0) },
+            deloadRestPercentage: entity.deloadRestPercentage
         )
     }
 
@@ -34,6 +35,7 @@ public enum WorkoutMapper {
             plannedSessionId: domain.plannedSessionId,
             plannedPlanId: domain.plannedPlanId
         )
+        entity.deloadRestPercentage = domain.deloadRestPercentage
         entity.exercises = domain.exercises.map { WorkoutExerciseMapper.toEntity($0) }
         return entity
     }
@@ -47,6 +49,7 @@ public enum WorkoutMapper {
         entity.notes = domain.notes
         entity.templateId = domain.templateId
         entity.healthKitWorkoutId = domain.healthKitWorkoutId
+        entity.deloadRestPercentage = domain.deloadRestPercentage
         entity.isDeload = domain.isDeload
         entity.plannedSessionId = domain.plannedSessionId
         entity.plannedPlanId = domain.plannedPlanId

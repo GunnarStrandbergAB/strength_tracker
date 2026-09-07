@@ -1,6 +1,6 @@
 import Foundation
 
-public struct TimeOfDayAnalysis: Sendable {
+public struct TimeOfDayAnalysis: Sendable, Encodable {
     public let bestWindow: String
     public let bestAvgQuality: Double
     public let worstWindow: String

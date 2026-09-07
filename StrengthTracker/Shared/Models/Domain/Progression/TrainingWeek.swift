@@ -67,7 +67,8 @@ public struct TrainingWeek: Identifiable, Codable, Equatable, Sendable {
         let today = Calendar.current.startOfDay(for: Date())
         let endOfToday = Calendar.current.date(byAdding: .day, value: 1, to: today)!
         let elapsed = sessions.filter { session in
-            session.isSkipped || (session.scheduledDate ?? .distantPast) < endOfToday
+            guard !session.isOmitted else { return false }
+            return session.isSkipped || (session.scheduledDate ?? .distantPast) < endOfToday
         }
         guard !elapsed.isEmpty else { return 0 }
         return Double(completedSessions) / Double(elapsed.count)

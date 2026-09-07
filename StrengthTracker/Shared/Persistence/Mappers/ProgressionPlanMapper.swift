@@ -79,7 +79,9 @@ public enum ProgressionPlanMapper {
             createdAt: entity.createdAt,
             updatedAt: entity.updatedAt,
             notes: entity.notes,
-            creationSource: creationSource
+            creationSource: creationSource,
+            configuration: entity.configurationJSON.flatMap { try? decoder.decode(PlanConfiguration.self, from: $0) },
+            expectedUpdatedAt: entity.updatedAt
         )
     }
 
@@ -95,7 +97,7 @@ public enum ProgressionPlanMapper {
         let deloadDaysData: Data? = plan.deloadDays.flatMap { try? encoder.encode($0) }
         let dayScheduleData: Data? = plan.daySchedule.isEmpty ? nil : (try? encoder.encode(plan.daySchedule))
 
-        return ProgressionPlanEntity(
+        let entity = ProgressionPlanEntity(
             id: plan.id,
             name: plan.name,
             status: plan.status.rawValue,
@@ -119,6 +121,8 @@ public enum ProgressionPlanMapper {
             creationSource: plan.creationSource?.rawValue,
             schemaVersion: currentSchemaVersion
         )
+        entity.configurationJSON = try plan.configuration.map { try encoder.encode($0) }
+        return entity
     }
 
     // MARK: - Update Entity In-Place
@@ -126,6 +130,13 @@ public enum ProgressionPlanMapper {
     /// Updates an existing ProgressionPlanEntity with values from a ProgressionPlan domain model.
     /// Throws if encoding fails — partial updates would otherwise wipe plan content.
     public static func updateEntity(_ entity: ProgressionPlanEntity, from plan: ProgressionPlan) throws {
+        // Encode everything before touching the entity: encoding failure is atomic too.
+        let configuration = try plan.configuration.map { try encoder.encode($0) }
+        let exercises = try encoder.encode(plan.exercises)
+        let blocks = try encoder.encode(plan.blocks)
+        let adjustments = try encoder.encode(plan.adjustments)
+        let schedule = try encoder.encode(plan.daySchedule)
+        entity.configurationJSON = configuration
         entity.name = plan.name
         entity.status = plan.status.rawValue
         entity.trainingStatus = plan.trainingStatus.rawValue
@@ -138,10 +149,10 @@ public enum ProgressionPlanMapper {
         entity.startDate = plan.startDate
         entity.targetEndDate = plan.targetEndDate
         entity.actualEndDate = plan.actualEndDate
-        entity.exercisesJSON = try encodeOrThrow(plan.exercises, label: "exercises")
-        entity.blocksJSON = try encodeOrThrow(plan.blocks, label: "blocks")
-        entity.adjustmentsJSON = try encodeOrThrow(plan.adjustments, label: "adjustments")
-        entity.dayScheduleJSON = plan.daySchedule.isEmpty ? nil : (try? encoder.encode(plan.daySchedule))
+        entity.exercisesJSON = exercises
+        entity.blocksJSON = blocks
+        entity.adjustmentsJSON = adjustments
+        entity.dayScheduleJSON = plan.daySchedule.isEmpty ? nil : schedule
         entity.updatedAt = plan.updatedAt
         entity.notes = plan.notes
         entity.creationSource = plan.creationSource?.rawValue

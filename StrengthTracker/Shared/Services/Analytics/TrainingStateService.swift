@@ -1,6 +1,6 @@
 import Foundation
 
-public enum TrainingStateKind: String, CaseIterable, Sendable {
+public enum TrainingStateKind: String, CaseIterable, Sendable, Encodable {
     case usual = "Usual pattern", volume = "More volume", heavy = "Lower-rep work"
     case light = "Lighter week", returning = "Returning after a break", mixed = "Mixed changes", building = "Building baseline"
     public var explanation: String {
@@ -15,12 +15,12 @@ public enum TrainingStateKind: String, CaseIterable, Sendable {
         }
     }
 }
-public struct TrainingStateSummary: Sendable {
-    public struct Period: Sendable {
+public struct TrainingStateSummary: Sendable, Encodable {
+    public struct Period: Sendable, Encodable {
         public let start: Date; public let end: Date; public let sessions: Int
         public let weeklySets: Double; public let medianReps: Double; public let meanRPE: Double?
     }
-    public struct Week: Identifiable, Sendable {
+    public struct Week: Identifiable, Sendable, Encodable {
         public var id: Date { start }; public let start: Date; public let sets: Int; public let sessions: Int
         public let kind: TrainingStateKind
     }

@@ -11,6 +11,7 @@ public final class WorkoutEntity {
     public var notes: String?
     public var templateId: UUID?
     public var healthKitWorkoutId: UUID?
+    public var deloadRestPercentage: Int? = nil
     public var isDeload: Bool = false
     public var plannedSessionId: UUID?
     public var plannedPlanId: UUID?

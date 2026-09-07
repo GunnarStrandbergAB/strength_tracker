@@ -123,7 +123,7 @@ public enum HistoryPeriod: String, CaseIterable, Sendable {
     }
 }
 
-public enum ExerciseHistoryMetric: String, CaseIterable, Sendable {
+public enum ExerciseHistoryMetric: String, CaseIterable, Sendable, Codable {
     case strength = "Estimated strength", weightAtReps = "Weight at reps", repsAtWeight = "Reps at weight"
     case volume = "Session volume", sets = "Working sets", duration = "Duration", distance = "Distance"
     public var isPerformance: Bool { self == .strength || self == .weightAtReps || self == .repsAtWeight }
@@ -178,7 +178,7 @@ public struct ExerciseHistorySession: Identifiable, Sendable {
     }
 }
 
-public struct HistoryPoint: Identifiable, Sendable {
+public struct HistoryPoint: Identifiable, Sendable, Encodable {
     public let id: UUID
     public let date: Date
     public let value: Double
@@ -250,7 +250,7 @@ public enum ExerciseHistoryPreferences {
     public static func metricKey(_ id: UUID) -> String { "analytics.history.metric.\(id.uuidString)" }
 }
 
-public struct MuscleHistoryWeek: Identifiable, Sendable {
+public struct MuscleHistoryWeek: Identifiable, Sendable, Encodable {
     public var id: Date { date }
     public let date: Date
     public var direct: Double = 0

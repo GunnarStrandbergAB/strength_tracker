@@ -94,6 +94,7 @@ public final class ListTemplatesTool: AITool {
 
         let entries = templates.map { template -> JSONValue in
             .object([
+                "id": .string(template.id.uuidString),
                 "name": .string(template.name),
                 "exercises": .array(
                     template.exercises
@@ -174,7 +175,8 @@ public final class ListExercisesTool: AITool {
 
         let output = AIJSON.string(.object([
             "count": .number(Double(lines.count)),
-            "exercises": .array(lines)
+            "exercises": .array(lines),
+            "exercise_data": .array(exercises.map { .object(["id": .string($0.id.uuidString), "name": .string($0.name), "type": .string($0.exerciseType.rawValue)]) })
         ]))
         return AIToolResult(
             outputForModel: output,
@@ -215,6 +217,7 @@ public final class GetTrainingHistoryTool: AITool {
 
     public var parametersSchema: JSONValue {
         AIToolRegistry.objectSchema(properties: [
+            "offset": AIToolRegistry.integerSchema("Pagination offset, default 0; follow next_offset"),
             "last_n": AIToolRegistry.integerSchema("Number of recent workouts (default 10, max 25)"),
             "start_date": AIToolRegistry.stringSchema("Start date yyyy-MM-dd (inclusive)"),
             "end_date": AIToolRegistry.stringSchema("End date yyyy-MM-dd (inclusive)"),
@@ -223,6 +226,7 @@ public final class GetTrainingHistoryTool: AITool {
     }
 
     private struct Arguments: Decodable {
+        var offset: Int?
         var last_n: Int?
         var start_date: String?
         var end_date: String?
@@ -237,7 +241,9 @@ public final class GetTrainingHistoryTool: AITool {
             guard let startString = args.start_date, let start = AIJSON.parseDate(startString) else {
                 throw AIToolError("start_date must be yyyy-MM-dd and is required when end_date is set")
             }
+            if let raw = args.end_date, AIJSON.parseDate(raw) == nil { throw AIToolError("end_date must be yyyy-MM-dd") }
             let end = args.end_date.flatMap { AIJSON.parseDate($0) } ?? Date()
+            guard start <= end else { throw AIToolError("start_date must precede end_date") }
             workouts = try await workoutRepository.fetchByDateRange(
                 start, Calendar.current.date(byAdding: .day, value: 1, to: end) ?? end
             )
@@ -260,8 +266,11 @@ public final class GetTrainingHistoryTool: AITool {
         }
 
         let limit = min(max(args.last_n ?? 10, 1), Self.maxWorkouts)
-        let truncated = workouts.count > limit
-        workouts = Array(workouts.prefix(limit))
+        let offset = args.offset ?? 0
+        guard offset >= 0 else { throw AIToolError("offset must be nonnegative") }
+        let total = workouts.count
+        let truncated = total > offset + limit
+        workouts = Array(workouts.dropFirst(offset).prefix(limit))
 
         let bodyWeight = bodyWeightProvider?.current ?? userPreferencesService.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
         let summaries = workouts.map { workout in
@@ -271,7 +280,9 @@ public final class GetTrainingHistoryTool: AITool {
         let output = AIJSON.string(.object([
             "unit": .string("kg"),
             "count": .number(Double(summaries.count)),
-            "truncated": .bool(truncated),
+            "truncated": .bool(truncated), "total": .number(Double(total)),
+            "next_offset": truncated ? .number(Double(offset + limit)) : .null,
+            "body_weight_provenance": .string("Current resolved bodyweight applied retrospectively for volume"),
             "workouts": .array(summaries)
         ]))
         return AIToolResult(
@@ -291,15 +302,18 @@ public final class GetTrainingHistoryTool: AITool {
                     .map(setSummary)
                 guard !sets.isEmpty else { return nil }
                 return .object([
+                    "id": .string(exercise.id.uuidString), "exercise_id": .string(exercise.exercise.id.uuidString),
                     "n": .string(exercise.exercise.name),
-                    "sets": .string(sets.joined(separator: ","))
+                    "sets": .string(sets.joined(separator: ",")),
+                    "set_data": .array(exercise.sets.filter(\.isCompleted).sorted { $0.order < $1.order }.enumerated().map { WorkoutJSON.set($0.element, number: $0.offset + 1) })
                 ])
             }
 
         var summary: [String: JSONValue] = [
+            "id": .string(workout.id.uuidString),
             "d": .string(AIJSON.dateString(workout.startedAt)),
             "name": .string(workout.name),
-            "vol_kg": .number(AIJSON.round1(workout.totalVolume(bodyWeightKg: bodyWeightKg))),
+            "vol_kg": .number(workout.totalVolume(bodyWeightKg: bodyWeightKg)),
             "ex": .array(exercises)
         ]
         if let duration = workout.duration {
@@ -314,7 +328,7 @@ public final class GetTrainingHistoryTool: AITool {
     private func setSummary(_ set: ExerciseSet) -> String {
         if let weight = set.weight, let reps = set.reps {
             let weightString = weight == weight.rounded()
-                ? String(Int(weight)) : String(format: "%.1f", weight)
+                ? String(Int(weight)) : String(weight)
             return "\(weightString)x\(reps)"
         }
         if let reps = set.reps {
@@ -372,20 +386,20 @@ public final class GetAnalyticsInsightsTool: AITool {
 
         payload["exercise_progress"] = .array(insights.overloadTrends.map { trend in
             .object(["exercise": .string(trend.exerciseName), "status": .string(trend.statusLabel),
-                "slope_margin_kg_per_week": .number(trend.slopeMargin ?? 0),
+                "slope_margin_kg_per_week": AIToolData.optional(trend.slopeMargin),
                 "observed_weeks": .number(Double(trend.observationCount ?? 0)),
                 "kg_per_week": .number(trend.slopePerWeek), "percent_per_week": .number(trend.percentPerWeek),
                 "last_observed_week": .string(trend.weeklyE1RMs.last.map { AIJSON.dateString($0.weekStart) } ?? "unknown")])
         })
         if let coverage = insights.muscleBalance {
             payload["muscle_coverage"] = .array(coverage.muscleGroupVolumes.map {
-                .object(["muscle": .string($0.muscleGroup), "direct_sets_per_week": .number($0.directWeeklySets ?? 0),
-                    "estimated_indirect_sets_per_week": .number($0.indirectWeeklySets ?? 0)])
+                .object(["muscle": .string($0.muscleGroup), "direct_sets_per_week": AIToolData.optional($0.directWeeklySets),
+                    "estimated_indirect_sets_per_week": AIToolData.optional($0.indirectWeeklySets)])
             })
         }
         if let load = insights.trainingLoad {
             payload["training_load"] = .object([
-                "acwr": .number(AIJSON.round1(load.acwr)),
+                "acwr": .number(load.acwr),
                 "zone": .string(AnalyticsFormatting.loadZoneLabel(load.loadZone))
             ])
         }
@@ -482,7 +496,7 @@ public final class GetPersonalRecordsTool: AITool {
         .object([
             "exercise": .string(exerciseName),
             "type": .string(record.recordType.rawValue),
-            "value": .number(AIJSON.round1(record.value)),
+            "value": .number(record.value),
             "date": .string(AIJSON.dateString(record.achievedAt))
         ])
     }
@@ -504,13 +518,19 @@ public final class GetActivePlanTool: AITool {
     }
 
     public let name = "get_active_plan"
-    public let description = "The user's active progression plan (goal, week, frequency, exercises with current 1RMs), or null if none."
+    public let description = "Active plan with version, calendar/programming week numbers, session IDs, dates and prescriptions. Schedule pages of 30 sessions; use offset/limit and week filters. Read before proposing edits."
 
     public var parametersSchema: JSONValue {
-        AIToolRegistry.objectSchema(properties: [:])
+        AIToolRegistry.objectSchema(properties: ["offset": AIToolRegistry.integerSchema("Session offset, default 0"),
+            "limit": AIToolRegistry.integerSchema("1–100 sessions, default 30"),
+            "week": AIToolRegistry.integerSchema("Optional displayed calendar week number")])
     }
 
+    private struct Arguments: Decodable { var offset: Int?; var limit: Int?; var week: Int? }
     public func call(argumentsJSON: String) async throws -> AIToolResult {
+        let args = try decodeArguments(Arguments.self, from: argumentsJSON)
+        let offset = args.offset ?? 0, limit = args.limit ?? 30
+        guard offset >= 0, (1...100).contains(limit) else { throw AIToolError("Invalid offset/limit") }
         guard let plan = try await progressionPlanRepository.fetchActive() else {
             return AIToolResult(
                 outputForModel: #"{"active_plan":null}"#,
@@ -522,8 +542,9 @@ public final class GetActivePlanTool: AITool {
         // PlanExercise 1RM values follow the app-wide kg convention.
         let exercises = plan.exercises.sorted { $0.order < $1.order }.map { exercise -> JSONValue in
             .object([
+                "id": .string(exercise.exerciseId.uuidString), "plan_exercise_id": .string(exercise.id.uuidString),
                 "n": .string(exercise.exerciseName),
-                "current_1rm": .number(AIJSON.round1(exercise.current1RM))
+                "current_1rm": .number(exercise.current1RM)
             ])
         }
 
@@ -537,6 +558,24 @@ public final class GetActivePlanTool: AITool {
             "unit_for_1rm": .string("kg"),
             "exercises": .array(exercises)
         ]
+        payload["id"] = .string(plan.id.uuidString)
+        payload["version"] = .string(PlanEditingService.version(plan))
+        payload["end_date"] = try AIToolData.json(plan.targetEndDate)
+        payload["configuration"] = try AIToolData.json(plan.configuration)
+        payload["week_semantics"] = .string("week is the displayed Monday–Sunday calendar bucket. programmingWeekNumber/ID retain the original programme; insertions never truncate remaining sessions.")
+        payload["current_deload_settings"] = .object(["weight_percent": .number(Double(userPreferencesService.deloadWeightPercentage)), "rest_percent": .number(Double(userPreferencesService.deloadRestPercentage))])
+        let scheduled = plan.blocks.flatMap { block in block.weeks.flatMap { week in
+            week.sessions.map { (block: block, week: week, session: $0) }
+        }}.filter { args.week == nil || $0.week.absoluteWeekNumber == args.week }
+            .sorted { ($0.session.scheduledDate ?? .distantFuture) < ($1.session.scheduledDate ?? .distantFuture) }
+        payload["schedule_total"] = .number(Double(scheduled.count))
+        payload["next_offset"] = offset + limit < scheduled.count ? .number(Double(offset + limit)) : .null
+        payload["sessions"] = .array(try scheduled.dropFirst(offset).prefix(limit).map { row in
+            .object(["calendar_week": .number(Double(row.week.absoluteWeekNumber)), "block": .string(row.block.name),
+                "session": try AIToolData.json(row.session), "omitted": .bool(row.session.isOmitted),
+                "completed": .bool(row.session.isCompleted)])
+        })
+        payload["adjustments"] = try AIToolData.json(Array(plan.adjustments.suffix(10)))
         if let currentWeekNumber {
             payload["current_week"] = .number(Double(currentWeekNumber))
         }

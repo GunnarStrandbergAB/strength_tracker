@@ -40,6 +40,9 @@ public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
     public var daySchedule: [DayScheduleEntry]          // Per-day template + exercise mapping (empty = legacy)
     public var notes: String?
     public var creationSource: PlanCreationSource?
+    public var configuration: PlanConfiguration?
+    /// Repository version this copy was read from; never used as the new write timestamp.
+    public var expectedUpdatedAt: Date?
 
     public enum PlanCreationSource: String, Codable, Sendable {
         case structuredFlow          // Traditional 4-step creation
@@ -67,7 +70,9 @@ public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         notes: String? = nil,
-        creationSource: PlanCreationSource? = nil
+        creationSource: PlanCreationSource? = nil,
+        configuration: PlanConfiguration? = nil,
+        expectedUpdatedAt: Date? = nil
     ) {
         self.id = id
         self.name = name
@@ -90,6 +95,8 @@ public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
         self.updatedAt = updatedAt
         self.notes = notes
         self.creationSource = creationSource
+        self.configuration = configuration
+        self.expectedUpdatedAt = expectedUpdatedAt
     }
 
     // MARK: - Computed Properties
@@ -129,6 +136,7 @@ public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
 
         let allSessions = blocks.flatMap(\.weeks).flatMap(\.sessions)
         let elapsedSessions = allSessions.filter { session in
+            guard !session.isOmitted else { return false }
             guard let scheduledDate = session.scheduledDate else { return true }
             return session.isSkipped || scheduledDate < endOfToday
         }
@@ -141,7 +149,9 @@ public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
 
     /// Closed calendar weeks (every session completed or skipped) since plan start
     public var completedWeeks: Int {
-        blocks.flatMap(\.weeks).filter(\.allSessionsClosed).count
+        Set(blocks.flatMap(\.weeks).map(\.absoluteWeekNumber)).filter { number in
+            blocks.flatMap(\.weeks).filter { $0.absoluteWeekNumber == number }.allSatisfy(\.allSessionsClosed)
+        }.count
     }
 
     /// Elapsed calendar weeks since the plan's anchor week (week of the earliest

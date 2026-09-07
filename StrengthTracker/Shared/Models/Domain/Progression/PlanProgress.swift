@@ -11,6 +11,7 @@ public struct PlanProgress: Identifiable, Codable, Equatable, Sendable {
     public var isOnTrack: Bool
     public var weeklyVolumeHistory: [WeeklyVolume]
     public var deloadCount: Int
+    public var attributions: [PlanWorkoutAttribution]?
     public var adjustmentCount: Int
 
     public init(
@@ -24,7 +25,7 @@ public struct PlanProgress: Identifiable, Codable, Equatable, Sendable {
         isOnTrack: Bool = true,
         weeklyVolumeHistory: [WeeklyVolume] = [],
         deloadCount: Int = 0,
-        adjustmentCount: Int = 0
+        adjustmentCount: Int = 0, attributions: [PlanWorkoutAttribution]? = nil
     ) {
         self.id = id
         self.planId = planId
@@ -36,6 +37,7 @@ public struct PlanProgress: Identifiable, Codable, Equatable, Sendable {
         self.isOnTrack = isOnTrack
         self.weeklyVolumeHistory = weeklyVolumeHistory
         self.deloadCount = deloadCount
+        self.attributions = attributions
         self.adjustmentCount = adjustmentCount
     }
 }
@@ -127,5 +129,14 @@ public struct WeeklyVolume: Identifiable, Codable, Equatable, Sendable {
         self.totalVolume = totalVolume
         self.averageIntensity = averageIntensity
         self.sessionCount = sessionCount
+    }
+}
+
+public struct PlanWorkoutAttribution: Codable, Equatable, Sendable {
+    public let sessionID: UUID
+    public let workoutID: UUID
+    public let explicitLink: Bool
+    public init(sessionID: UUID, workoutID: UUID, explicitLink: Bool) {
+        self.sessionID = sessionID; self.workoutID = workoutID; self.explicitLink = explicitLink
     }
 }

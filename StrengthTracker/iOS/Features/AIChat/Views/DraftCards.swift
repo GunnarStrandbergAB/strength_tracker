@@ -49,8 +49,25 @@ struct DraftCardView: View {
         case .plan(let parameters):
             PlanDraftContent(parameters: parameters, weightUnit: weightUnit)
         case .action(let action):
-            ActionConfirmContent(action: action)
+            if case .editPlan(let preview) = action.kind {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(action.title).font(.headline).foregroundStyle(STColors.textPrimary)
+                    ForEach(Array(preview.summaryLines.enumerated()), id: \.offset) { _, line in
+                        Text(line).font(.subheadline).foregroundStyle(STColors.textSecondary)
+                    }
+                    DisclosureGroup("Session details") {
+                        ForEach(Array((preview.detailLines ?? []).enumerated()), id: \.offset) { _, line in
+                            Text(line).font(.subheadline).foregroundStyle(STColors.textSecondary).padding(.vertical, 4)
+                        }
+                    }.font(.subheadline).tint(STColors.primary)
+                }
+            } else { ActionConfirmContent(action: action) }
         }
+    }
+
+    private var isDestructive: Bool {
+        if case .action(let action) = draft, case .editPlan = action.kind { return false }
+        return isAction
     }
 
     private var isAction: Bool {
@@ -79,10 +96,10 @@ struct DraftCardView: View {
                                 .font(.system(size: 14, weight: .semibold))
                         }
                     }
-                    .foregroundStyle(isAction ? .white : .black)
+                    .foregroundStyle(isDestructive ? .white : .black)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
-                    .background(isAction ? STColors.danger : STColors.primary)
+                    .background(isDestructive ? STColors.danger : STColors.primary)
                     .clipShape(RoundedRectangle(cornerRadius: STRadius.input))
                 }
                 Button(action: onDiscard) {
@@ -119,7 +136,9 @@ struct DraftCardView: View {
         case .exercise: return "Proposed Exercise"
         case .template: return "Proposed Template"
         case .plan: return "Proposed Training Plan"
-        case .action: return "Confirm Action"
+        case .action(let action):
+            if case .editPlan = action.kind { return "Proposed plan update" }
+            return "Confirm Action"
         }
     }
 
@@ -128,7 +147,9 @@ struct DraftCardView: View {
         case .exercise: return "dumbbell"
         case .template: return "list.clipboard"
         case .plan: return "calendar"
-        case .action: return "exclamationmark.triangle"
+        case .action(let action):
+            if case .editPlan = action.kind { return "calendar.badge.clock" }
+            return "exclamationmark.triangle"
         }
     }
 }
@@ -250,6 +271,9 @@ private struct PlanDraftContent: View {
                 .font(.stTitle)
                 .foregroundStyle(STColors.textPrimary)
 
+            if let weeks = parameters.durationWeeks {
+                Text("\(weeks) programme weeks").font(.stCaption).foregroundStyle(STColors.textSecondary)
+            }
             Text("\(goalLabel) · \(parameters.weeklyFrequency)×/week")
                 .font(.stCaption)
                 .foregroundStyle(STColors.textSecondary)

@@ -6,6 +6,7 @@ struct ActivePlanDetailView: View {
     let viewModel: ProgressionPlanViewModel
     let templateViewModel: TemplateViewModel
     let onStartSession: (WorkoutTemplate, UUID, UUID, Bool) async -> Void
+    @State private var showPlanEditor = false
     @State private var expandedWeekId: UUID?
     @State private var preparingSessionId: UUID?
     @State private var showPauseConfirmation = false
@@ -22,6 +23,14 @@ struct ActivePlanDetailView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     // Plan header
                     planHeader(plan)
+
+                    Button { showPlanEditor = true } label: {
+                        Label("Edit remaining plan", systemImage: "calendar.badge.clock")
+                            .frame(maxWidth: .infinity).padding(14)
+                    }
+                    .buttonStyle(.plain).foregroundStyle(STColors.primary)
+                    .background(STColors.surface, in: RoundedRectangle(cornerRadius: STRadius.card))
+                    .padding(.horizontal, 20)
 
                     // Overall progress
                     progressSection(plan)
@@ -56,6 +65,9 @@ struct ActivePlanDetailView: View {
         .navigationTitle("Training Plan")
         .navigationBarTitleDisplayMode(.inline)
         .stNavigationBarStyle()
+        .sheet(isPresented: $showPlanEditor) {
+            PlanScheduleEditor(viewModel: viewModel)
+        }
         .sheet(item: $templatePickerSession) { session in
             TemplateMergePickerView(
                 session: session,
@@ -143,6 +155,8 @@ struct ActivePlanDetailView: View {
                     .clipShape(Capsule())
             }
 
+            Text("\(plan.totalWeeks) calendar weeks · finishes \(PlanEditingService.dateLabel(plan.targetEndDate))")
+                .font(.caption).foregroundStyle(STColors.textSecondary)
             HStack(spacing: 12) {
                 Label(plan.programType.displayName, systemImage: "chart.bar.fill")
                     .font(.system(size: 12))
@@ -435,7 +449,7 @@ struct ActivePlanDetailView: View {
     private func sessionCard(_ session: PlannedSession, plan: ProgressionPlan, weekIsDeload: Bool = false) -> some View {
         let isCompleted = session.isCompleted
         let isSkipped = session.isSkipped
-        let isMuted = isCompleted || isSkipped
+        let isMuted = isCompleted || isSkipped || session.isOmitted
         let isPreparing = preparingSessionId == session.id
 
         return VStack(alignment: .leading, spacing: 8) {
@@ -489,6 +503,12 @@ struct ActivePlanDetailView: View {
                 }
             }
 
+            if session.isOmitted {
+                Text("Rest day during deload · excluded from adherence").font(.caption).foregroundStyle(STColors.textSecondary)
+            } else if let origin = session.programmingWeekNumber {
+                Text(session.insertedGroupID != nil ? "Added week · based on programme week \(origin)" : "Programme week \(origin)")
+                    .font(.caption).foregroundStyle(STColors.textSecondary)
+            }
             // Exercise lines
             ForEach(session.plannedExercises) { exercise in
                 exerciseLine(exercise, muted: isMuted)
@@ -524,7 +544,7 @@ struct ActivePlanDetailView: View {
             }
 
             // Start Session button (hidden for skipped sessions)
-            if !isCompleted && !isSkipped && plan.status == .active {
+            if !session.isClosed && plan.status == .active {
                 Button {
                     Task {
                         preparingSessionId = session.id
@@ -581,7 +601,7 @@ struct ActivePlanDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
         .opacity(isMuted ? 0.7 : 1.0)
         .contextMenu {
-            if !isCompleted && plan.status == .active {
+            if !isCompleted && !session.isOmitted && plan.status == .active {
                 Button {
                     Task { await viewModel.toggleSessionSkipped(sessionId: session.id) }
                 } label: {
@@ -673,8 +693,7 @@ struct ActivePlanDetailView: View {
     }
 
     private func isOverdue(_ session: PlannedSession) -> Bool {
-        guard !session.isCompleted,
-              !session.isSkipped,
+        guard !session.isClosed,
               let scheduled = session.scheduledDate else { return false }
         return scheduled < Calendar.current.startOfDay(for: Date())
     }
@@ -696,6 +715,162 @@ struct ActivePlanDetailView: View {
 
     private func formattedWeight(_ weight: Double) -> String {
         viewModel.weightUnit.format(weight)
+    }
+}
+
+/// The manual path uses the same validated preview/apply service as Grok.
+struct PlanScheduleEditor: View {
+    let viewModel: ProgressionPlanViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var operation: PlanEditRequest.Operation = .convertDeload
+    @State private var scope: PlanEditRequest.Scope = .week
+    @State private var week = 1
+    @State private var destinationWeek = 2
+    @State private var weeks = 1
+    @State private var sessionID: UUID?
+    @State private var templateID: UUID?
+    @State private var exerciseID: UUID?
+    @State private var replacementID: UUID?
+    @State private var date = Date()
+    @State private var sets = ""
+    @State private var reps = ""
+    @State private var weight = ""
+    @State private var rest = ""
+    @FocusState private var editingNumber: Bool
+    @State private var skipped = true
+    @State private var templates: [WorkoutTemplate] = []
+    @State private var exercises: [Exercise] = []
+    @State private var preview: PlanEditPreview?
+    @State private var error: String?
+    @State private var busy = false
+    private var sessions: [PlannedSession] {
+        viewModel.activePlan?.blocks.flatMap(\.weeks).flatMap(\.sessions).filter { !$0.isCompleted } ?? []
+    }
+    private var labels: [PlanEditRequest.Operation: String] { [
+        .convertDeload: "Make week a deload", .insertDeload: "Insert extra deload week", .moveDeload: "Move deload",
+        .removeDeload: "Remove deload", .repeatWeek: "Repeat week", .extendPlan: "Extend plan",
+        .rescheduleSession: "Reschedule session", .skipSession: "Skip / restore session",
+        .changeTemplate: "Change workout template", .changeExercise: "Swap exercise", .changeTargets: "Change targets"
+    ] }
+    var body: some View {
+        NavigationStack {
+            Form {
+                if let preview {
+                    Section("Review changes") {
+                        ForEach(Array(preview.summaryLines.enumerated()), id: \.offset) { _, line in Text(line) }
+                        DisclosureGroup("Session details") {
+                            ForEach(Array((preview.detailLines ?? []).enumerated()), id: \.offset) { _, line in Text(line) }
+                        }
+                    }
+                    Section {
+                        Button("Apply changes") { apply(preview) }.disabled(busy)
+                        Button("Back to editing") { self.preview = nil; error = nil }.disabled(busy)
+                    }
+                } else {
+                    Section("Change") {
+                        Picker("Action", selection: $operation) {
+                            ForEach(PlanEditRequest.Operation.allCases, id: \.self) { Text(labels[$0] ?? $0.rawValue).tag($0) }
+                        }
+                        Text(operation == .insertDeload ? "Adds time and preserves every original session. Deload uses your Settings percentages." : "Calendar weeks match the plan schedule. Completed and in-progress workouts are preserved.")
+                            .font(.caption).foregroundStyle(STColors.textSecondary)
+                    }
+                    Section("Where") {
+                        if [.changeTargets, .changeExercise, .changeTemplate].contains(operation) {
+                            Picker("Scope", selection: $scope) {
+                                Text("This week").tag(PlanEditRequest.Scope.week)
+                                Text("This session").tag(PlanEditRequest.Scope.session)
+                                Text("Remaining from week").tag(PlanEditRequest.Scope.remaining)
+                            }
+                        }
+                        if [.rescheduleSession, .skipSession].contains(operation) || scope == .session {
+                            Picker("Session", selection: $sessionID) {
+                                Text("Select a session").tag(Optional<UUID>.none)
+                                ForEach(sessions) { s in Text("\(PlanEditingService.dateLabel(s.scheduledDate)) · \(s.sessionLabel)").tag(Optional(s.id)) }
+                            }
+                        } else {
+                            Stepper("Calendar week \(week)", value: $week, in: 1...max(1, viewModel.activePlan?.totalWeeks ?? 1))
+                        }
+                        if operation == .moveDeload {
+                            Stepper("Move to week \(destinationWeek)", value: $destinationWeek, in: 1...max(1, viewModel.activePlan?.totalWeeks ?? 1))
+                        }
+                        if [.insertDeload, .repeatWeek, .extendPlan].contains(operation) { Stepper("\(weeks) extra week(s)", value: $weeks, in: 1...12) }
+                        if operation == .rescheduleSession { DatePicker("New date", selection: $date, in: Date()..., displayedComponents: .date) }
+                        if operation == .skipSession { Toggle("Skip session", isOn: $skipped) }
+                    }
+                    if operation == .changeTemplate {
+                        Section("Template") {
+                            Picker("Workout template", selection: $templateID) {
+                                Text("Select template").tag(Optional<UUID>.none)
+                                ForEach(templates) { Text($0.name).tag(Optional($0.id)) }
+                            }
+                            Text("Changes this plan's sessions. The reusable template is unchanged.").font(.caption)
+                        }
+                    }
+                    if [.changeTargets, .changeExercise].contains(operation) {
+                        Section("Exercise and normal targets") {
+                            Picker("Exercise", selection: $exerciseID) {
+                                Text(operation == .changeTargets ? "All exercises in scope" : "Select source exercise").tag(Optional<UUID>.none)
+                                ForEach(exercises) { Text($0.name).tag(Optional($0.id)) }
+                            }
+                            if operation == .changeExercise {
+                                Picker("Replace with", selection: $replacementID) {
+                                    Text("Select replacement").tag(Optional<UUID>.none)
+                                    ForEach(exercises) { Text($0.name).tag(Optional($0.id)) }
+                                }
+                                Text("Enter weight and reps for the replacement; weights do not transfer between exercises.").font(.caption)
+                            }
+                            TextField("Sets (leave blank to keep)", text: $sets).keyboardType(.numberPad).focused($editingNumber)
+                            TextField("Reps (leave blank to keep)", text: $reps).keyboardType(.numberPad).focused($editingNumber)
+                            TextField("Normal weight in kg", text: $weight).keyboardType(.decimalPad).focused($editingNumber)
+                            TextField("Normal rest in seconds", text: $rest).keyboardType(.numberPad).focused($editingNumber)
+                            Text("Deload percentages apply after these normal targets. Explicit targets stay fixed when adaptive updates run.").font(.caption)
+                        }
+                    }
+                    Section { Button("Preview changes", action: makePreview).disabled(busy) }
+                }
+                if let error { Section { Text(error).foregroundStyle(STColors.danger) } }
+                if busy { ProgressView() }
+            }
+            .onChange(of: operation) { _, _ in
+                scope = .week; sets = ""; reps = ""; weight = ""; rest = ""; error = nil
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .toolbar { ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Done") { editingNumber = false } } }
+            .scrollContentBackground(.hidden).background(STColors.background)
+            .foregroundStyle(STColors.textPrimary).tint(STColors.primary)
+            .navigationTitle("Edit plan").navigationBarTitleDisplayMode(.inline).stNavigationBarStyle()
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) } }
+            .task {
+                week = viewModel.activePlan?.currentWeek?.absoluteWeekNumber ?? 1
+                do { let catalog = try await viewModel.planEditCatalog(); templates = catalog.templates; exercises = catalog.exercises }
+                catch { self.error = error.localizedDescription }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+    private func makePreview() {
+        error = nil
+        let fields = [(sets, Int(sets) != nil), (reps, Int(reps) != nil), (rest, Int(rest) != nil), (weight, Double(weight.replacingOccurrences(of: ",", with: ".")) != nil)]
+        guard fields.allSatisfy({ $0.0.isEmpty || $0.1 }) else { error = "Enter valid numbers, or leave fields blank to keep their targets."; return }
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                let actualScope: PlanEditRequest.Scope = [.rescheduleSession, .skipSession].contains(operation) ? .session : [.changeTargets, .changeExercise, .changeTemplate].contains(operation) ? scope : .week
+                preview = try await viewModel.previewPlanEdit(.init(operation: operation, week: week, destinationWeek: destinationWeek,
+                    sessionID: sessionID, newDate: date, weeks: weeks, scope: actualScope, templateID: templateID,
+                    exerciseID: exerciseID, replacementExerciseID: replacementID, sets: Int(sets), reps: Int(reps),
+                    weightKg: Double(weight.replacingOccurrences(of: ",", with: ".")), restSeconds: Int(rest), skipped: skipped))
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+    private func apply(_ preview: PlanEditPreview) {
+        busy = true; error = nil
+        Task {
+            defer { busy = false }
+            do { try await viewModel.applyPlanEdit(preview); dismiss() }
+            catch { self.error = error.localizedDescription }
+        }
     }
 }
 #endif

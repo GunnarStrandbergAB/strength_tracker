@@ -219,7 +219,7 @@ public final class WorkoutSessionCoordinator {
         guard preferences.autoStartRestTimer else { return }
         var restSeconds = exercise.restTimerSeconds ?? preferences.defaultRestSeconds
         if workout.isDeload {
-            restSeconds = max(15, restSeconds * preferences.deloadRestPercentage / 100)
+            restSeconds = max(15, restSeconds * (workout.deloadRestPercentage ?? preferences.deloadRestPercentage) / 100)
         }
         let setIndex = exercise.sets.firstIndex(where: { $0.id == setId }) ?? 0
         restTimer.start(

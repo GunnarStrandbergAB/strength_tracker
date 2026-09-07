@@ -312,3 +312,24 @@ final class WorkoutNumberInputTests: XCTestCase {
         }
     }
 }
+
+@MainActor
+final class PlanEditRenderingTests: XCTestCase {
+    func testPlanEditPreviewAtCompactAndAccessibilitySizes() throws {
+        let fixture = EnhancedPlanEditingTests()
+        let preview = try PlanEditingService.preview(plan: fixture.makePlan(), request: .init(operation: .insertDeload, week: 5, weeks: 3), settings: fixture.settings, now: fixture.now)
+        let draft = AIDraft.action(.init(kind: .editPlan(preview), title: "Update training plan?", summaryLines: preview.summaryLines, confirmLabel: "Apply changes"))
+        for (name, width, typeSize) in [("compact", 375.0, DynamicTypeSize.large), ("accessibility", 430.0, DynamicTypeSize.accessibility2)] {
+            let content = DraftCardView(draft: draft, status: .pending, weightUnit: .kg, onSave: {}, onDiscard: {})
+                .padding(16).background(STColors.background)
+                .environment(\.dynamicTypeSize, typeSize).environment(\.colorScheme, .dark)
+            let renderer = ImageRenderer(content: content.frame(width: width))
+            renderer.scale = 2
+            let image = try XCTUnwrap(renderer.uiImage)
+            XCTAssertGreaterThan(image.size.height, 200)
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "enhanced-plan-preview-\(name)"; attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+}
