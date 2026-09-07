@@ -32,6 +32,7 @@ public struct AIPlanParameters: Codable, Sendable, Equatable {
         /// Estimated 1RM in kg, if known (from PRs or provided by the model).
         public var estimated1RMKg: Double?
         /// True when the 1RM came from the user's personal records (provenance).
+        public var weightRecording: WeightRecording?
         public var oneRMFromPersonalRecord: Bool?
 
         public init(
@@ -40,7 +41,8 @@ public struct AIPlanParameters: Codable, Sendable, Equatable {
             primaryMuscleGroup: MuscleGroup,
             category: ExerciseCategory,
             estimated1RMKg: Double? = nil,
-            oneRMFromPersonalRecord: Bool? = nil
+            oneRMFromPersonalRecord: Bool? = nil,
+            weightRecording: WeightRecording? = nil
         ) {
             self.exerciseID = exerciseID
             self.exerciseName = exerciseName
@@ -48,6 +50,7 @@ public struct AIPlanParameters: Codable, Sendable, Equatable {
             self.category = category
             self.estimated1RMKg = estimated1RMKg
             self.oneRMFromPersonalRecord = oneRMFromPersonalRecord
+            self.weightRecording = weightRecording
         }
     }
 

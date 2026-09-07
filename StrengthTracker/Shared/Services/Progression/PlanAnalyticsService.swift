@@ -199,7 +199,7 @@ public final class PlanAnalyticsService: Sendable {
                         // include every segment.
                         totalSets += 1
                         totalReps += set.totalReps
-                        totalVolume += set.setVolume(baseLoadPerRep: workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg))
+                        totalVolume += workoutExercise.exercise.volume(of: set, bodyWeightKg: bodyWeightKg)
                         if set.isPersonalRecord { prCount += 1 }  // m4
                     }
                     if let completedAt = workout.completedAt {

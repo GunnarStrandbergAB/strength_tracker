@@ -253,7 +253,7 @@ private struct TemplateDraftContent: View {
             parts += "×\(reps)"
         }
         if let weight = exercise.targetWeight, weight > 0 {
-            parts += " @ \(weightUnit.format(weight))"
+            parts += " @ \(weightUnit.formatValue(weight)) \(exercise.exercise.weightEntryLabel(weightUnit))"
         } else if let duration = exercise.targetDurationSeconds {
             parts += " · \(duration)s"
         }
@@ -307,7 +307,7 @@ private struct PlanDraftContent: View {
                             .lineLimit(1)
                         Spacer()
                         if let oneRM = selection.estimated1RMKg {
-                            Text("1RM \(weightUnit.format(oneRM))")
+                            Text("1RM \(weightUnit.formatValue(oneRM)) \(selection.weightRecording?.weightLabel(weightUnit) ?? weightUnit.symbol)")
                                 .font(.stCaption)
                                 .foregroundStyle(STColors.textSecondary)
                         }

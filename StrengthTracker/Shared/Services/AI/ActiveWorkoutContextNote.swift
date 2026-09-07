@@ -63,6 +63,7 @@ public final class ActiveWorkoutContextNoteProvider {
             if (nameCounts[name] ?? 1) > 1 { label += " (\(seen[name]!))" }
             let done = exercise.sets.filter(\.isCompleted).count
             var parts = ["\(index + 1). \(label): \(done)/\(exercise.sets.count) done"]
+            if let recording = exercise.exercise.weightRecordingExplanation { parts.append(recording) }
             if let last = exercise.sets.last(where: \.isCompleted) {
                 parts.append("last " + describe(last, unit: weightUnit, metric: intensityMetric))
             }

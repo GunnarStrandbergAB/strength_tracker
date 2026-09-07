@@ -9,6 +9,7 @@ struct WorkoutDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingDeleteConfirmation = false
     @State private var inputEdits = WorkoutInputQueue()
+    @State private var recordingExercise: WorkoutExercise?
     @State private var showingExercisePicker = false
     @State private var exerciseToRemove: WorkoutExercise? = nil
     @State private var exerciseToReplace: WorkoutExercise? = nil
@@ -79,7 +80,8 @@ struct WorkoutDetailView: View {
             showIntensity: showIntensity,
             intensityMetric: metric,
             weightUnit: hvm.userPreferencesService?.weightUnit ?? .kg,
-            weightLabel: workoutExercise.exercise.exerciseType == .bodyweightReps ? "+\(weightUnit.symbol)" : weightUnit.symbol,
+            weightLabel: workoutExercise.exercise.weightEntryLabel(weightUnit),
+                        repsLabel: workoutExercise.exercise.repetitionsLabel,
             onWeightChange: { weight in
                 inputEdits.enqueue { await hvm.updateSetWeight(exerciseId: exerciseId, setId: setId, weight: weight) }
             },
@@ -215,6 +217,8 @@ struct WorkoutDetailView: View {
 
             ForEach(displayedWorkout.exercises) { workoutExercise in
                 Section(workoutExercise.exercise.name) {
+                    if let explanation = workoutExercise.exercise.weightRecordingExplanation { Text(explanation).font(.caption) }
+                    if isEditing && workoutExercise.exercise.isDumbbell { Button("Weight logging…") { recordingExercise = workoutExercise } }
                     if isEditing, let hvm = historyViewModel {
                         editableSetRows(for: workoutExercise, hvm: hvm)
                         exerciseActionRow(for: workoutExercise, hvm: hvm)
@@ -274,6 +278,11 @@ struct WorkoutDetailView: View {
                         Label("Similar Workouts", systemImage: "doc.on.doc")
                     }
                 }
+            }
+        }
+        .sheet(item: $recordingExercise) { entry in
+            WeightRecordingEditorSheet(exercise: entry.exercise) { recording in
+                inputEdits.enqueue { await historyViewModel?.updateWeightRecording(exerciseId: entry.id, recording: recording) }
             }
         }
         .navigationTitle(displayedWorkout.name)

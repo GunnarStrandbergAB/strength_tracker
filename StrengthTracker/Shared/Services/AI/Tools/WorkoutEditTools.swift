@@ -157,8 +157,10 @@ public final class LogSetTool: AITool {
     public func call(argumentsJSON: String) async throws -> AIToolResult {
         let args = try decodeArguments(Arguments.self, from: argumentsJSON)
         if let reps = args.reps, reps < 0 { throw AIToolError("reps must be 0 or more.") }
+        let context = try await EditContext(resolver: resolver, args: args, preferences: preferences)
+        let exercise = try context.exercise(args)
         let changes = SetChanges(
-            weightKg: try args.weight?.kilograms(),
+            weightKg: try args.weight?.kilograms(for: exercise.exercise),
             reps: args.reps,
             durationSeconds: args.duration_seconds,
             distanceMeters: args.distance_meters,
@@ -166,11 +168,9 @@ public final class LogSetTool: AITool {
             setType: try ToolArguments.setType(args.set_type, allowDropset: true),
             isFailure: args.to_failure,
             isCompleted: args.completed ?? true,
-            dropSegments: try args.drop_segments?.map { try $0.segment() }
+            dropSegments: try args.drop_segments?.map { try $0.segment(for: exercise.exercise) }
         )
 
-        let context = try await EditContext(resolver: resolver, args: args, preferences: preferences)
-        let exercise = try context.exercise(args)
 
         // Resolve which set: existing, or a new one appended first.
         var action = "updated"
@@ -201,7 +201,7 @@ public final class LogSetTool: AITool {
         let receipt = try context.receipt(
             symbol: updated.isCompleted ? "checkmark.circle.fill" : "pencil.circle",
             title: "\(refreshed.exercise.name) · set \(number)",
-            lines: context.text.lines(for: updated)
+            lines: context.text.lines(for: updated, exercise: exercise.exercise)
         )
         return AIToolResult(
             outputForModel: output,
@@ -257,19 +257,19 @@ public final class AddSetsTool: AITool {
         let args = try decodeArguments(Arguments.self, from: argumentsJSON)
         let count = args.count ?? 1
         guard (1...10).contains(count) else { throw AIToolError("count must be between 1 and 10.") }
+        let context = try await EditContext(resolver: resolver, args: args, preferences: preferences)
+        let exercise = try context.exercise(args)
         let prefill = SetPrefill(
-            weightKg: try args.weight?.kilograms(),
+            weightKg: try args.weight?.kilograms(for: exercise.exercise),
             reps: args.reps,
             setType: try ToolArguments.setType(args.set_type, allowDropset: false) ?? .normal
         )
 
-        let context = try await EditContext(resolver: resolver, args: args, preferences: preferences)
-        let exercise = try context.exercise(args)
         let added = try await context.editor.addSets(exerciseId: exercise.id, prefills: Array(repeating: prefill, count: count))
         await context.editor.commit()
 
         var line = "Added \(count) set\(count == 1 ? "" : "s")"
-        if let load = context.text.load(weightKg: prefill.weightKg, reps: prefill.reps) { line += " · \(load)" }
+        if let load = context.text.load(weightKg: prefill.weightKg, reps: prefill.reps, exercise: exercise.exercise) { line += " · \(load)" }
         return AIToolResult(
             outputForModel: try context.exerciseOutput(
                 action: "added_sets", exerciseId: exercise.id,
@@ -321,7 +321,7 @@ public final class RemoveSetTool: AITool {
         let number = args.set_number ?? exercise.sets.count
         let target = try context.editor.set(in: exercise.id, number: number)
         let workout = try context.workout
-        let summary = context.text.inline(target)
+        let summary = context.text.inline(target, exercise: exercise.exercise)
 
         if WorkoutEditGuards.setHasData(target) {
             let title = "Remove set \(number) of \(exercise.exercise.name)?"
@@ -404,7 +404,7 @@ public final class AddExerciseTool: AITool {
         if existing > 0, args.allow_duplicate != true {
             throw AIToolError("\(exercise.name) is already in this workout (occurrence \(existing)). Pass allow_duplicate: true to add a second block.")
         }
-        let prefill = SetPrefill(weightKg: try args.weight?.kilograms(), reps: args.reps)
+        let prefill = SetPrefill(weightKg: try args.weight?.kilograms(for: exercise), reps: args.reps)
         let added = try await context.editor.addExercise(
             exercise, sets: Array(repeating: prefill, count: count),
             restSeconds: args.rest_seconds, notes: args.notes
@@ -412,7 +412,7 @@ public final class AddExerciseTool: AITool {
         await context.editor.commit()
 
         var line = "\(count) planned set\(count == 1 ? "" : "s")"
-        if let load = context.text.load(weightKg: prefill.weightKg, reps: prefill.reps) { line += " · \(load)" }
+        if let load = context.text.load(weightKg: prefill.weightKg, reps: prefill.reps, exercise: exercise) { line += " · \(load)" }
         return AIToolResult(
             outputForModel: try context.exerciseOutput(action: "added", exerciseId: added.id, extra: ["position": .number(Double(added.order))]),
             receipt: try context.receipt(symbol: "plus.circle", title: "Added \(exercise.name)", lines: [line]),

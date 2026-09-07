@@ -15,6 +15,7 @@ public final class ExerciseEntity {
     public var isArchived: Bool
     public var bodyweightFactor: Double?
     public var equipmentBrand: String?
+    public var weightRecordingJSON: String?
     public var loadingType: String?
 
     public init(
@@ -29,6 +30,7 @@ public final class ExerciseEntity {
         isArchived: Bool,
         bodyweightFactor: Double? = nil,
         equipmentBrand: String? = nil,
+        weightRecordingJSON: String? = nil,
         loadingType: String? = nil
     ) {
         self.id = id
@@ -42,6 +44,7 @@ public final class ExerciseEntity {
         self.isArchived = isArchived
         self.bodyweightFactor = bodyweightFactor
         self.equipmentBrand = equipmentBrand
+        self.weightRecordingJSON = weightRecordingJSON
         self.loadingType = loadingType
     }
 }

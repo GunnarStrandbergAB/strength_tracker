@@ -145,10 +145,10 @@ public struct ExerciseSet: Identifiable, Hashable, Sendable, Codable, IntensityR
     /// exercises. Returns 0 unless the set is completed and non-warmup.
     /// There is deliberately NO body-weight-blind variant — volume cannot be computed
     /// without knowing the base load.
-    public func setVolume(baseLoadPerRep: Double?) -> Double {
+    public func setVolume(baseLoadPerRep: Double?, multiplier: Double = 1) -> Double {
         guard isCompleted, setType != .warmup else { return 0 }
         return effectiveParts.reduce(0) {
-            $0 + ($1.effectiveLoad(baseLoadPerRep: baseLoadPerRep) ?? 0) * Double($1.reps ?? 0)
+            $0 + ($1.effectiveLoad(baseLoadPerRep: baseLoadPerRep) ?? 0) * Double($1.reps ?? 0) * multiplier
         }
     }
 
@@ -244,8 +244,7 @@ public struct WorkoutExercise: Identifiable, Hashable, Sendable, Codable {
     /// Effective-load volume: bodyweight-rep exercises count bw × factor + extra kg
     /// per rep (drop-set segments individually); external-load exercises are unchanged.
     public func exerciseVolume(bodyWeightKg: Double) -> Double {
-        let base = exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
-        return sets.reduce(0) { $0 + $1.setVolume(baseLoadPerRep: base) }
+        sets.reduce(0) { $0 + exercise.volume(of: $1, bodyWeightKg: bodyWeightKg) }
     }
 
     public init(id: UUID, exercise: Exercise, order: Int, supersetGroup: Int?, notes: String?, restTimerSeconds: Int?, sets: [ExerciseSet]) {

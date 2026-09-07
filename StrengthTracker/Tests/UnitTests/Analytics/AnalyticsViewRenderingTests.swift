@@ -278,6 +278,37 @@ final class WorkoutNumberInputTests: XCTestCase {
         XCTAssertEqual(savedNotes, ["Updated note"])
     }
 
+    func testDumbbellInputsRetainAccessibleTargetsAndLabels() async throws {
+        let set = AnalyticsTestHelpers.makeCompletedSet(weight: 100.25, reps: 10, rpe: 8)
+        for size in [DynamicTypeSize.large, .accessibility2] {
+            let content = ScrollView {
+                VStack(spacing: 16) {
+                    SetRowGridView(setNumber: 1, exerciseSet: set, showRPE: true, weightLabel: "kg each", repsLabel: "Reps/side",
+                        onWeightChange: { _ in }, onRepsChange: { _ in }, onToggleComplete: {})
+                    WeightRecordingFields(value: .constant(.init(equipment: .single, repetitions: .perSide)))
+                }.padding(16)
+            }.background(STColors.background).foregroundStyle(STColors.textPrimary).preferredColorScheme(.dark).environment(\.dynamicTypeSize, size)
+            let window = host(content, height: 950)
+            await settle()
+            let inputFields = fields(in: window.rootViewController!.view)
+            XCTAssertEqual(inputFields.count, 3)
+            for field in inputFields {
+                XCTAssertGreaterThanOrEqual(field.bounds.width, 44)
+                XCTAssertGreaterThanOrEqual(field.bounds.height, 44)
+                XCTAssertLessThanOrEqual(field.convert(field.bounds, to: window).maxX, window.bounds.maxX + 1)
+            }
+            try await Task.sleep(for: .milliseconds(100))
+            let renderedView = window.rootViewController!.view!
+            let image = UIGraphicsImageRenderer(bounds: renderedView.bounds).image { context in renderedView.layer.render(in: context.cgContext) }
+            let pixels = try XCTUnwrap(image.cgImage?.dataProvider?.data)
+            let bytes = try XCTUnwrap(CFDataGetBytePtr(pixels))
+            XCTAssertGreaterThan(Set(stride(from: 0, to: CFDataGetLength(pixels), by: 257).map { bytes[$0] }).count, 8, "Rendered inputs must not be blank")
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "dumbbell-input-\(size)"; attachment.lifetime = .keepAlways; add(attachment)
+            window.isHidden = true
+        }
+    }
+
     func testDropSegmentAndOrdinaryRowsRenderAtPhoneAndAccessibilitySizes() async throws {
         let set = AnalyticsTestHelpers.makeCompletedSet(weight: 999.99, reps: 12, rpe: 7.5)
         let entry = DropSetEntry(weight: 50.25, reps: 8, rpe: 8.5)

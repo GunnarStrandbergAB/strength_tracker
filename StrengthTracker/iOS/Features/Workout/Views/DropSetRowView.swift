@@ -9,6 +9,7 @@ struct DropSetRowView: View {
     var intensityMetric: IntensityMetric = .rpe
     var weightUnit: WeightUnit = .kg
     var weightLabel: String? = nil
+    var repsLabel: String = "Reps"
     let onWeightChange: (Double?) -> Void
     let onRepsChange: (Int?) -> Void
     let onIntensityChange: (Double?) -> Void
@@ -36,7 +37,7 @@ struct DropSetRowView: View {
             }.buttonStyle(.plain)
             STSetValuesEditor(weight: entry.weight, reps: entry.reps, intensity: entry.intensityValue(for: intensityMetric),
                 showIntensity: showIntensity, intensityMetric: intensityMetric, weightUnit: weightUnit,
-                weightLabel: weightLabel, context: "Drop \(label)", onWeightChange: onWeightChange,
+                weightLabel: weightLabel, repsLabel: repsLabel, context: "Drop \(label)", onWeightChange: onWeightChange,
                 onRepsChange: onRepsChange, onIntensityChange: onIntensityChange)
         }.padding(.horizontal, STSpacing.setRowHorizontal).padding(.vertical, STSpacing.setRowVertical)
     }

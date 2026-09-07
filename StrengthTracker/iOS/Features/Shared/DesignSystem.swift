@@ -370,6 +370,7 @@ struct STSetValuesEditor: View {
     let intensityMetric: IntensityMetric
     let weightUnit: WeightUnit
     var weightLabel: String? = nil
+    var repsLabel: String = "Reps"
     let context: String
     let onWeightChange: (Double?) -> Void
     let onRepsChange: (Int?) -> Void
@@ -384,7 +385,7 @@ struct STSetValuesEditor: View {
             let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 8))
             layout {
                 number(weight.map(weightUnit.fromKg), kind: .weight, title: weightLabel ?? weightUnit.symbol, position: 0) { onWeightChange($0.map(weightUnit.toKg)) }
-                number(reps.map(Double.init), kind: .reps, title: "Reps", position: 1) { onRepsChange($0.flatMap { Int(exactly: $0) }) }
+                number(reps.map(Double.init), kind: .reps, title: repsLabel, position: 1) { onRepsChange($0.flatMap { Int(exactly: $0) }) }
                 if showIntensity {
                     number(intensity, kind: intensityMetric == .rpe ? .rpe : .rir, title: intensityMetric.displayName, position: 2, commit: onIntensityChange)
                 }

@@ -10,7 +10,8 @@ public enum PersonalRecordMapper {
             recordType: RecordType(rawValue: entity.recordType) ?? .maxWeight,
             value: entity.value,
             setId: entity.setId,
-            achievedAt: entity.achievedAt
+            achievedAt: entity.achievedAt,
+            weightRecordingKey: entity.weightRecordingKey
         )
     }
 
@@ -22,7 +23,8 @@ public enum PersonalRecordMapper {
             recordType: domain.recordType.rawValue,
             value: domain.value,
             setId: domain.setId,
-            achievedAt: domain.achievedAt
+            achievedAt: domain.achievedAt,
+            weightRecordingKey: domain.weightRecordingKey
         )
     }
 
@@ -33,6 +35,7 @@ public enum PersonalRecordMapper {
         entity.value = domain.value
         entity.setId = domain.setId
         entity.achievedAt = domain.achievedAt
+        entity.weightRecordingKey = domain.weightRecordingKey
     }
 }
 #endif

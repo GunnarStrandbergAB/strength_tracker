@@ -94,8 +94,8 @@ struct ExerciseHistoryDetailView: View {
     private var trend: OverloadTrend? { suppliedTrend ?? OverloadTrackingService.computeOverloadTrends(workouts: workouts, bodyWeightKg: bodyWeightKg).first { $0.exerciseId == exercise.id } }
     private var units: String {
         switch metric {
-        case .volume: return "\(weightUnit.symbol) × reps"
-        case .strength, .weightAtReps: return weightUnit.symbol
+        case .volume: return "\(weightUnit.symbol) × reps (total)"
+        case .strength, .weightAtReps: return (sessions.last?.entries?.first?.exercise ?? exercise).weightEntryLabel(weightUnit)
         case .repsAtWeight: return "reps"
         case .sets: return "sets"
         case .duration: return "min"
@@ -108,6 +108,10 @@ struct ExerciseHistoryDetailView: View {
         ScrollView {
             LazyVStack(spacing: 16) {
                 AnalyticsPanel(title: exercise.name) {
+                    if let explanation = (sessions.last?.entries?.first?.exercise ?? exercise).weightRecordingExplanation {
+                        Text(explanation).font(.caption).foregroundStyle(STColors.textSecondary)
+                        Text("Strength uses the latest logging convention; known each/total weights are converted for comparison. Volume counts the configured dumbbells and sides. Incompatible histories stay separate.").font(.caption).foregroundStyle(STColors.textSecondary)
+                    }
                     HistoryPeriodControl(period: $period, start: $start, end: $end)
                     Picker("Metric", selection: $storedMetric) {
                         ForEach(ExerciseHistoryMetric.available(for: exercise.exerciseType), id: \.self) { Text($0.rawValue).tag($0.rawValue) }
@@ -142,6 +146,7 @@ struct ExerciseHistoryDetailView: View {
                                     if let value = session.value(for: metric, targetReps: targetReps, targetWeightKg: targetWeight) { Text(formatted(value)).monospacedDigit() }
                                     Image(systemName: "chevron.right").font(.caption)
                                 }
+                                if let label = session.entries?.first?.exercise.weightRecordingExplanation { Text(label).font(.caption).foregroundStyle(STColors.textSecondary) }
                                 Text("\(session.workout.name) · \(session.sets.count) working sets\(session.workout.isDeload ? " · Deload" : "")").font(.caption).foregroundStyle(STColors.textSecondary)
                             }.padding(.vertical, 6)
                         }.foregroundStyle(STColors.textPrimary)

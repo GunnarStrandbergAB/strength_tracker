@@ -3969,5 +3969,9 @@ public enum ExerciseSeedData {
             isArchived: false,
             bodyweightFactor: 1
         ),
-    ]
+    ].map { exercise in
+        var result = exercise
+        if result.category == .dumbbell { result.weightRecording = DumbbellDefaults.recording(for: result.name) }
+        return result
+    }
 }

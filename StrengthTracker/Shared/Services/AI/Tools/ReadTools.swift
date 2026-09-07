@@ -96,6 +96,7 @@ public final class ListTemplatesTool: AITool {
             .object([
                 "id": .string(template.id.uuidString),
                 "name": .string(template.name),
+                "weight_recording": .array(template.exercises.map { .object(["exercise_id": .string($0.exercise.id.uuidString), "convention": WorkoutJSON.recording($0.exercise)]) }),
                 "exercises": .array(
                     template.exercises
                         .sorted { $0.order < $1.order }
@@ -170,6 +171,7 @@ public final class ListExercisesTool: AITool {
         let lines = exercises.map { exercise -> JSONValue in
             var line = "\(exercise.name)|\(exercise.primaryMuscleGroup.rawValue)|\(exercise.category.rawValue)|\(exercise.exerciseType.rawValue)"
             if exercise.isCustom { line += "|custom" }
+            if let explanation = exercise.weightRecordingExplanation { line += "|" + explanation }
             return .string(line)
         }
 
@@ -304,6 +306,7 @@ public final class GetTrainingHistoryTool: AITool {
                 return .object([
                     "id": .string(exercise.id.uuidString), "exercise_id": .string(exercise.exercise.id.uuidString),
                     "n": .string(exercise.exercise.name),
+                    "weight_recording": WorkoutJSON.recording(exercise.exercise),
                     "sets": .string(sets.joined(separator: ",")),
                     "set_data": .array(exercise.sets.filter(\.isCompleted).sorted { $0.order < $1.order }.enumerated().map { WorkoutJSON.set($0.element, number: $0.offset + 1) })
                 ])
@@ -465,13 +468,13 @@ public final class GetPersonalRecordsTool: AITool {
         var records: [JSONValue] = []
         if let exerciseName = args.exercise_name, !exerciseName.isEmpty {
             let exercise = try ExerciseNameResolver.resolve(name: exerciseName, in: exercises)
-            let best = try await personalRecordRepository.fetchForExercise(exercise.id).bestPerType()
+            let best = try await personalRecordRepository.fetchForExercise(exercise.id).matching(exercise).bestPerType()
             records = best
                 .sorted { $0.recordType.rawValue < $1.recordType.rawValue }
                 .map { record in recordJSON(record, exerciseName: exercise.name) }
         } else {
             for exercise in exercises where !exercise.isArchived {
-                let best = try await personalRecordRepository.fetchForExercise(exercise.id).bestPerType()
+                let best = try await personalRecordRepository.fetchForExercise(exercise.id).matching(exercise).bestPerType()
                 let headline = best.first { $0.recordType == .estimatedOneRepMax }
                     ?? best.first { $0.recordType == .maxWeight }
                     ?? best.first
@@ -497,6 +500,7 @@ public final class GetPersonalRecordsTool: AITool {
             "exercise": .string(exerciseName),
             "type": .string(record.recordType.rawValue),
             "value": .number(record.value),
+            "weight_recording_key": record.weightRecordingKey.map(JSONValue.string) ?? .null,
             "date": .string(AIJSON.dateString(record.achievedAt))
         ])
     }
@@ -544,7 +548,8 @@ public final class GetActivePlanTool: AITool {
             .object([
                 "id": .string(exercise.exerciseId.uuidString), "plan_exercise_id": .string(exercise.id.uuidString),
                 "n": .string(exercise.exerciseName),
-                "current_1rm": .number(exercise.current1RM)
+                "current_1rm": .number(exercise.current1RM),
+                "weight_recording": (try? AIToolData.json(exercise.weightRecording)) ?? .null
             ])
         }
 

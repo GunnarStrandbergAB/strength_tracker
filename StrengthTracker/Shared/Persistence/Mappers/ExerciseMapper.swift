@@ -16,7 +16,8 @@ public enum ExerciseMapper {
             isArchived: entity.isArchived,
             bodyweightFactor: entity.bodyweightFactor,
             equipmentBrand: entity.equipmentBrand,
-            loadingType: entity.loadingType.flatMap { LoadingType(rawValue: $0) }
+            loadingType: entity.loadingType.flatMap { LoadingType(rawValue: $0) },
+            weightRecording: WeightRecording.decode(entity.weightRecordingJSON)
         )
     }
 
@@ -34,6 +35,7 @@ public enum ExerciseMapper {
             isArchived: domain.isArchived,
             bodyweightFactor: domain.bodyweightFactor,
             equipmentBrand: domain.equipmentBrand,
+            weightRecordingJSON: domain.weightRecording?.encoded,
             loadingType: domain.loadingType?.rawValue
         )
     }
@@ -50,6 +52,7 @@ public enum ExerciseMapper {
         entity.isArchived = domain.isArchived
         entity.bodyweightFactor = domain.bodyweightFactor
         entity.equipmentBrand = domain.equipmentBrand
+        entity.weightRecordingJSON = domain.weightRecording?.encoded
         entity.loadingType = domain.loadingType?.rawValue
     }
 

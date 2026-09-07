@@ -126,7 +126,7 @@ struct PlanCreationStep3ExercisesView: View {
                 .frame(width: 60)
                 .foregroundStyle(STColors.textPrimary)
 
-                Text(viewModel.weightUnit.symbol)
+                Text(draft.exercise.weightEntryLabel(viewModel.weightUnit))
                     .font(.system(size: 12))
                     .foregroundStyle(STColors.textTertiary)
             }

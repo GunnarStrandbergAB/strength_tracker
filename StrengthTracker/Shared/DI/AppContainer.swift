@@ -71,6 +71,7 @@ public final class AppContainer: Sendable {
 
     // Cached ViewModels (shared across multiple views)
     public let widgetRefreshService: WidgetRefreshService
+    public let weightRecordingService: WeightRecordingService
     public let workoutFinalizer: WorkoutFinalizer
 
     public let workoutViewModel: WorkoutViewModel
@@ -354,6 +355,18 @@ public final class AppContainer: Sendable {
         historyViewModel.finalizer = workoutFinalizer
         watchWorkoutListViewModel.finalizer = workoutFinalizer
         effectiveLoadMigrationService.finalizer = workoutFinalizer
+        weightRecordingService = WeightRecordingService(workouts: workoutRepository, exercises: exerciseRepository,
+            templates: templateRepository, plans: progressionPlanRepository)
+        let recordingFinalizer = workoutFinalizer
+        weightRecordingService.rebuild = { try await recordingFinalizer.rebuildWeightRecordingData() }
+        let recordingConnectivity = connectivityManager, recordingExercises = exerciseRepository, recordingTemplates = templateRepository
+        let recordingPlanVM = progressionPlanViewModel
+        weightRecordingService.didChange = {
+            recordingConnectivity.syncExercises((try? await recordingExercises.fetchAll()) ?? [])
+            recordingConnectivity.syncTemplates((try? await recordingTemplates.fetchAll()) ?? [])
+            await recordingPlanVM.loadActivePlan()
+            await recordingPlanVM.onPlanChanged?()
+        }
         aiFinalizerBox.finalizer = workoutFinalizer
 
         // AI assistant: workout editing seams (the AI writes through the same
@@ -564,7 +577,8 @@ public final class AppContainer: Sendable {
                         oneRMSource: selection.oneRMFromPersonalRecord == true ? .personalRecord : .naturalLanguage,
                         current1RM: oneRMKg,
                         isCompound: selection.category == .barbell || selection.category == .dumbbell,
-                        order: index
+                        order: index,
+                        weightRecording: selection.weightRecording
                     )
                 }
                 let daySchedule = (parameters.daySplits ?? []).map { split in

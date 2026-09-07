@@ -16,6 +16,7 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
     public var personalRecordId: UUID?                 // Link to PR record
     public var isCompound: Bool                        // Compound vs isolation
     public var order: Int                              // Priority ordering
+    public var weightRecording: WeightRecording?
     public var alternatives: [UUID]                    // Swap candidates (exercise IDs)
 
     public enum OneRMSource: String, Codable, Sendable {
@@ -41,7 +42,8 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
         personalRecordId: UUID? = nil,
         isCompound: Bool,
         order: Int,
-        alternatives: [UUID] = []
+        alternatives: [UUID] = [],
+        weightRecording: WeightRecording? = nil
     ) {
         self.id = id
         self.exerciseId = exerciseId
@@ -58,6 +60,7 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
         self.isCompound = isCompound
         self.order = order
         self.alternatives = alternatives
+        self.weightRecording = weightRecording
     }
 
     public func targetWeight(atPercentage pct: Double) -> Double {

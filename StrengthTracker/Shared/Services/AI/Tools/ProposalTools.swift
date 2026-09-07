@@ -8,13 +8,21 @@ import Foundation
 struct WeightArgument: Decodable {
     var value: Double
     var unit: String
+    var entry: WeightRecording.WeightEntry? = nil
 
-    func kilograms() throws -> Double {
+    func kilograms(for exercise: Exercise? = nil) throws -> Double {
+        let kg: Double
         switch unit.lowercased() {
-        case "kg": return value
-        case "lbs", "lb": return WeightUnit.lbs.toKg(value)
+        case "kg": kg = value
+        case "lbs", "lb": kg = WeightUnit.lbs.toKg(value)
         default: throw AIToolError("weight unit must be \"kg\" or \"lbs\", got '\(unit)'")
         }
+        guard kg.isFinite else { throw AIToolError("Weight must be finite") }
+        if let entry {
+            guard let exercise else { throw AIToolError("An exercise is required to convert the weight convention.") }
+            return try WeightRecordingHistory.inputWeight(kg, entry: entry, for: exercise)
+        }
+        return kg
     }
 }
 
@@ -56,7 +64,8 @@ public final class ProposeExerciseTool: AITool {
                 "instructions": AIToolRegistry.stringSchema("Short how-to instructions"),
                 "bodyweight_percent": AIToolRegistry.numberSchema("Percent of body weight lifted (bodyweightReps only, 10-150)"),
                 "equipment_brand": AIToolRegistry.stringSchema("Machine brand, e.g. Hammer Strength"),
-                "loading_type": AIToolRegistry.enumSchema(LoadingType.self)
+                "loading_type": AIToolRegistry.enumSchema(LoadingType.self),
+                "weight_recording": ToolSchemas.weightRecording
             ],
             required: ["name", "primary_muscle_group", "category", "exercise_type"]
         )
@@ -72,6 +81,7 @@ public final class ProposeExerciseTool: AITool {
         var bodyweight_percent: Double?
         var equipment_brand: String?
         var loading_type: String?
+        var weight_recording: WeightRecording?
     }
 
     public func call(argumentsJSON: String) async throws -> AIToolResult {
@@ -98,7 +108,8 @@ public final class ProposeExerciseTool: AITool {
             instructions: args.instructions,
             bodyweightPercent: args.bodyweight_percent,
             equipmentBrand: args.equipment_brand,
-            loadingType: try args.loading_type.map { try parseEnum(LoadingType.self, $0, field: "loading_type") }
+            loadingType: try args.loading_type.map { try parseEnum(LoadingType.self, $0, field: "loading_type") },
+            weightRecording: args.weight_recording
         )
 
         return AIToolResult(
@@ -202,7 +213,7 @@ public final class ProposeTemplateTool: AITool {
                 defaultReps: defaultReps,
                 targetSets: entry.target_sets,
                 targetReps: entry.target_reps,
-                targetWeightKg: try entry.target_weight?.kilograms(),
+                targetWeightKg: try entry.target_weight?.kilograms(for: exercise),
                 restSeconds: entry.rest_seconds,
                 supersetGroup: entry.superset_group,
                 isWarmUp: entry.is_warmup ?? false
@@ -390,11 +401,11 @@ public final class ProposeTrainingPlanTool: AITool {
         var selections: [AIPlanParameters.ExerciseSelection] = []
         for entry in args.exercises {
             let exercise = try ExerciseNameResolver.resolve(name: entry.exercise_name, in: catalog)
-            var oneRMKg = try entry.estimated_1rm?.kilograms()
+            var oneRMKg = try entry.estimated_1rm?.kilograms(for: exercise)
             var fromPersonalRecord = false
             if oneRMKg == nil {
                 // PRs store values in kg.
-                let records = try await personalRecordRepository.fetchForExercise(exercise.id).bestPerType()
+                let records = try await personalRecordRepository.fetchForExercise(exercise.id).matching(exercise).bestPerType()
                 oneRMKg = records.first { $0.recordType == .estimatedOneRepMax }?.value
                     ?? records.first { $0.recordType == .maxWeight }?.value
                 fromPersonalRecord = oneRMKg != nil
@@ -408,7 +419,8 @@ public final class ProposeTrainingPlanTool: AITool {
                 primaryMuscleGroup: exercise.primaryMuscleGroup,
                 category: exercise.category,
                 estimated1RMKg: oneRMKg,
-                oneRMFromPersonalRecord: fromPersonalRecord
+                oneRMFromPersonalRecord: fromPersonalRecord,
+                weightRecording: exercise.weightRecording
             ))
         }
 

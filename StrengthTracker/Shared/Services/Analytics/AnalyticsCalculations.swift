@@ -20,11 +20,12 @@ public enum AnalyticsCalculations {
         from workouts: [Workout],
         windowMonths: Int = 6,
         bodyWeightKg: Double,
-        asOf: Date = Date()
+        asOf: Date = Date(),
+        referenceExercises: [UUID: Exercise]? = nil
     ) -> [UUID: Double] {
         let cutoff = Calendar.mondayStart.date(byAdding: .month, value: -windowMonths, to: asOf)!
         var bestE1RM: [UUID: Double] = [:]
-        for past in workouts {
+        for past in WeightRecordingHistory.matching(workouts.filter { $0.trainingDate <= asOf }, references: referenceExercises) {
             guard past.id != excludingWorkoutId,
                   past.completedAt != nil,
                   past.trainingDate >= cutoff, past.trainingDate <= asOf else { continue }

@@ -264,3 +264,334 @@ struct EffectiveLoadTests {
         #expect(points.first?.reps == 8)
     }
 }
+
+@Suite("Dumbbell recording conventions")
+@MainActor
+struct DumbbellRecordingTests {
+    private func exercise(_ recording: WeightRecording? = nil, id: UUID = UUID()) -> Exercise {
+        Exercise(id: id, name: "Dumbbell Bench Press", primaryMuscleGroup: .chest, secondaryMuscleGroups: [.triceps], category: .dumbbell, exerciseType: .weightedReps, instructions: nil, isCustom: true, isArchived: false, weightRecording: recording)
+    }
+    private func set(_ weight: Double = 20, _ reps: Int = 10) -> ExerciseSet {
+        ExerciseSet(id: UUID(), order: 1, setType: .normal, weight: weight, reps: reps, durationSeconds: nil, distanceMeters: nil, rpe: 8, isCompleted: true, isPersonalRecord: false, completedAt: Date(timeIntervalSince1970: 1_700_000_000))
+    }
+    private func workout(_ e: Exercise, date: Date = Date(timeIntervalSince1970: 1_700_000_000), sets: [ExerciseSet]? = nil) -> Workout {
+        Workout(id: UUID(), name: "Push", startedAt: date, completedAt: date.addingTimeInterval(1000), notes: nil, templateId: nil,
+                exercises: [WorkoutExercise(id: UUID(), exercise: e, order: 1, supersetGroup: nil, notes: nil, restTimerSeconds: nil, sets: sets ?? [set()])])
+    }
+    @Test("Paired, single, unilateral, combined and unresolved logging have explicit tonnage")
+    func volumeMatrix() {
+        let cases: [(WeightRecording?, Double, Double)] = [
+            (nil, 20, 200), (.init(), 20, 400), (.init(equipment: .single), 20, 200),
+            (.init(equipment: .single, repetitions: .perSide), 20, 400),
+            (.init(equipment: .single, repetitions: .oneSide), 20, 200),
+            (.init(weightEntry: .combined), 40, 400),
+            (.init(repetitions: .perSide), 20, 800),
+            (.init(equipment: .single, repetitions: .totalAlternating), 20, 200)
+        ]
+        for (config, weight, expected) in cases {
+            #expect(workout(exercise(config), sets: [set(weight)]).totalVolume(bodyWeightKg: 80) == expected)
+        }
+    }
+    @Test("Drop segments count once; warmups and incomplete sets never add volume")
+    func drops() {
+        var drop = set(); drop.applyDropSets([DropSetEntry(weight: 20, reps: 10), DropSetEntry(weight: 15.25, reps: 8)])
+        var warmup = set(); warmup.setType = .warmup
+        var incomplete = set(); incomplete.isCompleted = false
+        let w = workout(exercise(.init()), sets: [drop, warmup, incomplete])
+        #expect(w.totalVolume(bodyWeightKg: 80) == 644)
+        #expect(w.exercises[0].sets[0].totalReps == 18)
+        #expect(AnalyticsCalculations.bestE1RM(for: drop, baseLoadPerRep: nil) == AnalyticsCalculations.calculateOneRM(weight: 20, reps: 10))
+    }
+    @Test("The chart and summary share volume even with mixed recording configurations in one workout")
+    func historyVolume() {
+        let id = UUID(); var w = workout(exercise(.init(), id: id))
+        w.exercises.append(workout(exercise(.init(equipment: .single), id: id)).exercises[0])
+        let sessions = ExerciseHistoryCalculator.sessions(exerciseId: id, workouts: [w], bodyWeightKg: 80)
+        #expect(sessions[0].recordedVolume == 600)
+        #expect(sessions[0].value(for: .volume) == w.totalVolume(bodyWeightKg: 80))
+        #expect(sessions[0].value(for: .strength) == nil)
+    }
+    @Test("Explicit weight conversions retain exact decimals and do not accept unresolved conventions")
+    func conversion() throws {
+        let e = exercise(.init())
+        #expect(try WeightRecordingHistory.inputWeight(40.5, entry: .combined, for: e) == 20.25)
+        #expect(try WeightRecordingHistory.inputWeight(20.25, entry: .perDumbbell, for: exercise(.init(weightEntry: .combined))) == 40.5)
+        #expect(throws: WorkoutEditError.self) { try WeightRecordingHistory.inputWeight(40, entry: .combined, for: exercise()) }
+        let pounds = WeightUnit.lbs.fromKg(20.25)
+        #expect(abs(WeightUnit.lbs.toKg(pounds) - 20.25) < 0.0001)
+    }
+    @Test("Every seeded dumbbell is classified; single dumbbell exceptions never receive paired defaults")
+    func seeds() {
+        let dumbbells = ExerciseSeedData.allExercises.filter(\.isDumbbell)
+        #expect(dumbbells.count == 54)
+        #expect(dumbbells.allSatisfy { $0.weightRecording != nil })
+        for name in ["Goblet Squat", "Dumbbell Pullover", "Dumbbell Overhead Tricep Extension"] {
+            #expect(dumbbells.first { $0.name == name }?.volumeMultiplier == 1)
+        }
+        #expect(DumbbellDefaults.recording(for: "Unknown custom curl") == nil)
+    }
+    @Test("Snapshot JSON round-trips and legacy data remains unresolved")
+    func codable() throws {
+        let original = workout(exercise(.init(repetitions: .perSide)))
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(original)
+        #expect(try JSONDecoder().decode(Workout.self, from: data) == original)
+        var object = try #require(JSONSerialization.jsonObject(with: encoder.encode(original.exercises[0].exercise)) as? [String: Any])
+        object.removeValue(forKey: "weightRecording")
+        let legacy = try JSONDecoder().decode(Exercise.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(legacy.weightRecording == nil)
+        #expect(legacy.volumeMultiplier == 1)
+    }
+    @Test("Changing volume interpretation never doubles e1RM or intensity-weighted load")
+    func relativeCalculations() {
+        let id = UUID(); let old = exercise(nil, id: id), fixed = exercise(.init(), id: id)
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let dates = (0..<12).map { now.addingTimeInterval(-Double($0) * 3 * 86400) }
+        let before = dates.map { workout(old, date: $0) }, after = dates.map { workout(fixed, date: $0) }
+        let baseline = AnalyticsCalculations.buildBestE1RMMap(from: before, bodyWeightKg: 80, asOf: now.addingTimeInterval(2000))
+        #expect(baseline == AnalyticsCalculations.buildBestE1RMMap(from: after, bodyWeightKg: 80, asOf: now.addingTimeInterval(2000)))
+        let a = TrainingLoadService.computeTrainingLoad(bodyWeightKg: 80, workouts: before, bestE1RM: baseline, now: now.addingTimeInterval(2000))
+        let b = TrainingLoadService.computeTrainingLoad(bodyWeightKg: 80, workouts: after, bestE1RM: baseline, now: now.addingTimeInterval(2000))
+        #expect(a?.acwr == b?.acwr)
+        #expect(a?.acuteLoad == b?.acuteLoad)
+    }
+    @Test("Performance histories separate conventions and never smooth a false weight jump")
+    func boundaries() {
+        let id = UUID(), date = Date(timeIntervalSince1970: 1_700_000_000)
+        let a = workout(exercise(.init(), id: id), date: date)
+        let b = workout(exercise(.init(equipment: .single, repetitions: .totalAlternating), id: id), date: date.addingTimeInterval(86400), sets: [set(40)])
+        let sessions = ExerciseHistoryCalculator.sessions(exerciseId: id, workouts: [a,b], bodyWeightKg: 80)
+        let points = ExerciseHistoryCalculator.points(sessions: sessions, metric: .strength)
+        #expect(points.count == 2)
+        #expect(points[0].segment != points[1].segment)
+        #expect(points[1].median == nil)
+        let latest = WeightRecordingHistory.matching([a,b])
+        #expect(latest[0].exercises.isEmpty)
+        #expect(latest[1].exercises.count == 1)
+    }
+    @Test("Correction preview, retries and undo preserve all source entries and skip active workouts")
+    func correction() async throws {
+        let ws = InMemoryWorkoutRepository(), es = InMemoryExerciseRepository(), ts = InMemoryTemplateRepository(), ps = InMemoryProgressionPlanRepository()
+        let suite = "dumbbell-tests-\(UUID())"; let defaults = try #require(UserDefaults(suiteName: suite)); defer { defaults.removePersistentDomain(forName: suite) }
+        let e = exercise(); _ = try await es.save(e)
+        let original = workout(e); _ = try await ws.save(original)
+        var active = workout(e); active.completedAt = nil; _ = try await ws.save(active)
+        let service = WeightRecordingService(workouts: ws, exercises: es, templates: ts, plans: ps, defaults: defaults)
+        let range = DateInterval(start: .distantPast, end: .distantFuture)
+        let preview = try await service.preview(selections: [e.id: .init()], history: range, updateFuture: true, bodyWeightKg: 80)
+        #expect(preview.workoutCount == 1)
+        #expect(preview.beforeVolume == 200)
+        #expect(preview.afterVolume == 400)
+        #expect(try await ws.fetchAll().first { $0.id == original.id } == original)
+        var rebuilds = 0
+        service.rebuild = { rebuilds += 1; if rebuilds == 1 { throw WeightRecordingService.Failure.busy } }
+        await #expect(throws: WeightRecordingService.Failure.self) { try await service.apply(preview) }
+        #expect(!service.canUndo)
+        // An interrupted update is durable and resumes with a new service instance.
+        let restarted = WeightRecordingService(workouts: ws, exercises: es, templates: ts, plans: ps, defaults: defaults)
+        restarted.rebuild = { rebuilds += 1 }
+        await restarted.resume()
+        #expect(restarted.canUndo)
+        try await restarted.apply(preview) // replay does not double the correction
+        let fixed = try #require(try await ws.fetchAll().first { $0.id == original.id })
+        #expect(fixed.exercises[0].sets == original.exercises[0].sets)
+        #expect(fixed.totalVolume(bodyWeightKg: 80) == 400)
+        #expect(try await ws.fetchAll().first { $0.id == active.id } == active)
+        #expect(rebuilds == 2)
+        try await restarted.undo()
+        #expect(!restarted.canUndo)
+        #expect(try await ws.fetchAll().first { $0.id == original.id } == original)
+    }
+    @Test("An edited workout invalidates a pending correction preview")
+    func stalePreview() async throws {
+        let ws = InMemoryWorkoutRepository(), es = InMemoryExerciseRepository(), ts = InMemoryTemplateRepository(), ps = InMemoryProgressionPlanRepository()
+        let suite = "dumbbell-stale-\(UUID())"; let defaults = try #require(UserDefaults(suiteName: suite)); defer { defaults.removePersistentDomain(forName: suite) }
+        let e = exercise(); _ = try await es.save(e)
+        var w = workout(e); _ = try await ws.save(w)
+        let service = WeightRecordingService(workouts: ws, exercises: es, templates: ts, plans: ps, defaults: defaults)
+        let preview = try await service.preview(selections: [e.id: .init()], history: DateInterval(start: .distantPast, end: .distantFuture), updateFuture: false, bodyWeightKg: 80)
+        w.exercises[0].sets[0].weight = 25; _ = try await ws.save(w)
+        await #expect(throws: WeightRecordingService.Failure.stale) { try await service.apply(preview) }
+        #expect(try await ws.fetchAll()[0].exercises[0].exercise.weightRecording == nil)
+    }
+    @Test("Known each/total changes normalize strength and retain source volume and weights")
+    func normalizedHistory() {
+        let id = UUID(), date = Date(timeIntervalSince1970: 1_700_000_000)
+        let a = workout(exercise(.init(), id: id), date: date)
+        let b = workout(exercise(.init(weightEntry: .combined), id: id), date: date.addingTimeInterval(86400), sets: [set(40)])
+        let sessions = ExerciseHistoryCalculator.sessions(exerciseId: id, workouts: [a, b], bodyWeightKg: 80)
+        let points = ExerciseHistoryCalculator.points(sessions: sessions, metric: .strength)
+        #expect(points[0].value == points[1].value)
+        #expect(points[0].segment == points[1].segment)
+        #expect(sessions.map(\.recordedVolume) == [400, 400])
+        #expect(a.exercises[0].sets[0].weight == 20)
+        #expect(WeightRecordingHistory.matching([a, b])[0].exercises[0].sets[0].weight == 40)
+    }
+    @Test("A known convention switch never earns a false live PR; manual values remain stored")
+    func recordsAcrossKnownConventions() async throws {
+        let ws = InMemoryWorkoutRepository(), prs = InMemoryPersonalRecordRepository()
+        let id = UUID(), each = exercise(.init(), id: id), total = exercise(.init(weightEntry: .combined), id: id)
+        let w = workout(each); _ = try await ws.save(w)
+        let manual = PersonalRecord(id: UUID(), exerciseId: id, recordType: .estimatedOneRepMax, value: 999, setId: nil, achievedAt: Date())
+        _ = try await prs.save(manual)
+        let service = PersonalRecordService(personalRecordRepository: prs, workoutRepository: ws)
+        try await service.recalculateAllPRs()
+        #expect(try await service.checkForPR(exercise: total, set: set(40)) == nil)
+        #expect(try await prs.fetchAll().contains(manual))
+        #expect(try await prs.fetchForExercise(id).matching(total).bestPerType().first { $0.recordType == .maxWeight }?.value == 40)
+    }
+    @Test("Volume PRs include older incompatible histories without mixing strength")
+    func volumeRecordsAcrossIncompatibleConventions() async throws {
+        let ws = InMemoryWorkoutRepository(), prs = InMemoryPersonalRecordRepository(), id = UUID()
+        _ = try await ws.save(workout(exercise(.init(), id: id), sets: [set(30, 20)]))
+        _ = try await ws.save(workout(exercise(.init(equipment: .single, repetitions: .totalAlternating), id: id), date: Date(), sets: [set(10)]))
+        try await PersonalRecordService(personalRecordRepository: prs, workoutRepository: ws).recalculateAllPRs()
+        let records = try await prs.fetchForExercise(id)
+        #expect(records.first { $0.recordType == .maxVolume }?.value == 1200)
+        #expect(records.first { $0.recordType == .maxWeight }?.value == 10)
+    }
+    @Test("Relative load is invariant when known each and total conventions are mixed")
+    func mixedRelativeLoad() {
+        let id = UUID(), now = Date(timeIntervalSince1970: 1_700_000_000)
+        let original = (0..<12).map { workout(exercise(.init(), id: id), date: now.addingTimeInterval(-Double($0) * 3 * 86400)) }
+        var mixed = original
+        for i in mixed.indices where i < 5 {
+            mixed[i].exercises[0].exercise.weightRecording = .init(weightEntry: .combined)
+            mixed[i].exercises[0].sets[0].weight = 40
+        }
+        func load(_ history: [Workout]) -> TrainingLoad? {
+            TrainingLoadService.computeTrainingLoad(bodyWeightKg: 80, workouts: history,
+                bestE1RM: AnalyticsCalculations.buildBestE1RMMap(from: history, bodyWeightKg: 80, asOf: now), now: now)
+        }
+        #expect(load(original)?.acuteLoad == load(mixed)?.acuteLoad)
+        #expect(load(original)?.acwr == load(mixed)?.acwr)
+    }
+    @Test("Future defaults annotate unresolved targets but preserve existing known template and plan snapshots")
+    func targetSnapshots() async throws {
+        let ws = InMemoryWorkoutRepository(), es = InMemoryExerciseRepository(), ts = InMemoryTemplateRepository(), ps = InMemoryProgressionPlanRepository()
+        let suite = "dumbbell-targets-\(UUID())"; let defaults = try #require(UserDefaults(suiteName: suite)); defer { defaults.removePersistentDomain(forName: suite) }
+        let e = exercise(); _ = try await es.save(e)
+        let legacy = TemplateExerciseFactory.make(exercise: e, order: 0, defaultReps: 10)
+        var known = legacy; known.exercise.weightRecording = .init(weightEntry: .combined)
+        let template = WorkoutTemplate(id: UUID(), name: "Legacy", notes: nil, sortOrder: 0, lastUsedAt: nil, timesUsed: 0, exercises: [legacy])
+        let confirmed = WorkoutTemplate(id: UUID(), name: "Confirmed", notes: nil, sortOrder: 1, lastUsedAt: nil, timesUsed: 0, exercises: [known])
+        _ = try await ts.save(template); _ = try await ts.save(confirmed)
+        let service = WeightRecordingService(workouts: ws, exercises: es, templates: ts, plans: ps, defaults: defaults)
+        let preview = try await service.preview(selections: [e.id: .init()], history: nil, updateFuture: true, bodyWeightKg: 80)
+        #expect(preview.workoutCount == 0)
+        try await service.apply(preview)
+        let saved = try await ts.fetchAll()
+        #expect(saved.first { $0.id == confirmed.id } == confirmed)
+        #expect(saved.first { $0.id == template.id }?.exercises[0].exercise.weightRecording == .init())
+        #expect(saved.first { $0.id == template.id }?.exercises[0].setTargets == legacy.setTargets)
+        try await service.undo()
+        #expect(try await ts.fetchAll().first { $0.id == template.id } == template)
+    }
+    @Test("Widget payloads describe each/total and decode older payloads without new fields")
+    func widgets() throws {
+        let widget = WidgetActiveWorkout(workoutName: "Push", currentExerciseName: "DB press", currentExerciseId: UUID().uuidString,
+            completedSets: 0, totalPlannedSets: 3, startedAt: Date(), isResting: false, restEndDate: nil,
+            nextSetWeight: 20.25, nextSetReps: 10, nextExerciseName: nil, weightRecording: .init(repetitions: .perSide))
+        #expect(widget.targetLabel == "20.25 kg each × 10 reps/side")
+        var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(widget)) as? [String: Any])
+        object.removeValue(forKey: "weightRecording"); object.removeValue(forKey: "dumbbellConventionUnconfirmed")
+        let legacy = try JSONDecoder().decode(WidgetActiveWorkout.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(legacy.weightRecording == nil)
+        #expect(legacy.nextSetWeight == 20.25)
+    }
+    @Test("Seeding never guesses existing historical defaults or overwrites custom conventions")
+    func preservesExistingSeedConventions() async throws {
+        let es = InMemoryExerciseRepository()
+        var e = try #require(ExerciseSeedData.allExercises.first { $0.name == "Dumbbell Bench Press" })
+        e.name = "Old seed name"; e.weightRecording = nil
+        _ = try await es.save(e)
+        await ExerciseSeeder(exerciseRepository: es).seedIfNeeded()
+        #expect(try await es.fetchAll().first { $0.id == e.id }?.weightRecording == nil)
+        e.weightRecording = .init(weightEntry: .combined); _ = try await es.save(e)
+        await ExerciseSeeder(exerciseRepository: es).seedIfNeeded()
+        #expect(try await es.fetchAll().first { $0.id == e.id }?.weightRecording == e.weightRecording)
+    }
+    @Test("Planned targets retain their convention despite subsequent library changes")
+    func plannedSnapshots() throws {
+        let id = UUID(), each = exercise(.init(), id: id), combined = exercise(.init(weightEntry: .combined), id: id)
+        let target = PlannedExerciseSet(planExerciseId: UUID(), exerciseId: id, exerciseName: each.name,
+            sets: 3, targetReps: 10, targetWeight: 20.25, percentageOf1RM: 0, weightRecording: each.weightRecording)
+        let session = PlannedSession(dayOfWeek: 2, sessionLabel: "Push", plannedExercises: [target], estimatedDurationMinutes: 60)
+        let prepared = session.toWorkoutTemplate(exercises: [combined])
+        #expect(prepared.exercises[0].exercise.weightRecording == each.weightRecording)
+        #expect(prepared.exercises[0].targetWeight == 20.25)
+        #expect(try JSONDecoder().decode(PlannedSession.self, from: JSONEncoder().encode(session)) == session)
+        #expect(WeightRecordingHistory.convertWeight(20.25, from: each.weightRecording, to: combined.weightRecording) == 40.5)
+        #expect(WeightRecordingHistory.convertWeight(20.25, from: nil, to: combined.weightRecording) == nil)
+    }
+    @Test("Training plan 1RM updates use plan units when the performed workout uses combined weights")
+    func planExecutionUnits() {
+        let id = UUID(), config = WeightRecording(), combined = exercise(.init(weightEntry: .combined), id: id)
+        let plan = PlanExercise(exerciseId: id, exerciseName: combined.name, primaryMuscleGroup: .chest, category: .dumbbell,
+            estimated1RM: 0, oneRMSource: .estimated, current1RM: 0, isCompound: true, order: 0, weightRecording: config)
+        let target = PlannedExerciseSet(planExerciseId: plan.id, exerciseId: id, exerciseName: combined.name,
+            sets: 1, targetReps: 10, targetWeight: 20, percentageOf1RM: 0, weightRecording: config)
+        let session = PlannedSession(dayOfWeek: 2, sessionLabel: "Push", plannedExercises: [target], estimatedDurationMinutes: 60)
+        let result = SessionExecutionService().completeSession(session, workout: workout(combined, sets: [set(40)]), planExercises: [plan], bodyWeightKg: 80)
+        let expected = AnalyticsCalculations.calculateOneRM(weight: 20, reps: 10).rounded(toNearest: 2.5)
+        #expect(result.updatedExercises[0].current1RM == expected)
+        #expect(result.updatedExercises[0].weightRecording == config)
+    }
+    @Test("Quality intensity and volume stay stable for equivalent each and combined entries")
+    func qualityUnits() {
+        let ws = InMemoryWorkoutRepository(), prefs = UserPreferencesService()
+        let service = WorkoutQualityScoreService(workoutRepository: ws, muscleBalanceService: MuscleBalanceService(), healthKitService: NoOpHealthKitService(), userPreferencesService: prefs)
+        let id = UUID(), now = Date()
+        let history = (1...5).map { workout(exercise(.init(), id: id), date: now.addingTimeInterval(-Double($0) * 86400)) }
+        let a = workout(exercise(.init(), id: id), date: now)
+        let b = workout(exercise(.init(weightEntry: .combined), id: id), date: now, sets: [set(40)])
+        let x = service.computeScore(for: a, history: history), y = service.computeScore(for: b, history: history)
+        #expect(x.intensityScore == y.intensityScore)
+        #expect(x.volumeScore == y.volumeScore)
+        #expect(x.balanceScore == y.balanceScore)
+    }
+    @Test("Future plan correction includes saved deload prescriptions and undo restores both")
+    func planCorrection() async throws {
+        let ws = InMemoryWorkoutRepository(), es = InMemoryExerciseRepository(), ts = InMemoryTemplateRepository(), ps = InMemoryProgressionPlanRepository()
+        let suite = "dumbbell-plans-\(UUID())"; let defaults = try #require(UserDefaults(suiteName: suite)); defer { defaults.removePersistentDomain(forName: suite) }
+        let e = exercise(); _ = try await es.save(e)
+        let pe = ProgressionTestHelpers.makeTestPlanExercise(exerciseId: e.id, category: .dumbbell)
+        let target = ProgressionTestHelpers.makeTestPlannedExerciseSet(planExerciseId: pe.id, exerciseId: e.id, targetWeight: 20.25)
+        var pending = ProgressionTestHelpers.makeIncompleteSession(exercises: [target])
+        PlanDeloadPolicy.apply(to: &pending, weightPercentage: 50, restPercentage: 100)
+        let done = ProgressionTestHelpers.makeCompletedSession(exercises: [ProgressionTestHelpers.makeTestPlannedExerciseSet(exerciseId: e.id)])
+        let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [ProgressionTestHelpers.makeTestTrainingWeek(sessions: [pending, done])])
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [block], exercises: [pe]); try await ps.save(plan)
+        let service = WeightRecordingService(workouts: ws, exercises: es, templates: ts, plans: ps, defaults: defaults)
+        let preview = try await service.preview(selections: [e.id: .init()], history: nil, updateFuture: true, bodyWeightKg: 80)
+        try await service.apply(preview)
+        let fixed = try #require(try await ps.fetch(id: plan.id))
+        #expect(fixed.blocks[0].weeks[0].sessions[0].plannedExercises[0].weightRecording == .init())
+        #expect(fixed.blocks[0].weeks[0].sessions[0].deloadPrescription?.normalExercises[0].weightRecording == .init())
+        #expect(fixed.blocks[0].weeks[0].sessions[0].plannedExercises[0].targetWeight == pending.plannedExercises[0].targetWeight)
+        #expect(fixed.blocks[0].weeks[0].sessions[1] == done)
+        try await service.undo()
+        #expect(try await ps.fetch(id: plan.id) == plan)
+    }
+    @Test("Every generated program retains dumbbell target conventions")
+    func generatedTargets() {
+        var pe = ProgressionTestHelpers.makeTestPlanExercise(category: .dumbbell); pe.weightRecording = .init()
+        for kind in ProgramType.allCases {
+            let plan = ProgressionTestHelpers.makeTestPlan(exercises: [pe], programType: kind)
+            let targets = ProgramDesignService().generateProgram(for: plan).flatMap(\.weeks).flatMap(\.sessions).flatMap(\.plannedExercises)
+            #expect(!targets.isEmpty)
+            #expect(targets.allSatisfy { $0.weightRecording == pe.weightRecording })
+        }
+    }
+    #if canImport(SwiftData)
+    @Test("Exercise, workout and template SwiftData mappers retain their own recording snapshots")
+    func persistence() {
+        let e = exercise(.init()), w = workout(e)
+        #expect(ExerciseMapper.toDomain(ExerciseMapper.toEntity(e)) == e)
+        #expect(WorkoutMapper.toDomain(WorkoutMapper.toEntity(w)) == w)
+        let template = WorkoutTemplate(id: UUID(), name: "Push", notes: nil, sortOrder: 0, lastUsedAt: nil, timesUsed: 0,
+            exercises: [TemplateExerciseFactory.make(exercise: e, order: 0, defaultReps: 10)])
+        #expect(TemplateMapper.toDomain(TemplateMapper.toEntity(template)).exercises[0].exercise.weightRecording == e.weightRecording)
+    }
+    #endif
+}

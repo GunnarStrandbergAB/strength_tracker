@@ -23,7 +23,7 @@ public final class WeightSuggestionService: Sendable {
         trainingLoad: TrainingLoad?,
         isDeload: Bool,
         bodyWeightKg: Double,
-        verdict: TrainingVerdict? = nil
+        verdict: TrainingVerdict? = nil, recordingReference: Exercise? = nil
     ) -> WeightSuggestion? {
         guard targetReps > 0 else { return nil }
 
@@ -31,7 +31,7 @@ public final class WeightSuggestionService: Sendable {
         if isDeload { return nil }
 
         // Best recent e1RM (effective load) for this exercise, deload sessions excluded
-        let history = recentWorkouts.filter { !$0.isDeload }
+        let history = WeightRecordingHistory.matching(recentWorkouts.filter { !$0.isDeload }, references: recordingReference.map { [$0.id: $0] })
         guard let e1rm = bestRecentE1RM(exerciseId: exerciseId, workouts: history, bodyWeightKg: bodyWeightKg), e1rm > 0 else {
             return nil
         }
@@ -130,7 +130,7 @@ public final class WeightSuggestionService: Sendable {
         bodyWeightKg: Double
     ) -> EffortCreepWarning? {
         // Collect RPE and e1RM per session for this exercise (last 5 sessions max)
-        let sessions = recentWorkouts
+        let sessions = WeightRecordingHistory.matching(recentWorkouts)
             .filter { $0.completedAt != nil && !$0.isDeload }
             .sorted { $0.trainingDate < $1.trainingDate }
             .compactMap { workout -> (rpe: Double, e1rm: Double)? in

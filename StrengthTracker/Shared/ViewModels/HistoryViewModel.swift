@@ -83,7 +83,7 @@ public final class HistoryViewModel {
     public func exerciseProgression(for exerciseId: UUID) -> [(date: Date, weight: Double, reps: Int)] {
         var results: [(date: Date, weight: Double, reps: Int)] = []
 
-        for workout in workouts {
+        for workout in WeightRecordingHistory.matching(workouts) {
             for workoutExercise in workout.exercises {
                 if workoutExercise.exercise.id == exerciseId {
                     let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: displayBodyWeightKg)
@@ -351,6 +351,13 @@ public final class HistoryViewModel {
     /// Swaps the exercise of a logged WorkoutExercise while keeping its id, order,
     /// notes, superset group and every set. PR rows are rebuilt by endEditing();
     /// per-set PR flags are cleared because they belonged to the old exercise.
+    public func updateWeightRecording(exerciseId: UUID, recording: WeightRecording) async {
+        guard var workout = selectedWorkout, let i = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              workout.exercises[i].exercise.isDumbbell else { return }
+        workout.exercises[i].exercise.weightRecording = recording
+        await saveAndSync(workout)
+    }
+
     public func replaceExercise(exerciseId: UUID, with exercise: Exercise) async {
         guard var workout = selectedWorkout,
               let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }),

@@ -66,6 +66,8 @@ public final class ProgressViewModel {
             let completed = allWorkouts.filter { $0.completedAt != nil }
             completedHistory = completed
             errorMessage = nil
+            let reference = WeightRecordingHistory.latestExercises(completed)[exerciseId]
+            let latestConvention = reference?.performanceConvention
             var results: [(date: Date, weight: Double, reps: Int)] = []
             var volume: Double = 0
 
@@ -76,10 +78,12 @@ public final class ProgressViewModel {
                         let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
                         // Working sets only: warm-ups are not performance data.
                         for set in workoutExercise.sets where set.isCompleted && set.setType != .warmup {
-                            volume += set.setVolume(baseLoadPerRep: baseLoad)
+                            volume += workoutExercise.exercise.volume(of: set, bodyWeightKg: bodyWeightKg)
                             // One point per performed segment so drop-set parts feed
                             // best-weight/best-reps/e1RM like any other effort.
-                            for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
+                            let normalized = WeightRecordingHistory.converted(workoutExercise, to: reference)
+                            let performanceSet = normalized.sets.first { $0.id == set.id } ?? set
+                            for part in performanceSet.effectiveLoadParts(baseLoadPerRep: baseLoad) where normalized.exercise.performanceConvention == latestConvention {
                                 results.append((date: workout.trainingDate, weight: part.load, reps: part.reps))
                             }
                         }
@@ -144,14 +148,28 @@ public struct ExerciseHistorySession: Identifiable, Sendable {
     public let workout: Workout
     public let sets: [ExerciseSet]
     public let baseLoad: Double?
+    public var entries: [WorkoutExercise]? = nil
+    public var performanceEntries: [WorkoutExercise]? = nil
+    public var bodyWeightKg: Double = 70
+    public var performanceConvention: String {
+        let keys = Set((performanceEntries ?? entries)?.map { $0.exercise.performanceConvention } ?? ["standard"])
+        return keys.count == 1 ? keys.first! : "mixed"
+    }
     public var loadParts: [(load: Double, reps: Int)] {
-        sets.flatMap(\.effectiveParts).compactMap { part in
+        if let performanceEntries {
+            return performanceEntries.flatMap { entry in entry.sets.flatMap(\.effectiveParts).compactMap { part in
+                guard let load = part.effectiveLoad(baseLoadPerRep: entry.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)), load.isFinite, load >= 0,
+                      let reps = part.reps, reps > 0 else { return nil }
+                return (load, reps)
+            } }
+        }
+        return sets.flatMap(\.effectiveParts).compactMap { part in
             guard let load = part.effectiveLoad(baseLoadPerRep: baseLoad), load.isFinite, load >= 0,
                   let reps = part.reps, reps > 0 else { return nil }
             return (load: load, reps: reps)
         }
     }
-    public var recordedVolume: Double { loadParts.reduce(0) { $0 + $1.load * Double($1.reps) } }
+    public var recordedVolume: Double { entries?.reduce(0) { $0 + $1.exerciseVolume(bodyWeightKg: bodyWeightKg) } ?? loadParts.reduce(0) { $0 + $1.load * Double($1.reps) } }
     public var recordedReps: Int { loadParts.reduce(0) { $0 + $1.reps } }
     /// Only complete sets contribute to per-set averages; a partially recorded drop set is not a complete set.
     public var completeLoadSets: [ExerciseSet] {
@@ -161,6 +179,7 @@ public struct ExerciseHistorySession: Identifiable, Sendable {
         } }
     }
     public func value(for metric: ExerciseHistoryMetric, targetReps: Int = 5, targetWeightKg: Double = 0) -> Double? {
+        if metric.isPerformance && performanceConvention == "mixed" { return nil }
         switch metric {
         case .strength:
             return loadParts.filter { $0.load > 0 }.map { AnalyticsCalculations.calculateOneRM(weight: $0.load, reps: min($0.reps, 15)) }.max()
@@ -185,30 +204,39 @@ public struct HistoryPoint: Identifiable, Sendable, Encodable {
     public let isDeload: Bool
     public let segment: Int
     public var median: Double?
+    public var performanceConvention: String? = nil
 }
 
 public enum ExerciseHistoryCalculator {
     public static func sessions(exerciseId: UUID, workouts: [Workout], bodyWeightKg: Double, now: Date = Date()) -> [ExerciseHistorySession] {
-        workouts.filter { $0.completedAt != nil && $0.trainingDate <= now }.sorted {
+        let references = WeightRecordingHistory.latestExercises(workouts.filter { $0.completedAt != nil && $0.trainingDate <= now })
+        return workouts.filter { $0.completedAt != nil && $0.trainingDate <= now }.sorted {
             $0.trainingDate == $1.trainingDate ? $0.id.uuidString < $1.id.uuidString : $0.trainingDate < $1.trainingDate
         }.compactMap { workout in
             let entries = workout.exercises.filter { $0.exercise.id == exerciseId }
             let sets = entries.flatMap(\.sets).filter { $0.isCompleted && $0.setType != .warmup }
             guard let exercise = entries.first?.exercise, !sets.isEmpty else { return nil }
-            return ExerciseHistorySession(workout: workout, sets: sets, baseLoad: exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg))
+            return ExerciseHistorySession(workout: workout, sets: sets, baseLoad: exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg), entries: entries, performanceEntries: entries.map { entry in
+                var working = entry; working.sets = working.sets.filter { $0.isCompleted && $0.setType != .warmup }
+                return WeightRecordingHistory.converted(working, to: references[exerciseId])
+            }, bodyWeightKg: bodyWeightKg)
         }
     }
 
     public static func points(sessions: [ExerciseHistorySession], metric: ExerciseHistoryMetric, targetReps: Int = 5, targetWeightKg: Double = 0) -> [HistoryPoint] {
         var result: [HistoryPoint] = [], recent: [Double] = []
         var last: Date?, segment = 0
+        var lastConvention: String?
         for session in sessions.sorted(by: { $0.date < $1.date }) {
             guard let value = session.value(for: metric, targetReps: targetReps, targetWeightKg: targetWeightKg), value.isFinite else { continue }
             if let last, session.date.timeIntervalSince(last) > 21 * 86400 { segment += 1; recent = [] }
+            if metric.isPerformance, let lastConvention, lastConvention != session.performanceConvention { segment += 1; recent = [] }
+            lastConvention = session.performanceConvention
             let excluded = metric.isPerformance && session.workout.isDeload
             if !excluded { recent.append(value); recent = Array(recent.suffix(3)); last = session.date }
             result.append(HistoryPoint(id: session.id, date: session.date, value: value, isDeload: session.workout.isDeload,
-                segment: segment, median: !excluded && recent.count == 3 ? recent.sorted()[1] : nil))
+                segment: segment, median: !excluded && recent.count == 3 ? recent.sorted()[1] : nil,
+                performanceConvention: metric.isPerformance ? session.performanceConvention : nil))
         }
         return result
     }
@@ -216,7 +244,7 @@ public enum ExerciseHistoryCalculator {
     /// Descriptive endpoint change, deliberately independent of the coaching classification.
     public static func performanceChange(points: [HistoryPoint], interval: DateInterval) -> Double? {
         let eligible = points.filter { !$0.isDeload && $0.date >= interval.start && $0.date <= interval.end }.sorted { $0.date < $1.date }
-        guard eligible.count >= 6 else { return nil }
+        guard Set(eligible.compactMap(\.performanceConvention)).count <= 1, eligible.count >= 6 else { return nil }
         let first = Array(eligible.prefix(3)), last = Array(eligible.suffix(3))
         guard first.last!.date <= interval.start.addingTimeInterval(interval.duration / 4),
               last.first!.date >= interval.end.addingTimeInterval(-interval.duration / 4) else { return nil }

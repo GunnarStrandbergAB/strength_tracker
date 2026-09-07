@@ -11,6 +11,7 @@ struct SetRowGridView: View {
     var intensityMetric: IntensityMetric = .rpe
     var weightUnit: WeightUnit = .kg
     var weightLabel: String? = nil
+    var repsLabel: String = "Reps"
     let onWeightChange: (Double?) -> Void
     let onRepsChange: (Int?) -> Void
     var onIntensityChange: ((Double?) -> Void)? = nil
@@ -42,7 +43,7 @@ struct SetRowGridView: View {
             } else {
                 STSetValuesEditor(weight: exerciseSet.weight, reps: exerciseSet.reps,
                     intensity: exerciseSet.intensityValue(for: intensityMetric), showIntensity: showRPE,
-                    intensityMetric: intensityMetric, weightUnit: weightUnit, weightLabel: weightLabel, context: "Set \(setNumber)",
+                    intensityMetric: intensityMetric, weightUnit: weightUnit, weightLabel: weightLabel, repsLabel: repsLabel, context: "Set \(setNumber)",
                     onWeightChange: onWeightChange, onRepsChange: onRepsChange, onIntensityChange: { onIntensityChange?($0) })
             }
         }
