@@ -266,3 +266,21 @@ struct WorkoutSessionCoordinatorTests {
         }
     }
 }
+
+extension WorkoutSessionCoordinatorTests {
+    @Test("Planned deload uses captured rest percentage once, even after Settings changes")
+    func plannedRestSnapshot() async throws {
+        try await withPrefs { prefs in
+            let s = makeStack(prefs: prefs)
+            var session = PlannedSession(sessionLabel: "Deload", plannedExercises: [ProgressionTestHelpers.makeTestPlannedExerciseSet(restSeconds: 120)])
+            PlanDeloadPolicy.apply(to: &session, weightPercentage: 60, restPercentage: 50)
+            prefs.deloadRestPercentage = 75
+            try await s.coordinator.start(.init(name: "Deload", template: session.toWorkoutTemplate(), isDeload: true))
+            let exercise = try #require(s.vm.currentWorkout?.exercises.first)
+            let set = try #require(exercise.sets.first)
+            try await s.coordinator.completeSet(exerciseId: exercise.id, setId: set.id)
+            #expect(s.timer.starts.first?.seconds == 60)
+            #expect(s.vm.currentWorkout?.deloadRestPercentage == 50)
+        }
+    }
+}

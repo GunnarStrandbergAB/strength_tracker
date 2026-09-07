@@ -326,4 +326,22 @@ private final class PipelineStubTemplateRepository: TemplateRepository, @uncheck
     func delete(_ template: WorkoutTemplate) async throws {}
     func incrementUsage(_ templateId: UUID) async throws {}
 }
+
+extension ProgressionPipelineTests {
+    @Test("Adaptive completion and historical replay preserve the normal deload backing prescription")
+    func deloadSurvivesAdaptiveReplay() async throws {
+        var plan = makePlan()
+        PlanDeloadPolicy.apply(to: &plan.blocks[0].weeks[0].sessions[1], weightPercentage: 60, restPercentage: 50)
+        let workout = makeBenchWorkout(weight: 90, reps: 5)
+        let fixture = makeFixture(plan: plan, workouts: [workout])
+        await fixture.vm.handleSessionCompleted(sessionId: sessionAId, planId: plan.id, workoutId: workout.id)
+        let updated = try #require(session(sessionBId, in: fixture.planRepo.plans[0]))
+        #expect(updated.deloadPrescription?.normalExercises[0].targetWeight == 85)
+        #expect(updated.plannedExercises[0].targetWeight == 51)
+        await fixture.vm.handleSessionEdited(sessionId: sessionAId, planId: plan.id, workoutId: workout.id)
+        let replayed = try #require(session(sessionBId, in: fixture.planRepo.plans[0]))
+        #expect(replayed.plannedExercises[0].targetWeight == 51)
+        #expect(replayed.deloadPrescription?.normalExercises[0].targetWeight == 85)
+    }
+}
 #endif

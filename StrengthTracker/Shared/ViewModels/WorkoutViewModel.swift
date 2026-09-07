@@ -149,6 +149,7 @@ public final class WorkoutViewModel {
             preDeloadWeights = originals
         }
 
+        workout.deloadRestPercentage = nil
         workout.isDeload.toggle()
         await persist(workout)
         if lastSaveError == nil {
@@ -179,7 +180,7 @@ public final class WorkoutViewModel {
             isDeload: isDeload,
             plannedSessionId: plannedSessionId,
             plannedPlanId: plannedPlanId,
-            exercises: exercises
+            exercises: exercises, deloadRestPercentage: template?.deloadRestPercentage
         )
 
         do {

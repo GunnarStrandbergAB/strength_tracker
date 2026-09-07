@@ -378,6 +378,7 @@ final class PlanAnalyticsServiceTests: XCTestCase {
             completedAt: nil
         )
         session.templateId = sharedTemplateId
+        session.scheduledDate = workout.trainingDate
 
         let week = ProgressionTestHelpers.makeTestTrainingWeek(weekNumber: 1, sessions: [session])
         let block = ProgressionTestHelpers.makeTestTrainingBlock(weeks: [week])
@@ -679,5 +680,34 @@ final class PlanAnalyticsServiceTests: XCTestCase {
 
         let ep = try XCTUnwrap(progress.exerciseProgress.first)
         XCTAssertEqual(ep.personalRecordsHit, 1)
+    }
+}
+
+extension PlanAnalyticsServiceTests {
+    func testOneWorkoutCannotInflateSeveralPlannedSessions() async throws {
+        let exerciseID = UUID(), templateID = UUID()
+        let workout = makeWorkout(templateId: templateID, exercises: [makeWorkoutExercise(exerciseId: exerciseID, sets: [makeSet(weight: 80, reps: 8)])])
+        var first = ProgressionTestHelpers.makeTestPlannedSession(scheduledDate: workout.trainingDate)
+        first.templateId = templateID
+        var second = first
+        second = PlannedSession(scheduledDate: workout.trainingDate, sessionLabel: "Same template", templateId: templateID)
+        let weeks = [ProgressionTestHelpers.makeTestTrainingWeek(sessions: [first, second])]
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [ProgressionTestHelpers.makeTestTrainingBlock(weeks: weeks)],
+            exercises: [ProgressionTestHelpers.makeTestPlanExercise(exerciseId: exerciseID)])
+        let progress = try await makeSUT(workouts: [workout]).generateProgress(for: plan)
+        XCTAssertEqual(progress.exerciseProgress.first?.totalSetsCompleted, 1)
+        XCTAssertEqual(progress.attributions?.count, 1)
+    }
+
+    func testOldTemplateMatchAndFutureSessionsAreNotAttributed() async throws {
+        let exerciseID = UUID(), templateID = UUID()
+        let old = makeWorkout(completedAt: Date().addingTimeInterval(-30 * 86400), templateId: templateID,
+            exercises: [makeWorkoutExercise(exerciseId: exerciseID, sets: [makeSet(weight: 80, reps: 8)])])
+        let session = PlannedSession(scheduledDate: Date().addingTimeInterval(86400), sessionLabel: "Future", templateId: templateID)
+        let plan = ProgressionTestHelpers.makeTestPlan(blocks: [ProgressionTestHelpers.makeTestTrainingBlock(weeks: [ProgressionTestHelpers.makeTestTrainingWeek(sessions: [session])])],
+            exercises: [ProgressionTestHelpers.makeTestPlanExercise(exerciseId: exerciseID)])
+        let progress = try await makeSUT(workouts: [old]).generateProgress(for: plan)
+        XCTAssertEqual(progress.exerciseProgress.first?.totalSetsCompleted, 0)
+        XCTAssertTrue(progress.attributions?.isEmpty == true)
     }
 }

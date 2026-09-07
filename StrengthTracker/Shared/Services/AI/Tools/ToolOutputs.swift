@@ -227,6 +227,7 @@ enum WorkoutJSON {
     static func workout(_ workout: Workout, scope: AIReceipt.Scope) -> JSONValue {
         var object: [String: JSONValue] = [
             "source": .string(scope == .activeWorkout ? "active" : "history"),
+            "id": .string(workout.id.uuidString),
             "name": .string(workout.name),
             "date": .string(AIJSON.dateString(workout.startedAt)),
             "started": .string(workout.startedAt.formatted(date: .omitted, time: .shortened)),
@@ -254,6 +255,7 @@ enum WorkoutJSON {
 
     static func exercise(_ exercise: WorkoutExercise, occurrence: Int? = nil) -> JSONValue {
         var object: [String: JSONValue] = [
+            "id": .string(exercise.id.uuidString), "exercise_id": .string(exercise.exercise.id.uuidString),
             "name": .string(exercise.exercise.name),
             "sets": .array(exercise.sets.enumerated().map { set($1, number: $0 + 1) }),
             "done": .string("\(exercise.sets.filter(\.isCompleted).count)/\(exercise.sets.count)")
@@ -266,12 +268,12 @@ enum WorkoutJSON {
     }
 
     static func set(_ set: ExerciseSet, number: Int) -> JSONValue {
-        var object: [String: JSONValue] = ["n": .number(Double(number))]
+        var object: [String: JSONValue] = ["id": .string(set.id.uuidString), "n": .number(Double(number))]
         if set.setType != .normal { object["type"] = .string(set.setType.rawValue) }
-        if let weight = set.weight { object["weight_kg"] = .number(AIJSON.round1(weight)) }
+        if let weight = set.weight { object["weight_kg"] = .number(weight) }
         if let reps = set.reps { object["reps"] = .number(Double(reps)) }
         if let seconds = set.durationSeconds { object["duration_s"] = .number(Double(seconds)) }
-        if let meters = set.distanceMeters { object["distance_m"] = .number(AIJSON.round1(meters)) }
+        if let meters = set.distanceMeters { object["distance_m"] = .number(meters) }
         if let rpe = set.rpe { object["rpe"] = .number(AIJSON.round1(rpe)) }
         if let rir = set.rir { object["rir"] = .number(AIJSON.round1(rir)) }
         if set.isCompleted { object["done"] = .bool(true) }
@@ -280,7 +282,7 @@ enum WorkoutJSON {
         if !set.dropSets.isEmpty {
             object["drops"] = .array(set.dropSets.map { entry in
                 var drop: [String: JSONValue] = [:]
-                if let weight = entry.weight { drop["weight_kg"] = .number(AIJSON.round1(weight)) }
+                if let weight = entry.weight { drop["weight_kg"] = .number(weight) }
                 if let reps = entry.reps { drop["reps"] = .number(Double(reps)) }
                 if let rpe = entry.rpe { drop["rpe"] = .number(AIJSON.round1(rpe)) }
                 if let rir = entry.rir { drop["rir"] = .number(AIJSON.round1(rir)) }

@@ -76,22 +76,24 @@ public final class SwiftDataProgressionPlanRepository: ProgressionPlanRepository
             predicate: #Predicate { $0.id == planId }
         )
 
-        if let existing = try modelContext.fetch(descriptor).first {
-            // Optimistic concurrency: verify no concurrent modification
-            if existing.updatedAt > plan.updatedAt {
-                throw ProgressionPlanConcurrencyError.staleData(
-                    planId: plan.id,
-                    storedUpdatedAt: existing.updatedAt,
-                    attemptedUpdatedAt: plan.updatedAt
-                )
+        try modelContext.transaction {
+            if let existing = try modelContext.fetch(descriptor).first {
+                // Optimistic concurrency: verify no concurrent modification
+                if plan.expectedUpdatedAt.map({ $0 != existing.updatedAt }) ?? (existing.updatedAt > plan.updatedAt) {
+                    throw ProgressionPlanConcurrencyError.staleData(
+                        planId: plan.id,
+                        storedUpdatedAt: existing.updatedAt,
+                        attemptedUpdatedAt: plan.updatedAt
+                    )
+                }
+                try ProgressionPlanMapper.updateEntity(existing, from: plan)
+            } else {
+                let entity = try ProgressionPlanMapper.toEntity(plan)
+                modelContext.insert(entity)
             }
-            try ProgressionPlanMapper.updateEntity(existing, from: plan)
-        } else {
-            let entity = try ProgressionPlanMapper.toEntity(plan)
-            modelContext.insert(entity)
-        }
 
-        try modelContext.save()
+            try modelContext.save()
+        }
     }
 
     // MARK: - Delete

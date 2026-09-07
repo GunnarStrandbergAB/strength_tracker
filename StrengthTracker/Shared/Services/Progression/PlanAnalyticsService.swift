@@ -44,6 +44,7 @@ public final class PlanAnalyticsService: Sendable {
             .filter { $0.absoluteWeekNumber <= currentWeekNumber }
             .flatMap(\.sessions)
             .filter { session in
+                guard !session.isOmitted else { return false }
                 guard let scheduledDate = session.scheduledDate else { return true }
                 return scheduledDate < endOfToday
             }
@@ -95,7 +96,11 @@ public final class PlanAnalyticsService: Sendable {
             isOnTrack: isOnTrack,
             weeklyVolumeHistory: weeklyVolumeHistory,
             deloadCount: deloadCount,
-            adjustmentCount: adjustmentCount
+            adjustmentCount: adjustmentCount,
+            attributions: resolvedWorkouts.map { sessionID, workout in
+                PlanWorkoutAttribution(sessionID: sessionID, workoutID: workout.id,
+                    explicitLink: workout.plannedSessionId == sessionID || allSessions.first { $0.id == sessionID }?.completedWorkoutId == workout.id)
+            }.sorted { $0.sessionID.uuidString < $1.sessionID.uuidString }
         )
     }
 
@@ -109,13 +114,22 @@ public final class PlanAnalyticsService: Sendable {
     ) -> [UUID: Workout] {
         var result: [UUID: Workout] = [:]
 
-        for session in sessions {
-            if let resolved = resolveWorkout(
-                for: session,
-                workoutById: workoutById,
-                allWorkouts: allWorkouts
-            ) {
-                result[session.id] = resolved
+        var used = Set<UUID>()
+        // Reserve explicit links first, including the link recorded on a workout.
+        for session in sessions where !session.isOmitted {
+            if let workout = session.completedWorkoutId.flatMap({ workoutById[$0] })
+                ?? allWorkouts.first(where: { $0.plannedSessionId == session.id }), used.insert(workout.id).inserted {
+                result[session.id] = workout
+            }
+        }
+        let endOfToday = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))!
+        for session in sessions.sorted(by: { ($0.scheduledDate ?? .distantPast) < ($1.scheduledDate ?? .distantPast) })
+            where result[session.id] == nil && !session.isSkipped && !session.isOmitted && session.completedWorkoutId == nil {
+            guard let date = session.scheduledDate, date < endOfToday else { continue }
+            let candidates = allWorkouts.filter { !used.contains($0.id) && $0.plannedSessionId == nil &&
+                abs($0.trainingDate.timeIntervalSince(date)) <= 2 * 86400 }
+            if let resolved = resolveWorkout(for: session, workoutById: [:], allWorkouts: candidates) {
+                result[session.id] = resolved; used.insert(resolved.id)
             }
         }
 
@@ -135,7 +149,7 @@ public final class PlanAnalyticsService: Sendable {
 
         // 2. M6: Match by templateId — session.templateId matches workout.templateId
         if let sessionTemplateId = session.templateId {
-            let templateMatch = allWorkouts.first { $0.templateId == sessionTemplateId }
+            let templateMatch = allWorkouts.filter { $0.templateId == sessionTemplateId }.min { abs($0.trainingDate.timeIntervalSince(session.scheduledDate ?? .distantPast)) < abs($1.trainingDate.timeIntervalSince(session.scheduledDate ?? .distantPast)) }
             if let templateMatch = templateMatch {
                 return templateMatch
             }

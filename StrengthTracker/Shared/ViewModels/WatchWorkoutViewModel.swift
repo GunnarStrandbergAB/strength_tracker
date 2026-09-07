@@ -308,7 +308,7 @@ public final class WatchWorkoutViewModel {
             isDeload: isDeload,
             plannedSessionId: plannedSessionId,
             plannedPlanId: plannedPlanId,
-            exercises: workoutExercises
+            exercises: workoutExercises, deloadRestPercentage: template.deloadRestPercentage
         )
 
         // Set state immediately so navigation pushes without waiting for save
@@ -605,9 +605,12 @@ public final class WatchWorkoutViewModel {
 
         stopRestTimer()
 
-        let duration = seconds
+        var duration = seconds
             ?? userPreferencesService?.defaultRestSeconds
             ?? UserPreferencesService.defaultRestSecondsValue
+        if activeWorkout?.isDeload == true {
+            duration = max(15, duration * (activeWorkout?.deloadRestPercentage ?? userPreferencesService?.deloadRestPercentage ?? 75) / 100)
+        }
         restDuration = TimeInterval(duration)
         isResting = true
         restTimeRemaining = restDuration

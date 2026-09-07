@@ -39,6 +39,11 @@ public final class ProgressionPlanViewModel {
     public var draftGoal: TrainingGoal = .hypertrophy
     public var draftProgramType: ProgramType = .linear
     public var draftFrequency: Int = 3
+    public var draftDurationWeeks: Int? = nil
+    public var resolvedDraftDurationWeeks: Int { draftDurationWeeks ?? (draftProgramType == .block ? (draftStatus == .advanced ? 9 : 10) : 12) }
+    public var protectedPlanSessions: (() -> Set<UUID>)?
+    public var canEditPlan: (() -> Bool)?
+    public var onPlanChanged: (() async -> Void)?
     public var draftTrainingDays: Set<Int> = []
     public var draftSelectedExercises: [DraftPlanExercise] = []
     public var draftPlanName: String = ""
@@ -332,25 +337,10 @@ public final class ProgressionPlanViewModel {
     // MARK: - Scheduled Dates
 
     public func rescheduleSession(sessionId: UUID, to newDate: Date) async {
-        guard var plan = activePlan else { return }
-        for blockIdx in plan.blocks.indices {
-            for weekIdx in plan.blocks[blockIdx].weeks.indices {
-                if let sIdx = plan.blocks[blockIdx].weeks[weekIdx].sessions.firstIndex(where: { $0.id == sessionId }) {
-                    plan.blocks[blockIdx].weeks[weekIdx].sessions[sIdx].scheduledDate = newDate
-                    // Moving a session across a calendar-week boundary changes its bucket.
-                    plan.blocks = CalendarWeekBucketer.rebucket(plan.blocks)
-                    plan.updatedAt = Date()
-                    do {
-                        try await progressionPlanRepository.save(plan)
-                        activePlan = plan
-                        planProgress = try await planAnalyticsService.generateProgress(for: plan)
-                    } catch {
-                        errorMessage = error.localizedDescription
-                    }
-                    return
-                }
-            }
-        }
+        do {
+            let preview = try await previewPlanEdit(.init(operation: .rescheduleSession, sessionID: sessionId, newDate: newDate, scope: .session))
+            try await applyPlanEdit(preview)
+        } catch { errorMessage = error.localizedDescription }
     }
 
     // MARK: - Skip Session
@@ -361,7 +351,9 @@ public final class ProgressionPlanViewModel {
         for blockIdx in plan.blocks.indices {
             for weekIdx in plan.blocks[blockIdx].weeks.indices {
                 if let sIdx = plan.blocks[blockIdx].weeks[weekIdx].sessions.firstIndex(where: { $0.id == sessionId }) {
-                    guard plan.blocks[blockIdx].weeks[weekIdx].sessions[sIdx].completedWorkoutId == nil else { return }
+                    guard plan.blocks[blockIdx].weeks[weekIdx].sessions[sIdx].completedWorkoutId == nil,
+                          !(protectedPlanSessions?().contains(sessionId) ?? false),
+                          !plan.blocks[blockIdx].weeks[weekIdx].sessions[sIdx].isOmitted else { return }
                     let nowSkipped = !plan.blocks[blockIdx].weeks[weekIdx].sessions[sIdx].isSkipped
                     plan.blocks[blockIdx].weeks[weekIdx].sessions[sIdx].isSkipped = nowSkipped
                     plan.blocks[blockIdx].weeks[weekIdx].sessions[sIdx].skippedAt = nowSkipped ? Date() : nil
@@ -369,6 +361,7 @@ public final class ProgressionPlanViewModel {
                     do {
                         try await progressionPlanRepository.save(plan)
                         await loadActivePlan()
+                        await onPlanChanged?()
                     } catch {
                         errorMessage = error.localizedDescription
                     }
@@ -382,6 +375,7 @@ public final class ProgressionPlanViewModel {
 
     /// Everything needed to create a plan, independent of the draft flow state.
     public struct PlanCreationRequest: Sendable {
+        public var durationWeeks: Int?
         public var name: String
         public var trainingStatus: TrainingStatus
         public var programType: ProgramType
@@ -407,8 +401,10 @@ public final class ProgressionPlanViewModel {
             startDate: Date = Date(),
             exercises: [PlanExercise],
             daySchedule: [DayScheduleEntry] = [],
-            creationSource: ProgressionPlan.PlanCreationSource
+            creationSource: ProgressionPlan.PlanCreationSource,
+            durationWeeks: Int? = nil
         ) {
+            self.durationWeeks = durationWeeks
             self.name = name
             self.trainingStatus = trainingStatus
             self.programType = programType
@@ -427,6 +423,8 @@ public final class ProgressionPlanViewModel {
     /// structured draft flow and AI-proposed plans.
     @discardableResult
     public func createPlan(from request: PlanCreationRequest) async throws -> ProgressionPlan {
+        let duration = request.durationWeeks ?? (request.programType == .block ? (request.trainingStatus == .advanced ? 9 : 10) : 12)
+        guard (4...52).contains(duration) else { throw PlanEditError("Plan duration must be 4–52 weeks.") }
         let startWeekday = Calendar.current.component(.weekday, from: request.startDate)
         let startFirstOrder = (0..<7).map { (startWeekday - 1 + $0) % 7 + 1 }
         let sortedDays = request.trainingDays.isEmpty
@@ -445,7 +443,10 @@ public final class ProgressionPlanViewModel {
             startDate: request.startDate,
             exercises: request.exercises,
             daySchedule: request.daySchedule,
-            creationSource: request.creationSource
+            creationSource: request.creationSource,
+            configuration: PlanConfiguration(durationWeeks: duration,
+                deloadWeightPercentage: userPreferencesService?.deloadWeightPercentage ?? 50,
+                deloadRestPercentage: userPreferencesService?.deloadRestPercentage ?? 75)
         )
 
         let deloadIntensity = Double(userPreferencesService?.deloadWeightPercentage ?? 50) / 100.0
@@ -460,8 +461,9 @@ public final class ProgressionPlanViewModel {
             ?? Calendar.current.date(byAdding: .weekOfYear, value: plan.totalWeeks, to: plan.startDate)
 
         try await progressionPlanRepository.save(plan)
-        activePlan = plan
+        activePlan = try await progressionPlanRepository.fetchActive()
         planProgress = try await planAnalyticsService.generateProgress(for: plan)
+        await onPlanChanged?()
         return plan
     }
 
@@ -511,7 +513,7 @@ public final class ProgressionPlanViewModel {
                 startDate: draftStartDate,
                 exercises: planExercises,
                 daySchedule: daySchedule,
-                creationSource: .structuredFlow
+                creationSource: .structuredFlow, durationWeeks: draftDurationWeeks
             ))
         } catch {
             errorMessage = "Failed to generate plan: \(error.localizedDescription)"
@@ -521,6 +523,7 @@ public final class ProgressionPlanViewModel {
     // MARK: - Draft Reset
 
     public func resetDraft() {
+        draftDurationWeeks = nil
         draftStep = 1
         draftStatus = .beginner
         draftStatusIsDetecting = false
@@ -691,7 +694,9 @@ public final class ProgressionPlanViewModel {
                 let week = plan.blocks[bi].weeks[wi]
                 for si in plan.blocks[bi].weeks[wi].sessions.indices {
                     guard plan.blocks[bi].weeks[wi].sessions[si].dayOfWeek == dayOfWeek else { continue }
-                    guard plan.blocks[bi].weeks[wi].sessions[si].completedWorkoutId == nil else { continue }
+                    guard plan.blocks[bi].weeks[wi].sessions[si].completedWorkoutId == nil,
+                          !(protectedPlanSessions?().contains(plan.blocks[bi].weeks[wi].sessions[si].id) ?? false) else { continue }
+                    let priorPolicy = plan.blocks[bi].weeks[wi].sessions[si].deloadPrescription
                     plan.blocks[bi].weeks[wi].sessions[si].templateId = templateId
                     plan.blocks[bi].weeks[wi].sessions[si].plannedExercises =
                         Self.rebuildSessionExercises(
@@ -703,6 +708,21 @@ public final class ProgressionPlanViewModel {
                         )
                     plan.blocks[bi].weeks[wi].sessions[si].dupSessionType = nil
                     plan.blocks[bi].weeks[wi].sessions[si].sessionLabel = neutralLabel
+                    if let priorPolicy {
+                        var session = plan.blocks[bi].weeks[wi].sessions[si]
+                        // Rebuild normal prescriptions using the captured normal week, then reapply once.
+                        var normalWeek = week
+                        normalWeek.sessions = week.sessions.map { s in
+                            var copy = s
+                            if let policy = s.deloadPrescription { copy.plannedExercises = policy.normalExercises; copy.isDeload = false }
+                            return copy
+                        }
+                        session.plannedExercises = Self.rebuildSessionExercises(inWeek: normalWeek, newTemplate: template,
+                            planExercises: plan.exercises, autoPickedIds: autoPickedIds, targetDayOfWeek: dayOfWeek)
+                        session.deloadPrescription = nil
+                        PlanDeloadPolicy.apply(to: &session, weightPercentage: priorPolicy.weightPercentage, restPercentage: priorPolicy.restPercentage, omitted: priorPolicy.omitted)
+                        plan.blocks[bi].weeks[wi].sessions[si] = session
+                    }
                 }
             }
         }
@@ -710,8 +730,9 @@ public final class ProgressionPlanViewModel {
         plan.updatedAt = Date()
         do {
             try await progressionPlanRepository.save(plan)
-            activePlan = plan
+            activePlan = try await progressionPlanRepository.fetchActive()
             await refreshLinkedTemplateNames(for: plan)
+            await onPlanChanged?()
         } catch {
             errorMessage = "Failed to link template: \(error.localizedDescription)"
         }
@@ -1039,13 +1060,17 @@ public final class ProgressionPlanViewModel {
             for wi in plan.blocks[bi].weeks.indices {
                 for si in plan.blocks[bi].weeks[wi].sessions.indices {
                     let session = plan.blocks[bi].weeks[wi].sessions[si]
-                    guard !session.isClosed else { continue }
+                    guard !session.isClosed, !(protectedPlanSessions?().contains(session.id) ?? false) else { continue }
                     // Past-date gate only applies beyond the current block.
                     if bi != currentBlockIndex,
                        let scheduled = session.scheduledDate, scheduled < startOfToday { continue }
 
+                    if let policy = session.deloadPrescription {
+                        plan.blocks[bi].weeks[wi].sessions[si].plannedExercises = policy.normalExercises
+                    }
                     for ei in plan.blocks[bi].weeks[wi].sessions[si].plannedExercises.indices {
                         let set = plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei]
+                        guard set.isUserOverride != true else { continue }
                         // Untracked template exercises carry a template-exercise id in
                         // planExerciseId; fall back to the library exercise id.
                         guard let planExercise = planExercisesById[set.planExerciseId]
@@ -1059,6 +1084,11 @@ public final class ProgressionPlanViewModel {
                                   let newWeight = Double(newWeightString) {
                             plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei].targetWeight = newWeight
                         }
+                    }
+                    if session.deloadPrescription != nil {
+                        let normalExercises = plan.blocks[bi].weeks[wi].sessions[si].plannedExercises
+                        plan.blocks[bi].weeks[wi].sessions[si].deloadPrescription?.normalExercises = normalExercises
+                        PlanDeloadPolicy.refresh(&plan.blocks[bi].weeks[wi].sessions[si])
                     }
                 }
             }
@@ -1099,7 +1129,8 @@ public final class ProgressionPlanViewModel {
     /// Accepts a pending adjustment and applies its effect to future sessions.
     public func acceptAdjustment(id: UUID) async {
         guard var plan = activePlan,
-              let index = plan.adjustments.firstIndex(where: { $0.id == id }) else { return }
+              let index = plan.adjustments.firstIndex(where: { $0.id == id }),
+              plan.adjustments[index].wasAccepted == nil else { return }
         plan.adjustments[index].wasAccepted = true
         let adjustment = plan.adjustments[index]
 
@@ -1125,9 +1156,11 @@ public final class ProgressionPlanViewModel {
             plan.adjustments[index].newValues["deloadPercent"] = String(percent)
             applyDeloadToCurrentWeek(plan: &plan, deloadPercent: percent)
         case .blockExtension:
-            // TODO: Repeat-week / block-extension structural changes are deferred —
-            // acceptance is recorded but the program structure is left unchanged.
-            break
+            do {
+                plan = try PlanEditingService.applying(.init(operation: .repeatWeek, week: plan.currentWeek?.absoluteWeekNumber),
+                    to: plan, settings: plan.configuration ?? .init(durationWeeks: plan.totalWeeks),
+                    protectedSessionIDs: protectedPlanSessions?() ?? [])
+            } catch { errorMessage = error.localizedDescription; return }
         default:
             break
         }
@@ -1136,6 +1169,7 @@ public final class ProgressionPlanViewModel {
         do {
             try await progressionPlanRepository.save(plan)
             await loadActivePlan()
+            await onPlanChanged?()
         } catch {
             errorMessage = "Failed to apply adjustment: \(error.localizedDescription)"
         }
@@ -1170,16 +1204,25 @@ public final class ProgressionPlanViewModel {
             for wi in plan.blocks[bi].weeks.indices {
                 for si in plan.blocks[bi].weeks[wi].sessions.indices {
                     let session = plan.blocks[bi].weeks[wi].sessions[si]
-                    guard session.completedWorkoutId == nil else { continue }
+                    guard session.completedWorkoutId == nil, !(protectedPlanSessions?().contains(session.id) ?? false) else { continue }
                     if let scheduled = session.scheduledDate, scheduled < startOfToday { continue }
 
+                    if let policy = session.deloadPrescription {
+                        plan.blocks[bi].weeks[wi].sessions[si].plannedExercises = policy.normalExercises
+                    }
                     for ei in plan.blocks[bi].weeks[wi].sessions[si].plannedExercises.indices {
                         let set = plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei]
+                        guard set.isUserOverride != true else { continue }
                         guard affected.isEmpty
                             || affected.contains(set.exerciseId)
                             || affected.contains(set.planExerciseId) else { continue }
                         let scaled = (set.targetWeight * factor).rounded(toNearest: 2.5)
                         plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei].targetWeight = scaled
+                    }
+                    if session.deloadPrescription != nil {
+                        let normalExercises = plan.blocks[bi].weeks[wi].sessions[si].plannedExercises
+                        plan.blocks[bi].weeks[wi].sessions[si].deloadPrescription?.normalExercises = normalExercises
+                        PlanDeloadPolicy.refresh(&plan.blocks[bi].weeks[wi].sessions[si])
                     }
                 }
             }
@@ -1189,23 +1232,21 @@ public final class ProgressionPlanViewModel {
     /// Marks the current week's open (not completed/skipped) sessions as deload and scales
     /// their set weights by the given deload percentage.
     private func applyDeloadToCurrentWeek(plan: inout ProgressionPlan, deloadPercent: Double) {
-        guard let currentWeekId = plan.currentWeek?.id else { return }
-        let factor = deloadPercent / 100.0
-
+        guard let number = plan.currentWeek?.absoluteWeekNumber else { return }
+        let protected = protectedPlanSessions?() ?? []
         for bi in plan.blocks.indices {
-            for wi in plan.blocks[bi].weeks.indices where plan.blocks[bi].weeks[wi].id == currentWeekId {
+            for wi in plan.blocks[bi].weeks.indices where plan.blocks[bi].weeks[wi].absoluteWeekNumber == number {
                 for si in plan.blocks[bi].weeks[wi].sessions.indices {
-                    guard !plan.blocks[bi].weeks[wi].sessions[si].isClosed else { continue }
-                    plan.blocks[bi].weeks[wi].sessions[si].isDeload = true
-                    for ei in plan.blocks[bi].weeks[wi].sessions[si].plannedExercises.indices {
-                        let weight = plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei].targetWeight
-                        plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei].targetWeight =
-                            (weight * factor).rounded(toNearest: 2.5)
-                    }
+                    let session = plan.blocks[bi].weeks[wi].sessions[si]
+                    guard !session.isClosed, !protected.contains(session.id),
+                        (session.scheduledDate ?? .distantPast) >= Calendar.current.startOfDay(for: Date()) else { continue }
+                    // Existing deloads are already scaled; never scale them a second time.
+                    guard !session.isDeload || session.deloadPrescription != nil else { continue }
+                    PlanDeloadPolicy.apply(to: &plan.blocks[bi].weeks[wi].sessions[si], weightPercentage: Int(deloadPercent),
+                        restPercentage: userPreferencesService?.deloadRestPercentage ?? 75,
+                        omitted: plan.deloadDays.map { !$0.contains(session.dayOfWeek ?? 0) } ?? false)
                 }
-                // Week-level deload flag mirrors per-session truth (all-or-nothing).
-                plan.blocks[bi].weeks[wi].isDeload =
-                    plan.blocks[bi].weeks[wi].sessions.allSatisfy(\.isDeload)
+                plan.blocks[bi].weeks[wi].isDeload = plan.blocks[bi].weeks[wi].sessions.allSatisfy(\.isDeload)
             }
         }
     }
@@ -1235,6 +1276,15 @@ public final class ProgressionPlanViewModel {
                 ?? plannedByName[te.exercise.name.lowercased()]
             guard let planned else {
                 if session.isDeload {
+                    if let policy = session.deloadPrescription {
+                        var copy = te
+                        let factor = Double(policy.weightPercentage) / 100
+                        copy.targetWeight = copy.targetWeight.map { ($0 * factor * 100).rounded() / 100 }
+                        copy.setTargets = copy.setTargets.map { target in
+                            var t = target; t.targetWeight = t.targetWeight.map { ($0 * factor * 100).rounded() / 100 }; return t
+                        }
+                        return copy
+                    }
                     return te.deloaded()
                 }
                 return te
@@ -1298,8 +1348,45 @@ public final class ProgressionPlanViewModel {
             sortOrder: 0,
             lastUsedAt: nil,
             timesUsed: 0,
-            exercises: mergedExercises
+            exercises: mergedExercises, deloadRestPercentage: session.deloadPrescription?.restPercentage
         )
     }
+    public func planEditCatalog() async throws -> (templates: [WorkoutTemplate], exercises: [Exercise]) {
+        (try await templateRepository.fetchAll(), try await exerciseRepository.fetchAll().filter { !$0.isArchived })
+    }
+
+    public func previewPlanEdit(_ request: PlanEditRequest) async throws -> PlanEditPreview {
+        guard canEditPlan?() ?? true else { throw PlanEditError("Training plans require Pro access.") }
+        guard let plan = try await progressionPlanRepository.fetchActive() else { throw PlanEditError("No active plan.") }
+        let templates = try await templateRepository.fetchAll()
+        let exercises = try await exerciseRepository.fetchAll()
+        var protected = protectedPlanSessions?() ?? []
+        if let workoutRepository, let active = try await workoutRepository.fetchActive(), let id = active.plannedSessionId { protected.insert(id) }
+        let settings = PlanConfiguration(durationWeeks: plan.configuration?.durationWeeks ?? plan.totalWeeks,
+            deloadWeightPercentage: userPreferencesService?.deloadWeightPercentage ?? 50,
+            deloadRestPercentage: userPreferencesService?.deloadRestPercentage ?? 75)
+        return try PlanEditingService.preview(plan: plan, request: request, settings: settings,
+            templates: templates, exercises: exercises, protectedSessionIDs: protected)
+    }
+
+    public func applyPlanEdit(_ preview: PlanEditPreview) async throws {
+        guard canEditPlan?() ?? true else { throw PlanEditError("Training plans require Pro access.") }
+        guard let plan = try await progressionPlanRepository.fetchActive(), plan.id == preview.planID else { throw PlanEditError("The active plan changed. Request a fresh preview.") }
+        if plan.adjustments.contains(where: { $0.id == preview.id && $0.wasAccepted == true }) { return }
+        let templates = try await templateRepository.fetchAll()
+        let exercises = try await exerciseRepository.fetchAll()
+        guard PlanEditingService.version(plan) == preview.expectedVersion,
+              PlanEditingService.dependencies(templates: templates, exercises: exercises) == preview.dependencyVersion else {
+            throw PlanEditError("The plan or exercise/template data changed. Request a fresh preview before applying.")
+        }
+        var protected = protectedPlanSessions?() ?? []
+        if let workoutRepository, let active = try await workoutRepository.fetchActive(), let id = active.plannedSessionId { protected.insert(id) }
+        let changed = try PlanEditingService.applying(preview.request, to: plan, settings: preview.settings,
+            templates: templates, exercises: exercises, protectedSessionIDs: protected, operationID: preview.id)
+        try await progressionPlanRepository.save(changed)
+        await loadActivePlan()
+        await onPlanChanged?()
+    }
+
 }
 #endif

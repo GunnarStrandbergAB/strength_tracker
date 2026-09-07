@@ -63,6 +63,11 @@ struct PlanCreationStep2GoalView: View {
                         .textCase(.uppercase)
                         .foregroundStyle(STColors.textSecondary)
 
+                    Stepper("\(viewModel.resolvedDraftDurationWeeks) programme weeks", value: Binding(
+                        get: { viewModel.resolvedDraftDurationWeeks }, set: { viewModel.draftDurationWeeks = $0 }), in: 4...52)
+                        .foregroundStyle(STColors.textPrimary)
+                    Text("You can extend the plan later. Inserting a deload preserves the remaining sessions.")
+                        .font(.caption).foregroundStyle(STColors.textSecondary)
                     Text("\(viewModel.draftTrainingDays.count) days per week")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(STColors.textPrimary)

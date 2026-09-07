@@ -7,6 +7,7 @@ import Foundation
 public final class ActiveWorkoutContextNoteProvider {
     private let workoutViewModel: WorkoutViewModel
     private let userPreferencesService: UserPreferencesService
+    public var planNote: (() -> String)?
     private let now: () -> Date
 
     public init(
@@ -20,6 +21,10 @@ public final class ActiveWorkoutContextNoteProvider {
     }
 
     public func note() -> String {
+        workoutNote() + (planNote.map { "\n[App state, auto-generated: " + $0() + "]" } ?? "")
+    }
+
+    private func workoutNote() -> String {
         guard workoutViewModel.isActive, let workout = workoutViewModel.currentWorkout else {
             if workoutViewModel.watchActiveWorkout != nil {
                 return "[App state, auto-generated: a workout is in progress on Apple Watch; it cannot be edited from here.]"

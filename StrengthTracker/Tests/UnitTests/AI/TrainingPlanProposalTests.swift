@@ -468,3 +468,70 @@ struct CreatePlanTests {
         #expect(plan.name == "Training Plan")
     }
 }
+
+extension CreatePlanTests {
+    @Test("Plan edit preview writes nothing; applying twice is idempotent and refreshes once")
+    func editPreviewApply() async throws {
+        let (vm, repo) = makeViewModel()
+        let plan = try await vm.createPlan(from: .init(name: "Editable", trainingStatus: .advanced, programType: .linear,
+            primaryGoal: .strength, weeklyFrequency: 3, trainingDays: [2,4,6],
+            exercises: [ProgressionTestHelpers.makeTestPlanExercise()], creationSource: .structuredFlow, durationWeeks: 8))
+        var refreshes = 0; vm.onPlanChanged = { refreshes += 1 }
+        let preview = try await vm.previewPlanEdit(.init(operation: .insertDeload, week: 5))
+        #expect(try await repo.fetchActive()?.totalWeeks == plan.totalWeeks)
+        let stored = try JSONDecoder().decode(PlanEditPreview.self, from: JSONEncoder().encode(preview))
+        try await vm.applyPlanEdit(stored)
+        try await vm.applyPlanEdit(stored)
+        #expect(vm.activePlan?.totalWeeks == plan.totalWeeks + 1)
+        #expect(vm.activePlan?.adjustments.filter { $0.id == stored.id }.count == 1)
+        #expect(refreshes == 1)
+    }
+
+    @Test("Stale preview and changed Pro access prevent saving")
+    func staleEditPreview() async throws {
+        let (vm, repo) = makeViewModel()
+        var plan = try await vm.createPlan(from: .init(name: "Editable", trainingStatus: .advanced, programType: .linear,
+            primaryGoal: .strength, weeklyFrequency: 3, exercises: [ProgressionTestHelpers.makeTestPlanExercise()], creationSource: .structuredFlow))
+        let preview = try await vm.previewPlanEdit(.init(operation: .convertDeload, week: 5))
+        plan.notes = "Changed after preview"; plan.updatedAt = Date()
+        try await repo.save(plan)
+        await #expect(throws: PlanEditError.self) { try await vm.applyPlanEdit(preview) }
+        #expect(try await repo.fetchActive()?.notes == "Changed after preview")
+        let fresh = try await vm.previewPlanEdit(.init(operation: .convertDeload, week: 5))
+        vm.canEditPlan = { false }
+        await #expect(throws: PlanEditError.self) { try await vm.applyPlanEdit(fresh) }
+    }
+
+    @Test("Grok plan edit returns an Apply card and does not mutate the active plan")
+    func grokPlanEditTool() async throws {
+        let (vm, repo) = makeViewModel()
+        let plan = try await vm.createPlan(from: .init(name: "Editable", trainingStatus: .advanced, programType: .linear,
+            primaryGoal: .strength, weeklyFrequency: 3, exercises: [ProgressionTestHelpers.makeTestPlanExercise()], creationSource: .structuredFlow))
+        let result = try await ProposePlanEditTool(viewModel: vm).call(argumentsJSON: #"{"operation":"insertDeload","week":5,"weeks":3}"#)
+        guard case .action(let action) = result.draft, case .editPlan(let preview) = action.kind else { Issue.record("Expected edit preview card"); return }
+        #expect(preview.request.weeks == 3)
+        #expect(action.confirmLabel == "Apply changes")
+        #expect(result.outputForModel.contains("confirmation_presented"))
+        #expect(try await repo.fetchActive()?.totalWeeks == plan.totalWeeks)
+    }
+
+    @Test("A workout becoming active after preview is protected on Apply")
+    func newlyActiveSession() async throws {
+        let (vm, _) = makeViewModel()
+        let plan = try await vm.createPlan(from: .init(name: "Editable", trainingStatus: .advanced, programType: .linear,
+            primaryGoal: .strength, weeklyFrequency: 3, exercises: [ProgressionTestHelpers.makeTestPlanExercise()], creationSource: .structuredFlow))
+        let target = try #require(plan.blocks.flatMap(\.weeks).first { $0.absoluteWeekNumber == 5 }?.sessions.first)
+        let preview = try await vm.previewPlanEdit(.init(operation: .convertDeload, week: 5))
+        vm.protectedPlanSessions = { [target.id] }
+        await #expect(throws: PlanEditError.self) { try await vm.applyPlanEdit(preview) }
+    }
+
+    @Test("Creation rejects unsupported duration")
+    func invalidDuration() async {
+        let (vm, _) = makeViewModel()
+        await #expect(throws: PlanEditError.self) {
+            try await vm.createPlan(from: .init(name: "Too short", trainingStatus: .beginner, programType: .block,
+                primaryGoal: .strength, weeklyFrequency: 3, exercises: [], creationSource: .structuredFlow, durationWeeks: 2))
+        }
+    }
+}

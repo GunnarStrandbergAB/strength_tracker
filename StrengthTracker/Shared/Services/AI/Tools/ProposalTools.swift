@@ -292,6 +292,7 @@ public final class ProposeTrainingPlanTool: AITool {
                 "name": AIToolRegistry.stringSchema("Plan name"),
                 "goal": AIToolRegistry.enumSchema(TrainingGoal.self, description: "Primary training goal"),
                 "program_type": AIToolRegistry.enumSchema(ProgramType.self, description: "Periodization style (omit to let the app choose)"),
+                "duration_weeks": AIToolRegistry.integerSchema("Programme length 4–52 weeks; default 12, or 10/9 for block programmes"),
                 "weekly_frequency": AIToolRegistry.integerSchema("Training days per week (1-7); must equal the number of training_days when those are given"),
                 "training_days": AIToolRegistry.arraySchema(
                     of: AIToolRegistry.integerSchema("Calendar weekday, Sunday=1 … Saturday=7"),
@@ -331,6 +332,7 @@ public final class ProposeTrainingPlanTool: AITool {
         var name: String
         var goal: String
         var program_type: String?
+        var duration_weeks: Int?
         var weekly_frequency: Int
         var training_days: [Int]?
         var deload_days: [Int]?
@@ -345,6 +347,7 @@ public final class ProposeTrainingPlanTool: AITool {
 
         let trimmedName = args.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { throw AIToolError("Plan name must not be empty") }
+        if let weeks = args.duration_weeks, !(4...52).contains(weeks) { throw AIToolError("duration_weeks must be 4–52") }
         guard (1...7).contains(args.weekly_frequency) else {
             throw AIToolError("weekly_frequency must be 1-7")
         }
@@ -491,7 +494,7 @@ public final class ProposeTrainingPlanTool: AITool {
             exercises: selections,
             daySplits: daySplits,
             deloadDays: deloadDays,
-            trainingStatus: trainingStatus
+            trainingStatus: trainingStatus, durationWeeks: args.duration_weeks
         )
 
         return AIToolResult(

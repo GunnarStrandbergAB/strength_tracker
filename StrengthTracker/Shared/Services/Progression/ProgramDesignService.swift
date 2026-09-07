@@ -7,8 +7,8 @@ import Foundation
 /// - **DUP**: Hypertrophy/strength/power sessions rotate within each week with %-based overload.
 /// - **WUP**: Rep schemes alternate week-to-week (hypertrophy, strength, power cycle).
 /// - **Block**: Accumulation -> Transmutation -> Realization -> Deload phases.
-/// m9: v1 uses a fixed 12-week mesocycle for all program types. Configurable duration
-/// is a planned v2 enhancement (consider adding `targetDurationWeeks` on ProgressionPlan).
+/// Configuration selects 4–52 programming weeks. Nil configuration preserves the legacy
+/// 12-week linear/undulating and 10/9-week block defaults.
 public final class ProgramDesignService: Sendable {
 
     // MARK: - Constants
@@ -76,6 +76,35 @@ public final class ProgramDesignService: Sendable {
             blocks = generateBlockProgram(plan, deloadIntensity: deloadIntensity)
         }
 
+        // Retain programming identity when calendar buckets split a microcycle.
+        for b in blocks.indices {
+            for w in blocks[b].weeks.indices {
+                let week = blocks[b].weeks[w]
+                for i in blocks[b].weeks[w].sessions.indices {
+                    blocks[b].weeks[w].sessions[i].programmingWeekID = week.id
+                    blocks[b].weeks[w].sessions[i].programmingWeekNumber = week.absoluteWeekNumber
+                }
+            }
+        }
+        if let configuration = plan.configuration {
+            let ordinary = blocks.flatMap(\.weeks).flatMap(\.sessions).filter { !$0.isDeload }
+            for b in blocks.indices {
+                for w in blocks[b].weeks.indices {
+                    for i in blocks[b].weeks[w].sessions.indices where blocks[b].weeks[w].sessions[i].isDeload {
+                        var session = blocks[b].weeks[w].sessions[i]
+                        let candidates = ordinary.filter { $0.dayOfWeek == session.dayOfWeek }
+                        if let normal = candidates.last(where: { ($0.programmingWeekNumber ?? 0) < (session.programmingWeekNumber ?? 0) }) ?? candidates.first {
+                            session.plannedExercises = normal.plannedExercises
+                            session.sessionLabel = normal.sessionLabel
+                            session.isDeload = false
+                            PlanDeloadPolicy.apply(to: &session, weightPercentage: configuration.deloadWeightPercentage,
+                                restPercentage: configuration.deloadRestPercentage)
+                            blocks[b].weeks[w].sessions[i] = session
+                        }
+                    }
+                }
+            }
+        }
         // Date the microcycles sequentially from the start date, then regroup into
         // Monday-anchored calendar-week buckets (Model A).
         CalendarWeekBucketer.assignSequentialDates(to: &blocks, startDate: plan.startDate)
@@ -85,7 +114,7 @@ public final class ProgramDesignService: Sendable {
     // MARK: - Linear Periodization
 
     private func generateLinearProgram(_ plan: ProgressionPlan, deloadIntensity: Double) -> [TrainingBlock] {
-        let totalWeeks = Defaults.linearWeeks
+        let totalWeeks = plan.configuration?.durationWeeks ?? Defaults.linearWeeks
         let step = intensityStep(for: plan.trainingStatus)
         let goalRange = plan.primaryGoal.intensityRange
         let startIntensity = goalRange.lowerBound
@@ -196,7 +225,7 @@ public final class ProgramDesignService: Sendable {
     // MARK: - DUP (Daily Undulating Periodization)
 
     private func generateDUPProgram(_ plan: ProgressionPlan, deloadIntensity: Double) -> [TrainingBlock] {
-        let totalWeeks = Defaults.linearWeeks
+        let totalWeeks = plan.configuration?.durationWeeks ?? Defaults.linearWeeks
         let restSeconds = middleRest(for: plan.primaryGoal)
         let days = resolveDays(for: plan)
         let deloadDays = resolveDeloadDays(for: plan)
@@ -325,7 +354,7 @@ public final class ProgramDesignService: Sendable {
     // MARK: - WUP (Weekly Undulating Periodization)
 
     private func generateWUPProgram(_ plan: ProgressionPlan, deloadIntensity: Double) -> [TrainingBlock] {
-        let totalWeeks = Defaults.linearWeeks
+        let totalWeeks = plan.configuration?.durationWeeks ?? Defaults.linearWeeks
         let restSeconds = middleRest(for: plan.primaryGoal)
         let days = resolveDays(for: plan)
         let deloadDays = resolveDeloadDays(for: plan)
@@ -424,8 +453,18 @@ public final class ProgramDesignService: Sendable {
         var blocks: [TrainingBlock] = []
         var absoluteWeek = 1
 
+        var phaseDurations = phases.map(\.weekDuration)
+        if let requested = plan.configuration?.durationWeeks {
+            phaseDurations = Array(repeating: 1, count: phases.count)
+            for _ in phases.count..<max(phases.count, requested) {
+                let index = phases.indices.max { a, b in
+                    Double(phases[a].weekDuration) / Double(phaseDurations[a]) < Double(phases[b].weekDuration) / Double(phaseDurations[b])
+                }!
+                phaseDurations[index] += 1
+            }
+        }
         for (blockOrder, phase) in phases.enumerated() {
-            let duration = phase.weekDuration
+            let duration = phaseDurations[blockOrder]
             var weeks: [TrainingWeek] = []
 
             for weekInPhase in 0..<duration {

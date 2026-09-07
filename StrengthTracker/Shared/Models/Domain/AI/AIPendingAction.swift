@@ -14,6 +14,7 @@ public struct AIPendingAction: Codable, Sendable, Equatable {
             isDeload: Bool,
             replacingWorkoutID: UUID
         )
+        case editPlan(PlanEditPreview)
         case cancelWorkout(workoutID: UUID)
         case removeExercise(workoutID: UUID, exerciseID: UUID)
         case removeSet(workoutID: UUID, exerciseID: UUID, setID: UUID)

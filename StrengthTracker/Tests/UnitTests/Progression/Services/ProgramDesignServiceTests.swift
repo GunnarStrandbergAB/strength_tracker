@@ -467,3 +467,205 @@ struct ProgramDesignServiceTests {
         week.sessions.flatMap(\.plannedExercises).reduce(0) { $0 + $1.sets }
     }
 }
+
+@Suite("Enhanced plan editing")
+struct EnhancedPlanEditingTests {
+    let now = CalendarWeekBucketer.weekStart(of: ProgressionTestHelpers.fixedMondayStart)
+    let settings = PlanConfiguration(durationWeeks: 12, deloadWeightPercentage: 60, deloadRestPercentage: 75)
+    func makePlan() -> ProgressionPlan {
+        var p = ProgressionTestHelpers.makeTestPlan(exercises: ProgressionTestHelpers.standardExercises(), trainingStatus: .advanced)
+        p.startDate = now; p.trainingDays = [2, 4, 6]; p.weeklyFrequency = 3
+        p.configuration = settings
+        p.blocks = ProgramDesignService().generateProgram(for: p)
+        p.targetEndDate = p.blocks.flatMap(\.weeks).flatMap(\.sessions).compactMap(\.scheduledDate).max()
+        return p
+    }
+    func sessions(_ p: ProgressionPlan) -> [PlannedSession] { p.blocks.flatMap(\.weeks).flatMap(\.sessions) }
+
+    @Test("All generators honor duration and retain programming identities", arguments: ProgramType.allCases, [4, 8, 12, 16, 52])
+    func durations(type: ProgramType, duration: Int) {
+        var p = makePlan(); p.programType = type; p.trainingStatus = .intermediate; p.configuration?.durationWeeks = duration
+        let generated = ProgramDesignService().generateProgram(for: p).flatMap(\.weeks).flatMap(\.sessions)
+        #expect(Set(generated.compactMap(\.programmingWeekNumber)).count == duration)
+        #expect(generated.allSatisfy { $0.programmingWeekID != nil })
+        for s in generated where s.isDeload {
+            #expect(s.deloadPrescription != nil)
+            #expect(s.plannedExercises.first?.targetWeight == s.deloadPrescription?.normalExercises.first.map { ($0.targetWeight * 60).rounded() / 100 })
+        }
+    }
+
+    @Test("Three inserted deload weeks extend 12 to 15 without losing prescriptions")
+    func multipleInsertions() throws {
+        let original = makePlan()
+        let changed = try PlanEditingService.applying(.init(operation: .insertDeload, week: 5, weeks: 3), to: original, settings: settings, now: now)
+        #expect(changed.totalWeeks == 15)
+        #expect(sessions(changed).count == sessions(original).count + 9)
+        for s in sessions(original) {
+            let updated = try #require(sessions(changed).first { $0.id == s.id })
+            #expect(updated.plannedExercises == s.plannedExercises)
+            #expect(updated.programmingWeekID == s.programmingWeekID)
+            let delta = (s.programmingWeekNumber ?? 0) >= 5 ? 21 : 0
+            #expect(updated.scheduledDate == Calendar.current.date(byAdding: .day, value: delta, to: s.scheduledDate!))
+        }
+    }
+
+    @Test("Conversion is reversible and does not change the finish date")
+    func conversion() throws {
+        let original = makePlan()
+        let changed = try PlanEditingService.applying(.init(operation: .convertDeload, week: 5), to: original, settings: settings, now: now)
+        #expect(changed.targetEndDate == original.targetEndDate)
+        let restored = try PlanEditingService.applying(.init(operation: .removeDeload, week: 5), to: changed, settings: settings, now: now)
+        #expect(sessions(restored) == sessions(original))
+    }
+
+    @Test("Deload overlay is idempotent, preserves sets/reps, snapshots rest and survives coding")
+    func overlay() throws {
+        var s = sessions(makePlan())[0]; let normal = s.plannedExercises
+        PlanDeloadPolicy.apply(to: &s, weightPercentage: 60, restPercentage: 50)
+        let once = s.plannedExercises
+        PlanDeloadPolicy.apply(to: &s, weightPercentage: 60, restPercentage: 50)
+        #expect(s.plannedExercises == once)
+        #expect(s.plannedExercises.map(\.sets) == normal.map(\.sets))
+        #expect(s.plannedExercises.map(\.targetReps) == normal.map(\.targetReps))
+        let copy = try JSONDecoder().decode(PlannedSession.self, from: JSONEncoder().encode(s))
+        #expect(copy == s)
+        #expect(copy.toWorkoutTemplate().deloadRestPercentage == 50)
+        s.deloadPrescription?.normalExercises[0].targetWeight = 101.25
+        PlanDeloadPolicy.refresh(&s)
+        #expect(s.plannedExercises[0].targetWeight == 60.75)
+        try PlanDeloadPolicy.remove(from: &s)
+        #expect(s.plannedExercises[0].targetWeight == 101.25)
+    }
+
+    @Test("Insertion can be moved and removed, preserving original IDs and dates")
+    func moveAndRemoveInserted() throws {
+        let original = makePlan()
+        let inserted = try PlanEditingService.applying(.init(operation: .insertDeload, week: 5), to: original, settings: settings, now: now)
+        let moved = try PlanEditingService.applying(.init(operation: .moveDeload, week: 5, destinationWeek: 8), to: inserted, settings: settings, now: now)
+        #expect(Set(sessions(moved).map(\.id)) == Set(sessions(inserted).map(\.id)))
+        let removed = try PlanEditingService.applying(.init(operation: .removeDeload, week: 8), to: moved, settings: settings, now: now)
+        #expect(sessions(removed).sorted { $0.id.uuidString < $1.id.uuidString } == sessions(original).sorted { $0.id.uuidString < $1.id.uuidString })
+    }
+
+    @Test("Completed and active sessions block broad edits")
+    func protectedWorkouts() throws {
+        var p = makePlan(); let first = sessions(p)[0]
+        #expect(throws: PlanEditError.self) {
+            try PlanEditingService.applying(.init(operation: .convertDeload, week: 1), to: p, settings: settings, protectedSessionIDs: [first.id], now: now)
+        }
+        p.blocks[0].weeks[0].sessions[0].completedWorkoutId = UUID()
+        #expect(throws: PlanEditError.self) {
+            try PlanEditingService.applying(.init(operation: .insertDeload, week: 1), to: p, settings: settings, now: now)
+        }
+        let edited = try PlanEditingService.applying(.init(operation: .convertDeload, week: 5), to: p, settings: settings, now: now)
+        #expect(edited.blocks[0].weeks[0].sessions[0] == p.blocks[0].weeks[0].sessions[0])
+        #expect(edited.blocks[0].weeks[0].id == p.blocks[0].weeks[0].id)
+    }
+
+    @Test("Fewer deload days are omitted instead of counted as missed workouts")
+    func omissions() throws {
+        var p = makePlan(); p.deloadDays = [2]
+        let edited = try PlanEditingService.applying(.init(operation: .convertDeload, week: 5), to: p, settings: settings, now: now)
+        let week = try #require(edited.blocks.flatMap(\.weeks).first { $0.absoluteWeekNumber == 5 })
+        #expect(week.sessions.filter(\.isOmitted).count == 2)
+        #expect(week.sessions.filter(\.isSkipped).isEmpty)
+        #expect(week.sessions.filter(\.isClosed).count == 2)
+    }
+
+    @Test("Explicit target edits are scoped and preserve precision through a deload")
+    func targets() throws {
+        let p = makePlan(); let source = sessions(p)[0]
+        let request = PlanEditRequest(operation: .changeTargets, sessionID: source.id, scope: .session, exerciseID: source.plannedExercises[0].exerciseId, sets: 4, reps: 8, weightKg: 100.25, restSeconds: 180)
+        let changed = try PlanEditingService.applying(request, to: p, settings: settings, now: now)
+        let edited = try #require(sessions(changed).first { $0.id == source.id })
+        #expect(edited.plannedExercises[0].targetWeight == 100.25)
+        #expect(edited.plannedExercises[0].isUserOverride == true)
+        #expect(sessions(changed).filter { $0.id != source.id } == sessions(p).filter { $0.id != source.id })
+        let deloaded = try PlanEditingService.applying(.init(operation: .convertDeload, week: 1), to: changed, settings: settings, now: now)
+        #expect(sessions(deloaded)[0].plannedExercises[0].targetWeight == 60.15)
+    }
+
+    @Test("Repeat and extend add complete weeks rather than discard the tail")
+    func repeatAndExtend() throws {
+        let p = makePlan()
+        for op in [PlanEditRequest.Operation.repeatWeek, .extendPlan] {
+            let edited = try PlanEditingService.applying(.init(operation: op, week: 5, weeks: 2), to: p, settings: settings, now: now)
+            #expect(edited.totalWeeks == 14)
+            #expect(Set(sessions(p).map(\.id)).isSubset(of: Set(sessions(edited).map(\.id))))
+        }
+    }
+
+    @Test("Invalid targets, dates and scopes fail without a candidate")
+    func invalidRequests() {
+        let p = makePlan()
+        for request in [PlanEditRequest(operation: .convertDeload, week: 999), .init(operation: .changeTargets, week: 1, weightKg: -.infinity),
+            .init(operation: .changeTargets, week: 1, sets: -1), .init(operation: .insertDeload, week: 2, weeks: 13)] {
+            #expect(throws: PlanEditError.self) { try PlanEditingService.applying(request, to: p, settings: settings, now: now) }
+        }
+    }
+}
+
+extension EnhancedPlanEditingTests {
+    @Test("Template and exercise edits stay local and preserve reusable templates")
+    func templateAndExercise() throws {
+        let p = makePlan()
+        let original = sessions(p)[0]
+        let replacement = ProgressionTestHelpers.makeTestExercise(name: "Replacement")
+        let template = WorkoutTemplate(id: UUID(), name: "New day", notes: nil, sortOrder: 0, lastUsedAt: nil, timesUsed: 0,
+            exercises: [TemplateExercise(id: UUID(), exercise: replacement, order: 0, supersetGroup: nil, notes: nil, restTimerSeconds: 120,
+                targetSets: 3, targetReps: 8, targetWeight: 20.25, targetDurationSeconds: nil, targetDistanceMeters: nil)])
+        let changed = try PlanEditingService.applying(.init(operation: .changeTemplate, sessionID: original.id, scope: .session, templateID: template.id),
+            to: p, settings: settings, templates: [template], exercises: [replacement], now: now)
+        let target = try #require(sessions(changed).first { $0.id == original.id })
+        #expect(target.templateId == template.id)
+        #expect(target.plannedExercises.first?.targetWeight == 20.25)
+        #expect(template.timesUsed == 0)
+        let swapped = try PlanEditingService.applying(.init(operation: .changeExercise, sessionID: original.id, scope: .session,
+            exerciseID: original.plannedExercises[0].exerciseId, replacementExerciseID: replacement.id, reps: 10, weightKg: 25.25),
+            to: p, settings: settings, exercises: [replacement], now: now)
+        #expect(sessions(swapped).first?.plannedExercises.first?.exerciseId == replacement.id)
+        #expect(sessions(swapped).first?.plannedExercises.first?.targetWeight == 25.25)
+    }
+
+    @Test("Rescheduling preserves identity and skip/restore preserves targets")
+    func rescheduleSkipRestore() throws {
+        let p = makePlan()
+        let session = sessions(p)[0]
+        let date = Calendar.current.date(byAdding: .day, value: 9, to: session.scheduledDate!)!
+        let changed = try PlanEditingService.applying(.init(operation: .rescheduleSession, sessionID: session.id, newDate: date, scope: .session), to: p, settings: settings, now: now)
+        #expect(sessions(changed).first { $0.id == session.id }?.scheduledDate == date)
+        let skipped = try PlanEditingService.applying(.init(operation: .skipSession, sessionID: session.id, scope: .session), to: changed, settings: settings, now: now)
+        #expect(sessions(skipped).first { $0.id == session.id }?.isSkipped == true)
+        let restored = try PlanEditingService.applying(.init(operation: .skipSession, sessionID: session.id, scope: .session, skipped: false), to: skipped, settings: settings, now: now)
+        #expect(sessions(restored).first { $0.id == session.id }?.plannedExercises == session.plannedExercises)
+        #expect(sessions(restored).first { $0.id == session.id }?.isSkipped == false)
+    }
+
+    @Test("Editing legacy deload targets preserves deload status and snapshots the normal targets")
+    func legacyDeloadTargets() throws {
+        var p = makePlan(); p.configuration = nil; p.trainingStatus = .intermediate
+        p.blocks = ProgramDesignService().generateProgram(for: p)
+        let s = try #require(sessions(p).first { $0.isDeload })
+        let changed = try PlanEditingService.applying(.init(operation: .changeTargets, sessionID: s.id, scope: .session, weightKg: 100.25),
+            to: p, settings: settings, now: now)
+        let result = try #require(sessions(changed).first { $0.id == s.id })
+        #expect(result.isDeload)
+        #expect(changed.configuration == nil)
+        #expect(result.deloadPrescription?.normalExercises.first?.targetWeight == 100.25)
+        #expect(result.plannedExercises.first?.targetWeight == 60.15)
+    }
+
+    @Test("Midweek starts and calendar shifts retain weekdays and local times")
+    func calendarBoundary() throws {
+        var p = makePlan()
+        p.startDate = Calendar.current.date(from: DateComponents(year: 2026, month: 3, day: 25, hour: 0))!
+        p.blocks = ProgramDesignService().generateProgram(for: p)
+        let changed = try PlanEditingService.applying(.init(operation: .insertDeload, week: 2), to: p, settings: settings, now: p.startDate)
+        for old in sessions(p) {
+            let new = try #require(sessions(changed).first { $0.id == old.id })
+            #expect(Calendar.current.component(.weekday, from: old.scheduledDate!) == Calendar.current.component(.weekday, from: new.scheduledDate!))
+            #expect(Calendar.current.component(.hour, from: old.scheduledDate!) == Calendar.current.component(.hour, from: new.scheduledDate!))
+        }
+        #expect(changed.totalWeeks == p.totalWeeks + 1)
+    }
+}

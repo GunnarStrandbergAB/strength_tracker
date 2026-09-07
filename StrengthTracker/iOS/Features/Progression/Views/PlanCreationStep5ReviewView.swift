@@ -60,7 +60,7 @@ struct PlanCreationStep5ReviewView: View {
                         Divider().overlay(STColors.border)
                         summaryRow(label: "Level", value: viewModel.draftStatus.rawValue.capitalized)
                         Divider().overlay(STColors.border)
-                        summaryRow(label: "Duration", value: "12 weeks")
+                        summaryRow(label: "Duration", value: "\(viewModel.resolvedDraftDurationWeeks) programme weeks")
                     }
                     .background(STColors.surface)
                     .clipShape(RoundedRectangle(cornerRadius: STRadius.card))

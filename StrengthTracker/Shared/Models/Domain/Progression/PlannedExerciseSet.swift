@@ -14,6 +14,7 @@ public struct PlannedExerciseSet: Identifiable, Codable, Equatable, Sendable {
     public var restSeconds: Int
     public var isWarmup: Bool
     public var notes: String?
+    public var isUserOverride: Bool?
 
     public init(
         id: UUID = UUID(),
@@ -27,7 +28,7 @@ public struct PlannedExerciseSet: Identifiable, Codable, Equatable, Sendable {
         targetRPE: Double? = nil,
         restSeconds: Int = 120,
         isWarmup: Bool = false,
-        notes: String? = nil
+        notes: String? = nil, isUserOverride: Bool? = nil
     ) {
         self.id = id
         self.planExerciseId = planExerciseId
@@ -41,6 +42,7 @@ public struct PlannedExerciseSet: Identifiable, Codable, Equatable, Sendable {
         self.restSeconds = restSeconds
         self.isWarmup = isWarmup
         self.notes = notes
+        self.isUserOverride = isUserOverride
     }
 
     /// APRE adjustment: recalculate weight based on actual reps achieved.

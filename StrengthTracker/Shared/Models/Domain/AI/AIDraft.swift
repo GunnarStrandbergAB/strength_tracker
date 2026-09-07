@@ -92,6 +92,7 @@ public struct AIPlanParameters: Codable, Sendable, Equatable {
     /// Weekdays deload weeks train on; nil = same as training days.
     public var deloadDays: [Int]?
     /// User-stated training level override; nil = auto-detect at save time.
+    public var durationWeeks: Int?
     public var trainingStatus: TrainingStatus?
 
     public init(
@@ -104,8 +105,9 @@ public struct AIPlanParameters: Codable, Sendable, Equatable {
         exercises: [ExerciseSelection],
         daySplits: [DaySplit]? = nil,
         deloadDays: [Int]? = nil,
-        trainingStatus: TrainingStatus? = nil
+        trainingStatus: TrainingStatus? = nil, durationWeeks: Int? = nil
     ) {
+        self.durationWeeks = durationWeeks
         self.name = name
         self.primaryGoal = primaryGoal
         self.programType = programType

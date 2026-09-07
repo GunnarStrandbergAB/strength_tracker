@@ -17,6 +17,11 @@ public struct PlannedSession: Identifiable, Codable, Equatable, Sendable {
     public var isDeload: Bool
     public var isSkipped: Bool
     public var skippedAt: Date?
+    public var programmingWeekID: UUID?
+    public var programmingWeekNumber: Int?
+    public var insertedGroupID: UUID?
+    public var deloadPrescription: PlanDeloadPrescription?
+    public var isOmitted: Bool { deloadPrescription?.omitted == true }
 
     public init(
         id: UUID = UUID(),
@@ -33,7 +38,9 @@ public struct PlannedSession: Identifiable, Codable, Equatable, Sendable {
         userWorkoutNotes: String? = nil,
         isDeload: Bool = false,
         isSkipped: Bool = false,
-        skippedAt: Date? = nil
+        skippedAt: Date? = nil,
+        programmingWeekID: UUID? = nil, programmingWeekNumber: Int? = nil,
+        insertedGroupID: UUID? = nil, deloadPrescription: PlanDeloadPrescription? = nil
     ) {
         self.id = id
         self.dayOfWeek = dayOfWeek
@@ -50,6 +57,10 @@ public struct PlannedSession: Identifiable, Codable, Equatable, Sendable {
         self.isDeload = isDeload
         self.isSkipped = isSkipped
         self.skippedAt = skippedAt
+        self.programmingWeekID = programmingWeekID
+        self.programmingWeekNumber = programmingWeekNumber
+        self.insertedGroupID = insertedGroupID
+        self.deloadPrescription = deloadPrescription
     }
 
     // Custom decoding for backward compatibility — existing JSON without
@@ -58,7 +69,7 @@ public struct PlannedSession: Identifiable, Codable, Equatable, Sendable {
         case id, dayOfWeek, scheduledDate, dupSessionType, sessionLabel
         case plannedExercises, estimatedDurationMinutes, templateId
         case completedWorkoutId, completedAt, notes, userWorkoutNotes, isDeload
-        case isSkipped, skippedAt
+        case isSkipped, skippedAt, programmingWeekID, programmingWeekNumber, insertedGroupID, deloadPrescription
     }
 
     public init(from decoder: Decoder) throws {
@@ -78,12 +89,16 @@ public struct PlannedSession: Identifiable, Codable, Equatable, Sendable {
         isDeload = try container.decodeIfPresent(Bool.self, forKey: .isDeload) ?? false
         isSkipped = try container.decodeIfPresent(Bool.self, forKey: .isSkipped) ?? false
         skippedAt = try container.decodeIfPresent(Date.self, forKey: .skippedAt)
+        programmingWeekID = try container.decodeIfPresent(UUID.self, forKey: .programmingWeekID)
+        programmingWeekNumber = try container.decodeIfPresent(Int.self, forKey: .programmingWeekNumber)
+        insertedGroupID = try container.decodeIfPresent(UUID.self, forKey: .insertedGroupID)
+        deloadPrescription = try container.decodeIfPresent(PlanDeloadPrescription.self, forKey: .deloadPrescription)
     }
 
     public var isCompleted: Bool { completedWorkoutId != nil }
 
     /// A session is closed when it no longer expects user action — completed or skipped.
-    public var isClosed: Bool { isCompleted || isSkipped }
+    public var isClosed: Bool { isCompleted || isSkipped || isOmitted }
 
     /// scheduledDate Precedence Rules
     public var effectiveDate: Date? {
@@ -134,7 +149,7 @@ public struct PlannedSession: Identifiable, Codable, Equatable, Sendable {
             sortOrder: 0,
             lastUsedAt: nil,
             timesUsed: 0,
-            exercises: templateExercises
+            exercises: templateExercises, deloadRestPercentage: deloadPrescription?.restPercentage
         )
     }
 }

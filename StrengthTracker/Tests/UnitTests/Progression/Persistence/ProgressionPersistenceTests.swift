@@ -509,3 +509,54 @@ final class ProgressionPlanMapperTests: XCTestCase {
     }
 }
 #endif
+
+#if canImport(SwiftData)
+@MainActor
+final class EnhancedPlanPersistenceTests: XCTestCase {
+    func testOptionalConfigurationAndNormalPrescriptionRoundTrip() throws {
+        var plan = EnhancedPlanEditingTests().makePlan()
+        let settings = PlanConfiguration(durationWeeks: 12, deloadWeightPercentage: 60, deloadRestPercentage: 50)
+        plan = try PlanEditingService.applying(.init(operation: .convertDeload, week: 5), to: plan, settings: settings, now: plan.startDate)
+        let entity = try ProgressionPlanMapper.toEntity(plan)
+        let read = try XCTUnwrap(ProgressionPlanMapper.toDomain(entity))
+        XCTAssertEqual(read.configuration, plan.configuration)
+        XCTAssertEqual(read.blocks.flatMap(\.weeks).flatMap(\.sessions).first { $0.isDeload }?.deloadPrescription,
+                       plan.blocks.flatMap(\.weeks).flatMap(\.sessions).first { $0.isDeload }?.deloadPrescription)
+        XCTAssertEqual(read.expectedUpdatedAt, entity.updatedAt)
+        entity.configurationJSON = nil
+        XCTAssertNil(ProgressionPlanMapper.toDomain(entity)?.configuration)
+    }
+
+    func testActualRepositoryRejectsStaleCopyEvenWithFreshWriteTimestamp() async throws {
+        let container = try ModelContainer(for: ProgressionPlanEntity.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let repo = SwiftDataProgressionPlanRepository(modelContext: ModelContext(container))
+        let plan = EnhancedPlanEditingTests().makePlan()
+        try await repo.save(plan)
+        let fetched = try await repo.fetchActive()
+        var stale = try XCTUnwrap(fetched)
+        var current = stale; current.name = "Current"; current.updatedAt = Date().addingTimeInterval(1)
+        try await repo.save(current)
+        stale.name = "Stale overwrite"; stale.updatedAt = Date().addingTimeInterval(2)
+        do { try await repo.save(stale); XCTFail("Stale version should fail") } catch is ProgressionPlanConcurrencyError { }
+        let saved = try await repo.fetchActive()
+        XCTAssertEqual(saved?.name, "Current")
+    }
+
+    func testEncodingFailureDoesNotPartiallyMutateEntity() throws {
+        let plan = EnhancedPlanEditingTests().makePlan()
+        let entity = try ProgressionPlanMapper.toEntity(plan)
+        var invalid = plan; invalid.name = "Should not leak"; invalid.exercises[0].current1RM = .infinity
+        XCTAssertThrowsError(try ProgressionPlanMapper.updateEntity(entity, from: invalid))
+        XCTAssertEqual(entity.name, plan.name)
+    }
+
+    func testWorkoutRestSnapshotSurvivesPersistenceAndWatchJSON() throws {
+        let workout = Workout(id: UUID(), name: "Deload", startedAt: Date(), completedAt: nil, notes: nil,
+                              templateId: nil, isDeload: true, exercises: [], deloadRestPercentage: 50)
+        let entity = WorkoutMapper.toEntity(workout)
+        XCTAssertEqual(WorkoutMapper.toDomain(entity).deloadRestPercentage, 50)
+        let copied = try JSONDecoder().decode(Workout.self, from: JSONEncoder().encode(workout))
+        XCTAssertEqual(copied.deloadRestPercentage, 50)
+    }
+}
+#endif

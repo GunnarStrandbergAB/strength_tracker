@@ -214,45 +214,7 @@ struct ContentViewWrapper: View {
                         let exercises = try await container.exerciseRepository.fetchAll()
                         container.connectivityManager.syncExercises(exercises)
 
-                        // Sync planned sessions from active progression plan
-                        if let plan = try await container.progressionPlanRepository.fetchActive(),
-                           let week = plan.currentWeek {
-                            let allTemplates = try await container.templateRepository.fetchAll()
-                            let templateLookup = Dictionary(
-                                allTemplates.map { ($0.id, $0) },
-                                uniquingKeysWith: { first, _ in first }
-                            )
-                            let vm = container.progressionPlanViewModel
-
-                            let sessions: [PlannedSessionSync] = week.sessions
-                                .filter { !$0.isClosed }
-                                .map { session in
-                                    let template: WorkoutTemplate
-                                    if let tid = session.templateId,
-                                       let linked = templateLookup[tid] {
-                                        template = vm.mergeSessionIntoTemplate(
-                                            session: session, template: linked, exercises: exercises
-                                        )
-                                    } else {
-                                        template = session.toWorkoutTemplate(exercises: exercises)
-                                    }
-                                    return PlannedSessionSync(
-                                        id: session.id,
-                                        planId: plan.id,
-                                        planName: plan.name,
-                                        sessionLabel: session.sessionLabel,
-                                        weekLabel: "Week \(week.absoluteWeekNumber)",
-                                        blockName: plan.currentBlock?.name,
-                                        isDeload: session.isDeload,
-                                        template: template
-                                    )
-                                }
-                            print("[iOS Sync] Syncing \(sessions.count) planned sessions to Watch for plan '\(plan.name)'")
-                            container.connectivityManager.syncPlannedSessions(sessions)
-                        } else {
-                            print("[iOS Sync] No active plan or no current week — clearing Watch planned sessions")
-                            container.connectivityManager.syncPlannedSessions([])
-                        }
+                        await container.syncActivePlanToWatch()
                     } catch {
                         print("[iOS Sync] Failed to sync data on activation: \(error)")
                     }

@@ -381,3 +381,59 @@ struct ReadToolsTests {
         #expect(planJSON["weekly_frequency"] == .number(4))
     }
 }
+
+extension ReadToolsTests {
+    @Test("History pages retain source IDs and two-decimal weights")
+    func structuredHistoryPagination() async throws {
+        let repo = MockWorkoutRepositoryProgression()
+        let exercise = makeExercise(name: "Bench")
+        repo.workouts = (0..<3).map { makeWorkout(name: "Day \($0)", daysAgo: $0 + 1, exercise: exercise, sets: [(100.25, 8)]) }
+        let tool = GetTrainingHistoryTool(workoutRepository: repo, exerciseRepository: InMemoryExerciseRepository(), userPreferencesService: UserPreferencesService())
+        let first = try json(try await tool.call(argumentsJSON: #"{"last_n":1}"#))
+        let second = try json(try await tool.call(argumentsJSON: #"{"last_n":1,"offset":1}"#))
+        #expect(first["next_offset"] == .number(1))
+        #expect(first["workouts"] != second["workouts"])
+        guard case .array(let entries)? = first["workouts"], case .object(let workout) = entries[0],
+              case .array(let exercises)? = workout["ex"], case .object(let entry) = exercises[0],
+              case .array(let sets)? = entry["set_data"], case .object(let set) = sets[0] else { Issue.record("Missing structured source data"); return }
+        #expect(workout["id"] == .string(repo.workouts[0].id.uuidString))
+        #expect(entry["exercise_id"] == .string(exercise.id.uuidString))
+        #expect(set["weight_kg"] == .number(100.25))
+        #expect(set["id"] != nil)
+        await #expect(throws: AIToolError.self) { try await tool.call(argumentsJSON: #"{"offset":-1}"#) }
+    }
+
+    @Test("Detailed quality and load match their app calculators before pagination")
+    func detailedAnalyticsParity() async throws {
+        let repo = MockWorkoutRepositoryProgression(), catalog = InMemoryExerciseRepository(), plans = InMemoryProgressionPlanRepository()
+        let prefs = UserPreferencesService(), health = MockHealthKitService()
+        let body = BodyWeightProvider(healthKitService: health, userPreferencesService: prefs)
+        let exercise = makeExercise(name: "Bench")
+        _ = try await catalog.save(exercise)
+        repo.workouts = (0..<12).map { makeWorkout(name: "Day \($0)", daysAgo: ($0 + 1) * 3, exercise: exercise, sets: [(100.25, 8), (100.25, 8), (100.25, 8)]) }
+        let quality = WorkoutQualityScoreService(workoutRepository: repo, muscleBalanceService: MuscleBalanceService(), healthKitService: health, userPreferencesService: prefs, bodyWeightProvider: body)
+        let analytics = WorkoutAnalyticsService(analyticsRepository: MockAnalyticsRepository(), workoutRepository: repo, exerciseRepository: catalog,
+            vectorizer: WorkoutVectorizer(), searchService: VectorSearchService(), plateauService: PlateauDetectionService(), muscleBalanceService: MuscleBalanceService(), recommendationService: ExerciseRecommendationService())
+        func tool(_ kind: DetailedAnalyticsTool.Kind) -> DetailedAnalyticsTool {
+            DetailedAnalyticsTool(kind: kind, workouts: repo, exercises: catalog, plans: plans, analytics: analytics, quality: quality,
+                planAnalytics: PlanAnalyticsService(workoutRepository: repo), bodyWeight: body)
+        }
+        let scored = try json(try await tool(.quality).call(argumentsJSON: #"{"limit":1}"#))
+        guard case .object(let aggregate)? = scored["aggregate"] else { Issue.record("Missing aggregate"); return }
+        #expect(aggregate["ewmaOverall"] == .number(quality.computeAggregateScore(workouts: repo.workouts).ewmaOverall))
+        let load = try json(try await tool(.load).call(argumentsJSON: #"{"limit":1}"#))
+        let bests = AnalyticsCalculations.buildBestE1RMMap(from: repo.workouts, bodyWeightKg: body.current)
+        let expected = TrainingLoadService.computeTrainingLoad(bodyWeightKg: body.current, workouts: repo.workouts, bestE1RM: bests)
+        #expect(load["acwr"] == expected.map { .number($0.acwr) })
+        let progress = try json(try await tool(.progress).call(argumentsJSON: "{\"exercise_id\":\"\(exercise.id)\",\"limit\":1}"))
+        #expect(progress["exercise_id"] == .string(exercise.id.uuidString))
+        guard case .object(let page)? = progress["history"] else { Issue.record("Missing history page"); return }
+        #expect(page["total"] == .number(12))
+        #expect(page["next_offset"] == .number(1))
+        for kind in [DetailedAnalyticsTool.Kind.coverage, .patterns, .recovery, .plan] {
+            let output = try json(try await tool(kind).call(argumentsJSON: "{}"))
+            #expect(output["source"] != nil)
+            #expect(output["status"] != nil)
+        }
+    }
+}
