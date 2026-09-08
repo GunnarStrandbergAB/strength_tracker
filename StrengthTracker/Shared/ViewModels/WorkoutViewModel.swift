@@ -250,6 +250,17 @@ public final class WorkoutViewModel {
 
     /// Swaps the exercise of a logged WorkoutExercise while keeping its id, order,
     /// notes and every set. Per-set PR flags are cleared (they belonged to the old exercise).
+    public func updateWeightRecording(exerciseId: UUID, recording: WeightRecording) async {
+        guard var workout = currentWorkout, let i = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              workout.exercises[i].exercise.isDumbbell else { return }
+        workout.exercises[i].exercise.weightRecording = recording
+        exerciseCoachingCache[exerciseId] = nil
+        previousSetDataCache = previousSetDataCache.filter { !$0.key.hasPrefix(exerciseId.uuidString + "-") }
+        await persist(workout)
+        await loadPreviousDataForExercise(exerciseId)
+        await loadCoachingData()
+    }
+
     public func replaceExercise(exerciseId: UUID, with exercise: Exercise) async {
         guard var workout = currentWorkout,
               let ei = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
@@ -526,7 +537,7 @@ public final class WorkoutViewModel {
         guard !missingIndices.isEmpty else { return }
 
         let targetExerciseId = exercise.exercise.id
-        guard let prevExercise = previousCompleted
+        guard let prevExercise = WeightRecordingHistory.matching(previousCompleted, references: [exercise.exercise.id: exercise.exercise])
             .first(where: { workout in workout.exercises.contains { $0.exercise.id == targetExerciseId } })?
             .exercises.first(where: { $0.exercise.id == targetExerciseId }) else { return }
 
@@ -580,7 +591,7 @@ public final class WorkoutViewModel {
                         trainingLoad: insights.trainingLoad,
                         isDeload: workout.isDeload,
                         bodyWeightKg: bodyWeightKg,
-                        verdict: insights.verdict
+                        verdict: insights.verdict, recordingReference: we.exercise
                     ) {
                         suggestions[setIndex] = suggestion
                     }

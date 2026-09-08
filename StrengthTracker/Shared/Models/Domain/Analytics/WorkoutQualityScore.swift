@@ -14,7 +14,7 @@ public struct WorkoutQualityScore: Identifiable, Hashable, Sendable, Codable {
     public let baselineNotes: [String]?
     public let scoredModelVersion: Int?
     public var isProvisional: Bool { !(provisionalReasons ?? []).isEmpty }
-    public static let modelVersion = 2
+    public static let modelVersion = 3
 
     public init(
         id: UUID = UUID(),

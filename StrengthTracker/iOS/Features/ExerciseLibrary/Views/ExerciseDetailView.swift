@@ -160,7 +160,7 @@ struct ExerciseDetailView: View {
 
     /// Returns the best record per type for display (highest value; date breaks ties).
     private var bestByType: [PersonalRecord] {
-        records.bestPerType().sorted { $0.recordType.sortOrder < $1.recordType.sortOrder }
+        records.matching(exercise).bestPerType().sorted { $0.recordType.sortOrder < $1.recordType.sortOrder }
     }
 }
 
@@ -188,7 +188,7 @@ private struct AddPRSheet: View {
                 }
 
                 HStack {
-                    Text(selectedType.unitLabel(weightUnit: weightUnit))
+                    Text(exercise.isDumbbell && [.maxWeight, .estimatedOneRepMax].contains(selectedType) ? exercise.weightEntryLabel(weightUnit) : selectedType.unitLabel(weightUnit: weightUnit))
                         .foregroundStyle(.secondary)
                     TextField("Value", text: $valueText)
                         .keyboardType(.decimalPad)
@@ -218,7 +218,8 @@ private struct AddPRSheet: View {
                             recordType: selectedType,
                             value: storedValue,
                             setId: nil,
-                            achievedAt: Date()
+                            achievedAt: Date(),
+                            weightRecordingKey: exercise.isDumbbell ? exercise.weightRecording?.performanceKey : nil
                         )
                         Task {
                             _ = try? await personalRecordService.saveManualRecord(record)

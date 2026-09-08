@@ -299,7 +299,7 @@ public final class ProgramDesignService: Sendable {
                             targetReps: reps,
                             targetWeight: exercise.targetWeight(atPercentage: intensity),
                             percentageOf1RM: intensity,
-                            restSeconds: restSeconds
+                            restSeconds: restSeconds, weightRecording: exercise.weightRecording
                         )
                     }
 
@@ -602,7 +602,7 @@ public final class ProgramDesignService: Sendable {
                     targetReps: targetReps,
                     targetWeight: exercise.targetWeight(atPercentage: intensity),
                     percentageOf1RM: intensity,
-                    restSeconds: restSeconds
+                    restSeconds: restSeconds, weightRecording: exercise.weightRecording
                 )
             }
 

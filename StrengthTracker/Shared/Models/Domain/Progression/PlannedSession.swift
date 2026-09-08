@@ -111,7 +111,7 @@ public struct PlannedSession: Identifiable, Codable, Equatable, Sendable {
         let exerciseLookup = Dictionary(exercises.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         let templateExercises: [TemplateExercise] = plannedExercises.enumerated().map { index, planned in
-            let exercise = exerciseLookup[planned.exerciseId] ?? Exercise(
+            var exercise = exerciseLookup[planned.exerciseId] ?? Exercise(
                 id: planned.exerciseId,
                 name: planned.exerciseName,
                 primaryMuscleGroup: .other,
@@ -123,6 +123,8 @@ public struct PlannedSession: Identifiable, Codable, Equatable, Sendable {
                 isArchived: false
             )
 
+            exercise.weightRecording = planned.weightRecording
+            if planned.weightRecording != nil { exercise.category = .dumbbell }
             let setTargets = planned.generateSetTargets()
 
             return TemplateExercise(

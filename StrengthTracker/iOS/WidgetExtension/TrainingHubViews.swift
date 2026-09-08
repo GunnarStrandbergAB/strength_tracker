@@ -516,7 +516,7 @@ struct ActiveWorkoutMediumView: View {
 
                     // Set target info
                     if let weight = active.nextSetWeight, let reps = active.nextSetReps {
-                        Text("Next: \(String(format: "%g", weight))kg x \(reps)")
+                        Text("Next: \(active.targetLabel ?? "")")
                             .font(.system(size: 11))
                             .foregroundStyle(WidgetColors.textSecondary)
                     }
@@ -645,8 +645,8 @@ struct ActiveWorkoutLargeView: View {
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(WidgetColors.accent)
 
-                        if let weight = active.nextSetWeight, let reps = active.nextSetReps {
-                            Label("\(String(format: "%g", weight))kg x \(reps)", systemImage: "scalemass")
+                        if let target = active.targetLabel {
+                            Label(target, systemImage: "scalemass")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(WidgetColors.textSecondary)
                         }

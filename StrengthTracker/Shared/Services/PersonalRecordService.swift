@@ -45,7 +45,7 @@ public final class PersonalRecordService {
 
         var newRecords: [PersonalRecord] = []
         for candidate in candidates {
-            let best = existing.filter { $0.recordType == candidate.recordType }.map(\.value).max() ?? 0
+            let best = existing.matching(exercise).filter { $0.recordType == candidate.recordType && $0.weightRecordingKey == candidate.weightRecordingKey }.map(\.value).max() ?? 0
             if candidate.value > best { newRecords.append(candidate) }
         }
         guard !newRecords.isEmpty else { return nil }
@@ -90,6 +90,7 @@ public final class PersonalRecordService {
         guard !exerciseIds.isEmpty else { return [:] }
         let allWorkouts = try await workoutRepository.fetchAll()
         let eligible = allWorkouts.filter { ($0.completedAt != nil || includeInProgress) && !$0.isDeload }
+        let references = WeightRecordingHistory.latestExercises(eligible)
         let bodyWeight = bodyWeightKg
 
         var winningSetIds = Set<UUID>()
@@ -98,9 +99,8 @@ public final class PersonalRecordService {
             for workout in eligible {
                 for workoutExercise in workout.exercises where workoutExercise.exercise.id == exerciseId {
                     for set in workoutExercise.sets where set.isCompleted && set.setType != .warmup {
-                        for candidate in Self.candidateRecords(
-                            exerciseId: exerciseId, exercise: workoutExercise.exercise, set: set, bodyWeightKg: bodyWeight
-                        ) {
+                        let candidates = Self.candidateRecords(exerciseId: exerciseId, exercise: workoutExercise.exercise, set: set, bodyWeightKg: bodyWeight)
+                        for candidate in references[exerciseId].map({ candidates.matching($0) }) ?? candidates {
                             if let current = elected[candidate.recordType] {
                                 if candidate.value > current.value
                                     || (candidate.value == current.value && candidate.achievedAt > current.achievedAt) {
@@ -157,6 +157,7 @@ public final class PersonalRecordService {
     /// The four record candidates a single set can produce, using effective loads
     /// from the set's own exercise snapshot.
     static func candidateRecords(exerciseId: UUID, exercise: Exercise, set: ExerciseSet, bodyWeightKg: Double) -> [PersonalRecord] {
+        let convention = exercise.isDumbbell ? exercise.weightRecording?.performanceKey : nil
         let base = exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
         let loadParts = set.effectiveLoadParts(baseLoadPerRep: base)
         let parts = set.effectiveParts
@@ -164,16 +165,16 @@ public final class PersonalRecordService {
         var records: [PersonalRecord] = []
 
         if let weight = loadParts.map(\.load).max(), weight > 0 {
-            records.append(PersonalRecord(id: UUID(), exerciseId: exerciseId, recordType: .maxWeight, value: weight, setId: set.id, achievedAt: achievedAt))
+            records.append(PersonalRecord(id: UUID(), exerciseId: exerciseId, recordType: .maxWeight, value: weight, setId: set.id, achievedAt: achievedAt, weightRecordingKey: convention))
         }
         if let reps = parts.compactMap(\.reps).filter({ $0 > 0 }).max() {
-            records.append(PersonalRecord(id: UUID(), exerciseId: exerciseId, recordType: .maxReps, value: Double(reps), setId: set.id, achievedAt: achievedAt))
+            records.append(PersonalRecord(id: UUID(), exerciseId: exerciseId, recordType: .maxReps, value: Double(reps), setId: set.id, achievedAt: achievedAt, weightRecordingKey: convention))
         }
         // Shared hybrid Epley/Brzycki — must match analytics e1RM (reps capped at 15).
         if let e1rm = loadParts.map({ AnalyticsCalculations.calculateOneRM(weight: $0.load, reps: min($0.reps, 15)) }).max(), e1rm > 0 {
-            records.append(PersonalRecord(id: UUID(), exerciseId: exerciseId, recordType: .estimatedOneRepMax, value: e1rm, setId: set.id, achievedAt: achievedAt))
+            records.append(PersonalRecord(id: UUID(), exerciseId: exerciseId, recordType: .estimatedOneRepMax, value: e1rm, setId: set.id, achievedAt: achievedAt, weightRecordingKey: convention))
         }
-        let volume = set.setVolume(baseLoadPerRep: base)
+        let volume = exercise.volume(of: set, bodyWeightKg: bodyWeightKg)
         if volume > 0 {
             records.append(PersonalRecord(id: UUID(), exerciseId: exerciseId, recordType: .maxVolume, value: volume, setId: set.id, achievedAt: achievedAt))
         }

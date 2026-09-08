@@ -159,6 +159,27 @@ struct WorkoutEditToolsTests {
         }
     }
 
+    @Test("Dumbbell tools convert explicit combined weights once and return the recording convention")
+    func dumbbellWeights() async throws {
+        try await withStack { s in
+            var e = try await s.exercise("Dumbbell Bench Press")
+            e.category = .dumbbell; e.weightRecording = .init()
+            _ = try await s.exerciseRepo.save(e)
+            try await s.coordinator.start(.init(name: "Dumbbell day"))
+            _ = await s.vm.addExercise(e, sets: [SetPrefill(weightKg: nil, reps: 10).makeSet(order: 1)])
+            let tool = LogSetTool(resolver: s.resolver, userPreferencesService: s.prefs)
+            _ = try await tool.call(argumentsJSON: #"{"exercise_name":"Dumbbell Bench Press","weight":{"value":40.5,"unit":"kg","entry":"combined"},"reps":10}"#)
+            #expect(s.activeExercise.sets[0].weight == 20.25)
+            #expect(s.vm.currentWorkout?.totalVolume(bodyWeightKg: 80) == 405)
+            let read = try await GetWorkoutTool(resolver: s.resolver).call(argumentsJSON: "{}")
+            #expect(read.outputForModel.contains("perDumbbell"))
+            #expect(read.outputForModel.contains("volume_multiplier"))
+            let add = AddSetsTool(resolver: s.resolver, userPreferencesService: s.prefs)
+            _ = try await add.call(argumentsJSON: #"{"exercise_name":"Dumbbell Bench Press","count":1,"weight":{"value":18.25,"unit":"kg","entry":"perDumbbell"},"reps":8}"#)
+            #expect(s.activeExercise.sets.last?.weight == 18.25)
+        }
+    }
+
     // MARK: - log_set
 
     @Test("log_set fills the next planned set, completes it, starts the rest timer, converts lbs")

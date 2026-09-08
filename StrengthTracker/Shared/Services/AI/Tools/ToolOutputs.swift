@@ -133,9 +133,9 @@ struct DropSegmentArgument: Decodable {
     var rir: Double?
     var to_failure: Bool?
 
-    func segment() throws -> DropSegment {
+    func segment(for exercise: Exercise? = nil) throws -> DropSegment {
         DropSegment(
-            weightKg: try weight?.kilograms(),
+            weightKg: try weight?.kilograms(for: exercise),
             reps: reps,
             intensity: try ToolArguments.intensity(rpe: rpe, rir: rir),
             isFailure: to_failure ?? false
@@ -202,10 +202,19 @@ enum ToolSchemas {
         AIToolRegistry.objectSchema(
             properties: [
                 "value": AIToolRegistry.numberSchema("Weight value"),
-                "unit": AIToolRegistry.stringSchema("kg or lbs")
+                "unit": AIToolRegistry.stringSchema("kg or lbs"),
+                "entry": AIToolRegistry.enumSchema(WeightRecording.WeightEntry.self, description: "Optional explicit input convention; otherwise the exercise snapshot convention")
             ],
             required: ["value", "unit"]
         )
+    }
+
+    static var weightRecording: JSONValue {
+        AIToolRegistry.objectSchema(properties: [
+            "equipment": AIToolRegistry.enumSchema(WeightRecording.Equipment.self),
+            "weightEntry": AIToolRegistry.enumSchema(WeightRecording.WeightEntry.self),
+            "repetitions": AIToolRegistry.enumSchema(WeightRecording.Repetitions.self)
+        ], required: ["equipment", "weightEntry", "repetitions"])
     }
 
     static var dropSegment: JSONValue {
@@ -260,11 +269,20 @@ enum WorkoutJSON {
             "sets": .array(exercise.sets.enumerated().map { set($1, number: $0 + 1) }),
             "done": .string("\(exercise.sets.filter(\.isCompleted).count)/\(exercise.sets.count)")
         ]
+        object["weight_recording"] = recording(exercise.exercise)
         if let occurrence { object["occurrence"] = .number(Double(occurrence)) }
         if let notes = exercise.notes, !notes.isEmpty { object["notes"] = .string(notes) }
         if let rest = exercise.restTimerSeconds { object["rest_s"] = .number(Double(rest)) }
         if let group = exercise.supersetGroup { object["superset"] = .number(Double(group)) }
         return .object(object)
+    }
+
+    static func recording(_ exercise: Exercise) -> JSONValue {
+        guard exercise.isDumbbell else { return .object(["status": .string("standard")]) }
+        guard let config = exercise.weightRecording else { return .object(["status": .string("unconfirmed"), "volume_multiplier": .number(1)]) }
+        return .object(["status": .string("confirmed"), "equipment": .string(config.equipment.rawValue),
+            "weight_entry": .string(config.weightEntry.rawValue), "repetitions": .string(config.repetitions.rawValue),
+            "volume_multiplier": .number(exercise.volumeMultiplier), "explanation": .string(config.explanation)])
     }
 
     static func set(_ set: ExerciseSet, number: Int) -> JSONValue {
@@ -326,22 +344,24 @@ struct ReceiptText {
         )
     }
 
-    func load(weightKg: Double?, reps: Int?) -> String? {
+    func load(weightKg: Double?, reps: Int?, exercise: Exercise? = nil) -> String? {
+        let suffix = exercise?.weightRecording.map { $0.weightEntry == .perDumbbell ? " each" : " total" } ?? ""
+        let repsSuffix = exercise?.weightRecording?.repetitions == .perSide ? "/side" : ""
         switch (weightKg, reps) {
-        case (let w?, let r?): return "\(unit.format(w)) × \(r)"
-        case (let w?, nil): return unit.format(w)
-        case (nil, let r?): return "\(r) reps"
+        case (let w?, let r?): return "\(unit.format(w))\(suffix) × \(r)\(repsSuffix)"
+        case (let w?, nil): return unit.format(w) + suffix
+        case (nil, let r?): return "\(r) reps\(repsSuffix)"
         default: return nil
         }
     }
 
     /// e.g. ["85 kg × 8", "RPE 9 · to failure"] or ["85 kg × 8 → 70 kg × 6", …]
-    func lines(for set: ExerciseSet) -> [String] {
+    func lines(for set: ExerciseSet, exercise: Exercise? = nil) -> [String] {
         var lines: [String] = []
         if !set.dropSets.isEmpty {
-            let segments = set.dropSets.compactMap { load(weightKg: $0.weight, reps: $0.reps) }
+            let segments = set.dropSets.compactMap { load(weightKg: $0.weight, reps: $0.reps, exercise: exercise) }
             if !segments.isEmpty { lines.append(segments.joined(separator: " → ")) }
-        } else if let text = load(weightKg: set.weight, reps: set.reps) {
+        } else if let text = load(weightKg: set.weight, reps: set.reps, exercise: exercise) {
             lines.append(text)
         } else if let seconds = set.durationSeconds {
             lines.append("\(seconds) s")
@@ -361,7 +381,7 @@ struct ReceiptText {
     }
 
     /// Short inline form for summaries: "85 kg × 8, RPE 9".
-    func inline(_ set: ExerciseSet) -> String {
-        lines(for: set).joined(separator: ", ")
+    func inline(_ set: ExerciseSet, exercise: Exercise? = nil) -> String {
+        lines(for: set, exercise: exercise).joined(separator: ", ")
     }
 }

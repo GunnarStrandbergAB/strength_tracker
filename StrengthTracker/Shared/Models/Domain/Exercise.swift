@@ -20,8 +20,9 @@ public struct Exercise: Identifiable, Hashable, Sendable, Codable {
     public var equipmentBrand: String?
     /// How the machine is loaded; nil when unspecified or not a machine.
     public var loadingType: LoadingType?
+    public var weightRecording: WeightRecording?
 
-    public init(id: UUID, name: String, primaryMuscleGroup: MuscleGroup, secondaryMuscleGroups: [MuscleGroup], category: ExerciseCategory, exerciseType: ExerciseType, instructions: String?, isCustom: Bool, isArchived: Bool, bodyweightFactor: Double? = nil, equipmentBrand: String? = nil, loadingType: LoadingType? = nil) {
+    public init(id: UUID, name: String, primaryMuscleGroup: MuscleGroup, secondaryMuscleGroups: [MuscleGroup], category: ExerciseCategory, exerciseType: ExerciseType, instructions: String?, isCustom: Bool, isArchived: Bool, bodyweightFactor: Double? = nil, equipmentBrand: String? = nil, loadingType: LoadingType? = nil, weightRecording: WeightRecording? = nil) {
         self.id = id
         self.name = name
         self.primaryMuscleGroup = primaryMuscleGroup
@@ -34,6 +35,7 @@ public struct Exercise: Identifiable, Hashable, Sendable, Codable {
         self.bodyweightFactor = bodyweightFactor
         self.equipmentBrand = equipmentBrand
         self.loadingType = loadingType
+        self.weightRecording = weightRecording
     }
 
     /// Copy of this exercise as a new independent custom variant — new identity,
@@ -51,7 +53,8 @@ public struct Exercise: Identifiable, Hashable, Sendable, Codable {
             isArchived: false,
             bodyweightFactor: bodyweightFactor,
             equipmentBrand: equipmentBrand,
-            loadingType: loadingType
+            loadingType: loadingType,
+            weightRecording: weightRecording
         )
     }
 }

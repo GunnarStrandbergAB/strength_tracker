@@ -336,7 +336,7 @@ public extension PlanEditingService {
                             planExerciseId: plan.exercises.first { $0.exerciseId == te.exercise.id }?.id ?? UUID(),
                             exerciseId: te.exercise.id, exerciseName: te.exercise.name, sets: te.targetSets,
                             targetReps: te.targetReps ?? 0, targetWeight: te.targetWeight ?? 0, percentageOf1RM: 0,
-                            restSeconds: te.restTimerSeconds ?? 120, isWarmup: te.isWarmUp)
+                            restSeconds: te.restTimerSeconds ?? 120, isWarmup: te.isWarmUp, weightRecording: te.exercise.weightRecording)
                     }
                     matched += 1
                 } else {
@@ -344,6 +344,7 @@ public extension PlanEditingService {
                         if request.operation == .changeExercise {
                             guard request.exerciseID != nil, let replacement = exercises.first(where: { $0.id == request.replacementExerciseID && !$0.isArchived }),
                                   let weight = request.weightKg, let reps = request.reps else { throw PlanEditError("An exercise swap needs source/replacement IDs and explicit weight_kg and reps; loads are not transferable between exercises.") }
+                            s.plannedExercises[e].weightRecording = replacement.weightRecording
                             s.plannedExercises[e].exerciseId = replacement.id; s.plannedExercises[e].exerciseName = replacement.name
                             s.plannedExercises[e].planExerciseId = plan.exercises.first { $0.exerciseId == replacement.id }?.id ?? UUID()
                             s.plannedExercises[e].targetWeight = weight; s.plannedExercises[e].targetReps = reps

@@ -49,6 +49,8 @@ struct AddExerciseView: View {
     @State private var bodyweightPercent = ""
     @State private var equipmentBrand = ""
     @State private var loadingType: LoadingType? = nil
+    @State private var weightRecording = WeightRecording()
+    @State private var recordingConfirmed = false
 
     init(
         viewModel: ExerciseListViewModel,
@@ -74,6 +76,8 @@ struct AddExerciseView: View {
             }
             _equipmentBrand = State(initialValue: source.equipmentBrand ?? "")
             _loadingType = State(initialValue: source.loadingType)
+            _weightRecording = State(initialValue: source.weightRecording ?? DumbbellDefaults.recording(for: source.name) ?? WeightRecording())
+            _recordingConfirmed = State(initialValue: source.weightRecording != nil)
         }
     }
 
@@ -107,6 +111,13 @@ struct AddExerciseView: View {
                     }
                 }
 
+                if category == .dumbbell {
+                    Section("Weight logging") {
+                        Toggle("Confirm how weights and reps are entered", isOn: $recordingConfirmed)
+                        if recordingConfirmed { WeightRecordingFields(value: $weightRecording) }
+                        Text("Applies to this exercise's future uses. Existing workouts and template targets retain their convention; review them in Settings → Weight logging.").font(.caption)
+                    }
+                }
                 if showsBrandField {
                     Section {
                         TextField("Brand (e.g. Hammer Strength)", text: $equipmentBrand)
@@ -172,7 +183,7 @@ struct AddExerciseView: View {
                         HStack {
                             TextField("e.g. 100", text: $known1RM)
                                 .keyboardType(.decimalPad)
-                            Text(weightUnit.symbol)
+                            Text(category == .dumbbell && recordingConfirmed ? weightRecording.weightLabel(weightUnit) : weightUnit.symbol)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -203,6 +214,7 @@ struct AddExerciseView: View {
                             bodyweightPercent: Double(bodyweightPercent),
                             equipmentBrand: equipmentBrand,
                             loadingType: loadingType,
+                            weightRecording: recordingConfirmed && category == .dumbbell ? weightRecording : nil,
                             isArchived: existing?.isArchived ?? false
                         ) else { return }
                         Task {
@@ -214,7 +226,8 @@ struct AddExerciseView: View {
                                     recordType: .estimatedOneRepMax,
                                     value: weightUnit.toKg(value),
                                     setId: nil,
-                                    achievedAt: Date()
+                                    achievedAt: Date(),
+                                    weightRecordingKey: exercise.isDumbbell ? exercise.weightRecording?.performanceKey : nil
                                 )
                                 _ = try? await prService.saveManualRecord(record)
                             }
@@ -244,6 +257,57 @@ struct AddExerciseView: View {
 
     private var showsLoadingPicker: Bool {
         ExerciseFactory.showsLoadingPicker(for: category)
+    }
+}
+/// Used in creation and the reviewed historical correction flow.
+struct WeightRecordingFields: View {
+    @Binding var value: WeightRecording
+    var body: some View {
+        choice("Dumbbells moving per repetition", selection: $value.equipment, options: WeightRecording.Equipment.allCases) { $0.title }
+        choice("Weight entry", selection: $value.weightEntry, options: WeightRecording.WeightEntry.allCases) { $0.title }
+        choice("Repetition entry", selection: $value.repetitions, options: WeightRecording.Repetitions.allCases) { $0.title }
+        Text(value.explanation).font(.caption).foregroundStyle(.secondary)
+        Text("For alternating curls, choose one dumbbell per repetition. For lunges holding two, choose two. Choose per-side reps only when one row covers both sides.")
+            .font(.caption).foregroundStyle(.secondary)
+    }
+    private func choice<T: Hashable>(_ title: String, selection: Binding<T>, options: [T], label: @escaping (T) -> String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Menu {
+                Picker(title, selection: selection) {
+                    ForEach(options, id: \.self) { Text(label($0)).tag($0) }
+                }
+            } label: {
+                HStack(alignment: .center, spacing: 12) {
+                    Text(label(selection.wrappedValue)).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.up.chevron.down").font(.caption)
+                }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            }.tint(STColors.primary)
+        }
+    }
+}
+
+struct WeightRecordingEditorSheet: View {
+    let exercise: Exercise
+    let save: (WeightRecording) -> Void
+    @State private var value: WeightRecording
+    @Environment(\.dismiss) private var dismiss
+    init(exercise: Exercise, save: @escaping (WeightRecording) -> Void) {
+        self.exercise = exercise; self.save = save
+        _value = State(initialValue: exercise.weightRecording ?? DumbbellDefaults.recording(for: exercise.name) ?? WeightRecording())
+    }
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(exercise.name) { WeightRecordingFields(value: $value) }
+                Section { Text("Applies to every set in this exercise entry, including drop segments. Entered numbers stay the same; this clarifies what they mean. Use Settings to review other workouts.") }
+            }.navigationTitle("Weight logging").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Apply") { save(value); dismiss() } }
+            }
+        }.preferredColorScheme(.dark)
     }
 }
 #endif

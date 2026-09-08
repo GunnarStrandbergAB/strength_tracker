@@ -617,7 +617,8 @@ struct ActivePlanDetailView: View {
     // MARK: - Exercise Line
 
     private func exerciseLine(_ exercise: PlannedExerciseSet, muted: Bool) -> some View {
-        HStack(spacing: 0) {
+        let recording = exercise.weightRecording ?? viewModel.activePlan?.exercises.first { $0.exerciseId == exercise.exerciseId }?.weightRecording
+        return HStack(spacing: 0) {
             Text(exercise.exerciseName)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(muted ? STColors.textTertiary : STColors.textSecondary)
@@ -626,12 +627,12 @@ struct ActivePlanDetailView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(STColors.textTertiary)
 
-            Text("\(exercise.sets)x\(exercise.targetReps)")
+            Text("\(exercise.sets)x\(exercise.targetReps)\(recording?.repetitions == .perSide ? "/side" : "")")
                 .font(.system(size: 12))
                 .foregroundStyle(muted ? STColors.textTertiary : STColors.textSecondary)
 
             if exercise.targetWeight > 0 {
-                Text(" @ \(formattedWeight(exercise.targetWeight))")
+                Text(" @ \(formattedWeight(exercise.targetWeight))\(recording.map { $0.weightEntry == .perDumbbell ? " each" : " total" } ?? "")")
                     .font(.system(size: 12))
                     .foregroundStyle(muted ? STColors.textTertiary : STColors.textSecondary)
             }
@@ -822,6 +823,7 @@ struct PlanScheduleEditor: View {
                             TextField("Sets (leave blank to keep)", text: $sets).keyboardType(.numberPad).focused($editingNumber)
                             TextField("Reps (leave blank to keep)", text: $reps).keyboardType(.numberPad).focused($editingNumber)
                             TextField("Normal weight in kg", text: $weight).keyboardType(.decimalPad).focused($editingNumber)
+                            Text("Use the target’s each/total weight convention. For a replacement, use its exercise-library convention.").font(.caption).foregroundStyle(STColors.textSecondary)
                             TextField("Normal rest in seconds", text: $rest).keyboardType(.numberPad).focused($editingNumber)
                             Text("Deload percentages apply after these normal targets. Explicit targets stay fixed when adaptive updates run.").font(.caption)
                         }

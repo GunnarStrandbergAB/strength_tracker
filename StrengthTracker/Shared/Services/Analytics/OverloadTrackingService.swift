@@ -15,7 +15,7 @@ public enum OverloadTrackingService {
         var exerciseWeights: [UUID: Set<Double>] = [:]
         var exerciseNames: [UUID: String] = [:]
 
-        for workout in completed {
+        for workout in WeightRecordingHistory.matching(completed) {
             let weekStart = calendar.weekStart(for: workout.trainingDate)
 
             for we in workout.exercises {

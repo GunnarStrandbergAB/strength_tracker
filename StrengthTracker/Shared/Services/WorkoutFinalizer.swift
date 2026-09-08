@@ -160,6 +160,13 @@ public final class WorkoutFinalizer {
            existing.completedAt != nil, incoming.completedAt == nil {
             return
         }
+        if let existing = try? await workoutRepository.fetchAll().first(where: { $0.id == incoming.id }) {
+            for i in incoming.exercises.indices where incoming.exercises[i].exercise.weightRecording == nil {
+                if let prior = existing.exercises.first(where: { $0.id == incoming.exercises[i].id }) {
+                    incoming.exercises[i].exercise.weightRecording = prior.exercise.weightRecording
+                }
+            }
+        }
         if incoming.plannedSessionId == nil,
            let sessionIdString = metadata?["plannedSessionId"],
            let planIdString = metadata?["plannedPlanId"],
@@ -187,6 +194,23 @@ public final class WorkoutFinalizer {
             dataRevision.bump()
             await widgetRefresh?.refresh()
         }
+    }
+
+    /// Metadata corrections stay local: no plan replay, HealthKit writes or webhook delivery.
+    /// Unlike best-effort rebuildAll, errors propagate so the durable journal can retry.
+    public func rebuildWeightRecordingData() async throws {
+        let result: Result<Void, Error> = await enqueue { [self] in
+            do {
+                try await analyticsRepository.deleteAllVectors()
+                try await analyticsService?.vectorizeAllWorkouts()
+                try await personalRecordService?.recalculateAllPRs()
+                invalidateCaches()
+                dataRevision.bump()
+                await widgetRefresh?.refresh()
+                return .success(())
+            } catch { return .failure(error) }
+        }
+        try result.get()
     }
 
     /// Re-elect automatic records after the shared e1RM formula changes. Manual records are preserved.

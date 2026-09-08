@@ -64,6 +64,7 @@ struct StrengthTrackeriOSApp: App {
                 await container.exerciseSeeder.ensureSeeded()
                 await container.effectiveLoadMigrationService.migrateIfNeeded()
                 await container.workoutFinalizer.migrateAnalyticsModelIfNeeded()
+                await container.weightRecordingService.resume()
             }
 
             // Request notification permission for rest timer background alerts
@@ -131,6 +132,7 @@ struct StrengthTrackeriOSApp: App {
         .modelContainer(container.modelContainer)
         .environment(container.bodyWeightProvider)
         .environment(container.dataRevision)
+        .environment(container.weightRecordingService)
     }
 
 }

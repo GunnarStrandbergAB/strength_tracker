@@ -138,7 +138,8 @@ public enum DeloadDetectionService {
         guard spanDays >= creepMinimumSpanDays else { return nil }
 
         let xs = window.map { $0.trainingDate.timeIntervalSince(first.trainingDate) / 86_400 }
-        let efforts = window.map { meanEffortRatio(of: $0, bestE1RM: bestE1RM, bodyWeightKg: bodyWeightKg) }
+        let conventionBests = WeightRecordingHistory.relativeBaselines(window, bodyWeightKg: bodyWeightKg)
+        let efforts = window.map { meanEffortRatio(of: $0, bestE1RM: bestE1RM, bodyWeightKg: bodyWeightKg, conventionBests: conventionBests) }
 
         var effortRise = 0.0
         let effortPairs = zip(xs, efforts).filter { $0.1 > 0 }
@@ -165,10 +166,10 @@ public enum DeloadDetectionService {
         return nil
     }
 
-    private static func meanEffortRatio(of workout: Workout, bestE1RM: [UUID: Double], bodyWeightKg: Double) -> Double {
+    private static func meanEffortRatio(of workout: Workout, bestE1RM: [UUID: Double], bodyWeightKg: Double, conventionBests: [String: Double]) -> Double {
         var ratios: [Double] = []
         for we in workout.exercises {
-            guard let best = bestE1RM[we.exercise.id], best > 0 else { continue }
+            guard let best = conventionBests[WeightRecordingHistory.relativeKey(we.exercise)] ?? bestE1RM[we.exercise.id], best > 0 else { continue }
             let baseLoad = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
             for set in we.sets where set.isCompleted && set.setType != .warmup {
                 for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
@@ -204,6 +205,7 @@ public enum DeloadDetectionService {
         calendar: Calendar
     ) -> Int {
         let currentWeekStart = calendar.weekStart(for: now)
+        let conventionBests = WeightRecordingHistory.relativeBaselines(workouts, bodyWeightKg: bodyWeightKg)
         var loadByWeek: [Date: Double] = [:]
         var deloadWeeks: Set<Date> = []
 
@@ -214,7 +216,7 @@ public enum DeloadDetectionService {
             for we in workout.exercises {
                 let base = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
                 for set in we.sets {
-                    sessionLoad += AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id], baseLoadPerRep: base)
+                    sessionLoad += AnalyticsCalculations.setIWV(for: set, bestE1RM: conventionBests[WeightRecordingHistory.relativeKey(we.exercise)] ?? bestE1RM[we.exercise.id], baseLoadPerRep: base)
                 }
             }
             loadByWeek[weekStart, default: 0] += sessionLoad

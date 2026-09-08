@@ -53,11 +53,16 @@ public struct SessionExecutionService: Sendable {
             uniquingKeysWith: { first, _ in first }
         )
 
-        for workoutExercise in workout.exercises {
+        for sourceExercise in workout.exercises {
+            var reference = sourceExercise.exercise
+            reference.weightRecording = planExercises.first { $0.exerciseId == reference.id }?.weightRecording
+            let workoutExercise = WeightRecordingHistory.converted(sourceExercise, to: reference)
             let exerciseId = workoutExercise.exercise.id
 
             guard let planIndex = planExerciseLookup[exerciseId] else { continue }
             let planExercise = updatedExercises[planIndex]
+            if workoutExercise.exercise.isDumbbell,
+               (planExercise.weightRecording?.performanceKey ?? "unconfirmed") != workoutExercise.exercise.performanceConvention { continue }
 
             // Skip 1RM updates for deload sessions — intentionally lighter weights
             // should not drag down stored estimates

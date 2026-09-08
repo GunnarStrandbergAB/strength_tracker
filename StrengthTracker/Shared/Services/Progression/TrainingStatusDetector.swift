@@ -104,9 +104,9 @@ public final class TrainingStatusDetector: Sendable {
     /// - **Beyond 12 months**: Data is ignored
     ///
     /// Only sets with reps <= 15 are considered. The Epley/Brzycki formulas are used.
-    public func estimateOneRM(exerciseId: UUID) async throws -> OneRMEstimate? {
+    public func estimateOneRM(exerciseId: UUID, recordingReference: Exercise? = nil) async throws -> OneRMEstimate? {
         let allWorkouts = try await workoutRepository.fetchAll()
-        let completed = allWorkouts.filter { $0.completedAt != nil }
+        let completed = WeightRecordingHistory.matching(allWorkouts.filter { $0.completedAt != nil }, references: recordingReference.map { [$0.id: $0] })
         let now = Date()
 
         let sixMonthsAgo = Calendar.current.date(

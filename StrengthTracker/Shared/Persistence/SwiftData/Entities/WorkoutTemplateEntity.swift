@@ -50,6 +50,7 @@ public final class TemplateExerciseEntity {
     public var isArchived: Bool
     public var bodyweightFactor: Double?
     public var equipmentBrand: String?
+    public var weightRecordingJSON: String?
     public var loadingType: String?
     public var order: Int
     public var supersetGroup: Int?
@@ -79,6 +80,7 @@ public final class TemplateExerciseEntity {
         isArchived: Bool,
         bodyweightFactor: Double? = nil,
         equipmentBrand: String? = nil,
+        weightRecordingJSON: String? = nil,
         loadingType: String? = nil,
         order: Int,
         supersetGroup: Int? = nil,
@@ -104,6 +106,7 @@ public final class TemplateExerciseEntity {
         self.isArchived = isArchived
         self.bodyweightFactor = bodyweightFactor
         self.equipmentBrand = equipmentBrand
+        self.weightRecordingJSON = weightRecordingJSON
         self.loadingType = loadingType
         self.order = order
         self.supersetGroup = supersetGroup

@@ -229,7 +229,9 @@ public final class WidgetDataService: Sendable {
             nextSetReps: nextSet?.reps,
             nextExerciseName: nextExercise?.exercise.name,
             nextSetIndex: nextSetIndex,
-            nextExerciseId: nextExercise?.id.uuidString
+            nextExerciseId: nextExercise?.id.uuidString,
+            weightRecording: currentExercise?.exercise.weightRecording,
+            dumbbellConventionUnconfirmed: currentExercise?.exercise.isDumbbell == true && currentExercise?.exercise.weightRecording == nil
         )
     }
 

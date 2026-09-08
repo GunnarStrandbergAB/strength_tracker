@@ -10,6 +10,7 @@ public final class PersonalRecordEntity {
     public var value: Double
     public var setId: UUID?
     public var achievedAt: Date
+    public var weightRecordingKey: String?
 
     public init(
         id: UUID,
@@ -17,7 +18,8 @@ public final class PersonalRecordEntity {
         recordType: String,
         value: Double,
         setId: UUID? = nil,
-        achievedAt: Date
+        achievedAt: Date,
+        weightRecordingKey: String? = nil
     ) {
         self.id = id
         self.exerciseId = exerciseId
@@ -25,6 +27,7 @@ public final class PersonalRecordEntity {
         self.value = value
         self.setId = setId
         self.achievedAt = achievedAt
+        self.weightRecordingKey = weightRecordingKey
     }
 }
 #endif

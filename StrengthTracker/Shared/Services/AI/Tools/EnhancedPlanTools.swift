@@ -28,7 +28,7 @@ public final class ProposePlanEditTool: AITool {
             "exercise_id": AIToolRegistry.stringSchema("Source library exercise ID from get_active_plan"),
             "replacement_exercise_id": AIToolRegistry.stringSchema("Library ID from list_exercises; swap also requires weight_kg and reps"),
             "sets": AIToolRegistry.integerSchema("1–20 sets"), "reps": AIToolRegistry.integerSchema("1–100 reps"),
-            "weight_kg": AIToolRegistry.numberSchema("Normal working weight in kg, 0–999.99; never a 1RM or pre-scaled deload weight"),
+            "weight_kg": AIToolRegistry.numberSchema("Normal working weight in kg in the session target’s weightRecording convention (replacement uses the library convention), 0–999.99; never a 1RM or pre-scaled deload weight"),
             "rest_seconds": AIToolRegistry.integerSchema("Normal rest 15–900 seconds"),
             "skipped": AIToolRegistry.boolSchema("For skipSession; false restores the scheduled session")
         ], required: ["operation"])

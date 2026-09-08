@@ -290,7 +290,7 @@ public final class ProgressionPlanViewModel {
         guard draftSelectedExercises[index].oneRM == 0 else { return }
 
         do {
-            if let estimate = try await trainingStatusDetector.estimateOneRM(exerciseId: exercise.id) {
+            if let estimate = try await trainingStatusDetector.estimateOneRM(exerciseId: exercise.id, recordingReference: exercise.exercise) {
                 // Re-check index in case array changed during await
                 guard let currentIndex = draftSelectedExercises.firstIndex(where: { $0.id == exercise.id }),
                       draftSelectedExercises[currentIndex].oneRM == 0 else { return }
@@ -483,7 +483,8 @@ public final class ProgressionPlanViewModel {
                     oneRMSource: draft.oneRMSource,
                     current1RM: draft.oneRM,
                     isCompound: draft.exercise.category == .barbell || draft.exercise.category == .dumbbell,
-                    order: index
+                    order: index,
+                    weightRecording: draft.exercise.weightRecording
                 )
             }
 
@@ -595,7 +596,11 @@ public final class ProgressionPlanViewModel {
                     return mergeSessionIntoTemplate(session: session, template: linked, exercises: exercises)
                 }
             }
-            return session.toWorkoutTemplate(exercises: exercises)
+            var resolved = session
+            for i in resolved.plannedExercises.indices where resolved.plannedExercises[i].weightRecording == nil {
+                resolved.plannedExercises[i].weightRecording = activePlan?.exercises.first { $0.exerciseId == resolved.plannedExercises[i].exerciseId }?.weightRecording
+            }
+            return resolved.toWorkoutTemplate(exercises: exercises)
         } catch {
             errorMessage = "Failed to prepare session: \(error.localizedDescription)"
             return nil
@@ -800,7 +805,7 @@ public final class ProgressionPlanViewModel {
                         targetRPE: donor?.targetRPE,
                         restSeconds: rest,
                         isWarmup: te.isWarmUp,
-                        notes: te.notes
+                        notes: te.notes, weightRecording: planExercise.weightRecording
                     )
                 }
                 return PlannedExerciseSet(
@@ -814,7 +819,7 @@ public final class ProgressionPlanViewModel {
                     targetRPE: nil,
                     restSeconds: te.restTimerSeconds ?? 120,
                     isWarmup: te.isWarmUp,
-                    notes: te.notes
+                    notes: te.notes, weightRecording: te.exercise.weightRecording
                 )
             }
     }
@@ -1077,12 +1082,15 @@ public final class ProgressionPlanViewModel {
                             ?? planExercisesByLibraryId[set.exerciseId] else { continue }
 
                         if set.percentageOf1RM > 0 {
-                            plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei].targetWeight =
-                                planExercise.targetWeight(atPercentage: set.percentageOf1RM)
+                            if let value = WeightRecordingHistory.convertWeight(planExercise.targetWeight(atPercentage: set.percentageOf1RM), from: planExercise.weightRecording, to: set.weightRecording ?? planExercise.weightRecording) {
+                                plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei].targetWeight = value
+                            }
                         } else if let apre = apreAdjustments.first(where: { $0.affectedExerciseIds.contains(planExercise.id) }),
                                   let newWeightString = apre.newValues["targetWeight"],
                                   let newWeight = Double(newWeightString) {
-                            plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei].targetWeight = newWeight
+                            if let value = WeightRecordingHistory.convertWeight(newWeight, from: planExercise.weightRecording, to: set.weightRecording ?? planExercise.weightRecording) {
+                                plan.blocks[bi].weeks[wi].sessions[si].plannedExercises[ei].targetWeight = value
+                            }
                         }
                     }
                     if session.deloadPrescription != nil {
@@ -1271,7 +1279,8 @@ public final class ProgressionPlanViewModel {
                 .map { ($0.exerciseName.lowercased(), $0) }
         )
 
-        var mergedExercises = template.exercises.map { te -> TemplateExercise in
+        var mergedExercises = template.exercises.map { original -> TemplateExercise in
+            var te = original
             let planned = plannedLookup[te.exercise.id]
                 ?? plannedByName[te.exercise.name.lowercased()]
             guard let planned else {
@@ -1289,6 +1298,7 @@ public final class ProgressionPlanViewModel {
                 }
                 return te
             }
+            te.exercise.weightRecording = planned.weightRecording ?? activePlan?.exercises.first { $0.exerciseId == planned.exerciseId }?.weightRecording
             return TemplateExercise(
                 id: te.id,
                 exercise: te.exercise,
@@ -1312,7 +1322,7 @@ public final class ProgressionPlanViewModel {
         var nextOrder = mergedExercises.count
 
         for planned in session.plannedExercises where !coveredIds.contains(planned.exerciseId) {
-            let exercise = exerciseLookup[planned.exerciseId] ?? Exercise(
+            var exercise = exerciseLookup[planned.exerciseId] ?? Exercise(
                 id: planned.exerciseId,
                 name: planned.exerciseName,
                 primaryMuscleGroup: .other,
@@ -1323,6 +1333,8 @@ public final class ProgressionPlanViewModel {
                 isCustom: false,
                 isArchived: false
             )
+            exercise.weightRecording = planned.weightRecording ?? activePlan?.exercises.first { $0.exerciseId == planned.exerciseId }?.weightRecording
+            if planned.weightRecording != nil { exercise.category = .dumbbell }
             mergedExercises.append(TemplateExercise(
                 id: planned.id,
                 exercise: exercise,

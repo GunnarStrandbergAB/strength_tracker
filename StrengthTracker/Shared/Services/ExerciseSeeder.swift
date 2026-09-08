@@ -32,7 +32,9 @@ public final class ExerciseSeeder {
                 if let current = existingById[seed.id] {
                     // Update non-custom exercises if seed data changed
                     if !current.isCustom && seedDataChanged(current: current, seed: seed) {
-                        _ = try await exerciseRepository.save(seed)
+                        var updated = seed
+                        updated.weightRecording = current.weightRecording
+                        _ = try await exerciseRepository.save(updated)
                     }
                 } else {
                     _ = try await exerciseRepository.save(seed)

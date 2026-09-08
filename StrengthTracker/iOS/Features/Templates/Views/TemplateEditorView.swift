@@ -228,6 +228,8 @@ private struct TemplateExerciseConfigView: View {
     let onSave: (TemplateExercise) -> Void
     let onCancel: () -> Void
 
+    @State private var weightRecording: WeightRecording?
+    private var configuredExercise: Exercise { var e = templateExercise.exercise; e.weightRecording = weightRecording; return e }
     @State private var targetSets: Int
     @State private var setTargets: [TemplateSetTarget]
     @State private var notes: String
@@ -249,6 +251,7 @@ private struct TemplateExerciseConfigView: View {
 
         let sets = templateExercise.targetSets
         self._targetSets = State(initialValue: sets)
+        self._weightRecording = State(initialValue: templateExercise.exercise.weightRecording)
         self._notes = State(initialValue: templateExercise.notes ?? "")
         self._restTimerSeconds = State(initialValue: templateExercise.restTimerSeconds)
         self._supersetGroup = State(initialValue: templateExercise.supersetGroup)
@@ -275,6 +278,13 @@ private struct TemplateExerciseConfigView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if templateExercise.exercise.isDumbbell {
+                    Section("Weight logging") {
+                        Toggle("Confirm how these targets are recorded", isOn: Binding(get: { weightRecording != nil }, set: { weightRecording = $0 ? (weightRecording ?? DumbbellDefaults.recording(for: templateExercise.exercise.name) ?? .init()) : nil }))
+                        if weightRecording != nil { WeightRecordingFields(value: Binding(get: { weightRecording ?? .init() }, set: { weightRecording = $0 })) }
+                        Text("This describes the numbers entered below. Changing it does not convert your targets.").font(.caption)
+                    }
+                }
                 Section("Exercise") {
                     Text(templateExercise.exercise.name)
                         .font(.headline)
@@ -296,7 +306,8 @@ private struct TemplateExerciseConfigView: View {
                             showsWeight: showsWeight,
                             showsDuration: showsDuration,
                             showsDistance: showsDistance,
-                            weightUnit: weightUnit
+                            weightUnit: weightUnit,
+                            weightLabel: configuredExercise.weightEntryLabel(weightUnit), repsLabel: configuredExercise.repetitionsLabel
                         )
                     }
                 }
@@ -388,7 +399,7 @@ private struct TemplateExerciseConfigView: View {
 
         let updated = TemplateExercise(
             id: templateExercise.id,
-            exercise: templateExercise.exercise,
+            exercise: configuredExercise,
             order: templateExercise.order,
             supersetGroup: supersetGroup,
             notes: notes.isEmpty ? nil : notes,
@@ -415,13 +426,15 @@ private struct SetTargetRow: View {
     let showsDuration: Bool
     let showsDistance: Bool
     let weightUnit: WeightUnit
+    let weightLabel: String?
+    let repsLabel: String
 
     @State private var repsText: String
     @State private var weightText: String
     @State private var durationText: String
     @State private var distanceText: String
 
-    init(index: Int, target: Binding<TemplateSetTarget>, showsReps: Bool, showsWeight: Bool, showsDuration: Bool, showsDistance: Bool, weightUnit: WeightUnit = .kg) {
+    init(index: Int, target: Binding<TemplateSetTarget>, showsReps: Bool, showsWeight: Bool, showsDuration: Bool, showsDistance: Bool, weightUnit: WeightUnit = .kg, weightLabel: String? = nil, repsLabel: String = "Reps") {
         self.index = index
         self._target = target
         self.showsReps = showsReps
@@ -429,6 +442,8 @@ private struct SetTargetRow: View {
         self.showsDuration = showsDuration
         self.showsDistance = showsDistance
         self.weightUnit = weightUnit
+        self.weightLabel = weightLabel
+        self.repsLabel = repsLabel
         let t = target.wrappedValue
         _repsText = State(initialValue: t.targetReps.map { String($0) } ?? "")
         _weightText = State(initialValue: t.targetWeight.map { weightUnit.formatValue($0) } ?? "")
@@ -451,7 +466,7 @@ private struct SetTargetRow: View {
                     .onChange(of: repsText) { _, newValue in
                         target.targetReps = Int(newValue)
                     }
-                Text("reps")
+                Text(repsLabel)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -464,7 +479,7 @@ private struct SetTargetRow: View {
                     .onChange(of: weightText) { _, newValue in
                         target.targetWeight = Double(newValue).map { weightUnit.toKg($0) }
                     }
-                Text(weightUnit.symbol)
+                Text(weightLabel ?? weightUnit.symbol)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -544,7 +559,7 @@ private struct SetTargetRow: View {
 
 // MARK: - Compact Target Summary
 
-private func compactTargetSummary(for te: TemplateExercise, weightUnit: WeightUnit = .kg) -> String {
+private func compactTargetSummary(for te: TemplateExercise, weightUnit: WeightUnit = .kg, weightLabel: String? = nil, repsLabel: String = "Reps") -> String {
     let targets = te.setTargets
     let sets = te.targetSets
 

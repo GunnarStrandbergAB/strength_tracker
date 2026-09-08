@@ -448,7 +448,8 @@ struct ActiveWorkoutView: View {
             coachingData: viewModel.exerciseCoachingCache[workoutExercise.id],
             alwaysShowRPE: viewModel.userPreferencesService?.alwaysShowRPE ?? false,
             intensityMetric: intensityMetric,
-            weightUnit: viewModel.userPreferencesService?.weightUnit ?? .kg
+            weightUnit: viewModel.userPreferencesService?.weightUnit ?? .kg,
+            onWeightRecordingChange: { recording in enqueueEdit { await viewModel.updateWeightRecording(exerciseId: workoutExercise.id, recording: recording) } }
         )
     }
 

@@ -28,6 +28,7 @@ public enum ExerciseFactory {
         bodyweightPercent: Double? = nil,
         equipmentBrand: String? = nil,
         loadingType: LoadingType? = nil,
+        weightRecording: WeightRecording? = nil,
         isArchived: Bool = false
     ) throws -> Exercise {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
@@ -47,7 +48,8 @@ public enum ExerciseFactory {
             isArchived: isArchived,
             bodyweightFactor: resolvedBodyweightFactor(bodyweightPercent, exerciseType: exerciseType),
             equipmentBrand: resolvedBrand(equipmentBrand, category: category),
-            loadingType: resolvedLoadingType(loadingType, category: category)
+            loadingType: resolvedLoadingType(loadingType, category: category),
+            weightRecording: category == .dumbbell ? weightRecording : nil
         )
     }
 

@@ -65,16 +65,17 @@ public final class WorkoutQualityScoreService: Sendable {
 
         let volumeScore: Double
         let intensityScore: Double
+        let performanceHistory = WeightRecordingHistory.matching(history, references: Dictionary(workout.exercises.map { ($0.exercise.id, $0.exercise) }, uniquingKeysWith: { first, _ in first }))
         let consistencyScore = computeConsistencyScore(workout)
         let balanceScore = computeBalanceScore(workout, history: history)
 
         if workout.isDeload {
             // Deload scoring: reward ~50% volume and ~70% intensity
             volumeScore = computeDeloadVolumeScore(workout, history: history, bodyWeightKg: bodyWeightKg)
-            intensityScore = computeDeloadIntensityScore(workout, history: history)
+            intensityScore = computeDeloadIntensityScore(workout, history: performanceHistory)
         } else {
             volumeScore = computeVolumeScore(workout, history: history, bodyWeightKg: bodyWeightKg)
-            intensityScore = computeIntensityScore(workout, history: history)
+            intensityScore = computeIntensityScore(workout, history: performanceHistory)
         }
 
         let overall = (volumeScore + intensityScore + consistencyScore + balanceScore) / 4.0
@@ -86,7 +87,7 @@ public final class WorkoutQualityScoreService: Sendable {
         let pairs: [(MuscleGroup, MuscleGroup)] = [(.chest, .back), (.quadriceps, .hamstrings), (.biceps, .triceps), (.shoulders, .lats), (.core, .lowerBack), (.glutes, .hipFlexors)]
         if pairs.filter({ activeMuscles.contains($0.0) || activeMuscles.contains($0.1) }).count < 2 { provisional.append("Too few muscle pairs for program balance") }
         if prior.count < 3 { provisional.append("Volume and balance baseline is building") }
-        let bests = buildBestE1RMMap(excluding: workout.id, from: history, asOf: workout.trainingDate)
+        let bests = buildBestE1RMMap(excluding: workout.id, from: performanceHistory, asOf: workout.trainingDate)
         if workout.exercises.contains(where: { bests[$0.exercise.id] == nil }) {
             provisional.append("Some exercises have no intensity baseline")
         }
@@ -237,11 +238,12 @@ public final class WorkoutQualityScoreService: Sendable {
         bestE1RM: [UUID: Double]
     ) -> [MuscleGroup: Double] {
         var iwv: [MuscleGroup: Double] = [:]
+        let conventionBests = WeightRecordingHistory.relativeBaselines(workouts, bodyWeightKg: resolvedBodyWeightKg)
         for workout in workouts {
             for we in workout.exercises {
                 let baseLoad = we.exercise.baseLoadPerRep(bodyWeightKg: resolvedBodyWeightKg)
                 for set in we.sets {
-                    let setIWV = AnalyticsCalculations.setIWV(for: set, bestE1RM: bestE1RM[we.exercise.id], baseLoadPerRep: baseLoad)
+                    let setIWV = AnalyticsCalculations.setIWV(for: set, bestE1RM: conventionBests[WeightRecordingHistory.relativeKey(we.exercise)] ?? bestE1RM[we.exercise.id], baseLoadPerRep: baseLoad)
                     guard setIWV > 0 else { continue }
 
                     let attributed = AnalyticsCalculations.attributeVolume(
@@ -271,6 +273,7 @@ public final class WorkoutQualityScoreService: Sendable {
             let average = comparison.reduce(0) { $0 + $1.totalVolume(bodyWeightKg: bodyWeightKg) } / Double(comparison.count)
             notes.append(String(format: "Session tonnage %.0f kg vs %.0f kg matched average; the score averages individual muscle ratios", workout.totalVolume(bodyWeightKg: bodyWeightKg), average))
         }
+        if workout.exercises.contains(where: { $0.exercise.isDumbbell && $0.exercise.weightRecording == nil }) { notes.append("Dumbbell weight convention unconfirmed: volume uses entered weight × reps.") }
         notes.append("Intensity is estimated performance relative to prior exercise bests, not RPE. Bodyweight movements use current resolved bodyweight retrospectively.")
         notes.append("Program balance is an app-defined six-pair distribution benchmark, not a prescription for identical muscle work.")
         return notes
@@ -301,7 +304,7 @@ public final class WorkoutQualityScoreService: Sendable {
         for we in workout.exercises {
             for set in we.sets {
                 guard set.isCompleted, set.setType != .warmup else { continue }
-                let vol = set.setVolume(baseLoadPerRep: we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg))
+                let vol = we.exercise.volume(of: set, bodyWeightKg: bodyWeightKg)
 
                 currentMuscleVol[we.exercise.primaryMuscleGroup, default: 0] += vol * 0.7
                 let secondaries = we.exercise.secondaryMuscleGroups
@@ -325,7 +328,7 @@ public final class WorkoutQualityScoreService: Sendable {
             for we in past.exercises {
                 for set in we.sets {
                     guard set.isCompleted, set.setType != .warmup else { continue }
-                    let vol = set.setVolume(baseLoadPerRep: we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg))
+                    let vol = we.exercise.volume(of: set, bodyWeightKg: bodyWeightKg)
 
                     historyMuscleVol[we.exercise.primaryMuscleGroup, default: 0] += vol * 0.7
                     musclesInWorkout.insert(we.exercise.primaryMuscleGroup)

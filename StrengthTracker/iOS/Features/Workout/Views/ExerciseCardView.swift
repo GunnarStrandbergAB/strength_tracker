@@ -32,6 +32,8 @@ struct ExerciseCardView: View {
     let alwaysShowRPE: Bool
     let intensityMetric: IntensityMetric
     let weightUnit: WeightUnit
+    let onWeightRecordingChange: ((WeightRecording) -> Void)?
+    @State private var editingWeightRecording = false
 
     @State private var isReorderingSets: Bool = false
     @State private var isEditingNote: Bool = false
@@ -65,7 +67,8 @@ struct ExerciseCardView: View {
         coachingData: ExerciseCoachingData? = nil,
         alwaysShowRPE: Bool = false,
         intensityMetric: IntensityMetric = .rpe,
-        weightUnit: WeightUnit = .kg
+        weightUnit: WeightUnit = .kg,
+        onWeightRecordingChange: ((WeightRecording) -> Void)? = nil
     ) {
         self.workoutExercise = workoutExercise
         self.previousSetData = previousSetData
@@ -92,6 +95,7 @@ struct ExerciseCardView: View {
         self.alwaysShowRPE = alwaysShowRPE
         self.intensityMetric = intensityMetric
         self.weightUnit = weightUnit
+        self.onWeightRecordingChange = onWeightRecordingChange
         self._noteText = State(initialValue: workoutExercise.notes ?? "")
         self._seededNoteText = State(initialValue: workoutExercise.notes ?? "")
         self._isEditingNote = State(initialValue: workoutExercise.notes != nil && !workoutExercise.notes!.isEmpty)
@@ -151,6 +155,13 @@ struct ExerciseCardView: View {
                     alignment: .top
                 )
             } else {
+                if let explanation = workoutExercise.exercise.weightRecordingExplanation {
+                    Text(explanation).font(.caption).foregroundStyle(STColors.textSecondary)
+                        .padding(.horizontal, STSpacing.setRowHorizontal).padding(.vertical, 8)
+                }
+                if workoutExercise.exercise.isDumbbell, onWeightRecordingChange != nil {
+                    Button("Weight logging…") { editingWeightRecording = true }.font(.caption).padding(.horizontal)
+                }
                 // Sets
                 ForEach(Array(workoutExercise.sets.enumerated()), id: \.element.id) { index, exerciseSet in
                     SetRowGroupView(
@@ -161,7 +172,8 @@ struct ExerciseCardView: View {
                         showIntensity: showRPE,
                         intensityMetric: intensityMetric,
                         weightUnit: weightUnit,
-                        weightLabel: workoutExercise.exercise.exerciseType == .bodyweightReps ? "+\(weightUnit.symbol)" : weightUnit.symbol,
+                        weightLabel: workoutExercise.exercise.weightEntryLabel(weightUnit),
+                        repsLabel: workoutExercise.exercise.repetitionsLabel,
                         onWeightChange: { weight in
                             onWeightChange(exerciseSet.id, weight)
                         },
@@ -210,6 +222,9 @@ struct ExerciseCardView: View {
                 // Add Set button
                 addSetButton
             }
+        }
+        .sheet(isPresented: $editingWeightRecording) {
+            WeightRecordingEditorSheet(exercise: workoutExercise.exercise) { onWeightRecordingChange?($0) }
         }
         .background(STColors.surface)
         .clipShape(RoundedRectangle(cornerRadius: STRadius.card))

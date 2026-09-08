@@ -123,9 +123,11 @@ public final class DetailedAnalyticsTool: AITool {
             if let weight = a.target_weight_kg, !weight.isFinite || weight < 0 { throw AIToolError("target_weight_kg must be nonnegative") }
             let sessions = ExerciseHistoryCalculator.sessions(exerciseId: exercise.id, workouts: history, bodyWeightKg: bw, now: now)
             let points = ExerciseHistoryCalculator.points(sessions: sessions, metric: metric, targetReps: a.target_reps ?? 5, targetWeightKg: a.target_weight_kg ?? 0)
+            payload["weight_recording"] = WorkoutJSON.recording(exercise)
             payload["exercise_id"] = .string(exercise.id.uuidString); payload["exercise"] = .string(exercise.name)
             payload["metric"] = .string(metric.rawValue); payload["units"] = .string(metric == .volume ? "kg × reps" : metric.usesWeight ? "kg effective load" : metric == .duration ? "seconds" : metric == .distance ? "meters" : "count")
             payload["smoothing"] = .string("Trailing median of 3 observations; resets after 21-day gaps; performance excludes deload from smoothing/change. Point id is source workout id.")
+            payload["recording_by_workout"] = .array(sessions.filter { interval.contains($0.date) }.map { .object(["workout_id": .string($0.id.uuidString), "conventions": .array(($0.entries ?? []).map { WorkoutJSON.recording($0.exercise) })]) })
             payload["history"] = page(try points.filter { interval.contains($0.date) }.map(AIToolData.json))
             payload["change_percent"] = AIToolData.optional(metric.isPerformance ? ExerciseHistoryCalculator.performanceChange(points: points, interval: interval) : ExerciseHistoryCalculator.activityChange(points: points, interval: interval, firstLoggedDate: sessions.first?.date))
             if points.filter({ interval.contains($0.date) }).isEmpty { payload["status"] = .string("no_observations") }
