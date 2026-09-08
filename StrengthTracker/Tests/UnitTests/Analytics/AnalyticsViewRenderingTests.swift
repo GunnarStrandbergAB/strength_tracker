@@ -278,6 +278,147 @@ final class WorkoutNumberInputTests: XCTestCase {
         XCTAssertEqual(savedNotes, ["Updated note"])
     }
 
+    func testWeightHeadingsPreserveRecordingConventionAndUnits() async throws {
+        let cases: [(WeightUnit, String?, String)] = [
+            (.kg, nil, "Kg"), (.kg, "kg each", "Kg each"), (.kg, "kg total", "Kg total"),
+            (.kg, "+kg", "+Kg"), (.kg, "kg ?", "Kg ?"),
+            (.lbs, nil, "lbs"), (.lbs, "lbs each", "lbs each"), (.lbs, "+lbs", "+lbs")
+        ]
+        for (unit, label, expected) in cases {
+            var saved: [Double?] = []
+            let view = STSetValuesEditor(weight: 50, reps: 8, intensity: nil, showIntensity: false,
+                intensityMetric: .rpe, weightUnit: unit, weightLabel: label, context: "Set 1",
+                onWeightChange: { saved.append($0) }, onRepsChange: { _ in }, onIntensityChange: { _ in })
+            let window = host(view.padding())
+            defer { window.isHidden = true }
+            await settle()
+            let field = try XCTUnwrap(fields(in: window.rootViewController!.view).first)
+            XCTAssertEqual(field.accessibilityLabel, "Set 1, \(expected)")
+            XCTAssertTrue(field.becomeFirstResponder())
+            await settle()
+            field.insertText("55.25")
+            XCTAssertTrue(STNumericTextField.commitActiveInput())
+            XCTAssertEqual(try XCTUnwrap(saved.first.flatMap { $0 }), unit.toKg(55.25), accuracy: 0.000001)
+        }
+    }
+
+    func testFailureShortcutCommitsWeightBeforeChangingFlag() async throws {
+        var set = AnalyticsTestHelpers.makeCompletedSet(weight: 100, reps: 10)
+        set.isCompleted = false
+        set.applyRPE(nil)
+        var events: [String] = []
+        let row = SetRowGridView(setNumber: 1, exerciseSet: set,
+            onWeightChange: { set.weight = $0; events.append("weight") }, onRepsChange: { _ in },
+            onToggleComplete: { XCTFail("Failure must not complete the set") },
+            onToggleFailure: { set.setFailureFlag(!set.isFailure); events.append("failure") })
+        let window = host(row)
+        defer { window.isHidden = true }
+        await settle()
+        let field = try XCTUnwrap(fields(in: window.rootViewController!.view).first)
+        XCTAssertTrue(field.becomeFirstResponder())
+        await settle()
+        field.insertText("102,5")
+        // Exercise the action shared by the flame and the menu with a real active input.
+        row.toggleFailure()
+        XCTAssertEqual(events, ["weight", "failure"])
+        XCTAssertEqual(set.weight, 102.5)
+        XCTAssertTrue(set.isFailure)
+        XCTAssertFalse(set.isCompleted)
+        XCTAssertEqual(set.rpe, 10)
+        XCTAssertEqual(set.rir, 0)
+        XCTAssertNil(STNumericTextField.active)
+        row.toggleFailure()
+        XCTAssertEqual(events, ["weight", "failure", "failure"])
+        XCTAssertFalse(set.isFailure)
+        XCTAssertEqual(set.rpe, 10)
+    }
+
+    func testFailureShortcutBlocksInvalidDraftAndPreservesExplicitIntensity() async throws {
+        for (metric, invalid, valid, expectedRPE, expectedRIR) in [
+            (IntensityMetric.rpe, "11", "7.5", 7.5, 2.5), (.rir, "10", "2", 8.0, 2.0)
+        ] {
+            var set = AnalyticsTestHelpers.makeCompletedSet(weight: 100, reps: 10)
+            set.applyRPE(nil)
+            var toggles = 0
+            let row = SetRowGridView(setNumber: 1, exerciseSet: set, showRPE: true, intensityMetric: metric,
+                onWeightChange: { _ in }, onRepsChange: { _ in },
+                onIntensityChange: { set.applyIntensity($0, metric: metric) }, onToggleComplete: {},
+                onToggleFailure: { set.setFailureFlag(!set.isFailure); toggles += 1 })
+            let window = host(row)
+            defer { window.isHidden = true }
+            await settle()
+            let field = try XCTUnwrap(fields(in: window.rootViewController!.view).last)
+            XCTAssertTrue(field.becomeFirstResponder())
+            await settle()
+            field.insertText(invalid)
+            row.toggleFailure()
+            XCTAssertEqual(toggles, 0)
+            XCTAssertFalse(set.isFailure)
+            XCTAssertTrue(field.isFirstResponder)
+            field.selectAll(nil)
+            field.insertText(valid)
+            row.toggleFailure()
+            XCTAssertEqual(toggles, 1)
+            XCTAssertTrue(set.isFailure)
+            XCTAssertEqual(set.rpe, expectedRPE)
+            XCTAssertEqual(set.rir, expectedRIR)
+            row.toggleFailure()
+            XCTAssertFalse(set.isFailure)
+            XCTAssertEqual(set.rpe, expectedRPE)
+            XCTAssertEqual(set.rir, expectedRIR)
+        }
+    }
+
+    func testSetControlsRenderAtCompactAndAccessibilitySizes() async throws {
+        for size in [DynamicTypeSize.large, .accessibility2] {
+            for (type, failure) in [
+                (SetType.normal, false), (.warmup, false), (.restPause, true), (.failure, true)
+            ] {
+                var set = AnalyticsTestHelpers.makeCompletedSet(weight: 100.25, reps: 10, rpe: 8)
+                set.setType = type
+                set.isFailure = failure && type != .failure
+                set.isCompleted = false
+                let row = SetRowGridView(setNumber: 3, exerciseSet: set, previousText: "100 kg × 10 reps", showRPE: true,
+                    weightLabel: "kg each", repsLabel: "Reps/side", onWeightChange: { _ in }, onRepsChange: { _ in },
+                    onToggleComplete: {}, onAddDropEntry: {}, onToggleFailure: {})
+                let content = ScrollView { row.background(STColors.surface).padding(16) }
+                    .background(STColors.background).preferredColorScheme(.dark).environment(\.dynamicTypeSize, size)
+                let window = host(content, width: 320, height: 950)
+                defer { window.isHidden = true }
+                await settle()
+                let renderedView = window.rootViewController!.view!
+                let renderedFields = fields(in: renderedView)
+                XCTAssertEqual(renderedFields.count, 3)
+                XCTAssertEqual(renderedFields.first?.accessibilityLabel, "Set 3, Kg each")
+                for field in renderedFields {
+                    XCTAssertGreaterThanOrEqual(field.bounds.width, 44)
+                    XCTAssertGreaterThanOrEqual(field.bounds.height, 44)
+                    XCTAssertGreaterThanOrEqual(field.convert(field.bounds, to: window).minX, 0)
+                    XCTAssertLessThanOrEqual(field.convert(field.bounds, to: window).maxX, window.bounds.maxX + 1)
+                }
+                try await Task.sleep(for: .milliseconds(100))
+                let image = UIGraphicsImageRenderer(bounds: renderedView.bounds).image { renderedView.layer.render(in: $0.cgContext) }
+                let pixels = try XCTUnwrap(image.cgImage?.dataProvider?.data)
+                let bytes = try XCTUnwrap(CFDataGetBytePtr(pixels))
+                XCTAssertGreaterThan(Set(stride(from: 0, to: CFDataGetLength(pixels), by: 257).map { bytes[$0] }).count, 8)
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "set-controls-\(type)-\(size)"; attachment.lifetime = .keepAlways; add(attachment)
+            }
+        }
+    }
+
+    func testGroupedDropSetRejectsParentFailureAction() async throws {
+        let set = AnalyticsTestHelpers.makeDropSet(order: 2, parts: [(50, 10), (40, 8)])
+        let row = SetRowGridView(setNumber: 2, exerciseSet: set,
+            onWeightChange: { _ in }, onRepsChange: { _ in }, onToggleComplete: {},
+            onAddDropEntry: {}, onToggleFailure: { XCTFail("Failure belongs to individual drop segments") })
+        let window = host(row)
+        defer { window.isHidden = true }
+        await settle()
+        XCTAssertTrue(fields(in: window.rootViewController!.view).isEmpty, "Only the segments should have editable values")
+        row.toggleFailure()
+    }
+
     func testDumbbellInputsRetainAccessibleTargetsAndLabels() async throws {
         let set = AnalyticsTestHelpers.makeCompletedSet(weight: 100.25, reps: 10, rpe: 8)
         for size in [DynamicTypeSize.large, .accessibility2] {

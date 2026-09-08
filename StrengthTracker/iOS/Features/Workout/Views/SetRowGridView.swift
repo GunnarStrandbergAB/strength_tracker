@@ -19,24 +19,31 @@ struct SetRowGridView: View {
     var onSetTypeChange: (SetType) -> Void = { _ in }
     var onAddDropEntry: (() -> Void)? = nil
     var onToggleFailure: (() -> Void)? = nil
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private var hasDropEntries: Bool { !exerciseSet.dropSets.isEmpty }
     private var isFailureOn: Bool { exerciseSet.isFailure || exerciseSet.setType == .failure }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 10) {
+            if typeSize.isAccessibilitySize {
                 setBadgeMenu
+                HStack(spacing: 10) { failureButton; Spacer(minLength: 0); completionButton }
+            } else {
+                HStack(spacing: 10) {
+                    setBadgeMenu
+                    failureButton
+                    Spacer(minLength: 0)
+                    completionButton
+                }
+            }
+            if previousText != nil || (weightSuggestion != nil && !exerciseSet.isCompleted) {
                 VStack(alignment: .leading, spacing: 2) {
                     if let previousText { Text("Previous: \(previousText)").foregroundStyle(STColors.textSecondary) }
                     if let suggestion = weightSuggestion, !exerciseSet.isCompleted {
                         Text("Try \(weightUnit.format(suggestion.weight))").foregroundStyle(STColors.primary)
                     }
-                }.font(.caption).frame(maxWidth: .infinity, alignment: .leading)
-                STCheckbox(isChecked: exerciseSet.isCompleted) {
-                    guard STNumericTextField.commitActiveInput() else { return }
-                    onToggleComplete()
-                }.accessibilityLabel("\(exerciseSet.isCompleted ? "Uncomplete" : "Complete") set \(setNumber)")
+                }.font(.caption).fixedSize(horizontal: false, vertical: true)
             }
             if hasDropEntries {
                 Text("\(exerciseSet.dropSets.count) drop segments").font(.caption).foregroundStyle(.purple)
@@ -52,6 +59,36 @@ struct SetRowGridView: View {
         .background(setRowBackground)
     }
 
+    private var completionButton: some View {
+        STCheckbox(isChecked: exerciseSet.isCompleted) {
+            guard STNumericTextField.commitActiveInput() else { return }
+            onToggleComplete()
+        }.accessibilityLabel("\(exerciseSet.isCompleted ? "Uncomplete" : "Complete") set \(setNumber)")
+    }
+
+    @ViewBuilder private var failureButton: some View {
+        if onToggleFailure != nil, !hasDropEntries {
+            Button(action: toggleFailure) {
+                Image(systemName: isFailureOn ? "flame.fill" : "flame")
+                    .font(.title3)
+                    .foregroundStyle(isFailureOn ? STColors.danger : STColors.textSecondary)
+                    .frame(width: 44, height: 44)
+                    .background(isFailureOn ? STColors.danger.opacity(0.1) : Color.clear, in: RoundedRectangle(cornerRadius: STRadius.input))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(isFailureOn ? "Unmark" : "Mark") set \(setNumber) as taken to failure")
+            .accessibilityValue(isFailureOn ? "On" : "Off")
+            .accessibilityIdentifier("set-failure-\(exerciseSet.id)")
+        }
+    }
+
+    // Both the shortcut and menu must flush the draft before the parent can re-create this row.
+    func toggleFailure() {
+        guard !hasDropEntries, let onToggleFailure, STNumericTextField.commitActiveInput() else { return }
+        onToggleFailure()
+    }
+
     private var setBadgeMenu: some View {
         Menu {
             ForEach([SetType.normal, SetType.warmup, SetType.restPause], id: \.self) { type in
@@ -59,7 +96,7 @@ struct SetRowGridView: View {
                     guard STNumericTextField.commitActiveInput() else { return }
                     onSetTypeChange(type)
                 } label: {
-                    if exerciseSet.setType == type {
+                    if exerciseSet.setType == type || (exerciseSet.setType == .failure && type == .normal) {
                         Label(type.displayName, systemImage: "checkmark")
                     } else {
                         Text(type.displayName)
@@ -83,39 +120,41 @@ struct SetRowGridView: View {
             }
 
             // For grouped drop sets, failure lives on each segment row instead.
-            if let onToggleFailure, !hasDropEntries {
-                Toggle(isOn: Binding(get: { isFailureOn }, set: { _ in if STNumericTextField.commitActiveInput() { onToggleFailure() } })) {
+            if onToggleFailure != nil, !hasDropEntries {
+                Toggle(isOn: Binding(get: { isFailureOn }, set: { _ in toggleFailure() })) {
                     Label("To Failure", systemImage: "flame")
                 }
             }
         } label: {
-            Text("Set \(setTypeLabel)")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(setTypeLabelColor)
-                .frame(minWidth: 44, minHeight: 44, alignment: .leading)
-                .overlay(alignment: .topTrailing) {
-                    if isFailureOn && !hasDropEntries {
-                        Image(systemName: "flame.fill")
-                            .font(.system(size: 8))
-                            .foregroundStyle(STColors.danger)
-                            .offset(x: 5, y: -4)
-                    }
-                }
-                .contentShape(Rectangle())
+            HStack(spacing: 6) {
+                Text("Set \(setNumber) · \(setTypeLabel)")
+                    .fixedSize(horizontal: false, vertical: true)
+                Image(systemName: "chevron.down").font(.caption.weight(.semibold))
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(setTypeLabelColor)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+            .background(STColors.background.opacity(0.35), in: RoundedRectangle(cornerRadius: STRadius.input))
+            .overlay(RoundedRectangle(cornerRadius: STRadius.input).stroke(STColors.border, lineWidth: 1))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Set \(setNumber), \(setTypeLabel)")
+        .accessibilityHint("Opens set type and options")
+        .accessibilityIdentifier("set-type-\(exerciseSet.id)")
     }
 
     // MARK: - Set Type Helpers
 
     private var setTypeLabel: String {
-        if hasDropEntries { return "\(setNumber)" }
+        if hasDropEntries { return "Drop" }
         switch exerciseSet.setType {
-        case .normal: return "\(setNumber)"
-        case .warmup: return "W"
-        case .dropset: return "D"
-        case .failure: return "F"
-        case .restPause: return "R"
+        case .normal, .failure: return "Normal" // Legacy failure is presented by the independent flame.
+        case .warmup: return "Warm-up"
+        case .dropset: return "Drop"
+        case .restPause: return "Rest-pause"
         }
     }
 
