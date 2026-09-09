@@ -151,6 +151,38 @@ struct WorkoutViewModelDropSetTests {
         #expect(s.isFailure == false)
     }
 
+    @Test("failure edits persist without changing set type, completion, or explicit intensity", arguments: [IntensityMetric.rpe, .rir])
+    func testFailurePersistence(metric: IntensityMetric) async throws {
+        let repository = InMemoryWorkoutRepository()
+        let vm = WorkoutViewModel(workoutRepository: repository,
+            templateRepository: InMemoryTemplateRepository(), healthKitService: NoOpHealthKitService())
+        await vm.startWorkout(name: "Failure shortcut")
+        vm.addExercise(makeExercise())
+        let exerciseId = try #require(vm.currentWorkout?.exercises.first?.id)
+        await vm.addEmptySet(exerciseId: exerciseId)
+        let setId = try #require(vm.currentWorkout?.exercises.first?.sets.first?.id)
+        await vm.updateSetType(exerciseId: exerciseId, setId: setId, setType: .warmup)
+        await vm.updateSetWeight(exerciseId: exerciseId, setId: setId, weight: 25.5)
+        await vm.updateSetReps(exerciseId: exerciseId, setId: setId, reps: 10)
+        await vm.updateSetIntensity(exerciseId: exerciseId, setId: setId, value: metric == .rpe ? 8 : 2, metric: metric)
+
+        for completed in [false, true] {
+            if completed { await vm.toggleSetCompletion(exerciseId: exerciseId, setId: setId) }
+            for failure in [true, false] {
+                await vm.toggleSetFailure(exerciseId: exerciseId, setId: setId)
+                let savedWorkout = try #require(await repository.fetchActive())
+                let saved = try #require(savedWorkout.exercises.first?.sets.first)
+                #expect(saved.isFailure == failure)
+                #expect(saved.isCompleted == completed)
+                #expect(saved.setType == .warmup)
+                #expect(saved.rpe == 8)
+                #expect(saved.rir == 2)
+                #expect(saved.weight == 25.5)
+                #expect(saved.reps == 10)
+            }
+        }
+    }
+
     @Test("updateSetIntensity co-stores both metrics; nil clears both")
     func testIntensityCoStorage() async {
         let (vm, exerciseId, setId) = await makeActiveWorkoutWithSet()

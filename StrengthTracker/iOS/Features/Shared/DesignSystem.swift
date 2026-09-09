@@ -380,11 +380,19 @@ struct STSetValuesEditor: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .title3) private var inputHeight = 52.0
 
+    // Capitalize field headings without changing the stored unit or formatted measurements.
+    private var weightHeading: String {
+        let label = weightLabel ?? weightUnit.symbol
+        guard weightUnit == .kg else { return label }
+        if label.hasPrefix("+kg") { return "+Kg" + label.dropFirst(3) }
+        return label.replacingOccurrences(of: "kg", with: "Kg", options: .anchored)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 8))
             layout {
-                number(weight.map(weightUnit.fromKg), kind: .weight, title: weightLabel ?? weightUnit.symbol, position: 0) { onWeightChange($0.map(weightUnit.toKg)) }
+                number(weight.map(weightUnit.fromKg), kind: .weight, title: weightHeading, position: 0) { onWeightChange($0.map(weightUnit.toKg)) }
                 number(reps.map(Double.init), kind: .reps, title: repsLabel, position: 1) { onRepsChange($0.flatMap { Int(exactly: $0) }) }
                 if showIntensity {
                     number(intensity, kind: intensityMetric == .rpe ? .rpe : .rir, title: intensityMetric.displayName, position: 2, commit: onIntensityChange)
