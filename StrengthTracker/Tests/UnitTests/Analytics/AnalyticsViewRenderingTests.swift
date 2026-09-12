@@ -485,6 +485,169 @@ final class WorkoutNumberInputTests: XCTestCase {
     }
 }
 
+/// Exercises the chat's actual SwiftUI hierarchy without network calls or an API key.
+@MainActor
+final class AIChatLayoutTests: XCTestCase {
+    private func inputs(in view: UIView) -> [UIView] {
+        if view is UITextField || (view as? UITextView)?.isEditable == true { return [view] }
+        return view.subviews.flatMap { inputs(in: $0) }
+    }
+
+    private func messageScrollView(in view: UIView) -> UIScrollView? {
+        if let scroll = view as? UIScrollView, !(view is UITextView) { return scroll }
+        return view.subviews.compactMap { messageScrollView(in: $0) }.first
+    }
+
+    private func makeWindow(host: UIViewController, size: CGSize? = nil) throws -> UIWindow {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        if let size { window.frame = CGRect(origin: .zero, size: size) }
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        return window
+    }
+
+    private func settle() async throws { try await Task.sleep(for: .milliseconds(250)) }
+
+    private func makeModel(withHistory: Bool) async throws -> (AIChatViewModel, UserPreferencesService) {
+        let preferences = UserPreferencesService()
+        let repository = InMemoryChatRepository()
+        if withHistory {
+            let conversation = ChatConversation(title: "Training")
+            try await repository.createConversation(conversation)
+            for index in 0..<20 {
+                try await repository.appendMessage(ChatMessage(role: index.isMultiple(of: 2) ? .user : .assistant,
+                    text: "Training message \(index). Let's look at your recent workouts."), to: conversation.id)
+            }
+        }
+        let model = AIChatViewModel(agent: MockAIAgent(), chatRepository: repository, userPreferencesService: preferences)
+        await model.loadLatestConversation()
+        return (model, preferences)
+    }
+
+    func testComposerStaysInsideKeyboardSafeAreaForEmptyAndLoadedConversations() async throws {
+        for withHistory in [false, true] {
+            let (model, preferences) = try await makeModel(withHistory: withHistory)
+            let host = UIHostingController(rootView: AIChatView(viewModel: model, userPreferencesService: preferences))
+            let window = try makeWindow(host: host, size: CGSize(width: 320, height: 568))
+            defer { window.isHidden = true }
+            for keyboardInset in [0.0, 300.0, 240.0, 0.0] {
+                // Model the safe-area changes delivered by docked keyboards, including resizing and dismissal.
+                host.additionalSafeAreaInsets.bottom = keyboardInset
+                host.view.frame = window.bounds
+                host.view.setNeedsLayout()
+                host.view.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(150))
+                let field = try XCTUnwrap(inputs(in: host.view).first)
+                let rect = field.convert(field.bounds, to: host.view)
+                let safeRect = host.view.safeAreaLayoutGuide.layoutFrame
+                XCTAssertGreaterThanOrEqual(rect.minY, safeRect.minY, "History: \(withHistory), keyboard: \(keyboardInset)")
+                XCTAssertLessThanOrEqual(rect.maxY, safeRect.maxY + 1, "Composer must remain above the keyboard; history: \(withHistory), keyboard: \(keyboardInset)")
+                XCTAssertGreaterThan(rect.height, 10)
+                let scroll = messageScrollView(in: host.view)
+                XCTAssertNotNil(scroll, "The welcome screen must scroll too")
+                if let scroll {
+                    let lastOffset = max(-scroll.adjustedContentInset.top,
+                        scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+                    if withHistory {
+                        XCTAssertEqual(scroll.contentOffset.y, lastOffset, accuracy: 4, "Keep the latest message visible across keyboard changes")
+                    } else if keyboardInset > 0 {
+                        XCTAssertGreaterThan(lastOffset, 0, "Welcome content must be scrollable in the remaining space")
+                    }
+                }
+                let image = UIGraphicsImageRenderer(bounds: host.view.bounds).image { context in
+                    if withHistory {
+                        host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true)
+                    } else {
+                        host.view.layer.render(in: context.cgContext)
+                    }
+                }
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "chat-history-\(withHistory)-inset-\(keyboardInset)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
+    func testMultilineTypingAndRefocusingKeepsCaretVisible() async throws {
+        let (model, preferences) = try await makeModel(withHistory: false)
+        let host = UIHostingController(rootView: AIChatView(viewModel: model, userPreferencesService: preferences))
+        let window = try makeWindow(host: host, size: CGSize(width: 375, height: 568))
+        defer { window.endEditing(true); window.isHidden = true }
+        let keyboardGuide = host.view.keyboardLayoutGuide
+        try await settle()
+        var draft = ""
+        for visit in 0..<2 {
+            let field = try XCTUnwrap(inputs(in: host.view).first)
+            XCTAssertTrue(field.becomeFirstResponder())
+            try await settle()
+            let input = try XCTUnwrap(field as? UIKeyInput)
+            let addition = visit == 0 ? "Can you review my training?\nWeek 1\nWeek 2\nWeek 3\nWeek 4\nWeek 5\nWeek 6\nLast line" : " and recovery?"
+            input.insertText(addition)
+            draft += addition
+            try await settle()
+            let rect = field.convert(field.bounds, to: host.view)
+            // Supports both hardware and software keyboards. Deterministic docked-keyboard
+            // resizing is covered separately by testComposerStaysInsideKeyboardSafeArea.
+            let visibleBottom = min(host.view.safeAreaLayoutGuide.layoutFrame.maxY, keyboardGuide.layoutFrame.minY)
+            XCTAssertLessThanOrEqual(rect.maxY, visibleBottom + 1)
+            XCTAssertGreaterThanOrEqual(rect.minY, host.view.safeAreaInsets.top)
+            XCTAssertEqual((field as? UITextView)?.text ?? (field as? UITextField)?.text, draft)
+            XCTAssertEqual(host.traitCollection.userInterfaceStyle, .dark)
+            let textInput = try XCTUnwrap(field as? UITextInput)
+            let selection = try XCTUnwrap(textInput.selectedTextRange)
+            let caret = field.convert(textInput.caretRect(for: selection.end), to: host.view)
+            XCTAssertLessThanOrEqual(caret.maxY, rect.maxY + 1)
+            XCTAssertGreaterThanOrEqual(caret.minY, rect.minY - 1)
+            let image = UIGraphicsImageRenderer(bounds: host.view.bounds).image { host.view.layer.render(in: $0.cgContext) }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "chat-typing-visit-\(visit)"; attachment.lifetime = .keepAlways; add(attachment)
+            XCTAssertTrue(field.resignFirstResponder())
+            try await settle()
+        }
+    }
+
+    private struct MultilineComposerFixture: View {
+        @State private var text = "Please review my training\nWeek 1\nWeek 2\nWeek 3\nWeek 4\nWeek 5\nWeek 6\nAnd recovery"
+        @FocusState private var isFocused: Bool
+        var body: some View {
+            ScrollView { Text("Conversation").frame(maxWidth: .infinity) }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    ChatInputBar(text: $text, isStreaming: false, isFocused: $isFocused, onSend: {}, onStop: {})
+                }
+                .background(STColors.background)
+                .preferredColorScheme(.dark)
+        }
+    }
+
+    func testMultilineComposerFitsLandscapeAndAccessibilityWithKeyboardSpaceReserved() async throws {
+        for (name, size, keyboardInset, sizeClass, typeSize) in [
+            ("landscape", CGSize(width: 568, height: 320), 140.0, UserInterfaceSizeClass.compact, DynamicTypeSize.large),
+            ("accessibility", CGSize(width: 320, height: 568), 300.0, .regular, .accessibility2)
+        ] {
+            let content = MultilineComposerFixture().environment(\.verticalSizeClass, sizeClass).environment(\.dynamicTypeSize, typeSize)
+            let host = UIHostingController(rootView: content)
+            let window = try makeWindow(host: host, size: size)
+            defer { window.isHidden = true }
+            host.additionalSafeAreaInsets.bottom = keyboardInset
+            host.view.layoutIfNeeded()
+            try await settle()
+            let field = try XCTUnwrap(inputs(in: host.view).first)
+            let rect = field.convert(field.bounds, to: host.view)
+            let safeRect = host.view.safeAreaLayoutGuide.layoutFrame
+            XCTAssertGreaterThanOrEqual(rect.minY, safeRect.minY)
+            XCTAssertLessThanOrEqual(rect.maxY, safeRect.maxY + 1)
+            XCTAssertGreaterThanOrEqual(rect.minX, safeRect.minX)
+            XCTAssertLessThanOrEqual(rect.maxX, safeRect.maxX + 1)
+            let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: host.view.bounds).image { host.view.layer.render(in: $0.cgContext) })
+            attachment.name = "chat-composer-\(name)"; attachment.lifetime = .keepAlways; add(attachment)
+        }
+    }
+}
+
 @MainActor
 final class PlanEditRenderingTests: XCTestCase {
     func testPlanEditPreviewAtCompactAndAccessibilitySizes() throws {
