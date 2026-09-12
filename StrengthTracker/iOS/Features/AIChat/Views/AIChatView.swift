@@ -7,15 +7,21 @@ struct AIChatView: View {
     let userPreferencesService: UserPreferencesService
     @Environment(\.dismiss) private var dismiss
     @State private var inputText = ""
+    @State private var messageViewport = CGSize.zero
+    @FocusState private var isInputFocused: Bool
+    private let bottomID = "chat-bottom"
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                messageList
+            messageList
+            .safeAreaInset(edge: .bottom, spacing: 0) {
                 ChatInputBar(
                     text: $inputText,
                     isStreaming: viewModel.isStreaming,
+                    isFocused: $isInputFocused,
                     onSend: {
+                        guard !viewModel.isStreaming,
+                              !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
                         viewModel.send(inputText)
                         inputText = ""
                     },
@@ -29,25 +35,42 @@ struct AIChatView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
+                        isInputFocused = false
                         dismiss()
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(STColors.textSecondary)
                     }
+                    .accessibilityLabel("Close AI assistant")
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if isInputFocused {
+                        Button {
+                            isInputFocused = false
+                        } label: {
+                            Image(systemName: "keyboard.chevron.compact.down")
+                                .foregroundStyle(STColors.textSecondary)
+                        }
+                        .accessibilityLabel("Hide keyboard")
+                        .accessibilityIdentifier("chat-hide-keyboard")
+                    }
                     Button {
                         viewModel.startNewConversation()
+                        inputText = ""
+                        isInputFocused = false
                     } label: {
                         Image(systemName: "square.and.pencil")
                             .font(.system(size: 15))
                             .foregroundStyle(STColors.textSecondary)
                     }
                     .disabled(viewModel.messages.isEmpty)
+                    .accessibilityLabel("New conversation")
                 }
             }
         }
+        .preferredColorScheme(.dark)
+        .onDisappear { isInputFocused = false }
         .task {
             await viewModel.loadLatestConversation()
         }
@@ -63,13 +86,14 @@ struct AIChatView: View {
 
     // MARK: - Messages
 
-    @ViewBuilder
     private var messageList: some View {
-        if viewModel.messages.isEmpty {
-            emptyState
-        } else {
-            ScrollViewReader { proxy in
-                ScrollView {
+        ScrollViewReader { proxy in
+            // The welcome content must be able to shrink/scroll just like a conversation.
+            // Otherwise its minimum height can push the composer below a docked keyboard.
+            ScrollView {
+                if viewModel.messages.isEmpty {
+                    emptyState
+                } else {
                     LazyVStack(spacing: 14) {
                         ForEach(viewModel.messages) { message in
                             messageView(message)
@@ -81,19 +105,34 @@ struct AIChatView: View {
                                 ToolActivityChip(label: runningToolLabel(for: toolName), isRunning: true)
                                 Spacer()
                             }
-                            .id("active-tool")
                         }
+
+                        // Include the bottom spacing in the scroll target itself.
+                        Color.clear.frame(height: 1).padding(.bottom, 12).id(bottomID)
                     }
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
+                    .padding(.top, 12)
                 }
-                .scrollDismissesKeyboard(.interactively)
-                .onChange(of: viewModel.messages.last?.text) { _, _ in
-                    scrollToBottom(proxy)
-                }
-                .onChange(of: viewModel.messages.count) { _, _ in
-                    scrollToBottom(proxy)
-                }
+            }
+            .defaultScrollAnchor(viewModel.messages.isEmpty ? .top : .bottom)
+            .scrollDismissesKeyboard(.interactively)
+            .accessibilityIdentifier("chat-messages")
+            .onGeometryChange(for: CGSize.self) { geometry in
+                CGSize(width: geometry.size.width,
+                       height: max(0, geometry.size.height - geometry.safeAreaInsets.top - geometry.safeAreaInsets.bottom))
+            } action: { messageViewport = $0 }
+            .task(id: messageViewport) {
+                // Let the scroll view apply its new insets before revealing the tail.
+                // This also handles rotation and the composer growing while typing.
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                scrollToBottom(proxy, animated: false)
+            }
+            .onChange(of: viewModel.messages.last) { _, _ in
+                scrollToBottom(proxy)
+            }
+            .onChange(of: viewModel.activeToolName) { _, _ in
+                scrollToBottom(proxy)
             }
         }
     }
@@ -133,10 +172,14 @@ struct AIChatView: View {
         }
     }
 
-    private func scrollToBottom(_ proxy: ScrollViewProxy) {
-        if let lastID = viewModel.messages.last?.id {
-            withAnimation(.easeOut(duration: 0.15)) {
-                proxy.scrollTo(lastID, anchor: .bottom)
+    private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
+        if !viewModel.messages.isEmpty {
+            if animated {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    proxy.scrollTo(bottomID, anchor: .bottom)
+                }
+            } else {
+                proxy.scrollTo(bottomID, anchor: .bottom)
             }
         }
     }
@@ -145,30 +188,30 @@ struct AIChatView: View {
 
     private var emptyState: some View {
         VStack(spacing: 16) {
-            Spacer()
             Image(systemName: "sparkles")
                 .font(.system(size: 40))
                 .foregroundStyle(STColors.primary)
             Text("Ask Grok about your training")
-                .font(.stTitle)
+                .font(.headline)
                 .foregroundStyle(STColors.textPrimary)
             VStack(alignment: .leading, spacing: 8) {
                 examplePrompt("Summarize my last two weeks of training")
                 examplePrompt("Create a legs template focused on quads")
                 examplePrompt("Am I close to any PRs?")
             }
-            Spacer()
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 24)
+        .padding(.vertical, 32)
     }
 
     private func examplePrompt(_ text: String) -> some View {
         Button {
             inputText = text
+            isInputFocused = true
         } label: {
             Text(text)
-                .font(.stBody)
+                .font(.subheadline)
                 .foregroundStyle(STColors.textSecondary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
