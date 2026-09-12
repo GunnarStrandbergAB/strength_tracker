@@ -10,6 +10,7 @@ public final class ExerciseListViewModel {
     public var selectedMuscleGroup: MuscleGroup? = nil
     public var isLoading = false
     public var errorMessage: String? = nil
+    public var didSave: (@MainActor () async -> Void)?
 
     public var filteredExercises: [Exercise] {
         var result = exercises
@@ -46,7 +47,8 @@ public final class ExerciseListViewModel {
     }
     #endif
 
-    public func saveExercise(_ exercise: Exercise) async {
+    @discardableResult
+    public func saveExercise(_ exercise: Exercise) async -> Bool {
         errorMessage = nil
         do {
             let saved = try await exerciseRepository.save(exercise)
@@ -58,8 +60,30 @@ public final class ExerciseListViewModel {
                 exercises.append(saved)
             }
             exercises.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            await didSave?()
+            return true
         } catch {
             errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Fetch before updating to preserve unrelated edits and the library identity.
+    public func saveBodyweightPercentage(exerciseId: UUID, percent: Double?) async -> Exercise? {
+        errorMessage = nil
+        do {
+            guard var exercise = try await exerciseRepository.fetchAll().first(where: { $0.id == exerciseId }),
+                  exercise.exerciseType == .bodyweightReps else {
+                errorMessage = "This exercise no longer supports bodyweight percentages."
+                return nil
+            }
+            exercise.bodyweightFactorOverride = try percent.map { try BodyweightPercentage.factor(percent: $0) }
+            if percent == nil && exercise.isCustom { exercise.bodyweightFactor = nil }
+            guard await saveExercise(exercise) else { return nil }
+            return exercise
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
         }
     }
 

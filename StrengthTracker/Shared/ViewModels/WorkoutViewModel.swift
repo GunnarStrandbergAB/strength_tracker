@@ -76,6 +76,8 @@ public final class WorkoutViewModel {
     private let weightSuggestionService: WeightSuggestionService?
     private let qualityScoreService: WorkoutQualityScoreService?
     private let bodyWeightProvider: BodyWeightProvider?
+    private let exerciseRepository: (any ExerciseRepository)?
+    private var bodyweightLibrary: [Exercise] = []
 
     /// Single resolved body weight (HealthKit → prefs → default) shared with every screen.
     private var bodyWeightKg: Double {
@@ -95,10 +97,12 @@ public final class WorkoutViewModel {
         coachingInsightService: CoachingInsightService? = nil,
         weightSuggestionService: WeightSuggestionService? = nil,
         qualityScoreService: WorkoutQualityScoreService? = nil,
-        bodyWeightProvider: BodyWeightProvider? = nil
+        bodyWeightProvider: BodyWeightProvider? = nil,
+        exerciseRepository: (any ExerciseRepository)? = nil
     ) {
         self.qualityScoreService = qualityScoreService
         self.bodyWeightProvider = bodyWeightProvider
+        self.exerciseRepository = exerciseRepository
         self.workoutRepository = workoutRepository
         self.templateRepository = templateRepository
         self.personalRecordService = personalRecordService
@@ -166,9 +170,11 @@ public final class WorkoutViewModel {
     }
 
     public func startWorkout(name: String, from template: WorkoutTemplate? = nil, isDeload: Bool = false) async {
+        do { bodyweightLibrary = try await exerciseRepository?.fetchAll() ?? [] }
+        catch { errorMessage = error.localizedDescription; return }
         try? await workoutRepository.deleteAllIncomplete()
 
-        let exercises: [WorkoutExercise] = template?.instantiateExercises() ?? []
+        let exercises: [WorkoutExercise] = template?.resolvingBodyweight(from: bodyweightLibrary).instantiateExercises() ?? []
 
         var workout = Workout(
             id: UUID(),
@@ -231,6 +237,8 @@ public final class WorkoutViewModel {
         _ exercise: Exercise, sets: [ExerciseSet], restTimerSeconds: Int?, notes: String?
     ) -> (Workout, WorkoutExercise)? {
         guard var workout = currentWorkout else { return nil }
+        let exercise = workout.exercises.first(where: { $0.exercise.id == exercise.id })?.exercise
+            ?? exercise.resolvingBodyweight(from: bodyweightLibrary)
         var numbered = sets
         for i in numbered.indices { numbered[i].order = i + 1 }
         let workoutExercise = WorkoutExercise(

@@ -24,6 +24,9 @@ extension Array where Element == PersonalRecord {
     /// Convert only known each/total weights. Unknown or incompatible strength
     /// records remain stored, but cannot establish a baseline in another convention.
     public func matching(_ exercise: Exercise) -> [PersonalRecord] {
+        if exercise.exerciseType == .bodyweightReps {
+            return filter { $0.weightRecordingKey == exercise.personalRecordConvention }
+        }
         guard exercise.isDumbbell else { return self }
         return compactMap { record in
             guard record.recordType != .maxVolume else { return record }

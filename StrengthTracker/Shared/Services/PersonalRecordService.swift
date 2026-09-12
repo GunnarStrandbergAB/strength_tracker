@@ -55,6 +55,9 @@ public final class PersonalRecordService {
         let survivors = existing.filter { $0.setId != nil && !beatenTypes.contains($0.recordType) }
         try await personalRecordRepository.replace(records: survivors + newRecords, forExercise: exercise.id, keepingManual: true)
 
+        // The first observation after a percentage change establishes a baseline;
+        // a larger estimated load caused by that setting is not a PR celebration.
+        if exercise.exerciseType == .bodyweightReps, !existing.isEmpty, existing.matching(exercise).isEmpty { return nil }
         return Self.mostSignificant(newRecords)
     }
 
@@ -115,7 +118,24 @@ public final class PersonalRecordService {
             }
             let records = Array(elected.values)
             try await personalRecordRepository.replace(records: records, forExercise: exerciseId, keepingManual: true)
-            winningSetIds.formUnion(records.compactMap(\.setId))
+            if let reference = references[exerciseId], reference.exerciseType == .bodyweightReps {
+                let rows = eligible.sorted { $0.trainingDate < $1.trainingDate }
+                let hasOtherBasis = rows.flatMap(\.exercises).contains {
+                    $0.exercise.id == exerciseId && $0.exercise.performanceConvention != reference.performanceConvention
+                }
+                let firstComparable = rows.first { workout in
+                    workout.exercises.contains { $0.exercise.id == exerciseId && $0.exercise.performanceConvention == reference.performanceConvention && $0.sets.contains { $0.isCompleted && $0.setType != .warmup } }
+                }
+                let baseline = firstComparable?.exercises.filter { $0.exercise.id == exerciseId && $0.exercise.performanceConvention == reference.performanceConvention }
+                    .flatMap { entry in entry.sets.filter { $0.isCompleted && $0.setType != .warmup }.flatMap {
+                        Self.candidateRecords(exerciseId: exerciseId, exercise: entry.exercise, set: $0, bodyWeightKg: bodyWeight)
+                    } } ?? []
+                winningSetIds.formUnion(records.filter { record in
+                    !hasOtherBasis || record.value > (baseline.filter { $0.recordType == record.recordType }.map(\.value).max() ?? 0)
+                }.compactMap(\.setId))
+            } else {
+                winningSetIds.formUnion(records.compactMap(\.setId))
+            }
         }
 
         // Flag pass: only the winning sets carry the badge.
@@ -157,7 +177,7 @@ public final class PersonalRecordService {
     /// The four record candidates a single set can produce, using effective loads
     /// from the set's own exercise snapshot.
     static func candidateRecords(exerciseId: UUID, exercise: Exercise, set: ExerciseSet, bodyWeightKg: Double) -> [PersonalRecord] {
-        let convention = exercise.isDumbbell ? exercise.weightRecording?.performanceKey : nil
+        let convention = exercise.personalRecordConvention
         let base = exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
         let loadParts = set.effectiveLoadParts(baseLoadPerRep: base)
         let parts = set.effectiveParts
@@ -176,7 +196,7 @@ public final class PersonalRecordService {
         }
         let volume = exercise.volume(of: set, bodyWeightKg: bodyWeightKg)
         if volume > 0 {
-            records.append(PersonalRecord(id: UUID(), exerciseId: exerciseId, recordType: .maxVolume, value: volume, setId: set.id, achievedAt: achievedAt))
+            records.append(PersonalRecord(id: UUID(), exerciseId: exerciseId, recordType: .maxVolume, value: volume, setId: set.id, achievedAt: achievedAt, weightRecordingKey: exercise.exerciseType == .bodyweightReps ? convention : nil))
         }
         return records
     }

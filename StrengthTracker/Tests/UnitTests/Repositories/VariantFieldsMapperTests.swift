@@ -156,3 +156,33 @@ struct VariantFieldsMapperTests {
         #expect(entity.loadingType == "weightStack")
     }
 }
+
+@Suite("Bodyweight setting persistence")
+struct BodyweightSettingMapperTests {
+    @Test("Library preserves default plus override, while workout and template snapshots store only the effective factor")
+    func snapshots() throws {
+        var exercise = try #require(ExerciseSeedData.allExercises.first { $0.name == "Push-Up" })
+        exercise.bodyweightFactorOverride = 0.72
+        let entity = ExerciseMapper.toEntity(exercise)
+        #expect(entity.bodyweightFactor == 0.64)
+        #expect(ExerciseMapper.toDomain(entity).bodyweightFactorOverride == 0.72)
+        exercise.bodyweightFactorOverride = 0.8
+        ExerciseMapper.updateEntity(entity, from: exercise)
+        #expect(ExerciseMapper.toDomain(entity).resolvedBodyweightFactor == 0.8)
+        let row = WorkoutExercise(id: UUID(), exercise: exercise, order: 1, supersetGroup: nil, notes: nil, restTimerSeconds: nil, sets: [])
+        let savedWorkout = WorkoutExerciseMapper.toEntity(row)
+        #expect(savedWorkout.bodyweightFactor == 0.8)
+        let restoredWorkout = WorkoutExerciseMapper.toDomain(savedWorkout)
+        #expect(restoredWorkout.exercise.bodyweightFactorOverride == nil)
+        #expect(restoredWorkout.exercise.resolvedBodyweightFactor == 0.8)
+        let templateRow = TemplateExerciseFactory.make(exercise: exercise, order: 1, defaultReps: 10)
+        let savedTemplate = TemplateExerciseMapper.toEntity(templateRow)
+        #expect(savedTemplate.bodyweightFactor == 0.8)
+        #expect(TemplateExerciseMapper.toDomain(savedTemplate).exercise.bodyweightFactorOverride == nil)
+        exercise.bodyweightFactorOverride = nil
+        ExerciseMapper.updateEntity(entity, from: exercise)
+        #expect(ExerciseMapper.toDomain(entity).resolvedBodyweightFactor == 0.64)
+        #expect(WorkoutExerciseMapper.toDomain(savedWorkout).exercise.resolvedBodyweightFactor == 0.8)
+        #expect(TemplateExerciseMapper.toDomain(savedTemplate).exercise.resolvedBodyweightFactor == 0.8)
+    }
+}

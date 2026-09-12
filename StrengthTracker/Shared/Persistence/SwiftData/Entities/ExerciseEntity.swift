@@ -14,6 +14,7 @@ public final class ExerciseEntity {
     public var isCustom: Bool
     public var isArchived: Bool
     public var bodyweightFactor: Double?
+    public var bodyweightFactorOverride: Double?
     public var equipmentBrand: String?
     public var weightRecordingJSON: String?
     public var loadingType: String?
@@ -31,7 +32,8 @@ public final class ExerciseEntity {
         bodyweightFactor: Double? = nil,
         equipmentBrand: String? = nil,
         weightRecordingJSON: String? = nil,
-        loadingType: String? = nil
+        loadingType: String? = nil,
+        bodyweightFactorOverride: Double? = nil
     ) {
         self.id = id
         self.name = name
@@ -43,6 +45,7 @@ public final class ExerciseEntity {
         self.isCustom = isCustom
         self.isArchived = isArchived
         self.bodyweightFactor = bodyweightFactor
+        self.bodyweightFactorOverride = bodyweightFactorOverride
         self.equipmentBrand = equipmentBrand
         self.weightRecordingJSON = weightRecordingJSON
         self.loadingType = loadingType

@@ -61,6 +61,7 @@ public struct SessionExecutionService: Sendable {
 
             guard let planIndex = planExerciseLookup[exerciseId] else { continue }
             let planExercise = updatedExercises[planIndex]
+            guard planExercise.acceptsBodyweightBasis(of: workoutExercise.exercise) else { continue }
             if workoutExercise.exercise.isDumbbell,
                (planExercise.weightRecording?.performanceKey ?? "unconfirmed") != workoutExercise.exercise.performanceConvention { continue }
 

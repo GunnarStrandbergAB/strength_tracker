@@ -14,6 +14,9 @@ public struct Exercise: Identifiable, Hashable, Sendable, Codable {
     /// (e.g. 0.64 for a push-up). nil for non-bodyweight types and legacy data;
     /// computation sites fall back to 1.0 via `baseLoadPerRep(bodyWeightKg:)`.
     public var bodyweightFactor: Double?
+    /// Personal library setting. Workout/template persistence stores the resolved
+    /// factor in bodyweightFactor, so later library edits never rewrite history.
+    public var bodyweightFactorOverride: Double?
     /// Free-text equipment brand/model for machine-like exercises
     /// (e.g. "Hammer Strength") — the same movement on different machines can
     /// take very different loads, so variants are tracked as separate exercises.
@@ -22,7 +25,7 @@ public struct Exercise: Identifiable, Hashable, Sendable, Codable {
     public var loadingType: LoadingType?
     public var weightRecording: WeightRecording?
 
-    public init(id: UUID, name: String, primaryMuscleGroup: MuscleGroup, secondaryMuscleGroups: [MuscleGroup], category: ExerciseCategory, exerciseType: ExerciseType, instructions: String?, isCustom: Bool, isArchived: Bool, bodyweightFactor: Double? = nil, equipmentBrand: String? = nil, loadingType: LoadingType? = nil, weightRecording: WeightRecording? = nil) {
+    public init(id: UUID, name: String, primaryMuscleGroup: MuscleGroup, secondaryMuscleGroups: [MuscleGroup], category: ExerciseCategory, exerciseType: ExerciseType, instructions: String?, isCustom: Bool, isArchived: Bool, bodyweightFactor: Double? = nil, equipmentBrand: String? = nil, loadingType: LoadingType? = nil, weightRecording: WeightRecording? = nil, bodyweightFactorOverride: Double? = nil) {
         self.id = id
         self.name = name
         self.primaryMuscleGroup = primaryMuscleGroup
@@ -33,6 +36,7 @@ public struct Exercise: Identifiable, Hashable, Sendable, Codable {
         self.isCustom = isCustom
         self.isArchived = isArchived
         self.bodyweightFactor = bodyweightFactor
+        self.bodyweightFactorOverride = bodyweightFactorOverride
         self.equipmentBrand = equipmentBrand
         self.loadingType = loadingType
         self.weightRecording = weightRecording
@@ -51,7 +55,7 @@ public struct Exercise: Identifiable, Hashable, Sendable, Codable {
             instructions: instructions,
             isCustom: true,
             isArchived: false,
-            bodyweightFactor: bodyweightFactor,
+            bodyweightFactor: exerciseType == .bodyweightReps ? resolvedBodyweightFactor : nil,
             equipmentBrand: equipmentBrand,
             loadingType: loadingType,
             weightRecording: weightRecording

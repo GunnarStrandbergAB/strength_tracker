@@ -16,6 +16,7 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
     public var personalRecordId: UUID?                 // Link to PR record
     public var isCompound: Bool                        // Compound vs isolation
     public var order: Int                              // Priority ordering
+    public var bodyweightFactor: Double?
     public var weightRecording: WeightRecording?
     public var alternatives: [UUID]                    // Swap candidates (exercise IDs)
 
@@ -43,7 +44,8 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
         isCompound: Bool,
         order: Int,
         alternatives: [UUID] = [],
-        weightRecording: WeightRecording? = nil
+        weightRecording: WeightRecording? = nil,
+        bodyweightFactor: Double? = nil
     ) {
         self.id = id
         self.exerciseId = exerciseId
@@ -61,6 +63,17 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
         self.order = order
         self.alternatives = alternatives
         self.weightRecording = weightRecording
+        self.bodyweightFactor = bodyweightFactor
+    }
+
+    /// Stored plan estimates are only comparable under their original percentage.
+    /// Legacy built-in plans used the library default; unknown custom baselines
+    /// cannot safely drive automatic load adjustments after a setting change.
+    public func acceptsBodyweightBasis(of exercise: Exercise) -> Bool {
+        guard exercise.exerciseType == .bodyweightReps else { return true }
+        let baseline = bodyweightFactor ?? ExerciseSeedData.allExercises.first { $0.id == exerciseId }?.bodyweightFactor
+        guard let baseline else { return false }
+        return abs(baseline - exercise.resolvedBodyweightFactor) < 0.000001
     }
 
     public func targetWeight(atPercentage pct: Double) -> Double {

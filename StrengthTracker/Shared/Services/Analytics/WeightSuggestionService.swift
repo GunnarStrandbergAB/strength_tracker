@@ -41,7 +41,9 @@ public final class WeightSuggestionService: Sendable {
 
         // Trend extrapolation only while the verdict allows progressing
         let allowsExtrapolation = (verdict?.kind ?? .progress) == .progress
-        if allowsExtrapolation, let trend = overloadTrend, trend.trendStatus == .progressing {
+        let latestBasis = WeightRecordingHistory.latestExercises(recentWorkouts)[exerciseId]?.performanceConvention
+        let usesLatestBasis = recordingReference.map { $0.performanceConvention == latestBasis } ?? true
+        if allowsExtrapolation, usesLatestBasis, let trend = overloadTrend, trend.trendStatus == .progressing {
             let weeksSinceLast = weeksSinceLastSession(exerciseId: exerciseId, workouts: history)
             let extrapolation = trend.slopePerWeek * weeksSinceLast
             if extrapolation > 0 {
@@ -95,7 +97,7 @@ public final class WeightSuggestionService: Sendable {
         // set's weight field, which means EXTRA kg — subtract the bodyweight base
         // and suppress the hint when bodyweight alone covers the target.
         var targetWeight = e1rmToWeight(e1rm: adjustedE1RM, reps: targetReps)
-        let exercise = recentWorkouts
+        let exercise = recordingReference ?? history
             .flatMap(\.exercises)
             .first { $0.exercise.id == exerciseId }?.exercise
         if let base = exercise?.baseLoadPerRep(bodyWeightKg: bodyWeightKg) {

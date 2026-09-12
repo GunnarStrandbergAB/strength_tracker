@@ -278,6 +278,13 @@ enum WorkoutJSON {
     }
 
     static func recording(_ exercise: Exercise) -> JSONValue {
+        if exercise.exerciseType == .bodyweightReps {
+            return .object(["status": .string("bodyweight"),
+                "bodyweight_percent": .number(exercise.resolvedBodyweightFactor * 100),
+                "weight_entry": .string("additional_weight"),
+                "performance_convention": .string(exercise.performanceConvention),
+                "explanation": .string(exercise.bodyweightExplanation ?? "")])
+        }
         guard exercise.isDumbbell else { return .object(["status": .string("standard")]) }
         guard let config = exercise.weightRecording else { return .object(["status": .string("unconfirmed"), "volume_multiplier": .number(1)]) }
         return .object(["status": .string("confirmed"), "equipment": .string(config.equipment.rawValue),

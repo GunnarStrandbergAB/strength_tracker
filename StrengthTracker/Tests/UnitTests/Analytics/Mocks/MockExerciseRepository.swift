@@ -24,6 +24,7 @@ final class MockExerciseRepository: ExerciseRepository {
     // MARK: - Error Simulation
 
     var shouldThrowOnFetch = false
+    var shouldThrowOnSave = false
     var customError: Error?
 
     private var errorToThrow: Error {
@@ -63,6 +64,7 @@ final class MockExerciseRepository: ExerciseRepository {
 
     func save(_ exercise: Exercise) async throws -> Exercise {
         saveCallCount += 1
+        if shouldThrowOnSave { throw errorToThrow }
         exercises[exercise.id] = exercise
         return exercise
     }
