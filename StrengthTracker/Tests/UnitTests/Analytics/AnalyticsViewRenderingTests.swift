@@ -668,3 +668,36 @@ final class PlanEditRenderingTests: XCTestCase {
         }
     }
 }
+
+@MainActor
+final class BodyweightPercentageRenderingTests: XCTestCase {
+    func testBodyweightEditorAtCompactAndAccessibilitySizes() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let exercise = try XCTUnwrap(ExerciseSeedData.allExercises.first { $0.name == "Push-Up" })
+        let vm = ExerciseListViewModel(exerciseRepository: InMemoryExerciseRepository())
+        for (name, width, size) in [("compact", 320.0, DynamicTypeSize.large), ("accessibility", 430.0, DynamicTypeSize.accessibility2)] {
+            let host = UIHostingController(rootView: BodyweightPercentageEditor(exercise: exercise, viewModel: vm, onSave: { _ in })
+                .environment(\.dynamicTypeSize, size))
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 800)
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            host.view.frame = window.bounds
+            host.view.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(300))
+            let fields = descendants(of: host.view).compactMap { $0 as? UITextField }
+            let input = try XCTUnwrap(fields.first)
+            XCTAssertEqual(input.text, "64")
+            XCTAssertGreaterThanOrEqual(input.font?.pointSize ?? 0, 20)
+            XCTAssertLessThanOrEqual(input.convert(input.bounds, to: window).maxX, window.bounds.maxX)
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "bodyweight-editor-\(name)"; attachment.lifetime = .keepAlways
+            add(attachment)
+            window.isHidden = true
+        }
+    }
+    private func descendants(of view: UIView) -> [UIView] {
+        view.subviews.flatMap { [$0] + descendants(of: $0) }
+    }
+}

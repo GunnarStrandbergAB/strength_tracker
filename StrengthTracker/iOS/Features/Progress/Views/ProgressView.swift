@@ -95,7 +95,7 @@ struct ExerciseHistoryDetailView: View {
     private var units: String {
         switch metric {
         case .volume: return "\(weightUnit.symbol) × reps (total)"
-        case .strength, .weightAtReps: return (sessions.last?.entries?.first?.exercise ?? exercise).weightEntryLabel(weightUnit)
+        case .strength, .weightAtReps: return exercise.exerciseType == .bodyweightReps ? "\(weightUnit.symbol) effective" : (sessions.last?.entries?.first?.exercise ?? exercise).weightEntryLabel(weightUnit)
         case .repsAtWeight: return "reps"
         case .sets: return "sets"
         case .duration: return "min"
@@ -108,6 +108,14 @@ struct ExerciseHistoryDetailView: View {
         ScrollView {
             LazyVStack(spacing: 16) {
                 AnalyticsPanel(title: exercise.name) {
+                    if exercise.exerciseType == .bodyweightReps {
+                        Text("Strength includes the saved bodyweight percentage plus added weight. Lines and smoothed trends restart when the percentage changes; older sessions remain visible.")
+                            .font(.caption).foregroundStyle(STColors.textSecondary)
+                        if Set(sessions.map(\.performanceConvention)).count > 1 {
+                            Label("Bodyweight percentage changed", systemImage: "info.circle")
+                                .font(.caption).foregroundStyle(STColors.primary)
+                        }
+                    }
                     if let explanation = (sessions.last?.entries?.first?.exercise ?? exercise).weightRecordingExplanation {
                         Text(explanation).font(.caption).foregroundStyle(STColors.textSecondary)
                         Text("Strength uses the latest logging convention; known each/total weights are converted for comparison. Volume counts the configured dumbbells and sides. Incompatible histories stay separate.").font(.caption).foregroundStyle(STColors.textSecondary)
@@ -145,6 +153,10 @@ struct ExerciseHistoryDetailView: View {
                                     Spacer()
                                     if let value = session.value(for: metric, targetReps: targetReps, targetWeightKg: targetWeight) { Text(formatted(value)).monospacedDigit() }
                                     Image(systemName: "chevron.right").font(.caption)
+                                }
+                                if let entry = session.entries?.first?.exercise, entry.exerciseType == .bodyweightReps {
+                                    Text("Bodyweight contribution: \(entry.bodyweightPercentLabel)")
+                                        .font(.caption).foregroundStyle(STColors.textSecondary)
                                 }
                                 if let label = session.entries?.first?.exercise.weightRecordingExplanation { Text(label).font(.caption).foregroundStyle(STColors.textSecondary) }
                                 Text("\(session.workout.name) · \(session.sets.count) working sets\(session.workout.isDeload ? " · Deload" : "")").font(.caption).foregroundStyle(STColors.textSecondary)

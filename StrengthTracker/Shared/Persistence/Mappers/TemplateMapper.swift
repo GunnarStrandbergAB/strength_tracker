@@ -97,7 +97,7 @@ public enum TemplateExerciseMapper {
             instructions: domain.exercise.instructions,
             isCustom: domain.exercise.isCustom,
             isArchived: domain.exercise.isArchived,
-            bodyweightFactor: domain.exercise.bodyweightFactor,
+            bodyweightFactor: domain.exercise.exerciseType == .bodyweightReps ? domain.exercise.resolvedBodyweightFactor : nil,
             equipmentBrand: domain.exercise.equipmentBrand,
             weightRecordingJSON: domain.exercise.weightRecording?.encoded,
             loadingType: domain.exercise.loadingType?.rawValue,
@@ -126,7 +126,7 @@ public enum TemplateExerciseMapper {
         entity.instructions = domain.exercise.instructions
         entity.isCustom = domain.exercise.isCustom
         entity.isArchived = domain.exercise.isArchived
-        entity.bodyweightFactor = domain.exercise.bodyweightFactor
+        entity.bodyweightFactor = domain.exercise.exerciseType == .bodyweightReps ? domain.exercise.resolvedBodyweightFactor : nil
         entity.equipmentBrand = domain.exercise.equipmentBrand
         entity.weightRecordingJSON = domain.exercise.weightRecording?.encoded
         entity.loadingType = domain.exercise.loadingType?.rawValue

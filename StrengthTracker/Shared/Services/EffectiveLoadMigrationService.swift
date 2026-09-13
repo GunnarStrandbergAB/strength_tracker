@@ -10,7 +10,8 @@ import Foundation
 public final class EffectiveLoadMigrationService {
     /// Bump when the effective-load model changes in a way that requires re-running.
     /// v2: personal-record rows deduped + per-set flags written by the rebuild.
-    public static let targetVersion = 2
+    /// v3: tag bodyweight PRs with their saved percentage for compatible comparisons.
+    public static let targetVersion = 3
 
     /// Set by AppContainer; the full derived-data rebuild replaces the bare PR recalc.
     public var finalizer: WorkoutFinalizer?
@@ -46,8 +47,10 @@ public final class EffectiveLoadMigrationService {
                 exercise.bodyweightFactor.map { (exercise.id, $0) }
             }, uniquingKeysWith: { first, _ in first })
 
-            try await backfillWorkouts(factorById: factorById)
-            try await backfillTemplates(factorById: factorById)
+            if userPreferencesService.effectiveLoadModelVersion < 2 {
+                try await backfillWorkouts(factorById: factorById)
+                try await backfillTemplates(factorById: factorById)
+            }
             if let finalizer {
                 await finalizer.rebuildAll(reason: .migration)
             } else {

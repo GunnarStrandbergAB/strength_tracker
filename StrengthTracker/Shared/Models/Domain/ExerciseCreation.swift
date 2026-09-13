@@ -14,7 +14,7 @@ public enum ExerciseValidationError: Error, Equatable, LocalizedError {
 /// AddExerciseView — the single rulebook shared by the UI and the AI tools:
 /// - equipment brand applies only to machine/cable/smith-machine exercises
 /// - loading type applies only to machines
-/// - bodyweight factor applies only to bodyweight-rep exercises, clamped 0.1…1.5
+/// - bodyweight factor applies only to bodyweight-rep exercises, validated 10…150%
 public enum ExerciseFactory {
 
     public static func makeCustom(
@@ -36,6 +36,10 @@ public enum ExerciseFactory {
 
         let trimmedInstructions = instructions?.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        if exerciseType == .bodyweightReps, let bodyweightPercent {
+            _ = try BodyweightPercentage.factor(percent: bodyweightPercent)
+        }
+
         return Exercise(
             id: id,
             name: trimmedName,
@@ -55,8 +59,8 @@ public enum ExerciseFactory {
 
     public static func resolvedBodyweightFactor(_ percent: Double?, exerciseType: ExerciseType) -> Double? {
         guard exerciseType == .bodyweightReps else { return nil }
-        guard let percent, percent > 0 else { return nil }
-        return min(max(percent / 100.0, 0.1), 1.5)
+        guard let percent else { return nil }
+        return try? BodyweightPercentage.factor(percent: percent)
     }
 
     public static func showsBrandField(for category: ExerciseCategory) -> Bool {

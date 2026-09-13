@@ -261,7 +261,7 @@ public final class AdaptiveAdjustmentService: Sendable {
                 ) else { continue }
 
                 let exerciseSets = workout.exercises
-                    .filter { $0.exercise.id == planExercise.exerciseId }
+                    .filter { $0.exercise.id == planExercise.exerciseId && planExercise.acceptsBodyweightBasis(of: $0.exercise) }
                     .flatMap(\.sets)
                     .filter { $0.isCompleted && $0.setType != .warmup }
 
@@ -336,7 +336,7 @@ public final class AdaptiveAdjustmentService: Sendable {
             // Per-session best e1RM for this exercise, newest first.
             let perSession: [Double] = sessions.compactMap { workout in
                 let estimates = workout.exercises
-                    .filter { $0.exercise.id == planExercise.exerciseId }
+                    .filter { $0.exercise.id == planExercise.exerciseId && planExercise.acceptsBodyweightBasis(of: $0.exercise) }
                     .compactMap { we -> Double? in
                         let baseLoad = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
                         return AnalyticsCalculations.bestE1RM(in: we.sets, baseLoadPerRep: baseLoad)

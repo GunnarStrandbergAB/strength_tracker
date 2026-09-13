@@ -595,3 +595,262 @@ struct DumbbellRecordingTests {
     }
     #endif
 }
+
+@Suite("Personal bodyweight percentage")
+@MainActor
+struct BodyweightPercentageTests {
+    private func exercise(_ factor: Double = 0.64, id: UUID = UUID()) -> Exercise {
+        Exercise(id: id, name: "Push-Up", primaryMuscleGroup: .chest, secondaryMuscleGroups: [],
+            category: .bodyweight, exerciseType: .bodyweightReps, instructions: nil,
+            isCustom: false, isArchived: false, bodyweightFactor: factor)
+    }
+    private func workout(_ exercise: Exercise, day: Int = 0, added: Double = 10) -> Workout {
+        let date = Date().addingTimeInterval(Double(day) * 86400 - 60)
+        let set = ExerciseSet(id: UUID(), order: 1, setType: .normal, weight: added, reps: 10,
+            durationSeconds: nil, distanceMeters: nil, rpe: nil, isCompleted: true,
+            isPersonalRecord: false, completedAt: date)
+        return Workout(id: UUID(), name: "Training", startedAt: date, completedAt: date,
+            notes: nil, templateId: nil, exercises: [WorkoutExercise(id: UUID(), exercise: exercise, order: 1,
+                supersetGroup: nil, notes: nil, restTimerSeconds: nil, sets: [set])])
+    }
+    private func template(_ exercise: Exercise) -> WorkoutTemplate {
+        WorkoutTemplate(id: UUID(), name: "Push", notes: nil, sortOrder: 0, lastUsedAt: nil, timesUsed: 0,
+            exercises: [TemplateExerciseFactory.make(exercise: exercise, order: 1, defaultReps: 10, targetWeightKg: 10)])
+    }
+
+    @Test("Percentage input accepts decimal commas, dots and blank reset; rejects invalid input")
+    func validation() throws {
+        #expect(try BodyweightPercentage.parse(" 64,25 ") == 64.25)
+        #expect(try BodyweightPercentage.parse("64.25") == 64.25)
+        #expect(try BodyweightPercentage.parse(" ") == nil)
+        #expect(try BodyweightPercentage.factor(percent: 10) == 0.1)
+        #expect(try BodyweightPercentage.factor(percent: 150) == 1.5)
+        for text in ["0", "9.99", "150.01", "-10", "abc", "NaN", "inf", "64,2.5"] {
+            #expect(throws: BodyweightPercentage.Invalid.self) { try BodyweightPercentage.parse(text) }
+        }
+    }
+
+    @Test("Built-in override retains identity and default, resets cleanly, and survives library refresh")
+    func overrideAndSeed() async throws {
+        let repo = InMemoryExerciseRepository()
+        var seed = try #require(ExerciseSeedData.allExercises.first { $0.name == "Push-Up" })
+        _ = try await repo.save(seed)
+        let vm = ExerciseListViewModel(exerciseRepository: repo)
+        var updates = 0
+        vm.didSave = { updates += 1 }
+        let changed = try #require(await vm.saveBodyweightPercentage(exerciseId: seed.id, percent: 70))
+        #expect(changed.id == seed.id && !changed.isCustom)
+        #expect(changed.bodyweightFactor == 0.64)
+        #expect(changed.resolvedBodyweightFactor == 0.7)
+        #expect(changed.baseLoadPerRep(bodyWeightKg: 80) == 56)
+        #expect(updates == 1)
+        #if canImport(SwiftData)
+        seed = changed; seed.instructions = "Old instructions"
+        _ = try await repo.save(seed)
+        await ExerciseSeeder(exerciseRepository: repo).seedIfNeeded()
+        let refreshed = try #require(try await repo.fetchAll().first { $0.id == seed.id })
+        #expect(refreshed.instructions != "Old instructions")
+        #expect(refreshed.bodyweightFactorOverride == 0.7)
+        #endif
+        let reset = try #require(await vm.saveBodyweightPercentage(exerciseId: seed.id, percent: nil))
+        #expect(reset.bodyweightFactorOverride == nil)
+        #expect(reset.resolvedBodyweightFactor == 0.64)
+        #expect(updates == 2)
+    }
+
+    @Test("Custom reset uses 100%; errors do not announce success or replace stored settings")
+    func resetAndFailure() async throws {
+        let repo = MockExerciseRepository()
+        var e = exercise(); e.isCustom = true
+        repo.seed([e])
+        let vm = ExerciseListViewModel(exerciseRepository: repo)
+        var updates = 0; vm.didSave = { updates += 1 }
+        let reset = try #require(await vm.saveBodyweightPercentage(exerciseId: e.id, percent: nil))
+        #expect(reset.resolvedBodyweightFactor == 1)
+        #expect(await vm.saveBodyweightPercentage(exerciseId: e.id, percent: 151) == nil)
+        #expect(vm.errorMessage != nil)
+        repo.shouldThrowOnSave = true
+        #expect(await vm.saveBodyweightPercentage(exerciseId: e.id, percent: 65) == nil)
+        #expect(vm.errorMessage != nil)
+        #expect(updates == 1)
+        #expect(repo.exercises[e.id]?.resolvedBodyweightFactor == 1)
+    }
+
+    @Test("Old templates resolve at iPhone and Watch starts; existing workouts and entered values retain their snapshots")
+    func newSessions() async throws {
+        let e = exercise(), old = template(exercise())
+        var t = old; t.exercises[0].exercise = e
+        var current = e; current.bodyweightFactorOverride = 0.8
+        let library = InMemoryExerciseRepository(); _ = try await library.save(current)
+        let workouts = InMemoryWorkoutRepository(), templates = InMemoryTemplateRepository()
+        _ = try await templates.save(t)
+        let vm = WorkoutViewModel(workoutRepository: workouts, templateRepository: templates,
+            healthKitService: MockHealthKitService(), exerciseRepository: library)
+        await vm.startWorkout(name: "Push", from: t)
+        let active = try #require(vm.currentWorkout)
+        #expect(active.exercises[0].exercise.resolvedBodyweightFactor == 0.8)
+        #expect(active.exercises[0].sets[0].weight == 10)
+        current.bodyweightFactorOverride = 0.9; _ = try await library.save(current)
+        #expect(vm.currentWorkout == active)
+        #expect(try await templates.fetchAll().first?.exercises[0].exercise.bodyweightFactor == 0.64)
+        let watch = WatchWorkoutViewModel(workoutRepository: InMemoryWorkoutRepository(), healthKitService: MockHealthKitService(),
+            connectivityManager: ConnectivityManager(), exerciseRepository: library)
+        await watch.startWorkout(name: "Push", from: t)
+        #expect(watch.activeWorkout?.exercises[0].exercise.resolvedBodyweightFactor == 0.9)
+        #expect(watch.activeWorkout?.exercises[0].sets[0].weight == 10)
+        let historic = workout(e)
+        #expect(historic.totalVolume(bodyWeightKg: 80) == 612)
+        #expect(historic.exercises[0].exercise.bodyweightFactor == 0.64)
+        #expect(t.resolvingBodyweight(from: [current]).exercises[0].targetWeight == 10)
+    }
+
+    @Test("Library and Watch JSON preserve overrides; legacy JSON decodes without an override")
+    func json() throws {
+        var e = exercise(); e.bodyweightFactorOverride = 0.75
+        let data = try JSONEncoder().encode(e)
+        #expect(try JSONDecoder().decode(Exercise.self, from: data) == e)
+        var object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object.removeValue(forKey: "bodyweightFactorOverride")
+        let legacy = try JSONDecoder().decode(Exercise.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(legacy.resolvedBodyweightFactor == 0.64)
+        let copy = e.duplicatedAsVariant()
+        #expect(copy.id != e.id && copy.isCustom)
+        #expect(copy.resolvedBodyweightFactor == 0.75)
+        #expect(copy.bodyweightFactorOverride == nil)
+    }
+
+    @Test("Type controls percentage; defaults and overrides cannot change external-load exercises")
+    func categoryVersusType() {
+        var e = exercise(); e.category = .trx; e.bodyweightFactorOverride = 0.5
+        #expect(e.baseLoadPerRep(bodyWeightKg: 80) == 40)
+        e.exerciseType = .weightedReps; e.category = .bodyweight
+        #expect(e.baseLoadPerRep(bodyWeightKg: 80) == nil)
+        #expect(workout(e).totalVolume(bodyWeightKg: 80) == 100)
+    }
+
+    @Test("Percentage changes split strength lines and medians, retain volume history, and do not produce a progression trend")
+    func historyComparisons() {
+        let original = exercise(); var changed = original; changed.bodyweightFactor = 0.8
+        let history = (-7...0).map { week in workout(week < -3 ? original : changed, day: week * 7) }
+        let sessions = ExerciseHistoryCalculator.sessions(exerciseId: original.id, workouts: history, bodyWeightKg: 80)
+        let points = ExerciseHistoryCalculator.points(sessions: sessions, metric: .strength)
+        #expect(points.count == 8)
+        #expect(points[3].segment != points[4].segment)
+        #expect(points[4].median == nil && points[5].median == nil && points[6].median != nil)
+        #expect(ExerciseHistoryCalculator.performanceChange(points: points, interval: DateInterval(start: history[0].trainingDate, end: Date())) == nil)
+        #expect(ExerciseHistoryCalculator.points(sessions: sessions, metric: .volume).count == 8)
+        let trend = OverloadTrackingService.computeOverloadTrends(workouts: history, bodyWeightKg: 80).first
+        #expect(trend?.trendStatus != .progressing)
+        #expect(abs(trend?.slopePerWeek ?? 0) < 0.0001)
+        #expect(WeightRecordingHistory.matching(history).flatMap(\.exercises).count == 4)
+        var legacy = exercise(1, id: original.id); legacy.bodyweightFactor = nil
+        #expect(legacy.performanceConvention == exercise(1, id: original.id).performanceConvention)
+    }
+
+    @Test("A changed percentage establishes a PR baseline without a celebration or badge; real improvement still wins")
+    func records() async throws {
+        let original = exercise(); var changed = original; changed.bodyweightFactor = 0.8
+        let repo = InMemoryWorkoutRepository(), prs = InMemoryPersonalRecordRepository()
+        let service = PersonalRecordService(personalRecordRepository: prs, workoutRepository: repo)
+        let old = workout(original, day: -7), next = workout(changed, day: -1)
+        _ = try await repo.save(old)
+        try await service.recalculateAllPRs()
+        #expect(try await service.checkForPR(exercise: changed, set: next.exercises[0].sets[0]) == nil)
+        _ = try await repo.save(next)
+        try await service.recalculateAllPRs()
+        let history = try await repo.fetchAll()
+        #expect(history.first { $0.id == next.id }?.exercises[0].sets[0].isPersonalRecord == false)
+        let improved = workout(changed, added: 15)
+        #expect(try await service.checkForPR(exercise: changed, set: improved.exercises[0].sets[0]) != nil)
+        _ = try await repo.save(improved)
+        try await service.recalculateAllPRs()
+        #expect(try await repo.fetchAll().first { $0.id == improved.id }?.exercises[0].sets[0].isPersonalRecord == true)
+    }
+
+    @Test("Weight suggestions require evidence under the selected percentage")
+    func suggestions() {
+        let original = exercise(); var changed = original; changed.bodyweightFactor = 0.8
+        let history = (-4 ... -1).map { workout(original, day: $0 * 7, added: 30) }
+        let result = WeightSuggestionService().suggest(exerciseId: original.id, exerciseName: original.name,
+            targetReps: 5, recentWorkouts: history, overloadTrend: nil, recoveryStatus: nil, trainingLoad: nil,
+            isDeload: false, bodyWeightKg: 80, recordingReference: changed)
+        #expect(result == nil)
+    }
+
+    @Test("Plan strength baselines reject another percentage, while targets still use entered additional weight")
+    func planBasis() {
+        let e = exercise()
+        let plan = PlanExercise(exerciseId: e.id, exerciseName: e.name, primaryMuscleGroup: .chest,
+            category: .bodyweight, estimated1RM: 80, oneRMSource: .estimated, current1RM: 80,
+            isCompound: true, order: 0, bodyweightFactor: 0.64)
+        #expect(plan.acceptsBodyweightBasis(of: e))
+        var changed = e; changed.bodyweightFactorOverride = 0.8
+        #expect(!plan.acceptsBodyweightBasis(of: changed))
+    }
+
+    @Test("Added-weight suggestions subtract the selected factor even when input history begins with an older percentage")
+    func suggestionUsesSelectedBase() throws {
+        let old = exercise(); var current = old; current.bodyweightFactor = 0.8
+        let recent = workout(current, day: -1, added: 30)
+        let mixed = [workout(old, day: -8, added: 30), recent]
+        func suggestion(_ rows: [Workout]) -> WeightSuggestion? {
+            WeightSuggestionService().suggest(exerciseId: current.id, exerciseName: current.name,
+                targetReps: 5, recentWorkouts: rows, overloadTrend: nil, recoveryStatus: nil, trainingLoad: nil,
+                isDeload: false, bodyWeightKg: 80, recordingReference: current)
+        }
+        #expect(try #require(suggestion(mixed)).weight == #require(suggestion([recent])).weight)
+    }
+
+    @Test("Intensity-weighted load uses each percentage's own strength baseline")
+    func workloadBaselines() {
+        let old = exercise(); var current = old; current.bodyweightFactor = 0.8
+        let history = [workout(old, day: -8), workout(current, day: -1)]
+        let baselines = WeightRecordingHistory.relativeBaselines(history, bodyWeightKg: 80)
+        let loads = history.map { row -> Double in
+            let entry = row.exercises[0]
+            return AnalyticsCalculations.setIWV(for: entry.sets[0],
+                bestE1RM: baselines[WeightRecordingHistory.relativeKey(entry.exercise)],
+                baseLoadPerRep: entry.exercise.baseLoadPerRep(bodyWeightKg: 80), modulateRPE: false)
+        }
+        #expect(abs(loads[0] - loads[1]) < 0.000001)
+    }
+
+    @Test("Linked plan templates, deloads and Watch payloads use current percentages without altering targets")
+    func plannedSessions() throws {
+        let original = exercise(); var current = original; current.bodyweightFactorOverride = 0.75
+        let planExercise = PlanExercise(exerciseId: original.id, exerciseName: original.name, primaryMuscleGroup: .chest,
+            category: .bodyweight, estimated1RM: 80, oneRMSource: .estimated, current1RM: 80,
+            isCompound: true, order: 0, bodyweightFactor: 0.64)
+        let target = PlannedExerciseSet(planExerciseId: planExercise.id, exerciseId: original.id,
+            exerciseName: original.name, sets: 3, targetReps: 10, targetWeight: 10, percentageOf1RM: 0.5, restSeconds: 90)
+        let session = PlannedSession(sessionLabel: "Push", plannedExercises: [target], isDeload: true)
+        let repo = InMemoryWorkoutRepository()
+        let vm = ProgressionPlanViewModel(progressionPlanRepository: InMemoryProgressionPlanRepository(),
+            trainingStatusDetector: TrainingStatusDetector(workoutRepository: repo), programDesignService: ProgramDesignService(),
+            planAnalyticsService: PlanAnalyticsService(workoutRepository: repo), exerciseRepository: InMemoryExerciseRepository(),
+            templateRepository: InMemoryTemplateRepository())
+        let merged = vm.mergeSessionIntoTemplate(session: session, template: template(original), exercises: [current])
+        #expect(merged.exercises[0].exercise.resolvedBodyweightFactor == 0.75)
+        #expect(merged.exercises[0].targetWeight == 10)
+        let unlinked = session.toWorkoutTemplate(exercises: [current])
+        #expect(unlinked.exercises[0].exercise.resolvedBodyweightFactor == 0.75)
+        let payload = PlannedSessionSync(id: session.id, planId: UUID(), planName: "Plan", sessionLabel: "Push",
+            weekLabel: "Week 1", blockName: nil, isDeload: true, template: merged)
+        let restored = try JSONDecoder().decode(PlannedSessionSync.self, from: JSONEncoder().encode(payload))
+        #expect(restored.template.exercises[0].exercise.resolvedBodyweightFactor == 0.75)
+        let execution = SessionExecutionService().completeSession(PlannedSession(sessionLabel: "Push", plannedExercises: [target]),
+            workout: workout(current), planExercises: [planExercise], bodyWeightKg: 80)
+        #expect(execution.updatedExercises[0].current1RM == 80)
+        #expect(execution.adjustments.isEmpty)
+    }
+
+    @Test("Grok reads the resolved percentage and additional-weight convention")
+    func grok() async throws {
+        let repo = InMemoryExerciseRepository(); var e = exercise(); e.bodyweightFactorOverride = 0.7
+        _ = try await repo.save(e)
+        let result = try await ListExercisesTool(exerciseRepository: repo).call(argumentsJSON: "{}")
+        #expect(result.outputForModel.contains("bodyweight_percent"))
+        #expect(result.outputForModel.contains("additional_weight"))
+        #expect(result.outputForModel.contains("70"))
+    }
+}

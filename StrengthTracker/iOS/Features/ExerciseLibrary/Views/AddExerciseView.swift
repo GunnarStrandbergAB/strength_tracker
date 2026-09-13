@@ -39,6 +39,7 @@ struct AddExerciseView: View {
     var onExerciseCreated: ((Exercise) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
+    @State private var isSaving = false
     @State private var name = ""
     @State private var primaryMuscleGroup: MuscleGroup = .chest
     @State private var category: ExerciseCategory = .barbell
@@ -71,7 +72,8 @@ struct AddExerciseView: View {
             _exerciseType = State(initialValue: source.exerciseType)
             _secondaryMuscleGroups = State(initialValue: Set(source.secondaryMuscleGroups))
             _instructions = State(initialValue: source.instructions ?? "")
-            if let factor = source.bodyweightFactor {
+            if source.exerciseType == .bodyweightReps {
+                let factor = source.resolvedBodyweightFactor
                 _bodyweightPercent = State(initialValue: String(format: "%g", factor * 100))
             }
             _equipmentBrand = State(initialValue: source.equipmentBrand ?? "")
@@ -109,6 +111,13 @@ struct AddExerciseView: View {
                                 .tag(type)
                         }
                     }
+                }
+
+                if exerciseType == .bodyweightReps {
+                    BodyweightPercentageFields(text: $bodyweightPercent)
+                }
+                if let error = viewModel.errorMessage {
+                    Section { Text(error).foregroundStyle(.red) }
                 }
 
                 if category == .dumbbell {
@@ -163,21 +172,6 @@ struct AddExerciseView: View {
                         .lineLimit(3...6)
                 }
 
-                if exerciseType == .bodyweightReps {
-                    Section {
-                        HStack {
-                            TextField("e.g. 65", text: $bodyweightPercent)
-                                .keyboardType(.decimalPad)
-                            Text("%")
-                                .foregroundStyle(.secondary)
-                        }
-                    } header: {
-                        Text("% of Body Weight Lifted (optional)")
-                    } footer: {
-                        Text("How much of your body weight this movement loads — e.g. push-ups ≈ 65%, pull-ups = 100%. Used for volume and strength estimates. Defaults to 100%.")
-                    }
-                }
-
                 if personalRecordService != nil && !mode.isEdit {
                     Section("Known 1RM (optional)") {
                         HStack {
@@ -192,11 +186,12 @@ struct AddExerciseView: View {
             .onChange(of: primaryMuscleGroup) { _, newValue in
                 secondaryMuscleGroups.remove(newValue)
             }
+            .interactiveDismissDisabled(isSaving)
             .navigationTitle(mode.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { dismiss() }.disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
@@ -211,14 +206,16 @@ struct AddExerciseView: View {
                             category: category,
                             exerciseType: exerciseType,
                             instructions: instructions.isEmpty ? nil : instructions,
-                            bodyweightPercent: Double(bodyweightPercent),
+                            bodyweightPercent: try? BodyweightPercentage.parse(bodyweightPercent),
                             equipmentBrand: equipmentBrand,
                             loadingType: loadingType,
                             weightRecording: recordingConfirmed && category == .dumbbell ? weightRecording : nil,
                             isArchived: existing?.isArchived ?? false
                         ) else { return }
+                        isSaving = true
                         Task {
-                            await viewModel.saveExercise(exercise)
+                            defer { isSaving = false }
+                            guard await viewModel.saveExercise(exercise) else { return }
                             if !mode.isEdit, let value = Double(known1RM), value > 0, let prService = personalRecordService {
                                 let record = PersonalRecord(
                                     id: UUID(),
@@ -227,7 +224,7 @@ struct AddExerciseView: View {
                                     value: weightUnit.toKg(value),
                                     setId: nil,
                                     achievedAt: Date(),
-                                    weightRecordingKey: exercise.isDumbbell ? exercise.weightRecording?.performanceKey : nil
+                                    weightRecordingKey: exercise.personalRecordConvention
                                 )
                                 _ = try? await prService.saveManualRecord(record)
                             }
@@ -235,7 +232,7 @@ struct AddExerciseView: View {
                             dismiss()
                         }
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(isSaving || name.trimmingCharacters(in: .whitespaces).isEmpty || (exerciseType == .bodyweightReps && !BodyweightPercentageFields.isValid(bodyweightPercent)))
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
@@ -308,6 +305,111 @@ struct WeightRecordingEditorSheet: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Apply") { save(value); dismiss() } }
             }
         }.preferredColorScheme(.dark)
+    }
+}
+/// Shared by custom creation/editing and the built-in exercise setting.
+struct BodyweightPercentageFields: View {
+    @Binding var text: String
+    @Environment(\.dynamicTypeSize) private var typeSize
+    var placeholder = "100"
+    var emptyValueDescription = "Leave blank to use 100%."
+    static func isValid(_ text: String) -> Bool {
+        do { _ = try BodyweightPercentage.parse(text); return true }
+        catch { return false }
+    }
+    var body: some View {
+        Section {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Percentage")
+                    percentageInput
+                }
+            } else {
+                HStack {
+                    Text("Percentage")
+                    percentageInput
+                }
+            }
+            if !Self.isValid(text) {
+                Text("Enter a percentage between 10 and 150.").foregroundStyle(.red)
+            }
+        } header: {
+            Text("Bodyweight contribution")
+        } footer: {
+            Text("An estimate of the bodyweight moved per rep. Enter only additional weight when logging; the bodyweight contribution is added automatically. \(emptyValueDescription)")
+        }
+    }
+    private var percentageInput: some View {
+        HStack {
+            TextField(placeholder, text: $text)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .font(.title2.monospacedDigit())
+                .accessibilityLabel("Percentage of bodyweight")
+                .accessibilityIdentifier("bodyweight-percentage-input")
+            Text("%").foregroundStyle(.secondary)
+        }.frame(minHeight: 44)
+    }
+}
+
+struct BodyweightPercentageEditor: View {
+    let exercise: Exercise
+    let viewModel: ExerciseListViewModel
+    let onSave: (Exercise) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String
+    @State private var saving = false
+    @FocusState private var focused: Bool
+
+    init(exercise: Exercise, viewModel: ExerciseListViewModel, onSave: @escaping (Exercise) -> Void) {
+        self.exercise = exercise; self.viewModel = viewModel; self.onSave = onSave
+        _text = State(initialValue: String(format: "%g", exercise.resolvedBodyweightFactor * 100))
+    }
+
+    private var defaultPercent: Double { exercise.isCustom ? 100 : (exercise.bodyweightFactor ?? 1) * 100 }
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section { Text(exercise.name).font(.headline) }
+                BodyweightPercentageFields(text: $text, placeholder: defaultPercent.formatted(), emptyValueDescription: "Leave blank to reset to \(defaultPercent.formatted())%.")
+                    .focused($focused)
+                Section {
+                    Button(exercise.isCustom ? "Reset to 100%" : "Reset to library default (\(defaultPercent.formatted())%)") {
+                        text = ""
+                        focused = false
+                    }
+                    Text("Applies to workouts started after saving. Workouts already started and completed sessions keep their saved percentage. Strength comparisons stay separate when the percentage changes.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                if let error = viewModel.errorMessage { Section { Text(error).foregroundStyle(.red) } }
+            }
+            .navigationTitle("Bodyweight")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(saving ? "Saving…" : "Save") {
+                        focused = false
+                        saving = true
+                        Task { @MainActor in
+                            defer { saving = false }
+                            let percent = try? BodyweightPercentage.parse(text)
+                            if let saved = await viewModel.saveBodyweightPercentage(exerciseId: exercise.id, percent: percent) {
+                                onSave(saved)
+                                dismiss()
+                            }
+                        }
+                    }.disabled(saving || !BodyweightPercentageFields.isValid(text))
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { focused = false }
+                }
+            }
+            .interactiveDismissDisabled(saving)
+        }
+        .preferredColorScheme(.dark)
+        .tint(STColors.primary)
     }
 }
 #endif

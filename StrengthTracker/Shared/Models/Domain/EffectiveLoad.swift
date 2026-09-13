@@ -11,10 +11,63 @@ import Foundation
 // so the fallback (factor nil → 1.0) and the extra-kg semantics stay uniform.
 
 extension Exercise {
+    public var resolvedBodyweightFactor: Double {
+        let factor = bodyweightFactorOverride ?? bodyweightFactor ?? 1
+        return factor.isFinite && (0.1...1.5).contains(factor) ? factor : 1
+    }
+
+    public var bodyweightPercentLabel: String {
+        (resolvedBodyweightFactor * 100).formatted(.number.precision(.fractionLength(0...2))) + "%"
+    }
+
+    public var bodyweightExplanation: String? {
+        guard exerciseType == .bodyweightReps else { return nil }
+        return "Estimated bodyweight contribution: \(bodyweightPercentLabel). Enter only additional weight. Effective load = bodyweight × percentage + added weight."
+    }
+
+    /// Only refresh the bodyweight setting, never the template's other metadata
+    /// or prescribed added weights. Used at new-session boundaries.
+    public func resolvingBodyweight(from library: [Exercise]) -> Exercise {
+        guard exerciseType == .bodyweightReps,
+              let current = library.first(where: { $0.id == id && $0.exerciseType == .bodyweightReps }) else { return self }
+        var copy = self
+        copy.bodyweightFactor = current.resolvedBodyweightFactor
+        copy.bodyweightFactorOverride = nil
+        return copy
+    }
     /// The base load every rep moves BEFORE added weight: `bodyWeight × (factor ?? 1.0)`
     /// for `.bodyweightReps` exercises, nil for every other type.
     public func baseLoadPerRep(bodyWeightKg: Double) -> Double? {
-        exerciseType == .bodyweightReps ? bodyWeightKg * (bodyweightFactor ?? 1.0) : nil
+        exerciseType == .bodyweightReps ? bodyWeightKg * resolvedBodyweightFactor : nil
+    }
+}
+
+extension WorkoutTemplate {
+    public func resolvingBodyweight(from library: [Exercise]) -> WorkoutTemplate {
+        var copy = self
+        for i in copy.exercises.indices {
+            copy.exercises[i].exercise = copy.exercises[i].exercise.resolvingBodyweight(from: library)
+        }
+        return copy
+    }
+}
+
+/// Shared validation for the exercise form, detail editor and AI creation tool.
+public enum BodyweightPercentage {
+    public enum Invalid: Error, LocalizedError {
+        case percentage
+        public var errorDescription: String? { "Enter a percentage between 10 and 150." }
+    }
+    public static func factor(percent: Double) throws -> Double {
+        guard percent.isFinite, (10...150).contains(percent) else { throw Invalid.percentage }
+        return percent / 100
+    }
+    public static func parse(_ text: String) throws -> Double? {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return nil }
+        guard let percent = Double(value.replacingOccurrences(of: ",", with: ".")) else { throw Invalid.percentage }
+        _ = try factor(percent: percent)
+        return percent
     }
 }
 

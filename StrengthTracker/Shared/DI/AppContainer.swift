@@ -258,7 +258,8 @@ public final class AppContainer: Sendable {
             coachingInsightService: coachingInsightService,
             weightSuggestionService: weightSuggestionService,
             qualityScoreService: qualityScoreService,
-            bodyWeightProvider: bodyWeightProvider
+            bodyWeightProvider: bodyWeightProvider,
+            exerciseRepository: exerciseRepository
         )
         workoutSessionCoordinator = WorkoutSessionCoordinator(
             workoutViewModel: workoutViewModel,
@@ -278,7 +279,8 @@ public final class AppContainer: Sendable {
             connectivityManager: connectivityManager,
             userPreferencesService: userPreferencesService,
             analyticsService: analyticsService,
-            bodyWeightProvider: bodyWeightProvider
+            bodyWeightProvider: bodyWeightProvider,
+            exerciseRepository: exerciseRepository
         )
         watchWorkoutListViewModel = WatchWorkoutListViewModel(
             workoutRepository: workoutRepository,
@@ -367,6 +369,18 @@ public final class AppContainer: Sendable {
             await recordingPlanVM.loadActivePlan()
             await recordingPlanVM.onPlanChanged?()
         }
+        let exerciseRevision = dataRevision, exerciseWidgetRefresh = widgetRefreshService
+        let savedExerciseVM = exerciseListViewModel
+        savedExerciseVM.didSave = {
+            exerciseRevision.bump()
+            guard let library = try? await recordingExercises.fetchAll() else { return }
+            recordingConnectivity.syncExercises(library)
+            if let templates = try? await recordingTemplates.fetchAll() {
+                recordingConnectivity.syncTemplates(templates.filter(\.isCustom).map { $0.resolvingBodyweight(from: library) })
+            }
+            await recordingPlanVM.onPlanChanged?()
+            await exerciseWidgetRefresh.refresh()
+        }
         aiFinalizerBox.finalizer = workoutFinalizer
 
         // AI assistant: workout editing seams (the AI writes through the same
@@ -450,7 +464,7 @@ public final class AppContainer: Sendable {
                 personalRecordRepository: personalRecordRepository,
                 templateRepository: templateRepository
             ),
-            ListTemplatesTool(templateRepository: templateRepository),
+            ListTemplatesTool(templateRepository: templateRepository, exerciseRepository: exerciseRepository),
             SaveMemoryTool(memoryService: aiMemoryService),
             ForgetMemoryTool(memoryService: aiMemoryService),
             // Workout editing (active or by date) and session control.

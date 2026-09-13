@@ -211,9 +211,8 @@ struct ContentViewWrapper: View {
                     do {
                         let allTemplates = try await container.templateRepository.fetchAll()
                         // Only sync user-created templates to Watch (not seed/library templates)
-                        container.connectivityManager.syncTemplates(allTemplates.filter { $0.isCustom })
-
                         let exercises = try await container.exerciseRepository.fetchAll()
+                        container.connectivityManager.syncTemplates(allTemplates.filter { $0.isCustom }.map { $0.resolvingBodyweight(from: exercises) })
                         container.connectivityManager.syncExercises(exercises)
 
                         await container.syncActivePlanToWatch()

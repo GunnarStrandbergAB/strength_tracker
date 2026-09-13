@@ -64,7 +64,10 @@ public enum TemplateNameResolver {
 public final class ListTemplatesTool: AITool {
     private let templateRepository: any TemplateRepository
 
-    public init(templateRepository: any TemplateRepository) {
+    private let exerciseRepository: (any ExerciseRepository)?
+
+    public init(templateRepository: any TemplateRepository, exerciseRepository: (any ExerciseRepository)? = nil) {
+        self.exerciseRepository = exerciseRepository
         self.templateRepository = templateRepository
     }
 
@@ -88,6 +91,9 @@ public final class ListTemplatesTool: AITool {
         let args = try decodeArguments(Arguments.self, from: argumentsJSON)
 
         var templates = try await templateRepository.fetchAll().filter(\.isCustom)
+        if let library = try await exerciseRepository?.fetchAll() {
+            templates = templates.map { $0.resolvingBodyweight(from: library) }
+        }
         if let query = args.query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
             templates = templates.filter { $0.name.localizedCaseInsensitiveContains(query) }
         }
@@ -178,7 +184,7 @@ public final class ListExercisesTool: AITool {
         let output = AIJSON.string(.object([
             "count": .number(Double(lines.count)),
             "exercises": .array(lines),
-            "exercise_data": .array(exercises.map { .object(["id": .string($0.id.uuidString), "name": .string($0.name), "type": .string($0.exerciseType.rawValue)]) })
+            "exercise_data": .array(exercises.map { .object(["id": .string($0.id.uuidString), "name": .string($0.name), "type": .string($0.exerciseType.rawValue), "weight_recording": WorkoutJSON.recording($0)]) })
         ]))
         return AIToolResult(
             outputForModel: output,
@@ -549,6 +555,7 @@ public final class GetActivePlanTool: AITool {
                 "id": .string(exercise.exerciseId.uuidString), "plan_exercise_id": .string(exercise.id.uuidString),
                 "n": .string(exercise.exerciseName),
                 "current_1rm": .number(exercise.current1RM),
+                "baseline_bodyweight_percent": exercise.bodyweightFactor.map { .number($0 * 100) } ?? .null,
                 "weight_recording": (try? AIToolData.json(exercise.weightRecording)) ?? .null
             ])
         }

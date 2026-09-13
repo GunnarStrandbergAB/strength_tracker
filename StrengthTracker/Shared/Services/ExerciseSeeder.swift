@@ -34,6 +34,7 @@ public final class ExerciseSeeder {
                     if !current.isCustom && seedDataChanged(current: current, seed: seed) {
                         var updated = seed
                         updated.weightRecording = current.weightRecording
+                        updated.bodyweightFactorOverride = current.bodyweightFactorOverride
                         _ = try await exerciseRepository.save(updated)
                     }
                 } else {

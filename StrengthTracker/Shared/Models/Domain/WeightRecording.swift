@@ -53,7 +53,13 @@ public struct WeightRecording: Codable, Hashable, Sendable {
 extension Exercise {
     public var isDumbbell: Bool { category == .dumbbell }
     public var volumeMultiplier: Double { isDumbbell && exerciseType == .weightedReps ? weightRecording?.volumeMultiplier ?? 1 : 1 }
-    public var performanceConvention: String { isDumbbell ? weightRecording?.performanceKey ?? "unconfirmed" : "standard" }
+    public var performanceConvention: String {
+        if exerciseType == .bodyweightReps { return "bodyweight/\(Int((resolvedBodyweightFactor * 1_000_000).rounded()))" }
+        return isDumbbell ? weightRecording?.performanceKey ?? "unconfirmed" : "standard"
+    }
+    public var personalRecordConvention: String? {
+        exerciseType == .bodyweightReps ? performanceConvention : isDumbbell ? weightRecording?.performanceKey : nil
+    }
     public func weightEntryLabel(_ unit: WeightUnit) -> String {
         if exerciseType == .bodyweightReps { return "+\(unit.symbol)" }
         return isDumbbell ? weightRecording?.weightLabel(unit) ?? "\(unit.symbol) ?" : unit.symbol
@@ -114,7 +120,8 @@ public enum WeightRecordingHistory {
         return source.weightEntry == .combined ? kg / source.equipment.count : kg * source.equipment.count
     }
     public static func convertible(_ source: Exercise, to reference: Exercise) -> Bool {
-        guard source.id == reference.id, let a = source.weightRecording, let b = reference.weightRecording else { return false }
+        guard source.exerciseType != .bodyweightReps, reference.exerciseType != .bodyweightReps,
+              source.id == reference.id, let a = source.weightRecording, let b = reference.weightRecording else { return false }
         return a.equipment == b.equipment && (a.repetitions == .totalAlternating) == (b.repetitions == .totalAlternating)
     }
     /// Transient performance view only. Persistence always retains the source numbers.

@@ -423,6 +423,13 @@ public final class ProgressionPlanViewModel {
     /// structured draft flow and AI-proposed plans.
     @discardableResult
     public func createPlan(from request: PlanCreationRequest) async throws -> ProgressionPlan {
+        var request = request
+        let library = try await exerciseRepository.fetchAll()
+        for i in request.exercises.indices {
+            if let exercise = library.first(where: { $0.id == request.exercises[i].exerciseId && $0.exerciseType == .bodyweightReps }) {
+                request.exercises[i].bodyweightFactor = exercise.resolvedBodyweightFactor
+            }
+        }
         let duration = request.durationWeeks ?? (request.programType == .block ? (request.trainingStatus == .advanced ? 9 : 10) : 12)
         guard (4...52).contains(duration) else { throw PlanEditError("Plan duration must be 4–52 weeks.") }
         let startWeekday = Calendar.current.component(.weekday, from: request.startDate)
@@ -1281,6 +1288,7 @@ public final class ProgressionPlanViewModel {
 
         var mergedExercises = template.exercises.map { original -> TemplateExercise in
             var te = original
+            te.exercise = te.exercise.resolvingBodyweight(from: exercises)
             let planned = plannedLookup[te.exercise.id]
                 ?? plannedByName[te.exercise.name.lowercased()]
             guard let planned else {

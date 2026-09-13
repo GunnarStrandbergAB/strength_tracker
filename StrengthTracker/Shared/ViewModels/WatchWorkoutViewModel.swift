@@ -49,6 +49,7 @@ public final class WatchWorkoutViewModel {
     private let userPreferencesService: UserPreferencesService?
     private let analyticsService: WorkoutAnalyticsService?
     private let bodyWeightProvider: BodyWeightProvider?
+    private let exerciseRepository: (any ExerciseRepository)?
     private var bodyWeightKg: Double {
         bodyWeightProvider?.current ?? userPreferencesService?.bodyWeightKg ?? UserPreferencesService.defaultBodyWeightKg
     }
@@ -64,7 +65,8 @@ public final class WatchWorkoutViewModel {
         connectivityManager: ConnectivityManager,
         userPreferencesService: UserPreferencesService? = nil,
         analyticsService: WorkoutAnalyticsService? = nil,
-        bodyWeightProvider: BodyWeightProvider? = nil
+        bodyWeightProvider: BodyWeightProvider? = nil,
+        exerciseRepository: (any ExerciseRepository)? = nil
     ) {
         self.workoutRepository = workoutRepository
         self.healthKitService = healthKitService
@@ -72,6 +74,7 @@ public final class WatchWorkoutViewModel {
         self.userPreferencesService = userPreferencesService
         self.analyticsService = analyticsService
         self.bodyWeightProvider = bodyWeightProvider
+        self.exerciseRepository = exerciseRepository
         if let prefs = userPreferencesService {
             self.restDuration = TimeInterval(prefs.defaultRestSeconds)
         }
@@ -257,6 +260,10 @@ public final class WatchWorkoutViewModel {
     }
 
     public func startWorkout(name: String, from template: WorkoutTemplate, isDeload: Bool = false) async {
+        let library: [Exercise]
+        do { library = try await exerciseRepository?.fetchAll() ?? [] }
+        catch { return }
+        let template = template.resolvingBodyweight(from: library)
         isQuickStart = false
 
         let workoutExercises = template.exercises.sorted { $0.order < $1.order }.enumerated().map { index, te in

@@ -19,6 +19,8 @@ struct ExerciseDetailView: View {
     @State private var records: [PersonalRecord] = []
     @State private var showAddPR = false
     @State private var formPresentation: ExerciseFormPresentation? = nil
+    @State private var showBodyweightEditor = false
+    @Environment(BodyWeightProvider.self) private var bodyWeightProvider: BodyWeightProvider?
 
     init(
         exercise: Exercise,
@@ -48,6 +50,28 @@ struct ExerciseDetailView: View {
                 }
                 if let loading = exercise.loadingType {
                     LabeledContent("Loading", value: loading.displayName)
+                }
+            }
+
+            if exercise.exerciseType == .bodyweightReps {
+                Section("Bodyweight contribution") {
+                    LabeledContent("Estimated percentage", value: exercise.bodyweightPercentLabel)
+                    Text(exercise.bodyweightFactorOverride != nil || (exercise.isCustom && exercise.bodyweightFactor != nil)
+                         ? "Your setting" : exercise.isCustom ? "Default" : "Library default")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if let provider = bodyWeightProvider {
+                        Text("At your current bodyweight of \(weightUnit.fromKg(provider.current).formatted(.number.precision(.fractionLength(0...1)))) \(weightUnit.symbol), this contributes \(weightUnit.fromKg(provider.current * exercise.resolvedBodyweightFactor).formatted(.number.precision(.fractionLength(0...2)))) \(weightUnit.symbol) per rep.")
+                        if provider.source == .defaultValue {
+                            Text("Using the default bodyweight. Set your weight in Settings or connect Apple Health.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Text("Enter only additional weight when logging. The bodyweight contribution is added automatically.")
+                        .font(.subheadline)
+                    if listViewModel != nil {
+                        Button("Change percentage", systemImage: "slider.horizontal.3") { showBodyweightEditor = true }
+                            .accessibilityIdentifier("bodyweight-change-percentage")
+                    }
                 }
             }
 
@@ -135,6 +159,14 @@ struct ExerciseDetailView: View {
                 records.append(newRecord)
             }
         }
+        .sheet(isPresented: $showBodyweightEditor) {
+            if let listViewModel {
+                BodyweightPercentageEditor(exercise: exercise, viewModel: listViewModel) { saved in
+                    exercise = saved
+                    Task { await loadRecords() }
+                }
+            }
+        }
         .sheet(item: $formPresentation) { presentation in
             if let listViewModel {
                 AddExerciseView(
@@ -219,7 +251,7 @@ private struct AddPRSheet: View {
                             value: storedValue,
                             setId: nil,
                             achievedAt: Date(),
-                            weightRecordingKey: exercise.isDumbbell ? exercise.weightRecording?.performanceKey : nil
+                            weightRecordingKey: exercise.personalRecordConvention
                         )
                         Task {
                             _ = try? await personalRecordService.saveManualRecord(record)

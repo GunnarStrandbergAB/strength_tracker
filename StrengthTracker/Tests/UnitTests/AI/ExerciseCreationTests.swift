@@ -56,7 +56,7 @@ struct ExerciseFactoryTests {
         #expect(cable.loadingType == nil)
     }
 
-    @Test("Bodyweight factor only applies to bodyweight reps and clamps to 0.1…1.5")
+    @Test("Bodyweight factor only applies to bodyweight reps and rejects percentages outside 10…150")
     func bodyweightFactor() throws {
         let pullUp = try ExerciseFactory.makeCustom(
             name: "Pull-Up X", primaryMuscleGroup: .back,
@@ -65,19 +65,12 @@ struct ExerciseFactoryTests {
         )
         #expect(pullUp.bodyweightFactor == 0.95)
 
-        let clampedHigh = try ExerciseFactory.makeCustom(
-            name: "Weighted Dip X", primaryMuscleGroup: .triceps,
-            category: .bodyweight, exerciseType: .bodyweightReps,
-            bodyweightPercent: 400
-        )
-        #expect(clampedHigh.bodyweightFactor == 1.5)
-
-        let clampedLow = try ExerciseFactory.makeCustom(
-            name: "Assisted X", primaryMuscleGroup: .back,
-            category: .bodyweight, exerciseType: .bodyweightReps,
-            bodyweightPercent: 1
-        )
-        #expect(clampedLow.bodyweightFactor == 0.1)
+        for invalid in [400.0, 1.0, 0, -1, Double.infinity, Double.nan] {
+            #expect(throws: BodyweightPercentage.Invalid.self) {
+                try ExerciseFactory.makeCustom(name: "Invalid", primaryMuscleGroup: .back,
+                    category: .bodyweight, exerciseType: .bodyweightReps, bodyweightPercent: invalid)
+            }
+        }
 
         let weighted = try ExerciseFactory.makeCustom(
             name: "Bench X", primaryMuscleGroup: .chest,
