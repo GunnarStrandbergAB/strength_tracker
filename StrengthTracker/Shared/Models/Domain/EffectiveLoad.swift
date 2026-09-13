@@ -81,6 +81,15 @@ extension DropSetEntry {
 }
 
 extension ExerciseSet {
+    /// Strength-only interpretation; volume and recorded rep history stay intact.
+    public func strengthParts(baseLoadPerRep: Double?, recording: WeightRecording? = nil) -> [(load: Double, reps: Int)] {
+        effectiveLoadParts(baseLoadPerRep: baseLoadPerRep).compactMap { part in
+            guard part.load.isFinite else { return nil }
+            let reps: Int? = recording == nil ? part.reps : recording?.strengthReps(part.reps)
+            guard let reps, reps > 0 else { return nil }
+            return (part.load, reps)
+        }
+    }
     /// (load, reps) for every performed part with a positive effective load and reps —
     /// the canonical input for e1RM, max-weight PRs, and IWV candidates.
     public func effectiveLoadParts(baseLoadPerRep: Double?) -> [(load: Double, reps: Int)] {

@@ -21,15 +21,17 @@ public final class ProgressViewModel {
     }
 
     public var estimated1RM: Double? {
-        progressionData
-            .map { AnalyticsCalculations.calculateOneRM(weight: $0.weight, reps: min($0.reps, 15)) }
-            .max()
+        progressionData.compactMap { part -> Double? in
+            guard let reps = progressionReference?.strengthReps(part.reps) ?? (progressionReference == nil ? part.reps : nil) else { return nil }
+            return AnalyticsCalculations.calculateOneRM(weight: part.weight, reps: reps)
+        }.max()
     }
 
     /// Effective-load volume of every completed working set of the exercise, all time
     /// (same definition as Workout.totalVolume). Computed in loadProgression.
     public private(set) var totalVolume: Double = 0
 
+    private var progressionReference: Exercise?
     private let exerciseRepository: any ExerciseRepository
     private let workoutRepository: any WorkoutRepository
     public let userPreferencesService: UserPreferencesService?
@@ -67,6 +69,7 @@ public final class ProgressViewModel {
             completedHistory = completed
             errorMessage = nil
             let reference = WeightRecordingHistory.latestExercises(completed)[exerciseId]
+            progressionReference = reference
             let latestConvention = reference?.performanceConvention
             var results: [(date: Date, weight: Double, reps: Int)] = []
             var volume: Double = 0
@@ -182,6 +185,11 @@ public struct ExerciseHistorySession: Identifiable, Sendable {
         if metric.isPerformance && performanceConvention == "mixed" { return nil }
         switch metric {
         case .strength:
+            if let performanceEntries {
+                return performanceEntries.compactMap { entry in
+                    AnalyticsCalculations.bestE1RM(in: entry.sets, baseLoadPerRep: entry.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg), recording: entry.exercise.strengthRecording)
+                }.max()
+            }
             return loadParts.filter { $0.load > 0 }.map { AnalyticsCalculations.calculateOneRM(weight: $0.load, reps: min($0.reps, 15)) }.max()
         case .weightAtReps: return loadParts.filter { $0.reps == targetReps }.map(\.load).max()
         case .repsAtWeight: return loadParts.filter { abs($0.load - targetWeightKg) < 0.000001 }.map { Double($0.reps) }.max()

@@ -166,3 +166,37 @@ struct WorkoutFinalizerTests {
         #expect(try await s.prRepo.fetchForExercise(bench.id).first { $0.recordType == .maxWeight }?.value == 110)
     }
 }
+
+extension WorkoutFinalizerTests {
+    @Test("Version 3 alternating records are rebuilt once without changing logged weights, reps or manual records")
+    func alternatingMigration() async throws {
+        let stack = makeStack()
+        var exercise = AnalyticsTestHelpers.makeExercise(name: "Alternating curl")
+        exercise.category = .dumbbell
+        exercise.weightRecording = .init(equipment: .single, repetitions: .totalAlternating)
+        var workout = completedWorkout(exercise, weight: 24, daysAgo: 1)
+        workout.exercises[0].sets[0].reps = 16
+        _ = try await stack.workoutRepo.save(workout)
+        let stale = PersonalRecord(id: UUID(), exerciseId: exercise.id, recordType: .estimatedOneRepMax, value: 36,
+            setId: workout.exercises[0].sets[0].id, achievedAt: workout.trainingDate, weightRecordingKey: exercise.performanceConvention)
+        let manual = PersonalRecord(id: UUID(), exerciseId: exercise.id, recordType: .maxWeight, value: 99,
+            setId: nil, achievedAt: workout.trainingDate)
+        _ = try await stack.prRepo.save(stale)
+        _ = try await stack.prRepo.save(manual)
+        let suite = "AlternatingMigration.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(3, forKey: "analytics_derived_model_version")
+        #expect(await stack.finalizer.migrateAnalyticsModelIfNeeded(defaults: defaults))
+        let records = try await stack.prRepo.fetchForExercise(exercise.id)
+        #expect(records.contains(manual))
+        #expect(records.contains { $0.recordType == .estimatedOneRepMax && abs($0.value - 30.4) < 0.000001 })
+        let saved = try #require(try await stack.workoutRepo.fetchAll().first)
+        #expect(saved.exercises[0].sets[0].weight == 24)
+        #expect(saved.exercises[0].sets[0].reps == 16)
+        #expect(saved.totalVolume(bodyWeightKg: 80) == 384)
+        #expect(!(await stack.finalizer.migrateAnalyticsModelIfNeeded(defaults: defaults)))
+        #expect(stack.revision.value == 1)
+        #expect(stack.healthKit.savedWorkoutIds.isEmpty)
+    }
+}

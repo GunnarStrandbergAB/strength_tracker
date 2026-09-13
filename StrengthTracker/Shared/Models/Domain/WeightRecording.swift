@@ -35,6 +35,13 @@ public struct WeightRecording: Codable, Hashable, Sendable {
     public var volumeMultiplier: Double {
         (weightEntry == .perDumbbell ? equipment.count : 1) * (repetitions == .perSide ? 2 : 1)
     }
+    /// Strength is estimated per side, never from the sum of both sides' reps.
+    /// Odd alternating totals do not tell us how many reps each side performed.
+    public func strengthReps(_ entered: Int) -> Int? {
+        guard entered > 0 else { return nil }
+        guard repetitions == .totalAlternating else { return entered }
+        return entered.isMultiple(of: 2) ? entered / 2 : nil
+    }
     /// Strength remains in the recorded convention. Incompatible conventions form
     /// separate histories, rather than manufacturing a PR when a setting changes.
     public var performanceKey: String { "\(equipment.rawValue)/\(weightEntry.rawValue)/\(repetitions == .totalAlternating ? "alternating" : "perMovement")" }
@@ -52,6 +59,18 @@ public struct WeightRecording: Codable, Hashable, Sendable {
 
 extension Exercise {
     public var isDumbbell: Bool { category == .dumbbell }
+    public var strengthRecording: WeightRecording? { isDumbbell && exerciseType == .weightedReps ? weightRecording : nil }
+    public func strengthReps(_ entered: Int) -> Int? {
+        if let recording = strengthRecording { return recording.strengthReps(entered) }
+        return entered > 0 ? entered : nil
+    }
+    public func recordedPerformance(weight: Double, reps: Int, unit: WeightUnit) -> String {
+        let symbol = unit == .kg ? "Kg" : unit.symbol
+        let weightSuffix = strengthRecording.map { $0.weightEntry == .perDumbbell ? " each" : " total" } ?? ""
+        let repSuffix = strengthRecording.map { $0.repetitions == .perSide ? "/side" : $0.repetitions == .totalAlternating ? " total alternating" : $0.repetitions == .oneSide ? " on one side" : "" } ?? ""
+        let added = exerciseType == .bodyweightReps ? " added" : ""
+        return "\(unit.formatValue(weight)) \(symbol)\(weightSuffix)\(added) × \(reps)\(repSuffix)"
+    }
     public var volumeMultiplier: Double { isDumbbell && exerciseType == .weightedReps ? weightRecording?.volumeMultiplier ?? 1 : 1 }
     public var performanceConvention: String {
         if exerciseType == .bodyweightReps { return "bodyweight/\(Int((resolvedBodyweightFactor * 1_000_000).rounded()))" }
@@ -152,7 +171,7 @@ public enum WeightRecordingHistory {
                 let compatible = rows.filter { $0.exercise.performanceConvention == reference.performanceConvention || convertible($0.exercise, to: reference) }
                 result[relativeKey(reference)] = compatible.compactMap { source in
                     let entry = converted(source, to: reference)
-                    return AnalyticsCalculations.bestE1RM(in: entry.sets, baseLoadPerRep: entry.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg))
+                    return AnalyticsCalculations.bestE1RM(in: entry.sets, baseLoadPerRep: entry.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg), recording: entry.exercise.strengthRecording)
                 }.max() ?? 0
             }
         }

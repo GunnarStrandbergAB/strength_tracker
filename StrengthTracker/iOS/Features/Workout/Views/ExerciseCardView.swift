@@ -168,7 +168,7 @@ struct ExerciseCardView: View {
                         setNumber: index + 1,
                         exerciseSet: exerciseSet,
                         previousText: previousSetData[index],
-                        weightSuggestion: coachingData?.suggestions[index],
+                        weightSuggestion: coachingData?.suggestions[exerciseSet.id],
                         showIntensity: showRPE,
                         intensityMetric: intensityMetric,
                         weightUnit: weightUnit,

@@ -731,8 +731,8 @@ struct ActiveWorkoutView: View {
     private func previousDataForExercise(_ exerciseId: UUID) -> [Int: String] {
         var result: [Int: String] = [:]
         if let exercise = viewModel.currentWorkout?.exercises.first(where: { $0.id == exerciseId }) {
-            for (index, _) in exercise.sets.enumerated() {
-                let key = "\(exerciseId)-\(index)"
+            for (index, set) in exercise.sets.enumerated() {
+                let key = "\(exerciseId)-\(set.id)"
                 if let data = viewModel.previousSetDataCache[key] {
                     result[index] = data
                 }

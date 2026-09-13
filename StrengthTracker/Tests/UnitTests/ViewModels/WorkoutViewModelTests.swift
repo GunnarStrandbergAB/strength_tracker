@@ -492,3 +492,167 @@ struct WorkoutInputSaveTests {
         #expect(!saved.isCompleted) // fixture started completed: exactly one toggle
     }
 }
+
+@Suite("Active workout weight hints")
+@MainActor
+struct WorkoutWeightHintTests {
+    private func setup() async throws -> (WorkoutViewModel, HintWorkoutRepository, WorkoutExercise) {
+        let repo = HintWorkoutRepository()
+        var exercise = AnalyticsTestHelpers.makeExercise(name: "Bulgarian Split Squat")
+        exercise.category = .dumbbell
+        exercise.weightRecording = .init(weightEntry: .combined, repetitions: .perSide)
+        for day in [1, 4, 7] {
+            let date = Date().addingTimeInterval(-Double(day) * 86400)
+            _ = try await repo.save(AnalyticsTestHelpers.makeWorkout(exercises: [AnalyticsTestHelpers.makeWorkoutExercise(exercise: exercise,
+                sets: (1...3).map { AnalyticsTestHelpers.makeCompletedSet(order: $0, weight: 48, reps: 8) })], startedAt: date, completedAt: date.addingTimeInterval(3600)))
+        }
+        let vm = WorkoutViewModel(workoutRepository: repo, templateRepository: InMemoryTemplateRepository(),
+            healthKitService: NoOpHealthKitService(), weightSuggestionService: WeightSuggestionService())
+        await vm.startWorkout(name: "Lower")
+        let sets = (1...3).map { index -> ExerciseSet in
+            var set = AnalyticsTestHelpers.makeCompletedSet(order: index, weight: 48, reps: 8)
+            set.isCompleted = false; set.completedAt = nil
+            return set
+        }
+        let entry = try #require(await vm.addExercise(exercise, sets: sets))
+        await vm.loadPreviousData()
+        await vm.loadCoachingData()
+        return (vm, repo, entry)
+    }
+
+    @Test("Rep edits refresh just the correct set without another history fetch")
+    func repEdits() async throws {
+        let (vm, repo, entry) = try await setup()
+        let reads = repo.fetchCount
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[entry.sets[0].id]?.weight == 48)
+        await vm.updateSetReps(exerciseId: entry.id, setId: entry.sets[0].id, reps: 12)
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[entry.sets[0].id]?.targetReps == 12)
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[entry.sets[0].id]?.weight == 43.42)
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[entry.sets[1].id]?.weight == 48)
+        #expect(repo.fetchCount == reads)
+        await vm.updateSetReps(exerciseId: entry.id, setId: entry.sets[0].id, reps: nil)
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[entry.sets[0].id] == nil)
+    }
+
+    @Test("Removing and adding rows never transfers an old hint to another set")
+    func stableRows() async throws {
+        let (vm, _, entry) = try await setup()
+        await vm.updateSetReps(exerciseId: entry.id, setId: entry.sets[1].id, reps: 12)
+        await vm.removeSet(exerciseId: entry.id, setId: entry.sets[0].id)
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[entry.sets[0].id] == nil)
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[entry.sets[1].id]?.targetReps == 12)
+        await vm.addEmptySet(exerciseId: entry.id)
+        let added = try #require(vm.currentWorkout?.exercises[0].sets.last)
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[added.id] == nil)
+        await vm.updateSetReps(exerciseId: entry.id, setId: added.id, reps: 8)
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[added.id]?.weight == 48)
+    }
+
+    @Test("Warmup, grouped drops, completed sets and deloads suppress and restore hints")
+    func eligibility() async throws {
+        let (vm, _, entry) = try await setup()
+        let id = entry.sets[0].id
+        await vm.updateSetType(exerciseId: entry.id, setId: id, setType: .warmup)
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[id] == nil)
+        await vm.updateSetType(exerciseId: entry.id, setId: id, setType: .normal)
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[id] != nil)
+        await vm.replaceDropSets(exerciseId: entry.id, setId: id, entries: [.init(weight: 48, reps: 8), .init(weight: 40, reps: 8)])
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[id] == nil)
+        await vm.setDeload(true)
+        #expect(vm.exerciseCoachingCache.values.allSatisfy { $0.suggestions.isEmpty })
+        await vm.setDeload(false)
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[entry.sets[1].id] != nil)
+        var workout = try #require(vm.currentWorkout)
+        workout.exercises[0].sets[1].isCompleted = true
+        vm.currentWorkout = workout
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[entry.sets[1].id] == nil)
+    }
+
+    @Test("Previous and suggested values convert together when the entry convention changes")
+    func recordingChanges() async throws {
+        let (vm, repo, entry) = try await setup()
+        let reads = repo.fetchCount
+        #expect(await vm.previousSetData(for: entry.id, setIndex: 0) == "48 Kg total × 8/side")
+        await vm.updateWeightRecording(exerciseId: entry.id, recording: .init(repetitions: .perSide))
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[entry.sets[0].id]?.weight == 24)
+        #expect(await vm.previousSetData(for: entry.id, setIndex: 0) == "24 Kg each × 8/side")
+        #expect(repo.fetchCount == reads)
+        // A metadata correction never changes entered numbers.
+        #expect(vm.currentWorkout?.exercises[0].sets[0].weight == 48)
+        await vm.updateWeightRecording(exerciseId: entry.id, recording: .init(equipment: .single))
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions.isEmpty ?? true)
+        #expect(await vm.previousSetData(for: entry.id, setIndex: 0) == nil)
+    }
+
+    @Test("Replacing an exercise clears previous values and suggestions for the old exercise")
+    func replacement() async throws {
+        let (vm, _, entry) = try await setup()
+        await vm.replaceExercise(exerciseId: entry.id, with: AnalyticsTestHelpers.makeExercise(name: "New lift"))
+        #expect(vm.exerciseCoachingCache[entry.id] == nil)
+        #expect(await vm.previousSetData(for: entry.id, setIndex: 0) == nil)
+    }
+
+    @Test("Unrelated recent workouts do not push this exercise's evidence out of the window")
+    func exerciseWindow() async throws {
+        let (vm, repo, entry) = try await setup()
+        for _ in 0..<25 {
+            let other = AnalyticsTestHelpers.makeExercise(name: "Other")
+            _ = try await repo.save(AnalyticsTestHelpers.makeWorkout(exercises: [AnalyticsTestHelpers.makeWorkoutExercise(exercise: other,
+                sets: [AnalyticsTestHelpers.makeCompletedSet(weight: 100, reps: 8)])]))
+        }
+        await vm.loadCoachingData()
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[entry.sets[0].id]?.weight == 48)
+    }
+
+    @Test("A load that finishes after a rep edit uses the current draft")
+    func editWhileLoading() async throws {
+        let (vm, repo, entry) = try await setup()
+        repo.suspendNextFetch = true
+        let load = Task { await vm.loadCoachingData() }
+        for _ in 0..<100 where repo.pending == nil { await Task.yield() }
+        try #require(repo.pending != nil)
+        await vm.updateSetReps(exerciseId: entry.id, setId: entry.sets[0].id, reps: 12)
+        repo.resumeFetch()
+        await load.value
+        #expect(vm.exerciseCoachingCache[entry.id]?.suggestions[entry.sets[0].id]?.targetReps == 12)
+    }
+
+    @Test("An older history request cannot overwrite newer empty evidence")
+    func staleLoad() async throws {
+        let (vm, repo, entry) = try await setup()
+        repo.suspendNextFetch = true
+        let old = Task { await vm.loadCoachingData() }
+        for _ in 0..<100 where repo.pending == nil { await Task.yield() }
+        try #require(repo.pending != nil)
+        for workout in try await repo.base.fetchAll() where workout.completedAt != nil { try await repo.delete(workout) }
+        await vm.loadCoachingData()
+        repo.resumeFetch()
+        await old.value
+        #expect(vm.exerciseCoachingCache[entry.id] == nil)
+    }
+}
+
+@MainActor
+private final class HintWorkoutRepository: WorkoutRepository {
+    let base = InMemoryWorkoutRepository()
+    var fetchCount = 0
+    var suspendNextFetch = false
+    var pending: CheckedContinuation<[Workout], Never>?
+    var snapshot: [Workout] = []
+    func fetchAll() async throws -> [Workout] {
+        fetchCount += 1
+        let result = try await base.fetchAll()
+        if suspendNextFetch {
+            suspendNextFetch = false; snapshot = result
+            return await withCheckedContinuation { pending = $0 }
+        }
+        return result
+    }
+    func resumeFetch() { let continuation = pending; pending = nil; continuation?.resume(returning: snapshot) }
+    func fetchActive() async throws -> Workout? { try await base.fetchActive() }
+    func fetchByDateRange(_ start: Date, _ end: Date) async throws -> [Workout] { try await base.fetchByDateRange(start, end) }
+    func save(_ workout: Workout) async throws -> Workout { try await base.save(workout) }
+    func complete(_ id: UUID) async throws { try await base.complete(id) }
+    func delete(_ workout: Workout) async throws { try await base.delete(workout) }
+    func deleteAllIncomplete() async throws { try await base.deleteAllIncomplete() }
+}

@@ -24,7 +24,7 @@ public enum OverloadTrackingService {
                     if let weight = set.weight, weight > 0 { exerciseWeights[we.exercise.id, default: []].insert(weight) }
                 }
                 let baseLoad = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
-                guard let bestE1RM = AnalyticsCalculations.bestE1RM(in: we.sets, baseLoadPerRep: baseLoad), bestE1RM > 0 else { continue }
+                guard let bestE1RM = AnalyticsCalculations.bestE1RM(in: we.sets, baseLoadPerRep: baseLoad, recording: we.exercise.strengthRecording), bestE1RM > 0 else { continue }
 
                 var entries = exerciseWeeklyE1RMs[we.exercise.id] ?? []
                 if let existing = entries.firstIndex(where: { $0.weekStart == weekStart }) {

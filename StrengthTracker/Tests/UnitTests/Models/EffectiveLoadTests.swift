@@ -791,14 +791,14 @@ struct BodyweightPercentageTests {
     @Test("Added-weight suggestions subtract the selected factor even when input history begins with an older percentage")
     func suggestionUsesSelectedBase() throws {
         let old = exercise(); var current = old; current.bodyweightFactor = 0.8
-        let recent = workout(current, day: -1, added: 30)
-        let mixed = [workout(old, day: -8, added: 30), recent]
+        let recent = (-3 ... -1).map { workout(current, day: $0, added: 30) }
+        let mixed = [workout(old, day: -8, added: 30)] + recent
         func suggestion(_ rows: [Workout]) -> WeightSuggestion? {
             WeightSuggestionService().suggest(exerciseId: current.id, exerciseName: current.name,
                 targetReps: 5, recentWorkouts: rows, overloadTrend: nil, recoveryStatus: nil, trainingLoad: nil,
                 isDeload: false, bodyWeightKg: 80, recordingReference: current)
         }
-        #expect(try #require(suggestion(mixed)).weight == #require(suggestion([recent])).weight)
+        #expect(try #require(suggestion(mixed)).weight == #require(suggestion(recent)).weight)
     }
 
     @Test("Intensity-weighted load uses each percentage's own strength baseline")

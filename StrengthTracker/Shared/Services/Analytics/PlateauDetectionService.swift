@@ -89,7 +89,7 @@ public final class PlateauDetectionService: Sendable {
             .map { weekStart, group in
                 let best = group.compactMap { (_, workoutExercise) -> Double? in
                     let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
-                    return AnalyticsCalculations.bestE1RM(in: workoutExercise.sets, baseLoadPerRep: baseLoad)
+                    return AnalyticsCalculations.bestE1RM(in: workoutExercise.sets, baseLoadPerRep: baseLoad, recording: workoutExercise.exercise.strengthRecording)
                 }.max() ?? 0.0
                 return (weekStart, best)
             }

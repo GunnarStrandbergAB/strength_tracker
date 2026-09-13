@@ -23,30 +23,38 @@ public final class WeightSuggestionService: Sendable {
         trainingLoad: TrainingLoad?,
         isDeload: Bool,
         bodyWeightKg: Double,
-        verdict: TrainingVerdict? = nil, recordingReference: Exercise? = nil
+        verdict: TrainingVerdict? = nil, recordingReference: Exercise? = nil, now: Date = Date()
     ) -> WeightSuggestion? {
-        guard targetReps > 0 else { return nil }
-
-        // No coaching suggestions during a deload session — weights are intentionally reduced
-        if isDeload { return nil }
-
-        // Best recent e1RM (effective load) for this exercise, deload sessions excluded
-        let history = WeightRecordingHistory.matching(recentWorkouts.filter { !$0.isDeload }, references: recordingReference.map { [$0.id: $0] })
-        guard let e1rm = bestRecentE1RM(exerciseId: exerciseId, workouts: history, bodyWeightKg: bodyWeightKg), e1rm > 0 else {
-            return nil
+        let eligible = recentWorkouts.filter {
+            $0.completedAt != nil && !$0.isDeload && $0.trainingDate <= now
+                && $0.trainingDate >= now.addingTimeInterval(-90 * 86400)
         }
+        guard !isDeload,
+              let exercise = recordingReference ?? WeightRecordingHistory.latestExercises(eligible)[exerciseId],
+              exercise.id == exerciseId,
+              exercise.exerciseType == .weightedReps || exercise.exerciseType == .bodyweightReps,
+              !exercise.isDumbbell || exercise.weightRecording != nil,
+              let strengthReps = exercise.strengthReps(targetReps),
+              (1...AnalyticsCalculations.maxRepsForE1RM).contains(strengthReps) else { return nil }
+
+        // Three distinct sessions for THIS exercise, in the active recording convention.
+        // Keep the original observation alongside the converted estimate for explanation.
+        let evidence = sessionEvidence(workouts: eligible, exercise: exercise, bodyWeightKg: bodyWeightKg)
+        guard evidence.count == 3 else { return nil }
+        let e1rm = evidence.map(\.estimatedStrength).sorted()[1]
+        guard e1rm.isFinite, e1rm > 0 else { return nil }
 
         var modifiers: [String] = []
         var adjustedE1RM = e1rm
 
         // Trend extrapolation only while the verdict allows progressing
         let allowsExtrapolation = (verdict?.kind ?? .progress) == .progress
-        let latestBasis = WeightRecordingHistory.latestExercises(recentWorkouts)[exerciseId]?.performanceConvention
-        let usesLatestBasis = recordingReference.map { $0.performanceConvention == latestBasis } ?? true
+        let latestBasis = WeightRecordingHistory.latestExercises(eligible)[exerciseId]?.performanceConvention
+        let usesLatestBasis = exercise.performanceConvention == latestBasis
         if allowsExtrapolation, usesLatestBasis, let trend = overloadTrend, trend.trendStatus == .progressing {
-            let weeksSinceLast = weeksSinceLastSession(exerciseId: exerciseId, workouts: history)
+            let weeksSinceLast = min(1, max(0, now.timeIntervalSince(evidence[0].date) / (7 * 86400)))
             let extrapolation = trend.slopePerWeek * weeksSinceLast
-            if extrapolation > 0 {
+            if extrapolation.isFinite, extrapolation > 0 {
                 adjustedE1RM += extrapolation
                 modifiers.append(String(format: "Trend: +%.1f kg/wk", trend.slopePerWeek))
             }
@@ -92,33 +100,55 @@ public final class WeightSuggestionService: Sendable {
         }
         adjustedE1RM = baseline * reduction
 
-        // Convert e1RM to weight at target reps via inverse Brzycki. For bodyweight
-        // exercises the e1RM is EFFECTIVE load, but the suggestion is shown in the
-        // set's weight field, which means EXTRA kg — subtract the bodyweight base
-        // and suppress the hint when bodyweight alone covers the target.
-        var targetWeight = e1rmToWeight(e1rm: adjustedE1RM, reps: targetReps)
-        let exercise = recordingReference ?? history
-            .flatMap(\.exercises)
-            .first { $0.exercise.id == exerciseId }?.exercise
-        if let base = exercise?.baseLoadPerRep(bodyWeightKg: bodyWeightKg) {
-            targetWeight -= base
-        }
-        let rounded = roundToNearest2_5(targetWeight)
+        guard var targetWeight = AnalyticsCalculations.weightAtReps(e1rm: adjustedE1RM, reps: strengthReps) else { return nil }
+        targetWeight -= exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg) ?? 0
+        guard targetWeight.isFinite, targetWeight > 0 else { return nil }
+
+        // This is an estimate, not a claim about available equipment. Round only
+        // display precision, in per-dumbbell units so each and total stay equivalent.
+        let count = exercise.strengthRecording.map { $0.weightEntry == .combined ? $0.equipment.count : 1 } ?? 1
+        let rounded = (targetWeight / count * 100).rounded() / 100 * count
         guard rounded > 0 else { return nil }
 
-        let explanation: String
-        if abs(adjustedE1RM - e1rm) >= 0.5 {
-            explanation = String(format: "Based on %.0f kg e1RM (adjusted from %.0f kg)", adjustedE1RM, e1rm)
-        } else {
-            explanation = String(format: "Based on %.0f kg e1RM", e1rm)
-        }
-
         return WeightSuggestion(
-            weight: rounded,
-            targetReps: targetReps,
-            explanation: explanation,
-            modifiers: modifiers
+            weight: rounded, targetReps: targetReps,
+            explanation: "Median strength estimate from the latest three comparable sessions within 90 days. Equipment increments are unknown; choose an available weight near this estimate.",
+            modifiers: modifiers, exercise: exercise, evidence: evidence
         )
+    }
+
+    private func sessionEvidence(workouts: [Workout], exercise: Exercise, bodyWeightKg: Double) -> [WeightSuggestion.Evidence] {
+        var result: [WeightSuggestion.Evidence] = []
+        var seen: Set<UUID> = []
+        for workout in workouts.sorted(by: { $0.trainingDate == $1.trainingDate ? $0.id.uuidString < $1.id.uuidString : $0.trainingDate > $1.trainingDate }) {
+            guard seen.insert(workout.id).inserted else { continue }
+            var candidates: [WeightSuggestion.Evidence] = []
+            for entry in workout.exercises where entry.exercise.id == exercise.id {
+                guard entry.exercise.performanceConvention == exercise.performanceConvention
+                        || WeightRecordingHistory.convertible(entry.exercise, to: exercise) else { continue }
+                let converted = WeightRecordingHistory.converted(entry, to: exercise)
+                for (source, set) in zip(entry.sets, converted.sets) {
+                    guard set.isCompleted, set.dropSets.isEmpty,
+                          set.setType == .normal || set.setType == .failure,
+                          let reps = set.reps, let count = exercise.strengthReps(reps),
+                          (1...AnalyticsCalculations.maxRepsForE1RM).contains(count),
+                          let part = set.strengthParts(baseLoadPerRep: exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg), recording: exercise.strengthRecording).first else { continue }
+                    let estimate = AnalyticsCalculations.calculateOneRM(weight: part.load, reps: part.reps)
+                    guard estimate.isFinite, estimate > 0 else { continue }
+                    candidates.append(.init(workoutId: workout.id, date: workout.trainingDate,
+                        originalExercise: entry.exercise, originalWeight: source.weight ?? 0, reps: reps,
+                        convertedWeight: set.weight ?? 0, estimatedStrength: estimate))
+                }
+            }
+            // Separate-side rows have no left/right identity: never assume the
+            // stronger row represents both sides. Use the lower estimate.
+            let sorted = candidates.sorted { $0.estimatedStrength < $1.estimatedStrength }
+            let hasSeparateSides = exercise.strengthRecording?.repetitions == .oneSide || candidates.contains { $0.originalExercise.strengthRecording?.repetitions == .oneSide }
+            let observation = hasSeparateSides ? sorted.first : sorted.last
+            if let observation { result.append(observation) }
+            if result.count == 3 { break }
+        }
+        return result
     }
 
     // MARK: - Effort Creep Detection
@@ -129,10 +159,10 @@ public final class WeightSuggestionService: Sendable {
         exerciseId: UUID,
         exerciseName: String,
         recentWorkouts: [Workout],
-        bodyWeightKg: Double
+        bodyWeightKg: Double, recordingReference: Exercise? = nil
     ) -> EffortCreepWarning? {
         // Collect RPE and e1RM per session for this exercise (last 5 sessions max)
-        let sessions = WeightRecordingHistory.matching(recentWorkouts)
+        let sessions = WeightRecordingHistory.matching(recentWorkouts, references: recordingReference.map { [$0.id: $0] })
             .filter { $0.completedAt != nil && !$0.isDeload }
             .sorted { $0.trainingDate < $1.trainingDate }
             .compactMap { workout -> (rpe: Double, e1rm: Double)? in
@@ -143,7 +173,7 @@ public final class WeightSuggestionService: Sendable {
                 let avgRPE = rpes.reduce(0, +) / Double(rpes.count)
 
                 let base = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
-                guard let best = AnalyticsCalculations.bestE1RM(in: completedSets, baseLoadPerRep: base) else { return nil }
+                guard let best = AnalyticsCalculations.bestE1RM(in: completedSets, baseLoadPerRep: base, recording: we.exercise.strengthRecording) else { return nil }
                 return (avgRPE, best)
             }
             .suffix(5)
@@ -170,36 +200,4 @@ public final class WeightSuggestionService: Sendable {
         )
     }
 
-    // MARK: - Private Helpers
-
-    private func bestRecentE1RM(exerciseId: UUID, workouts: [Workout], bodyWeightKg: Double) -> Double? {
-        let e1rmMap = AnalyticsCalculations.buildBestE1RMMap(from: workouts, windowMonths: 3, bodyWeightKg: bodyWeightKg)
-        return e1rmMap[exerciseId]
-    }
-
-    /// Inverse Brzycki: weight = e1RM × (37 - reps) / 36
-    private func e1rmToWeight(e1rm: Double, reps: Int) -> Double {
-        if reps == 1 { return e1rm }
-        if reps <= 5 {
-            // Inverse of Epley: e1RM = weight * (1 + reps/30) → weight = e1RM / (1 + reps/30)
-            return e1rm / (1.0 + Double(reps) / 30.0)
-        }
-        // Inverse of Brzycki: e1RM = weight * 36 / (37 - reps) → weight = e1RM * (37 - reps) / 36
-        return e1rm * (37.0 - Double(reps)) / 36.0
-    }
-
-    private func roundToNearest2_5(_ value: Double) -> Double {
-        (value / 2.5).rounded() * 2.5
-    }
-
-    private func weeksSinceLastSession(exerciseId: UUID, workouts: [Workout]) -> Double {
-        let lastDate = workouts
-            .filter { $0.completedAt != nil }
-            .filter { $0.exercises.contains { $0.exercise.id == exerciseId } }
-            .compactMap(\.completedAt)
-            .max()
-
-        guard let last = lastDate else { return 0 }
-        return Date().timeIntervalSince(last) / (7 * 24 * 3600)
-    }
 }

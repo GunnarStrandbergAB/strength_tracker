@@ -20,6 +20,7 @@ struct SetRowGridView: View {
     var onAddDropEntry: (() -> Void)? = nil
     var onToggleFailure: (() -> Void)? = nil
     @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var showingWeightExplanation = false
 
     private var hasDropEntries: Bool { !exerciseSet.dropSets.isEmpty }
     private var isFailureOn: Bool { exerciseSet.isFailure || exerciseSet.setType == .failure }
@@ -40,8 +41,12 @@ struct SetRowGridView: View {
             if previousText != nil || (weightSuggestion != nil && !exerciseSet.isCompleted) {
                 VStack(alignment: .leading, spacing: 2) {
                     if let previousText { Text("Previous: \(previousText)").foregroundStyle(STColors.textSecondary) }
-                    if let suggestion = weightSuggestion, !exerciseSet.isCompleted {
-                        Text("Try \(weightUnit.format(suggestion.weight))").foregroundStyle(STColors.primary)
+                    if let suggestion = weightSuggestion, !exerciseSet.isCompleted, !hasDropEntries, exerciseSet.setType != .warmup {
+                        Text(suggestion.displayText(unit: weightUnit)).foregroundStyle(STColors.primary)
+                        Button { showingWeightExplanation = true } label: {
+                            Label("Why this weight?", systemImage: "info.circle")
+                                .frame(minHeight: 44, alignment: .leading)
+                        }.buttonStyle(.plain).foregroundStyle(STColors.textSecondary)
                     }
                 }.font(.caption).fixedSize(horizontal: false, vertical: true)
             }
@@ -57,6 +62,11 @@ struct SetRowGridView: View {
         .padding(.horizontal, STSpacing.setRowHorizontal)
         .padding(.vertical, STSpacing.setRowVertical)
         .background(setRowBackground)
+        .sheet(isPresented: $showingWeightExplanation) {
+            if let suggestion = weightSuggestion {
+                WeightSuggestionExplanationView(suggestion: suggestion, unit: weightUnit)
+            }
+        }
     }
 
     private var completionButton: some View {
@@ -178,6 +188,39 @@ struct SetRowGridView: View {
             return Color.orange.opacity(0.06)
         }
         return Color.clear
+    }
+}
+
+struct WeightSuggestionExplanationView: View {
+    let suggestion: WeightSuggestion
+    let unit: WeightUnit
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text(suggestion.displayText(unit: unit)).font(.title3.bold()).foregroundStyle(STColors.primary)
+                    Text(suggestion.explanation)
+                    if suggestion.exercise?.strengthRecording?.repetitions == .totalAlternating {
+                        Text("Strength is estimated from reps per side. Alternating sets are compared only with other alternating sets.")
+                    }
+                    if suggestion.exercise?.strengthRecording?.repetitions == .oneSide {
+                        Text("Separate-side rows have no left/right label. The lower session estimate is used so the stronger side does not set the target for both.")
+                    }
+                    ForEach(suggestion.evidence) { source in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(source.date.formatted(date: .abbreviated, time: .omitted)).font(.headline)
+                            Text(source.description(unit: unit, reference: suggestion.exercise))
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding()
+                            .background(STColors.surface, in: RoundedRectangle(cornerRadius: 14))
+                    }
+                    ForEach(suggestion.modifiers, id: \.self) { Text($0) }
+                }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+            }.background(STColors.background).foregroundStyle(STColors.textPrimary)
+                .navigationTitle("Suggested weight").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }.preferredColorScheme(.dark).tint(STColors.primary)
     }
 }
 
