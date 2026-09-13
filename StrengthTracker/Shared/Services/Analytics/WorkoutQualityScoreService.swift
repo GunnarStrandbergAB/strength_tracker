@@ -387,7 +387,7 @@ public final class WorkoutQualityScoreService: Sendable {
             for set in we.sets {
                 guard set.isCompleted, set.setType != .warmup else { continue }
                 guard let historicalBest = bestE1RM[we.exercise.id], historicalBest > 0 else { continue }
-                for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
+                for part in set.strengthParts(baseLoadPerRep: baseLoad, recording: we.exercise.strengthRecording) {
                     let setE1RM = AnalyticsCalculations.calculateOneRM(weight: part.load, reps: min(part.reps, AnalyticsCalculations.maxRepsForE1RM))
                     ratios.append(setE1RM / historicalBest)
                 }
@@ -516,7 +516,7 @@ public final class WorkoutQualityScoreService: Sendable {
             for set in we.sets {
                 guard set.isCompleted, set.setType != .warmup else { continue }
                 guard let historicalBest = bestE1RM[we.exercise.id], historicalBest > 0 else { continue }
-                for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
+                for part in set.strengthParts(baseLoadPerRep: baseLoad, recording: we.exercise.strengthRecording) {
                     let setE1RM = AnalyticsCalculations.calculateOneRM(weight: part.load, reps: min(part.reps, AnalyticsCalculations.maxRepsForE1RM))
                     ratios.append(setE1RM / historicalBest)
                 }

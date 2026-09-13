@@ -701,3 +701,52 @@ final class BodyweightPercentageRenderingTests: XCTestCase {
         view.subviews.flatMap { [$0] + descendants(of: $0) }
     }
 }
+
+@MainActor
+final class WeightHintRenderingTests: XCTestCase {
+    func testSuggestionAndExplanationAtCompactAndAccessibilitySizes() async throws {
+        var exercise = AnalyticsTestHelpers.makeExercise(name: "Bulgarian Split Squat")
+        exercise.category = .dumbbell
+        exercise.weightRecording = .init(weightEntry: .combined, repetitions: .perSide)
+        var set = AnalyticsTestHelpers.makeCompletedSet(weight: 48, reps: 8)
+        set.isCompleted = false
+        let history = [1, 4, 7].map { day in
+            let date = Date().addingTimeInterval(-Double(day) * 86400)
+            return AnalyticsTestHelpers.makeWorkout(exercises: [AnalyticsTestHelpers.makeWorkoutExercise(exercise: exercise,
+                sets: [AnalyticsTestHelpers.makeCompletedSet(weight: 48, reps: 8)])], startedAt: date, completedAt: date.addingTimeInterval(3600))
+        }
+        let hint = try XCTUnwrap(WeightSuggestionService().suggest(exerciseId: exercise.id, exerciseName: exercise.name, targetReps: 8,
+            recentWorkouts: history, overloadTrend: nil, recoveryStatus: nil, trainingLoad: nil, isDeload: false,
+            bodyWeightKg: 80, recordingReference: exercise))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        for (name, width, size) in [("compact", 375.0, DynamicTypeSize.large), ("accessibility", 430.0, DynamicTypeSize.accessibility2)] {
+            for details in [false, true] {
+                let content = Group {
+                    if details {
+                        WeightSuggestionExplanationView(suggestion: hint, unit: .kg)
+                    } else {
+                        ScrollView {
+                            SetRowGridView(setNumber: 1, exerciseSet: set,
+                                previousText: "48 Kg total × 8/side", weightSuggestion: hint, showRPE: true,
+                                weightLabel: "Kg total", repsLabel: "Reps/side", onWeightChange: { _ in }, onRepsChange: { _ in }, onToggleComplete: {})
+                                .padding().background(STColors.surface)
+                        }.background(STColors.background)
+                    }
+                }.environment(\.dynamicTypeSize, size).preferredColorScheme(.dark)
+                let host = UIHostingController(rootView: content)
+                let window = UIWindow(windowScene: scene)
+                window.frame = CGRect(x: 0, y: 0, width: width, height: 950)
+                window.rootViewController = host; window.makeKeyAndVisible()
+                host.view.frame = window.bounds; host.view.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(300))
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in host.view.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "weight-hint-\(name)-\(details ? "explanation" : "row")"
+                attachment.lifetime = .keepAlways; add(attachment)
+                XCTAssertEqual(image.size.width, width)
+                XCTAssertNotNil(image.pngData())
+                window.isHidden = true
+            }
+        }
+    }
+}

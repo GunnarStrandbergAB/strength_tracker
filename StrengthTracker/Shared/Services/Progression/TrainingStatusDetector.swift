@@ -132,7 +132,7 @@ public final class TrainingStatusDetector: Sendable {
                 let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
 
                 for set in workoutExercise.sets {
-                    guard let estimate = AnalyticsCalculations.bestE1RM(for: set, baseLoadPerRep: baseLoad) else { continue }
+                    guard let estimate = AnalyticsCalculations.bestE1RM(for: set, baseLoadPerRep: baseLoad, recording: workoutExercise.exercise.strengthRecording) else { continue }
                     do {
 
                         if isRecent {

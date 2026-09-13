@@ -33,7 +33,7 @@ public enum AnalyticsCalculations {
                 let base = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
                 for set in we.sets {
                     guard set.isCompleted, set.setType != .warmup else { continue }
-                    if let e1rm = Self.bestE1RM(for: set, baseLoadPerRep: base) {
+                    if let e1rm = Self.bestE1RM(for: set, baseLoadPerRep: base, recording: we.exercise.strengthRecording) {
                         bestE1RM[we.exercise.id] = max(bestE1RM[we.exercise.id] ?? 0, e1rm)
                     }
                 }
@@ -85,9 +85,9 @@ public enum AnalyticsCalculations {
     /// Best estimated 1RM of a set across its effective-load parts (drop segments
     /// included), reps clamped to `maxRepsForE1RM`. nil for warm-ups, incomplete
     /// sets, or sets without a positive load.
-    public static func bestE1RM(for set: ExerciseSet, baseLoadPerRep: Double?) -> Double? {
+    public static func bestE1RM(for set: ExerciseSet, baseLoadPerRep: Double?, recording: WeightRecording? = nil) -> Double? {
         guard set.isCompleted, set.setType != .warmup else { return nil }
-        let best = set.effectiveLoadParts(baseLoadPerRep: baseLoadPerRep)
+        let best = set.strengthParts(baseLoadPerRep: baseLoadPerRep, recording: recording)
             .filter { $0.load > 0 && $0.reps > 0 }
             .map { calculateOneRM(weight: $0.load, reps: min($0.reps, maxRepsForE1RM)) }
             .max()
@@ -95,15 +95,21 @@ public enum AnalyticsCalculations {
     }
 
     /// Best estimated 1RM across several sets.
-    public static func bestE1RM(in sets: [ExerciseSet], baseLoadPerRep: Double?) -> Double? {
-        sets.compactMap { bestE1RM(for: $0, baseLoadPerRep: baseLoadPerRep) }.max()
+    public static func bestE1RM(in sets: [ExerciseSet], baseLoadPerRep: Double?, recording: WeightRecording? = nil) -> Double? {
+        sets.compactMap { bestE1RM(for: $0, baseLoadPerRep: baseLoadPerRep, recording: recording) }.max()
     }
 
     /// Epley estimate for 2–15 reps; high-rep observations require separate interpretation.
     public static func calculateOneRM(weight: Double, reps: Int) -> Double {
-        guard weight > 0, reps > 0 else { return 0 }
+        guard weight.isFinite, weight > 0, reps > 0 else { return 0 }
         // A single monotonic formula avoids a lower estimate when going from 5 to 6 reps.
         return reps == 1 ? weight : weight * (1.0 + Double(min(reps, maxRepsForE1RM)) / 30.0)
+    }
+
+    /// Exact inverse of our strength formula within its supported rep range.
+    public static func weightAtReps(e1rm: Double, reps: Int) -> Double? {
+        guard e1rm.isFinite, e1rm > 0, (1...maxRepsForE1RM).contains(reps) else { return nil }
+        return reps == 1 ? e1rm : e1rm / (1 + Double(reps) / 30)
     }
 
     // MARK: - Time Windows

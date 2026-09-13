@@ -18,6 +18,8 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
     public var order: Int                              // Priority ordering
     public var bodyweightFactor: Double?
     public var weightRecording: WeightRecording?
+    /// Nil on older plans whose alternating-rep baseline used total reps.
+    public var strengthModelVersion: Int?
     public var alternatives: [UUID]                    // Swap candidates (exercise IDs)
 
     public enum OneRMSource: String, Codable, Sendable {
@@ -45,7 +47,8 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
         order: Int,
         alternatives: [UUID] = [],
         weightRecording: WeightRecording? = nil,
-        bodyweightFactor: Double? = nil
+        bodyweightFactor: Double? = nil,
+        strengthModelVersion: Int? = WorkoutQualityScore.modelVersion
     ) {
         self.id = id
         self.exerciseId = exerciseId
@@ -64,12 +67,17 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
         self.alternatives = alternatives
         self.weightRecording = weightRecording
         self.bodyweightFactor = bodyweightFactor
+        self.strengthModelVersion = strengthModelVersion
     }
 
     /// Stored plan estimates are only comparable under their original percentage.
     /// Legacy built-in plans used the library default; unknown custom baselines
     /// cannot safely drive automatic load adjustments after a setting change.
     public func acceptsBodyweightBasis(of exercise: Exercise) -> Bool {
+        // Do not interpret a formula correction as a performance collapse and
+        // automatically reduce an existing alternating exercise's plan targets.
+        if exercise.strengthRecording?.repetitions == .totalAlternating,
+           (strengthModelVersion ?? 0) < 4 { return false }
         guard exercise.exerciseType == .bodyweightReps else { return true }
         let baseline = bodyweightFactor ?? ExerciseSeedData.allExercises.first { $0.id == exerciseId }?.bodyweightFactor
         guard let baseline else { return false }

@@ -339,7 +339,7 @@ public final class AdaptiveAdjustmentService: Sendable {
                     .filter { $0.exercise.id == planExercise.exerciseId && planExercise.acceptsBodyweightBasis(of: $0.exercise) }
                     .compactMap { we -> Double? in
                         let baseLoad = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
-                        return AnalyticsCalculations.bestE1RM(in: we.sets, baseLoadPerRep: baseLoad)
+                        return AnalyticsCalculations.bestE1RM(in: we.sets, baseLoadPerRep: baseLoad, recording: we.exercise.strengthRecording)
                     }
                 return estimates.max()
             }
@@ -374,7 +374,7 @@ public final class AdaptiveAdjustmentService: Sendable {
         for workout in workouts {
             for workoutExercise in workout.exercises where workoutExercise.exercise.id == exerciseId {
                 let baseLoad = workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
-                if let estimate = AnalyticsCalculations.bestE1RM(in: workoutExercise.sets, baseLoadPerRep: baseLoad) {
+                if let estimate = AnalyticsCalculations.bestE1RM(in: workoutExercise.sets, baseLoadPerRep: baseLoad, recording: workoutExercise.exercise.strengthRecording) {
                     best = max(best ?? 0, estimate)
                 }
             }

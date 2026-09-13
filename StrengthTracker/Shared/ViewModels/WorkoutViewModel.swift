@@ -23,7 +23,23 @@ public final class WorkoutViewModel {
     @ObservationIgnored private var pendingPersistence: Task<Void, Never>?
     @ObservationIgnored private var persistenceRevision = 0
 
-    public var currentWorkout: Workout? = nil
+    public var currentWorkout: Workout? = nil {
+        didSet {
+            if oldValue?.id != currentWorkout?.id {
+                previousHistory = nil
+                coachingHistory = nil
+                previousLoadRevision += 1
+                coachingLoadRevision += 1
+            }
+            refreshPreviousDataCache()
+            refreshCoachingFromCache()
+        }
+    }
+    @ObservationIgnored private var previousHistory: [Workout]?
+    @ObservationIgnored private var coachingHistory: [Workout]?
+    @ObservationIgnored private var coachingInsights: WorkoutInsights = .empty
+    @ObservationIgnored private var previousLoadRevision = 0
+    @ObservationIgnored private var coachingLoadRevision = 0
     public var isActive = false
 
     /// Last exercise the user interacted with (completed or edited a set). Drives the
@@ -266,7 +282,7 @@ public final class WorkoutViewModel {
         previousSetDataCache = previousSetDataCache.filter { !$0.key.hasPrefix(exerciseId.uuidString + "-") }
         await persist(workout)
         await loadPreviousDataForExercise(exerciseId)
-        await loadCoachingData()
+        if coachingHistory == nil { await loadCoachingData() }
     }
 
     public func replaceExercise(exerciseId: UUID, with exercise: Exercise) async {
@@ -480,81 +496,43 @@ public final class WorkoutViewModel {
     }
 
 
-    /// Fetch previous set data for an exercise to help with progressive overload
+    /// Both callers use the same convention-aware, completed-set lookup.
     public func previousSetData(for exerciseId: UUID, setIndex: Int) async -> String? {
-        // Get the exercise ID from the current workout's exercise
-        guard let currentWorkout = currentWorkout,
-              let workoutExercise = currentWorkout.exercises.first(where: { $0.id == exerciseId }) else {
-            return nil
-        }
-
-        let targetExerciseId = workoutExercise.exercise.id
-
-        // Fetch recent completed workouts
-        #if canImport(SwiftData)
-        do {
-            let allWorkouts = try await workoutRepository.fetchAll()
-            // Find last completed workout with this exercise (not the current one)
-            let previousWorkout = allWorkouts
-                .filter { $0.completedAt != nil && $0.id != currentWorkout.id }
-                .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
-                .first { workout in
-                    workout.exercises.contains { $0.exercise.id == targetExerciseId }
-                }
-
-            guard let prev = previousWorkout,
-                  let prevExercise = prev.exercises.first(where: { $0.exercise.id == targetExerciseId }),
-                  setIndex < prevExercise.sets.count else {
-                return nil
-            }
-
-            let prevSet = prevExercise.sets[setIndex]
-            let unit = userPreferencesService?.weightUnit ?? .kg
-            let weight = prevSet.weight.map { unit.formatValue($0) } ?? "0"
-            let reps = prevSet.reps.map { String($0) } ?? "0"
-            return "\(weight)\(unit.symbol) × \(reps)"
-        } catch {
-            return nil
-        }
-        #else
-        return nil
-        #endif
+        if previousHistory == nil { await loadPreviousData() }
+        guard let entry = currentWorkout?.exercises.first(where: { $0.id == exerciseId }),
+              entry.sets.indices.contains(setIndex) else { return nil }
+        return previousSetDataCache["\(exerciseId)-\(entry.sets[setIndex].id)"]
     }
 
-    /// Load previous data for all exercises when workout starts.
-    /// Fetches the history ONCE — a per-set fetch here used to block the main
-    /// actor for seconds on workout entry, starving the first tap's render.
     public func loadPreviousData() async {
-        guard let workout = currentWorkout else { return }
-        guard let allWorkouts = try? await workoutRepository.fetchAll() else { return }
-        let previousCompleted = allWorkouts
-            .filter { $0.completedAt != nil && $0.id != workout.id }
-            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
-        for exercise in workout.exercises {
-            fillPreviousDataCache(for: exercise, from: previousCompleted)
-            await Task.yield()  // let queued UI updates (e.g. a tap) get a frame
-        }
+        guard let workoutId = currentWorkout?.id else { return }
+        previousLoadRevision += 1
+        let revision = previousLoadRevision
+        let history = try? await workoutRepository.fetchAll()
+        guard revision == previousLoadRevision, currentWorkout?.id == workoutId else { return }
+        previousHistory = history
+        refreshPreviousDataCache()
     }
 
-    /// Fill missing previous-set cache keys for one exercise from an already
-    /// fetched, completed-and-sorted workout history.
-    private func fillPreviousDataCache(for exercise: WorkoutExercise, from previousCompleted: [Workout]) {
-        let missingIndices = exercise.sets.indices.filter {
-            previousSetDataCache["\(exercise.id)-\($0)"] == nil
-        }
-        guard !missingIndices.isEmpty else { return }
-
-        let targetExerciseId = exercise.exercise.id
-        guard let prevExercise = WeightRecordingHistory.matching(previousCompleted, references: [exercise.exercise.id: exercise.exercise])
-            .first(where: { workout in workout.exercises.contains { $0.exercise.id == targetExerciseId } })?
-            .exercises.first(where: { $0.exercise.id == targetExerciseId }) else { return }
-
+    private func refreshPreviousDataCache() {
+        var cache: [String: String] = [:]
+        defer { previousSetDataCache = cache }
+        guard let workout = currentWorkout, let previousHistory else { return }
+        let previous = previousHistory.filter { $0.completedAt != nil && $0.id != workout.id && $0.trainingDate <= Date() }
+            .sorted { $0.trainingDate > $1.trainingDate }
         let unit = userPreferencesService?.weightUnit ?? .kg
-        for index in missingIndices where index < prevExercise.sets.count {
-            let prevSet = prevExercise.sets[index]
-            let weight = prevSet.weight.map { unit.formatValue($0) } ?? "0"
-            let reps = prevSet.reps.map { String($0) } ?? "0"
-            previousSetDataCache["\(exercise.id)-\(index)"] = "\(weight)\(unit.symbol) × \(reps)"
+        for entry in workout.exercises {
+            let history = WeightRecordingHistory.matching(previous, references: [entry.exercise.id: entry.exercise])
+            guard let prior = history.flatMap(\.exercises).first(where: {
+                $0.exercise.id == entry.exercise.id && $0.sets.contains(where: \.isCompleted)
+            }) else { continue }
+            for (index, set) in entry.sets.enumerated() where prior.sets.indices.contains(index) {
+                let priorSet = prior.sets[index]
+                guard priorSet.isCompleted, let reps = priorSet.reps else { continue }
+                // Format with the source repetition convention: a separate-side
+                // observation must not be relabelled as a completed pair of sides.
+                cache["\(entry.id)-\(set.id)"] = prior.exercise.recordedPerformance(weight: priorSet.weight ?? 0, reps: reps, unit: unit)
+            }
         }
     }
 
@@ -563,67 +541,51 @@ public final class WorkoutViewModel {
     /// load and coach verdict from the revision-cached insights so an in-workout hint
     /// can never contradict the analytics screens.
     public func loadCoachingData() async {
-        guard let workout = currentWorkout, let wss = weightSuggestionService else { return }
-        let bodyWeightKg = self.bodyWeightKg
-        do {
-            let allWorkouts = try await workoutRepository.fetchAll()
-            // Suggestions scan recentWorkouts per set — cap the window so a long
-            // history doesn't cost seconds of main-actor time on workout entry.
-            // Deload sessions are not evidence of what the lifter can do.
-            let recentCompleted = Array(
-                allWorkouts
-                    .filter { $0.completedAt != nil && $0.id != workout.id && !$0.isDeload }
-                    .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
-                    .prefix(20)
-            )
-            guard recentCompleted.count >= 3 else { return }
+        guard let workoutId = currentWorkout?.id, weightSuggestionService != nil else { return }
+        coachingLoadRevision += 1
+        let revision = coachingLoadRevision
+        let history = try? await workoutRepository.fetchAll()
+        let insights = (try? await analyticsService?.generateInsights()) ?? .empty
+        guard revision == coachingLoadRevision, currentWorkout?.id == workoutId else { return }
+        coachingHistory = history
+        coachingInsights = insights
+        // Refresh against the latest draft, even if reps changed while loading.
+        refreshCoachingFromCache()
+    }
 
-            let insights = (try? await analyticsService?.generateInsights()) ?? .empty
-            let trendsByExercise = Dictionary(insights.overloadTrends.map { ($0.exerciseId, $0) }, uniquingKeysWith: { a, _ in a })
-            let recoveryByGroup = Dictionary(insights.recoveryPatterns.map { ($0.muscleGroup.lowercased(), $0) }, uniquingKeysWith: { a, _ in a })
-
-            for we in workout.exercises {
-                await Task.yield()  // keep the UI responsive during workout entry
-                let exerciseId = we.exercise.id
-                let recovery = recoveryByGroup[we.exercise.primaryMuscleGroup.rawValue.lowercased()]
-                var suggestions: [Int: WeightSuggestion] = [:]
-                for (setIndex, set) in we.sets.enumerated() {
-                    let targetReps = set.reps ?? 8
-                    if let suggestion = wss.suggest(
-                        exerciseId: exerciseId,
-                        exerciseName: we.exercise.name,
-                        targetReps: targetReps,
-                        recentWorkouts: recentCompleted,
-                        overloadTrend: trendsByExercise[exerciseId],
-                        recoveryStatus: recovery?.recoveryStatus,
-                        trainingLoad: insights.trainingLoad,
-                        isDeload: workout.isDeload,
-                        bodyWeightKg: bodyWeightKg,
-                        verdict: insights.verdict, recordingReference: we.exercise
-                    ) {
-                        suggestions[setIndex] = suggestion
-                    }
+    /// Editing never fetches history or runs the analytics pipeline. The latest
+    /// draft is projected synchronously onto cached evidence, keyed by set ID.
+    private func refreshCoachingFromCache() {
+        var cache: [UUID: ExerciseCoachingData] = [:]
+        defer { exerciseCoachingCache = cache }
+        guard let workout = currentWorkout, let history = coachingHistory, let service = weightSuggestionService else { return }
+        let completed = history.filter { $0.completedAt != nil && $0.id != workout.id && !$0.isDeload }
+        let trends = Dictionary(coachingInsights.overloadTrends.map { ($0.exerciseId, $0) }, uniquingKeysWith: { a, _ in a })
+        let recovery = Dictionary(coachingInsights.recoveryPatterns.map { ($0.muscleGroup.lowercased(), $0) }, uniquingKeysWith: { a, _ in a })
+        for entry in workout.exercises {
+            let exercise = entry.exercise
+            let pattern = recovery[exercise.primaryMuscleGroup.rawValue.lowercased()]
+            let history = completed.filter { $0.exercises.contains { $0.exercise.id == exercise.id } }
+            var suggestions: [UUID: WeightSuggestion] = [:]
+            var byReps: [Int: WeightSuggestion] = [:]
+            var evaluatedReps: Set<Int> = []
+            for set in entry.sets where !set.isCompleted && set.dropSets.isEmpty && (set.setType == .normal || set.setType == .failure) {
+                guard let reps = set.reps else { continue }
+                if evaluatedReps.insert(reps).inserted {
+                    byReps[reps] = service.suggest(exerciseId: exercise.id, exerciseName: exercise.name,
+                    targetReps: reps, recentWorkouts: history, overloadTrend: trends[exercise.id],
+                    recoveryStatus: pattern?.recoveryStatus, trainingLoad: coachingInsights.trainingLoad,
+                    isDeload: workout.isDeload, bodyWeightKg: bodyWeightKg,
+                    verdict: coachingInsights.verdict, recordingReference: exercise)
                 }
-
-                let effortCreep = wss.checkEffortCreep(
-                    exerciseId: exerciseId,
-                    exerciseName: we.exercise.name,
-                    recentWorkouts: recentCompleted,
-                    bodyWeightKg: bodyWeightKg
-                )
-
-                let recoveryNote = Self.recoveryNote(for: recovery)
-
-                if !suggestions.isEmpty || effortCreep != nil || recoveryNote != nil {
-                    exerciseCoachingCache[we.id] = ExerciseCoachingData(
-                        suggestions: suggestions,
-                        effortCreepWarning: effortCreep,
-                        recoveryNote: recoveryNote
-                    )
-                }
+                suggestions[set.id] = byReps[reps]
             }
-        } catch {
-            // Coaching data is best-effort
+            let creep = service.checkEffortCreep(exerciseId: exercise.id, exerciseName: exercise.name,
+                recentWorkouts: history, bodyWeightKg: bodyWeightKg, recordingReference: exercise)
+            let note = Self.recoveryNote(for: pattern)
+            if !suggestions.isEmpty || creep != nil || note != nil {
+                cache[entry.id] = ExerciseCoachingData(suggestions: suggestions, effortCreepWarning: creep, recoveryNote: note)
+            }
         }
     }
 
@@ -640,18 +602,9 @@ public final class WorkoutViewModel {
         return "\(name) is still recovering, ready \(formatter.string(from: ready))"
     }
 
-    /// Load previous data for a single exercise (fills any missing cache keys)
     public func loadPreviousDataForExercise(_ exerciseId: UUID) async {
-        guard let workout = currentWorkout,
-              let exercise = workout.exercises.first(where: { $0.id == exerciseId }) else { return }
-        let hasMissing = exercise.sets.indices.contains {
-            previousSetDataCache["\(exercise.id)-\($0)"] == nil
-        }
-        guard hasMissing, let allWorkouts = try? await workoutRepository.fetchAll() else { return }
-        let previousCompleted = allWorkouts
-            .filter { $0.completedAt != nil && $0.id != workout.id }
-            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
-        fillPreviousDataCache(for: exercise, from: previousCompleted)
+        if previousHistory == nil { await loadPreviousData() }
+        else { refreshPreviousDataCache() }
     }
 
     // MARK: - Inline Editing Methods

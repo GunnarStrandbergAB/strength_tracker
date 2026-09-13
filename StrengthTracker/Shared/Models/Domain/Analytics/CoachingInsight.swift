@@ -40,14 +40,14 @@ public enum CoachingColor: String, Sendable {
 
 /// Per-exercise coaching data cached in WorkoutViewModel for inline display.
 public struct ExerciseCoachingData: Sendable {
-    public let suggestions: [Int: WeightSuggestion]  // setIndex → suggestion
+    public let suggestions: [UUID: WeightSuggestion]  // stable set ID → suggestion
     public let effortCreepWarning: EffortCreepWarning?
     /// "Chest is still recovering, ready Thursday" — only when the group is
     /// fatigued and was not just trained.
     public let recoveryNote: String?
 
     public init(
-        suggestions: [Int: WeightSuggestion] = [:],
+        suggestions: [UUID: WeightSuggestion] = [:],
         effortCreepWarning: EffortCreepWarning? = nil,
         recoveryNote: String? = nil
     ) {

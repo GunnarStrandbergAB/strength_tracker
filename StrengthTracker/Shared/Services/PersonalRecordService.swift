@@ -190,8 +190,8 @@ public final class PersonalRecordService {
         if let reps = parts.compactMap(\.reps).filter({ $0 > 0 }).max() {
             records.append(PersonalRecord(id: UUID(), exerciseId: exerciseId, recordType: .maxReps, value: Double(reps), setId: set.id, achievedAt: achievedAt, weightRecordingKey: convention))
         }
-        // Shared hybrid Epley/Brzycki — must match analytics e1RM (reps capped at 15).
-        if let e1rm = loadParts.map({ AnalyticsCalculations.calculateOneRM(weight: $0.load, reps: min($0.reps, 15)) }).max(), e1rm > 0 {
+        // Same exercise-aware strength calculation as analytics.
+        if let e1rm = AnalyticsCalculations.bestE1RM(for: set, baseLoadPerRep: base, recording: exercise.strengthRecording), e1rm > 0 {
             records.append(PersonalRecord(id: UUID(), exerciseId: exerciseId, recordType: .estimatedOneRepMax, value: e1rm, setId: set.id, achievedAt: achievedAt, weightRecordingKey: convention))
         }
         let volume = exercise.volume(of: set, bodyWeightKg: bodyWeightKg)

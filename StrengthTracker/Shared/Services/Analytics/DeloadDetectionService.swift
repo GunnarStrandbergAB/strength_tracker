@@ -172,7 +172,7 @@ public enum DeloadDetectionService {
             guard let best = conventionBests[WeightRecordingHistory.relativeKey(we.exercise)] ?? bestE1RM[we.exercise.id], best > 0 else { continue }
             let baseLoad = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
             for set in we.sets where set.isCompleted && set.setType != .warmup {
-                for part in set.effectiveLoadParts(baseLoadPerRep: baseLoad) {
+                for part in set.strengthParts(baseLoadPerRep: baseLoad, recording: we.exercise.strengthRecording) {
                     let e1rm = AnalyticsCalculations.calculateOneRM(weight: part.load, reps: min(part.reps, AnalyticsCalculations.maxRepsForE1RM))
                     ratios.append(e1rm / best)
                 }

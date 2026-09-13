@@ -70,7 +70,7 @@ public struct SessionExecutionService: Sendable {
             guard !session.isDeload && !workout.isDeload else { continue }
 
             // Estimate 1RM from completed sets
-            if let estimated1RM = estimateCurrent1RM(from: workoutExercise.sets, baseLoadPerRep: workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)) {
+            if let estimated1RM = estimateCurrent1RM(from: workoutExercise.sets, baseLoadPerRep: workoutExercise.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg), recording: workoutExercise.exercise.strengthRecording) {
                 let current = planExercise.current1RM
 
                 // M17: When current1RM is 0 (first use), direct assign without EWMA
@@ -227,11 +227,11 @@ public struct SessionExecutionService: Sendable {
     // MARK: - Estimate 1RM
 
     /// Estimates the current 1RM from a set of completed exercise sets using the
-    /// app-wide formula (`AnalyticsCalculations.bestE1RM`: hybrid Epley/Brzycki,
+    /// app-wide formula (`AnalyticsCalculations.bestE1RM`: Epley,
     /// warm-ups and incomplete sets ignored, every drop segment considered, reps
     /// clamped to 15). Returns the highest estimate rounded to nearest 2.5.
-    public func estimateCurrent1RM(from sets: [ExerciseSet], baseLoadPerRep: Double? = nil) -> Double? {
-        guard let best = AnalyticsCalculations.bestE1RM(in: sets, baseLoadPerRep: baseLoadPerRep), best > 0 else { return nil }
+    public func estimateCurrent1RM(from sets: [ExerciseSet], baseLoadPerRep: Double? = nil, recording: WeightRecording? = nil) -> Double? {
+        guard let best = AnalyticsCalculations.bestE1RM(in: sets, baseLoadPerRep: baseLoadPerRep, recording: recording), best > 0 else { return nil }
         return best.rounded(toNearest: 2.5)
     }
 }
