@@ -21,6 +21,7 @@ public final class ExerciseSetEntity {
     public var completedAt: Date?
     /// JSON-encoded [DropSetEntry]; nil when the set has no drop segments.
     public var dropSetsJSON: String?
+    public var sideSetsJSON: String? = nil
 
     @Relationship(deleteRule: .nullify, inverse: \WorkoutExerciseEntity.sets)
     public var workoutExercise: WorkoutExerciseEntity?

@@ -20,6 +20,8 @@ struct ExerciseDetailView: View {
     @State private var showAddPR = false
     @State private var formPresentation: ExerciseFormPresentation? = nil
     @State private var showBodyweightEditor = false
+    @State private var showRecordingEditor = false
+    @State private var recordingSaveError: String?
     @Environment(BodyWeightProvider.self) private var bodyWeightProvider: BodyWeightProvider?
 
     init(
@@ -72,6 +74,15 @@ struct ExerciseDetailView: View {
                         Button("Change percentage", systemImage: "slider.horizontal.3") { showBodyweightEditor = true }
                             .accessibilityIdentifier("bodyweight-change-percentage")
                     }
+                }
+            }
+
+            if exercise.supportsWeightRecording {
+                Section("Sides & weight logging") {
+                    Text(exercise.weightRecording?.summary ?? "Standard logging")
+                    if let explanation = exercise.weightRecordingExplanation { Text(explanation).font(.caption).foregroundStyle(.secondary) }
+                    if listViewModel != nil { Button("Change logging", systemImage: "slider.horizontal.3") { showRecordingEditor = true } }
+                    if let recordingSaveError { Text(recordingSaveError).foregroundStyle(.red) }
                 }
             }
 
@@ -129,6 +140,15 @@ struct ExerciseDetailView: View {
             if let analyticsVM = analyticsViewModel {
                 Section("Insights") {
                     ExerciseInsightsView(exercise: exercise, viewModel: analyticsVM)
+                }
+            }
+        }
+        .sheet(isPresented: $showRecordingEditor) {
+            WeightRecordingEditorSheet(exercise: exercise, scopeDescription: "Changes the library default for future uses. Saved workout history and existing template or plan targets keep their convention. Review historical corrections in Settings → Weight logging.") { recording in
+                var updated = exercise; updated.weightRecording = recording
+                Task {
+                    if await listViewModel?.saveExercise(updated) == true { exercise = updated; recordingSaveError = nil }
+                    else { recordingSaveError = "Could not save the logging setting. Please try again." }
                 }
             }
         }
@@ -220,7 +240,7 @@ private struct AddPRSheet: View {
                 }
 
                 HStack {
-                    Text(exercise.isDumbbell && [.maxWeight, .estimatedOneRepMax].contains(selectedType) ? exercise.weightEntryLabel(weightUnit) : selectedType.unitLabel(weightUnit: weightUnit))
+                    Text(exercise.strengthRecording != nil && [.maxWeight, .estimatedOneRepMax].contains(selectedType) ? exercise.weightEntryLabel(weightUnit) : selectedType.unitLabel(weightUnit: weightUnit))
                         .foregroundStyle(.secondary)
                     TextField("Value", text: $valueText)
                         .keyboardType(.decimalPad)

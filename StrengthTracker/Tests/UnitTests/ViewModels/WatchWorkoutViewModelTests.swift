@@ -281,3 +281,24 @@ struct WatchWorkoutViewModelTests {
         #expect(vm.activeWorkout != nil)
     }
 }
+
+extension WatchWorkoutViewModelTests {
+    @Test("Watch records left and right within one set and waits for both before resting")
+    func watchSideLogging() async throws {
+        let (vm, repo) = makeViewModel()
+        var exercise = makeExercise(name: "Cable row")
+        exercise.category = .cable; exercise.weightRecording = .sides()
+        await vm.startWorkout(name: "Pull", from: makeTemplateFrom([exercise]))
+        try await vm.logSide(.left, weight: 41, reps: 8)
+        #expect(vm.visibleSet?.completedSideCount == 1)
+        #expect(vm.currentSetNumber == 1)
+        #expect(!vm.isResting)
+        try await vm.logSide(.right, weight: 36, reps: 6)
+        #expect(vm.currentSetNumber == 2)
+        #expect(vm.activeWorkout?.totalVolume(bodyWeightKg: 80) == 544)
+        #expect(vm.activeWorkout?.exercises[0].sets[0].sideSets?.count == 2)
+        let saved = try await repo.fetchAll()
+        #expect(saved.first?.exercises[0].sets[0].isFullyCompleted == true)
+        vm.stopRestTimer()
+    }
+}

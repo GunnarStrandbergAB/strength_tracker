@@ -33,6 +33,9 @@ struct ExerciseCardView: View {
     let intensityMetric: IntensityMetric
     let weightUnit: WeightUnit
     let onWeightRecordingChange: ((WeightRecording) -> Void)?
+    var onSaveRecordingDefault: ((WeightRecording) -> Void)? = nil
+    var onSideSetsChange: ((UUID, [SideSetEntry]) -> Void)? = nil
+    var onSideRest: ((UUID) -> Void)? = nil
     @State private var editingWeightRecording = false
 
     @State private var isReorderingSets: Bool = false
@@ -68,7 +71,10 @@ struct ExerciseCardView: View {
         alwaysShowRPE: Bool = false,
         intensityMetric: IntensityMetric = .rpe,
         weightUnit: WeightUnit = .kg,
-        onWeightRecordingChange: ((WeightRecording) -> Void)? = nil
+        onWeightRecordingChange: ((WeightRecording) -> Void)? = nil,
+        onSideSetsChange: ((UUID, [SideSetEntry]) -> Void)? = nil,
+        onSideRest: ((UUID) -> Void)? = nil,
+        onSaveRecordingDefault: ((WeightRecording) -> Void)? = nil
     ) {
         self.workoutExercise = workoutExercise
         self.previousSetData = previousSetData
@@ -96,6 +102,9 @@ struct ExerciseCardView: View {
         self.intensityMetric = intensityMetric
         self.weightUnit = weightUnit
         self.onWeightRecordingChange = onWeightRecordingChange
+        self.onSideSetsChange = onSideSetsChange
+        self.onSideRest = onSideRest
+        self.onSaveRecordingDefault = onSaveRecordingDefault
         self._noteText = State(initialValue: workoutExercise.notes ?? "")
         self._seededNoteText = State(initialValue: workoutExercise.notes ?? "")
         self._isEditingNote = State(initialValue: workoutExercise.notes != nil && !workoutExercise.notes!.isEmpty)
@@ -108,7 +117,7 @@ struct ExerciseCardView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            cardHeader
+            cardHeader.fixedSize(horizontal: false, vertical: true)
 
             // Effort creep warning (M2)
             if let warning = coachingData?.effortCreepWarning {
@@ -155,12 +164,20 @@ struct ExerciseCardView: View {
                     alignment: .top
                 )
             } else {
-                if let explanation = workoutExercise.exercise.weightRecordingExplanation {
-                    Text(explanation).font(.caption).foregroundStyle(STColors.textSecondary)
-                        .padding(.horizontal, STSpacing.setRowHorizontal).padding(.vertical, 8)
-                }
-                if workoutExercise.exercise.isDumbbell, onWeightRecordingChange != nil {
-                    Button("Weight logging…") { editingWeightRecording = true }.font(.caption).padding(.horizontal)
+                if let recording = workoutExercise.exercise.strengthRecording {
+                    Button { editingWeightRecording = true } label: {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(recording.summary).fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.down")
+                        }.font(.caption).foregroundStyle(STColors.textSecondary)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }.buttonStyle(.plain).fixedSize(horizontal: false, vertical: true).padding(.horizontal, STSpacing.setRowHorizontal)
+                        .accessibilityLabel("Sides and weight logging: \(recording.summary)")
+                        .disabled(onWeightRecordingChange == nil)
+                } else if workoutExercise.exercise.recordingNeedsConfirmation, onWeightRecordingChange != nil {
+                    Button("Set up side logging", systemImage: "slider.horizontal.3") { editingWeightRecording = true }
+                        .font(.callout).frame(minHeight: 44).padding(.horizontal)
                 }
                 // Sets
                 ForEach(Array(workoutExercise.sets.enumerated()), id: \.element.id) { index, exerciseSet in
@@ -209,7 +226,10 @@ struct ExerciseCardView: View {
                         } : nil,
                         onRemoveDropEntry: onRemoveDropEntry != nil ? { entryId in
                             onRemoveDropEntry?(exerciseSet.id, entryId)
-                        } : nil
+                        } : nil,
+                        recording: workoutExercise.exercise.strengthRecording,
+                        onSideSetsChange: onSideSetsChange.map { action in { action(exerciseSet.id, $0) } },
+                        onSideRest: onSideRest.map { action in { action(exerciseSet.id) } }
                     )
 
                     if index < workoutExercise.sets.count - 1 {
@@ -224,7 +244,7 @@ struct ExerciseCardView: View {
             }
         }
         .sheet(isPresented: $editingWeightRecording) {
-            WeightRecordingEditorSheet(exercise: workoutExercise.exercise) { onWeightRecordingChange?($0) }
+            WeightRecordingEditorSheet(exercise: workoutExercise.exercise, saveDefault: onSaveRecordingDefault) { onWeightRecordingChange?($0) }
         }
         .background(STColors.surface)
         .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
@@ -258,6 +278,12 @@ struct ExerciseCardView: View {
 
             HStack(spacing: 4) {
                 Menu {
+                    if workoutExercise.exercise.supportsWeightRecording, onWeightRecordingChange != nil {
+                        Button("Sides & weight logging", systemImage: "slider.horizontal.3") {
+                            guard STNumericTextField.commitActiveInput() else { return }
+                            editingWeightRecording = true
+                        }
+                    }
                     Button("Reorder Sets", systemImage: "arrow.up.arrow.down") {
                         guard STNumericTextField.commitActiveInput() else { return }
                         isReorderingSets = true

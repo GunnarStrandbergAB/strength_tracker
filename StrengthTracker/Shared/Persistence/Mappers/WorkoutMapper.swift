@@ -203,13 +203,14 @@ public enum ExerciseSetMapper {
             // Legacy rows marked failure via the set type carry the per-set flag.
             isFailure: entity.isFailure || entity.setType == SetType.failure.rawValue,
             completedAt: entity.completedAt,
-            dropSets: decodeDropSets(entity.dropSetsJSON)
+            dropSets: decodeDropSets(entity.dropSetsJSON),
+            sideSets: entity.sideSetsJSON.flatMap { try? JSONDecoder().decode([SideSetEntry].self, from: Data($0.utf8)) }
         )
     }
 
     /// Converts an ExerciseSet (domain model) to an ExerciseSetEntity
     public static func toEntity(_ domain: ExerciseSet) -> ExerciseSetEntity {
-        ExerciseSetEntity(
+        let entity = ExerciseSetEntity(
             id: domain.id,
             order: domain.order,
             setType: domain.setType.rawValue,
@@ -225,6 +226,8 @@ public enum ExerciseSetMapper {
             completedAt: domain.completedAt,
             dropSetsJSON: encodeDropSets(domain.dropSets)
         )
+        entity.sideSetsJSON = domain.sideSets.flatMap { try? String(decoding: JSONEncoder().encode($0), as: UTF8.self) }
+        return entity
     }
 
     /// Updates an existing ExerciseSetEntity with values from an ExerciseSet domain model
@@ -242,6 +245,7 @@ public enum ExerciseSetMapper {
         entity.isFailure = domain.isFailure
         entity.completedAt = domain.completedAt
         entity.dropSetsJSON = encodeDropSets(domain.dropSets)
+        entity.sideSetsJSON = domain.sideSets.flatMap { try? String(decoding: JSONEncoder().encode($0), as: UTF8.self) }
     }
 
     private static func encodeDropSets(_ entries: [DropSetEntry]) -> String? {

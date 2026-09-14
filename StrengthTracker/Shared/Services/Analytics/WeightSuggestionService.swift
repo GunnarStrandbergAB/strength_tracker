@@ -33,7 +33,7 @@ public final class WeightSuggestionService: Sendable {
               let exercise = recordingReference ?? WeightRecordingHistory.latestExercises(eligible)[exerciseId],
               exercise.id == exerciseId,
               exercise.exerciseType == .weightedReps || exercise.exerciseType == .bodyweightReps,
-              !exercise.isDumbbell || exercise.weightRecording != nil,
+              !exercise.recordingNeedsConfirmation,
               let strengthReps = exercise.strengthReps(targetReps),
               (1...AnalyticsCalculations.maxRepsForE1RM).contains(strengthReps) else { return nil }
 
@@ -128,7 +128,7 @@ public final class WeightSuggestionService: Sendable {
                         || WeightRecordingHistory.convertible(entry.exercise, to: exercise) else { continue }
                 let converted = WeightRecordingHistory.converted(entry, to: exercise)
                 for (source, set) in zip(entry.sets, converted.sets) {
-                    guard set.isCompleted, set.dropSets.isEmpty,
+                    guard set.isFullyCompleted, set.dropSets.isEmpty, set.sideSets?.contains(where: { $0.effort.isDropSet || $0.effort.setType == .restPause || $0.effort.setType == .warmup }) != true,
                           set.setType == .normal || set.setType == .failure,
                           let reps = set.reps, let count = exercise.strengthReps(reps),
                           (1...AnalyticsCalculations.maxRepsForE1RM).contains(count),
@@ -137,7 +137,7 @@ public final class WeightSuggestionService: Sendable {
                     guard estimate.isFinite, estimate > 0 else { continue }
                     candidates.append(.init(workoutId: workout.id, date: workout.trainingDate,
                         originalExercise: entry.exercise, originalWeight: source.weight ?? 0, reps: reps,
-                        convertedWeight: set.weight ?? 0, estimatedStrength: estimate))
+                        convertedWeight: part.load - (exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg) ?? 0), estimatedStrength: estimate, sourceSides: source.sideSets))
                 }
             }
             // Separate-side rows have no left/right identity: never assume the

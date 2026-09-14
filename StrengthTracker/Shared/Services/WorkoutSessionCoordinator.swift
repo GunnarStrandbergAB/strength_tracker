@@ -113,25 +113,48 @@ public final class WorkoutSessionCoordinator {
             refreshWidget()
             return nil
         }
-        if set.isCompleted {
+        if set.isFullyCompleted {
             startRestTimerIfNeeded(workout: workout, exercise: exercise, setId: setId)
         }
         refreshWidget()
-        return set.isCompleted
+        return set.isFullyCompleted
     }
 
     /// Completes the set only if it is currently incomplete (never restarts the
     /// rest timer for an already-completed set).
     public func completeSet(exerciseId: UUID, setId: UUID) async throws {
         guard let set = findSet(exerciseId: exerciseId, setId: setId) else { throw SessionError.setNotFound }
-        guard !set.isCompleted else { return }
+        guard !set.isFullyCompleted else { return }
         await toggleSet(exerciseId: exerciseId, setId: setId)
     }
 
     public func uncompleteSet(exerciseId: UUID, setId: UUID) async throws {
         guard let set = findSet(exerciseId: exerciseId, setId: setId) else { throw SessionError.setNotFound }
         guard set.isCompleted else { return }
+        if let sides = set.sideSets {
+            await updateSideSets(exerciseId: exerciseId, setId: setId, entries: sides.map { side in
+                var copy = side; copy.effort.setCompleted(false); return copy
+            })
+            return
+        }
         await toggleSet(exerciseId: exerciseId, setId: setId)
+    }
+
+    public func updateSideSets(exerciseId: UUID, setId: UUID, entries: [SideSetEntry]) async {
+        let wasComplete = findSet(exerciseId: exerciseId, setId: setId)?.isFullyCompleted == true
+        await workoutViewModel.replaceSideSets(exerciseId: exerciseId, setId: setId, entries: entries)
+        if !wasComplete, let workout = workoutViewModel.currentWorkout,
+           let exercise = workout.exercises.first(where: { $0.id == exerciseId }),
+           exercise.sets.first(where: { $0.id == setId })?.isFullyCompleted == true {
+            startRestTimerIfNeeded(workout: workout, exercise: exercise, setId: setId)
+        }
+        refreshWidget()
+    }
+    public func restBetweenSides(exerciseId: UUID, setId: UUID) {
+        guard let workout = workoutViewModel.currentWorkout,
+              let exercise = workout.exercises.first(where: { $0.id == exerciseId }) else { return }
+        startRestTimerIfNeeded(workout: workout, exercise: exercise, setId: setId, explicit: true)
+        refreshWidget()
     }
 
     // MARK: Session lifecycle
@@ -215,8 +238,8 @@ public final class WorkoutSessionCoordinator {
             .sets.first(where: { $0.id == setId })
     }
 
-    private func startRestTimerIfNeeded(workout: Workout, exercise: WorkoutExercise, setId: UUID) {
-        guard preferences.autoStartRestTimer else { return }
+    private func startRestTimerIfNeeded(workout: Workout, exercise: WorkoutExercise, setId: UUID, explicit: Bool = false) {
+        guard explicit || preferences.autoStartRestTimer else { return }
         var restSeconds = exercise.restTimerSeconds ?? preferences.defaultRestSeconds
         if workout.isDeload {
             restSeconds = max(15, restSeconds * (workout.deloadRestPercentage ?? preferences.deloadRestPercentage) / 100)

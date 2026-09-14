@@ -96,7 +96,7 @@ public final class WatchWorkoutViewModel {
 
     public var currentSetNumber: Int {
         guard let exercise = currentExercise else { return 1 }
-        let completedCount = exercise.sets.filter(\.isCompleted).count
+        let completedCount = exercise.sets.filter(\.isFullyCompleted).count
         return completedCount + 1
     }
 
@@ -111,7 +111,7 @@ public final class WatchWorkoutViewModel {
     public var currentTargetWeight: Double? {
         // Prefer the next incomplete pre-populated set's weight (per-set targets from template)
         if let exercise = currentExercise,
-           let nextIncomplete = exercise.sets.first(where: { !$0.isCompleted }) {
+           let nextIncomplete = exercise.sets.first(where: { !$0.isFullyCompleted }) {
             return nextIncomplete.weight
         }
         // Fall back to exercise-level target for extra sets
@@ -121,7 +121,7 @@ public final class WatchWorkoutViewModel {
     public var currentTargetReps: Int? {
         // Prefer the next incomplete pre-populated set's reps (per-set targets from template)
         if let exercise = currentExercise,
-           let nextIncomplete = exercise.sets.first(where: { !$0.isCompleted }) {
+           let nextIncomplete = exercise.sets.first(where: { !$0.isFullyCompleted }) {
             return nextIncomplete.reps
         }
         // Fall back to exercise-level target for extra sets
@@ -150,7 +150,7 @@ public final class WatchWorkoutViewModel {
 
     public var canNavigateToPreviousSet: Bool {
         guard let exercise = currentExercise else { return false }
-        let completedCount = exercise.sets.filter(\.isCompleted).count
+        let completedCount = exercise.sets.filter(\.isFullyCompleted).count
         if viewingSetIndex == nil {
             return completedCount > 0
         }
@@ -165,7 +165,7 @@ public final class WatchWorkoutViewModel {
         guard !isQuickStart,
               let planned = plannedSetsPerExercise[currentExerciseIndex],
               let exercise = currentExercise else { return false }
-        return exercise.sets.filter(\.isCompleted).count >= planned
+        return exercise.sets.filter(\.isFullyCompleted).count >= planned
     }
 
     public var isLastExercise: Bool {
@@ -179,7 +179,7 @@ public final class WatchWorkoutViewModel {
 
     public var totalSetsCompleted: Int {
         guard let workout = activeWorkout else { return 0 }
-        return workout.exercises.reduce(0) { $0 + $1.sets.filter(\.isCompleted).count }
+        return workout.exercises.reduce(0) { $0 + $1.sets.filter(\.isFullyCompleted).count }
     }
 
     public var elapsedTime: TimeInterval {
@@ -348,6 +348,44 @@ public final class WatchWorkoutViewModel {
         await startWorkout(name: session.sessionLabel, from: session.template, isDeload: session.isDeload)
     }
 
+    public var visibleSet: ExerciseSet? {
+        guard let exercise = currentExercise else { return nil }
+        if let index = viewingSetIndex, exercise.sets.indices.contains(index) { return exercise.sets[index] }
+        return exercise.sets.first { !$0.isFullyCompleted }
+    }
+
+    public func logSide(_ side: BodySide, weight: Double?, reps: Int?, rpe: Double? = nil) async throws {
+        guard var workout = activeWorkout, workout.exercises.indices.contains(currentExerciseIndex),
+              let recording = workout.exercises[currentExerciseIndex].exercise.strengthRecording,
+              recording.supportsSeparateSides else { throw WorkoutError.exerciseNotFound }
+        let exercise = workout.exercises[currentExerciseIndex]
+        let index = viewingSetIndex ?? exercise.sets.firstIndex { !$0.isFullyCompleted } ?? exercise.sets.count
+        if index == exercise.sets.count {
+            workout.exercises[currentExerciseIndex].sets.append(ExerciseSet(id: UUID(), order: index + 1,
+                setType: pendingSetType, weight: weight.map { $0 / recording.sideWeightScale }, reps: reps, durationSeconds: nil, distanceMeters: nil,
+                rpe: nil, isCompleted: false, isPersonalRecord: false, completedAt: nil))
+        }
+        guard workout.exercises[currentExerciseIndex].sets.indices.contains(index) else { return }
+        var set = workout.exercises[currentExerciseIndex].sets[index]
+        let wasComplete = set.isFullyCompleted
+        set.separateSides(recording: recording, onlySide: recording.repetitions == .oneSide ? side : nil)
+        guard var sides = set.sideSets, let i = sides.firstIndex(where: { $0.side == side }), sides[i].effort.dropSets.isEmpty else { return }
+        sides[i].effort.weight = weight
+        sides[i].effort.reps = reps
+        sides[i].effort.applyRPE(rpe)
+        if sides[i].effort.isFailure { sides[i].effort.setFailureFlag(true) }
+        sides[i].effort.setCompleted(true)
+        set.applySideSets(sides)
+        workout.exercises[currentExerciseIndex].sets[index] = set
+        activeWorkout = workout
+        _ = try await workoutRepository.save(workout)
+        connectivityManager.sendWorkoutSnapshot(workout)
+        if set.isFullyCompleted {
+            viewingSetIndex = nil; pendingSetType = .normal
+            if !wasComplete { startRestTimer(seconds: exercise.restTimerSeconds) }
+        }
+    }
+
     public func logSet(weight: Double?, reps: Int?, rpe: Double? = nil) async throws {
         guard var workout = activeWorkout else {
             throw WorkoutError.noActiveWorkout
@@ -357,8 +395,10 @@ public final class WatchWorkoutViewModel {
             throw WorkoutError.exerciseNotFound
         }
 
+        // Named sides must be edited independently; never replace their summary.
+        guard visibleSet?.sideSets == nil else { return }
         // If there's an incomplete pre-populated set, update it instead of appending
-        if let incompleteIndex = workout.exercises[currentExerciseIndex].sets.firstIndex(where: { !$0.isCompleted }) {
+        if let incompleteIndex = workout.exercises[currentExerciseIndex].sets.firstIndex(where: { !$0.isFullyCompleted }) {
             workout.exercises[currentExerciseIndex].sets[incompleteIndex].weight = weight
             workout.exercises[currentExerciseIndex].sets[incompleteIndex].reps = reps
             workout.exercises[currentExerciseIndex].sets[incompleteIndex].applyRPE(rpe)
@@ -529,7 +569,7 @@ public final class WatchWorkoutViewModel {
 
     public func navigateToPreviousSet() {
         guard let exercise = currentExercise else { return }
-        let completedCount = exercise.sets.filter(\.isCompleted).count
+        let completedCount = exercise.sets.filter(\.isFullyCompleted).count
         if viewingSetIndex == nil {
             // From active set, go to last completed
             if completedCount > 0 {
@@ -543,7 +583,7 @@ public final class WatchWorkoutViewModel {
     public func navigateToNextSet() {
         guard let idx = viewingSetIndex,
               let exercise = currentExercise else { return }
-        let completedCount = exercise.sets.filter(\.isCompleted).count
+        let completedCount = exercise.sets.filter(\.isFullyCompleted).count
         if idx < completedCount - 1 {
             viewingSetIndex = idx + 1
         } else {
@@ -556,7 +596,7 @@ public final class WatchWorkoutViewModel {
         if let idx = viewingSetIndex, idx < exercise.sets.count {
             return exercise.sets[idx].setType
         }
-        if let nextIncomplete = exercise.sets.first(where: { !$0.isCompleted }) {
+        if let nextIncomplete = exercise.sets.first(where: { !$0.isFullyCompleted }) {
             return nextIncomplete.setType
         }
         return pendingSetType
@@ -573,7 +613,7 @@ public final class WatchWorkoutViewModel {
                 workout.exercises[currentExerciseIndex].sets[idx].setFailureFlag(true)
             }
             activeWorkout = workout
-        } else if let incompleteIdx = workout.exercises[currentExerciseIndex].sets.firstIndex(where: { !$0.isCompleted }) {
+        } else if let incompleteIdx = workout.exercises[currentExerciseIndex].sets.firstIndex(where: { !$0.isFullyCompleted }) {
             workout.exercises[currentExerciseIndex].sets[incompleteIdx].setType = setType
             if setType == .failure {
                 workout.exercises[currentExerciseIndex].sets[incompleteIdx].setFailureFlag(true)
@@ -589,7 +629,8 @@ public final class WatchWorkoutViewModel {
         guard let idx = viewingSetIndex,
               var workout = activeWorkout,
               currentExerciseIndex < workout.exercises.count,
-              idx < workout.exercises[currentExerciseIndex].sets.count else { return }
+              idx < workout.exercises[currentExerciseIndex].sets.count,
+              workout.exercises[currentExerciseIndex].sets[idx].sideSets == nil else { return }
         workout.exercises[currentExerciseIndex].sets[idx].weight = weight
         workout.exercises[currentExerciseIndex].sets[idx].reps = reps
         activeWorkout = workout

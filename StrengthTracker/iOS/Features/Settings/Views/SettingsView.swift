@@ -521,10 +521,10 @@ struct WeightRecordingSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Text("Keep logging the weight of one dumbbell. Tell the app how many dumbbells and sides each row covers so it can calculate total volume.")
+                Text("Choose how weights and sides are recorded for each exercise. Review changes before applying them to history.")
                 Text("Unconfirmed history keeps its original calculation until you review it. Entered weights and reps are preserved.").font(.caption)
-                Button("Select all as weight per dumbbell") { selectAll(.perDumbbell) }
-                Button("Select all as combined weight") { selectAll(.combined) }
+                Button("Select dumbbell exercises as weight per dumbbell") { selectAll(.perDumbbell) }
+                Button("Select dumbbell exercises as combined weight") { selectAll(.combined) }
                 Button("Clear selection / leave unresolved") { selections.removeAll() }
             }
             Section("Exercise exceptions") {
@@ -536,7 +536,7 @@ struct WeightRecordingSettingsView: View {
                         }))
                         WeightRecordingFields(value: Binding(get: { configurations[exercise.id] ?? WeightRecording() }, set: {
                             configurations[exercise.id] = $0; selections.insert(exercise.id)
-                        }))
+                        }), allowsLegacyDumbbells: exercise.isDumbbell)
                     } label: {
                         VStack(alignment: .leading) {
                             Text(exercise.name)
@@ -591,16 +591,16 @@ struct WeightRecordingSettingsView: View {
         } message: { Text("Restores the previous conventions and recalculates analytics. Your entered weights and reps are preserved.") }
     }
     private func selectAll(_ entry: WeightRecording.WeightEntry) {
-        for exercise in catalog {
+        for exercise in catalog where exercise.isDumbbell {
             var config = configurations[exercise.id] ?? WeightRecording()
             config.weightEntry = entry; configurations[exercise.id] = config
         }
-        selections = Set(catalog.map(\.id))
+        selections = Set(catalog.filter(\.isDumbbell).map(\.id))
     }
     private func load() async {
         do {
             catalog = try await service.catalog()
-            configurations = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0.weightRecording ?? DumbbellDefaults.recording(for: $0.name) ?? WeightRecording()) })
+            configurations = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0.defaultWeightRecording) })
         } catch { message = error.localizedDescription }
     }
     private func run(_ action: @escaping @MainActor () async throws -> Void) {

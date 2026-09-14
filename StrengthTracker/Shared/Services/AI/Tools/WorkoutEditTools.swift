@@ -112,7 +112,10 @@ public final class LogSetTool: AITool {
     like tapping the checkmark: rest timer and widget update on the active workout. Omit set_number \
     for the next incomplete set (appends if none); pass count+1 to append. Unspecified fields keep \
     their values. For drop sets pass drop_segments (top set first); a drop set's weight/reps can only \
-    be edited through drop_segments. Call once per set.
+    be edited through drop_segments. For named left/right efforts pass side_sets (one logical set), \
+    with actual per-side weights and reps. This replaces the complete side list; retain an unfinished \
+    side with completed:false when needed. Omit parent weight/reps/completed with side_sets. \
+    Read weight_recording first; use configure_weight_recording if the user specifies a new setup. Call once per set.
     """
 
     public var parametersSchema: JSONValue {
@@ -132,6 +135,7 @@ public final class LogSetTool: AITool {
             of: ToolSchemas.dropSegment,
             description: "All segments of a drop set including the top set (at least 2); [] converts back to a plain set."
         )
+        properties["side_sets"] = AIToolRegistry.arraySchema(of: ToolSchemas.sideSet, description: "One or two unique sides; actual per-side loads, never double them. Full replacement of left/right entries.")
         properties["completed"] = AIToolRegistry.boolSchema("Mark the set done (default true). false = plan it without completing.")
         return AIToolRegistry.objectSchema(properties: properties, required: ["exercise_name"])
     }
@@ -151,6 +155,7 @@ public final class LogSetTool: AITool {
         var to_failure: Bool?
         var set_type: String?
         var drop_segments: [DropSegmentArgument]?
+        var side_sets: [SideSetArgument]?
         var completed: Bool?
     }
 
@@ -159,6 +164,11 @@ public final class LogSetTool: AITool {
         if let reps = args.reps, reps < 0 { throw AIToolError("reps must be 0 or more.") }
         let context = try await EditContext(resolver: resolver, args: args, preferences: preferences)
         let exercise = try context.exercise(args)
+        if let sides = args.side_sets {
+            guard (1...2).contains(sides.count), Set(sides.map(\.side)).count == sides.count,
+                  exercise.exercise.strengthRecording?.supportsSeparateSides == true else { throw AIToolError("Use one or two unique sides after configuring side logging on this exercise.") }
+            guard args.completed == nil else { throw AIToolError("Use each side's completed flag with side_sets.") }
+        }
         let changes = SetChanges(
             weightKg: try args.weight?.kilograms(for: exercise.exercise),
             reps: args.reps,
@@ -167,8 +177,9 @@ public final class LogSetTool: AITool {
             intensity: try ToolArguments.intensity(rpe: args.rpe, rir: args.rir),
             setType: try ToolArguments.setType(args.set_type, allowDropset: true),
             isFailure: args.to_failure,
-            isCompleted: args.completed ?? true,
-            dropSegments: try args.drop_segments?.map { try $0.segment(for: exercise.exercise) }
+            isCompleted: args.side_sets == nil ? args.completed ?? true : nil,
+            dropSegments: try args.drop_segments?.map { try $0.segment(for: exercise.exercise) },
+            sideSets: try args.side_sets?.map { try $0.entry() }
         )
 
 
@@ -182,7 +193,7 @@ public final class LogSetTool: AITool {
             } else {
                 target = try context.editor.set(in: exercise.id, number: number)
             }
-        } else if let next = exercise.sets.first(where: { !$0.isCompleted }) {
+        } else if let next = exercise.sets.first(where: { !$0.isFullyCompleted }) {
             target = next
         } else {
             target = try await appendSet(context, exerciseId: exercise.id)
@@ -680,5 +691,34 @@ public final class SetDeloadTool: AITool {
             ),
             activityLabel: "Updated deload flag"
         )
+    }
+}
+
+@MainActor
+public final class ConfigureWeightRecordingTool: AITool {
+    private let resolver: any WorkoutTargetResolving
+    public init(resolver: any WorkoutTargetResolving) { self.resolver = resolver }
+    public let name = "configure_weight_recording"
+    public let description = "Configure how an exercise's weights and sides are logged when the user explicitly describes the setup. Active workouts preserve completed efforts in their original entry. Read get_workout afterwards because occurrence may change. Historical use corrects only that entry's interpretation; explain before changing history. Library defaults are edited in exercise details."
+    public var parametersSchema: JSONValue {
+        var properties = ToolSchemas.target.merging(ToolSchemas.exerciseInWorkout) { $1 }
+        properties["weight_recording"] = ToolSchemas.weightRecording
+        return AIToolRegistry.objectSchema(properties: properties, required: ["exercise_name", "weight_recording"])
+    }
+    private struct Arguments: Decodable {
+        let workout_date: String?
+        let workout_name: String?
+        let exercise_name: String
+        let occurrence: Int?
+        let weight_recording: WeightRecording
+    }
+    public func call(argumentsJSON: String) async throws -> AIToolResult {
+        let args = try decodeArguments(Arguments.self, from: argumentsJSON)
+        try args.weight_recording.validate()
+        let editor = try await resolver.resolve(date: args.workout_date, workoutName: args.workout_name)
+        let entry = try editor.findExercise(named: args.exercise_name, occurrence: args.occurrence ?? 1)
+        try await editor.configureWeightRecording(exerciseId: entry.id, recording: args.weight_recording)
+        await editor.commit()
+        return AIToolResult(outputForModel: AIJSON.string(WorkoutJSON.workout(try editor.snapshot(), scope: editor.scope)), activityLabel: "Updated side logging for \(entry.exercise.name)")
     }
 }

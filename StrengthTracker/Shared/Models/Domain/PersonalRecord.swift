@@ -27,7 +27,7 @@ extension Array where Element == PersonalRecord {
         if exercise.exerciseType == .bodyweightReps {
             return filter { $0.weightRecordingKey == exercise.personalRecordConvention }
         }
-        guard exercise.isDumbbell else { return self }
+        guard exercise.isDumbbell || exercise.strengthRecording != nil else { return filter { $0.weightRecordingKey == nil || $0.recordType == .maxVolume } }
         return compactMap { record in
             guard record.recordType != .maxVolume else { return record }
             let targetKey = exercise.weightRecording?.performanceKey
@@ -35,7 +35,7 @@ extension Array where Element == PersonalRecord {
             guard let key = record.weightRecordingKey, let target = exercise.weightRecording else { return nil }
             let parts = key.split(separator: "/").map(String.init)
             guard parts.count == 3, parts[0] == target.equipment.rawValue,
-                  parts[2] == (target.repetitions == .totalAlternating ? "alternating" : "perMovement"),
+                  parts[2] == target.movementKey,
                   let entry = WeightRecording.WeightEntry(rawValue: parts[1]) else { return nil }
             var copy = record
             if record.recordType == .maxWeight || record.recordType == .estimatedOneRepMax {

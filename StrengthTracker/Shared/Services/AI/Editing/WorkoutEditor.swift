@@ -43,13 +43,14 @@ public struct SetChanges: Sendable, Equatable {
     public var isCompleted: Bool?
     /// Replaces the whole segment group; `[]` collapses a drop set to a plain set.
     public var dropSegments: [DropSegment]?
+    public var sideSets: [SideSetEntry]?
 
     public init(
         weightKg: Double? = nil, reps: Int? = nil,
         durationSeconds: Int? = nil, distanceMeters: Double? = nil,
         intensity: IntensityValue? = nil, setType: SetType? = nil,
         isFailure: Bool? = nil, isCompleted: Bool? = nil,
-        dropSegments: [DropSegment]? = nil
+        dropSegments: [DropSegment]? = nil, sideSets: [SideSetEntry]? = nil
     ) {
         self.weightKg = weightKg
         self.reps = reps
@@ -60,6 +61,7 @@ public struct SetChanges: Sendable, Equatable {
         self.isFailure = isFailure
         self.isCompleted = isCompleted
         self.dropSegments = dropSegments
+        self.sideSets = sideSets
     }
 
     /// True when any parent-row field is set (these are rejected on a drop set).
@@ -215,6 +217,7 @@ public protocol WorkoutEditor: AnyObject {
     func removeSet(exerciseId: UUID, setId: UUID) async throws
     @discardableResult
     func updateSet(exerciseId: UUID, setId: UUID, changes: SetChanges) async throws -> ExerciseSet
+    func configureWeightRecording(exerciseId: UUID, recording: WeightRecording) async throws
     func setWorkoutNotes(_ notes: String?) async throws
     func setExerciseNotes(exerciseId: UUID, notes: String?) async throws
     func setDeload(_ isDeload: Bool) async throws
@@ -223,6 +226,9 @@ public protocol WorkoutEditor: AnyObject {
 }
 
 public extension WorkoutEditor {
+    func configureWeightRecording(exerciseId: UUID, recording: WeightRecording) async throws {
+        throw WorkoutEditError.invalidArgument("This editor does not support changing side logging.")
+    }
     func findExercise(named name: String, occurrence: Int = 1) throws -> WorkoutExercise {
         try WorkoutExerciseResolver.resolve(name: name, occurrence: occurrence, in: try snapshot())
     }
@@ -247,6 +253,14 @@ public extension WorkoutEditor {
     /// Validates parent-field edits against the drop-set invariant (parent
     /// weight/reps are mirrors of segment 1 and must be edited via segments).
     func validateDropSetEdit(_ set: ExerciseSet, exerciseName: String, changes: SetChanges) throws {
+        if changes.sideSets != nil || set.sideSets != nil {
+            guard changes.sideSets != nil || !(changes.touchesParentFields || changes.intensity != nil || changes.isFailure != nil || changes.dropSegments != nil) else {
+                throw WorkoutEditError.invalidArgument("This set has named sides. Pass side_sets to edit left/right values.")
+            }
+            if changes.sideSets != nil && (changes.touchesParentFields || changes.dropSegments != nil || changes.intensity != nil || changes.isFailure != nil) {
+                throw WorkoutEditError.invalidArgument("Pass weight, reps, effort and drops inside side_sets, not on the parent set.")
+            }
+        }
         let willBeDropSet = changes.dropSegments.map { !$0.isEmpty } ?? !set.dropSets.isEmpty
         if willBeDropSet, changes.touchesParentFields {
             throw WorkoutEditError.invalidArgument(

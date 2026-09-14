@@ -492,7 +492,7 @@ struct DumbbellRecordingTests {
         let widget = WidgetActiveWorkout(workoutName: "Push", currentExerciseName: "DB press", currentExerciseId: UUID().uuidString,
             completedSets: 0, totalPlannedSets: 3, startedAt: Date(), isResting: false, restEndDate: nil,
             nextSetWeight: 20.25, nextSetReps: 10, nextExerciseName: nil, weightRecording: .init(repetitions: .perSide))
-        #expect(widget.targetLabel == "20.25 kg each × 10 reps/side")
+        #expect(widget.targetLabel == "20.25 Kg each × 10 reps/side")
         var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(widget)) as? [String: Any])
         object.removeValue(forKey: "weightRecording"); object.removeValue(forKey: "dumbbellConventionUnconfirmed")
         let legacy = try JSONDecoder().decode(WidgetActiveWorkout.self, from: JSONSerialization.data(withJSONObject: object))
@@ -852,5 +852,294 @@ struct BodyweightPercentageTests {
         #expect(result.outputForModel.contains("bodyweight_percent"))
         #expect(result.outputForModel.contains("additional_weight"))
         #expect(result.outputForModel.contains("70"))
+    }
+}
+
+@Suite("Iso-lateral logging")
+@MainActor
+struct SideLoggingTests {
+    func exercise(_ recording: WeightRecording? = .sides(), type: ExerciseType = .weightedReps) -> Exercise {
+        Exercise(id: UUID(), name: "Kneeling cable row", primaryMuscleGroup: .back,
+            secondaryMuscleGroups: [.biceps], category: .cable, exerciseType: type,
+            instructions: nil, isCustom: true, isArchived: false, bodyweightFactor: type == .bodyweightReps ? 0.5 : nil,
+            weightRecording: recording)
+    }
+    func set(_ weight: Double = 41, _ reps: Int = 8, completed: Bool = true) -> ExerciseSet {
+        ExerciseSet(id: UUID(), order: 1, setType: .normal, weight: weight, reps: reps,
+            durationSeconds: nil, distanceMeters: nil, rpe: 8, isCompleted: completed,
+            isPersonalRecord: false, completedAt: completed ? Date() : nil)
+    }
+    func entry(_ exercise: Exercise, _ set: ExerciseSet) -> WorkoutExercise {
+        WorkoutExercise(id: UUID(), exercise: exercise, order: 1, supersetGroup: nil, notes: nil, restTimerSeconds: 120, sets: [set])
+    }
+
+    @Test("Recorded-load volume follows the physical setup, not the equipment category")
+    func scenarioMatrix() throws {
+        let scenarios: [(WeightRecording, Double, Int, Double)] = [
+            (.sides(), 41, 8, 656),
+            (.sides(execution: .sequential, resistance: .shared, weightEntry: .displayed), 41, 8, 656),
+            (.sides(execution: .together, weightEntry: .combined), 82, 8, 656),
+            (.sides(execution: .together), 41, 8, 656),
+            (.sides(execution: .together, resistance: .shared, weightEntry: .displayed), 41, 8, 328),
+            (.sides(resistance: .carriedPair, weightEntry: .combined), 48, 8, 768),
+            (.sides(resistance: .carriedPair, weightEntry: .perDumbbell), 24, 8, 768)
+        ]
+        for (recording, weight, reps, expected) in scenarios {
+            try recording.validate()
+            for category in [ExerciseCategory.cable, .machine, .plate, .kettlebell, .dumbbell, .other] {
+                var exercise = exercise(recording); exercise.category = category
+                #expect(exercise.volume(of: set(weight, reps), bodyWeightKg: 80) == expected)
+                #expect(exercise.weightRecording == recording)
+            }
+        }
+    }
+
+    @Test("Expanding equal sides preserves volume, strength and set credits in every configuration")
+    func equivalentRepresentations() throws {
+        let configs: [WeightRecording] = [.sides(), .sides(execution: .together), .sides(execution: .together, weightEntry: .combined),
+            .sides(resistance: .shared, weightEntry: .displayed), .sides(resistance: .carriedPair, weightEntry: .combined),
+            .sides(resistance: .carriedPair, weightEntry: .perDumbbell)]
+        for config in configs {
+            for type in [ExerciseType.weightedReps, .bodyweightReps] {
+                let exercise = exercise(config, type: type)
+                let collapsed = set()
+                var expanded = collapsed; expanded.separateSides(recording: config)
+                #expect(expanded.sideSets?.count == 2)
+                #expect(exercise.volume(of: expanded, bodyWeightKg: 80) == exercise.volume(of: collapsed, bodyWeightKg: 80))
+                #expect(entry(exercise, collapsed).workingSetCredits == entry(exercise, expanded).workingSetCredits)
+                let a = AnalyticsCalculations.bestE1RM(for: collapsed, baseLoadPerRep: exercise.baseLoadPerRep(bodyWeightKg: 80), recording: config)
+                let b = AnalyticsCalculations.bestE1RM(for: expanded, baseLoadPerRep: exercise.baseLoadPerRep(bodyWeightKg: 80), recording: config)
+                #expect(a == b)
+            }
+        }
+    }
+
+    @Test("Unequal, partial, one-sided and warm-up work uses only the performed efforts")
+    func partialSides() throws {
+        let exercise = exercise()
+        var parent = set(completed: false)
+        parent.applySideSets([.init(side: .left, effort: set(41, 8)), .init(side: .right, effort: set(36, 6, completed: false))])
+        #expect(exercise.volume(of: parent, bodyWeightKg: 80) == 328)
+        #expect(parent.isCompleted && !parent.isFullyCompleted)
+        #expect(entry(exercise, parent).workingSetCredits == 0.5)
+        #expect(parent.strengthParts(baseLoadPerRep: nil, recording: exercise.strengthRecording).isEmpty)
+        parent.applySideSets([.init(side: .left, effort: set(41, 8)), .init(side: .right, effort: set(36, 6))])
+        #expect(exercise.volume(of: parent, bodyWeightKg: 80) == 544)
+        #expect(parent.isFullyCompleted)
+        #expect(parent.strengthParts(baseLoadPerRep: nil, recording: exercise.strengthRecording).first?.load == 36)
+        parent.applySideSets([.init(side: .left, effort: set(41, 8))])
+        #expect(parent.isFullyCompleted)
+        #expect(exercise.volume(of: parent, bodyWeightKg: 80) == 328)
+        #expect(entry(exercise, parent).workingSetCredits == 0.5)
+        var warmup = set(36, 6); warmup.setType = .warmup
+        parent.applySideSets([.init(side: .left, effort: set()), .init(side: .right, effort: warmup)])
+        #expect(exercise.volume(of: parent, bodyWeightKg: 80) == 328)
+        #expect(parent.workingSetCredit == 0.5)
+        #expect(parent.strengthParts(baseLoadPerRep: nil, recording: exercise.strengthRecording).isEmpty)
+    }
+
+    @Test("Side drops remain separate from left/right grouping and round-trip through JSON and persistence")
+    func sideDropsRoundTrip() throws {
+        let exercise = exercise()
+        var left = set(); left.applyDropSets([.init(weight: 41, reps: 8), .init(weight: 30, reps: 6)])
+        var right = set(); right.applyDropSets([.init(weight: 36, reps: 8), .init(weight: 25, reps: 6)])
+        var parent = set(); parent.applySideSets([.init(side: .left, effort: left), .init(side: .right, effort: right)])
+        #expect(parent.dropSets.isEmpty)
+        #expect(exercise.volume(of: parent, bodyWeightKg: 80) == 946)
+        #expect(parent.workingSetCredit == 1)
+        #expect(try JSONDecoder().decode(ExerciseSet.self, from: JSONEncoder().encode(parent)) == parent)
+        #if canImport(SwiftData)
+        let entity = ExerciseSetMapper.toEntity(parent)
+        #expect(ExerciseSetMapper.toDomain(entity) == parent)
+        var changed = parent; changed.setCompleted(false)
+        ExerciseSetMapper.updateEntity(entity, from: changed)
+        #expect(ExerciseSetMapper.toDomain(entity) == changed)
+        #expect(exercise.volume(of: changed, bodyWeightKg: 80) == 0)
+        #endif
+    }
+
+    @Test("Legacy nil and dumbbell metadata decode unchanged; new settings do not guess old execution")
+    func backwardCompatibility() throws {
+        let old = "{\"equipment\":\"pair\",\"weightEntry\":\"perDumbbell\",\"repetitions\":\"perSide\"}"
+        let legacy = try #require(WeightRecording.decode(old))
+        #expect(legacy.execution == nil)
+        #expect(legacy.volumeMultiplier == 4)
+        #expect(legacy.performanceKey == "pair/perDumbbell/perMovement")
+        let unknown = exercise(nil)
+        #expect(unknown.volume(of: set(), bodyWeightKg: 80) == 328)
+        var configured = unknown; configured.weightRecording = .sides()
+        #expect(!WeightRecordingHistory.convertible(unknown, to: configured))
+        var before = set()
+        let data = try JSONEncoder().encode(before)
+        var object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object.removeValue(forKey: "sideSets")
+        before = try JSONDecoder().decode(ExerciseSet.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(before.sideSets == nil)
+        #expect(before.weight == 41)
+    }
+
+    @Test("Strength comparisons convert display basis only within the same execution")
+    func comparisonsAndConversions() throws {
+        let source = exercise(.sides(execution: .together))
+        var combined = source; combined.weightRecording = .sides(execution: .together, weightEntry: .combined)
+        #expect(WeightRecordingHistory.convertible(source, to: combined))
+        #expect(WeightRecordingHistory.converted(entry(source, set()), to: combined).sets[0].weight == 82)
+        var expanded = set(); expanded.separateSides(recording: source.weightRecording!)
+        let converted = WeightRecordingHistory.converted(entry(source, expanded), to: combined)
+        #expect(converted.sets[0].sideSets?.first?.effort.weight == 41)
+        #expect(converted.sets[0].strengthParts(baseLoadPerRep: nil, recording: combined.strengthRecording).first?.load == 82)
+        #expect(converted.exerciseVolume(bodyWeightKg: 80) == 656)
+        var sequential = source; sequential.weightRecording = .sides()
+        #expect(!WeightRecordingHistory.convertible(sequential, to: combined))
+        #expect(source.performanceConvention != sequential.performanceConvention)
+        #expect(try WeightRecordingHistory.inputWeight(82, entry: .combined, for: source) == 41)
+        #expect(try WeightRecordingHistory.inputWeight(WeightUnit.lbs.toKg(90.3895), entry: .perSide, for: source) > 40.99)
+    }
+
+    @Test("Alternating reps can be converted without doubling strength; odd totals cannot silently expand")
+    func alternating() throws {
+        var config = WeightRecording.sides(execution: .alternating); config.repetitions = .totalAlternating
+        let exercise = exercise(config)
+        var even = set(41, 16); even.separateSides(recording: config)
+        #expect(even.sideSets?.first?.effort.reps == 8)
+        #expect(exercise.volume(of: even, bodyWeightKg: 80) == 656)
+        var odd = set(41, 15); odd.separateSides(recording: config)
+        #expect(odd.sideSets == nil)
+        #expect(odd.strengthParts(baseLoadPerRep: nil, recording: config).isEmpty)
+        #expect(exercise.volume(of: odd, bodyWeightKg: 80) == 615)
+    }
+
+    @Test("Bad configurations are rejected and ordinary cards need no side setup")
+    func validationAndDiscovery() throws {
+        var bad = WeightRecording.sides(); bad.execution = nil
+        #expect(throws: WorkoutEditError.self) { try bad.validate() }
+        bad = .sides(execution: .together); bad.repetitions = .perSide
+        #expect(throws: WorkoutEditError.self) { try bad.validate() }
+        let regular = exercise(nil)
+        #expect(regular.weightRecordingExplanation == nil)
+        #expect(regular.weightEntryLabel(.kg) == "Kg")
+        #expect(regular.suggestedSideRecording == nil)
+        var library = regular; library.name = "Single-Arm Cable Row"; library.isCustom = false
+        #expect(library.suggestedSideRecording != nil)
+        #expect(library.weightRecording == nil)
+        library.isCustom = true
+        #expect(library.suggestedSideRecording == nil)
+        let custom = try ExerciseFactory.makeCustom(name: "My row", primaryMuscleGroup: .back, category: .machine, exerciseType: .weightedReps, weightRecording: .sides())
+        #expect(custom.strengthRecording == .sides())
+    }
+
+    @Test("Finishing and unfinishing a partial pair updates both sides and active traversal")
+    func completion() throws {
+        let exercise = exercise()
+        var partial = set(); partial.applySideSets([.init(side: .left, effort: set()), .init(side: .right, effort: set(completed: false))])
+        let row = entry(exercise, partial)
+        var workout = Workout(id: UUID(), name: "Pull", startedAt: Date(), completedAt: nil, notes: nil, templateId: nil, exercises: [row])
+        #expect(workout.activeExercise(preferredId: nil)?.id == row.id)
+        #expect(workout.toggleSetCompletion(exerciseId: row.id, setId: partial.id) == true)
+        #expect(workout.exercises[0].sets[0].isFullyCompleted)
+        #expect(workout.toggleSetCompletion(exerciseId: row.id, setId: partial.id) == false)
+        #expect(workout.exercises[0].sets[0].completedSideCount == 0)
+        #expect(workout.totalVolume(bodyWeightKg: 80) == 0)
+    }
+}
+
+extension SideLoggingTests {
+    @Test("Cable historical correction has a reviewed volume change and an exact undo")
+    func correctionAndUndo() async throws {
+        let suite = "side-correction-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let es = InMemoryExerciseRepository(), ws = InMemoryWorkoutRepository()
+        let ts = InMemoryTemplateRepository(), ps = InMemoryProgressionPlanRepository()
+        let exercise = exercise(nil)
+        _ = try await es.save(exercise)
+        let original = Workout(id: UUID(), name: "Pull", startedAt: Date().addingTimeInterval(-3600), completedAt: Date(), notes: nil, templateId: nil, exercises: [entry(exercise, set())])
+        _ = try await ws.save(original)
+        let service = WeightRecordingService(workouts: ws, exercises: es, templates: ts, plans: ps, defaults: defaults)
+        #expect(try await service.catalog().contains { $0.id == exercise.id })
+        let preview = try await service.preview(selections: [exercise.id: .sides()], history: DateInterval(start: .distantPast, end: .distantFuture), updateFuture: true, bodyWeightKg: 80)
+        #expect(preview.beforeVolume == 328)
+        #expect(preview.afterVolume == 656)
+        #expect(try await ws.fetchAll().first == original)
+        try await service.apply(preview)
+        #expect(try await ws.fetchAll().first?.exercises[0].sets == original.exercises[0].sets)
+        #expect(try await ws.fetchAll().first?.totalVolume(bodyWeightKg: 80) == 656)
+        try await service.undo()
+        #expect(try await ws.fetchAll().first == original)
+    }
+
+    @Test("Muscle exposure and recovery are invariant when an equal set expands into named sides")
+    func analyticsEquivalence() async throws {
+        let exercise = exercise()
+        let collapsed = set()
+        var expanded = collapsed; expanded.separateSides(recording: exercise.weightRecording!)
+        let stamp = Date().addingTimeInterval(-3600)
+        let a = Workout(id: UUID(), name: "Pull", startedAt: stamp, completedAt: stamp.addingTimeInterval(1000), notes: nil, templateId: nil, exercises: [entry(exercise, collapsed)])
+        var b = a; b.exercises[0].sets = [expanded]
+        let balance = MuscleBalanceService()
+        let volumesA = balance.analyzeBalance(workouts: [a], bodyWeightKg: 80).muscleGroupVolumes
+        let volumesB = balance.analyzeBalance(workouts: [b], bodyWeightKg: 80).muscleGroupVolumes
+        #expect(volumesA.map(\.muscleGroup) == volumesB.map(\.muscleGroup))
+        #expect(volumesA.map(\.weeklyVolume) == volumesB.map(\.weeklyVolume))
+        #expect(volumesA.map(\.directWeeklySets) == volumesB.map(\.directWeeklySets))
+        #expect(volumesA.map(\.indirectWeeklySets) == volumesB.map(\.indirectWeeklySets))
+        let recovery = RecoveryEstimationService(workoutRepository: InMemoryWorkoutRepository())
+        let now = Date()
+        let recoveryA = try await recovery.computeRecoveryPatterns(workouts: [a], bodyWeightKg: 80, now: now)
+        let recoveryB = try await recovery.computeRecoveryPatterns(workouts: [b], bodyWeightKg: 80, now: now)
+        #expect(recoveryA.map(\.exposureCredits) == recoveryB.map(\.exposureCredits))
+        #expect(recoveryA.map(\.readyToTrainDate) == recoveryB.map(\.readyToTrainDate))
+    }
+
+    @Test("Weight suggestions stay at the per-side load and use the lower side, never the combined volume")
+    func suggestions() throws {
+        let exercise = exercise()
+        let now = Date()
+        let workouts = (1...3).map { day -> Workout in
+            var parent = set()
+            parent.applySideSets([.init(side: .left, effort: set(45, 8)), .init(side: .right, effort: set(41, 8))])
+            let stamp = now.addingTimeInterval(Double(-day) * 86400)
+            return Workout(id: UUID(), name: "Pull", startedAt: stamp, completedAt: stamp.addingTimeInterval(3600), notes: nil, templateId: nil, exercises: [entry(exercise, parent)])
+        }
+        let suggestion = WeightSuggestionService().suggest(exerciseId: exercise.id, exerciseName: exercise.name, targetReps: 8,
+            recentWorkouts: workouts, overloadTrend: nil, recoveryStatus: nil, trainingLoad: nil, isDeload: false,
+            bodyWeightKg: 80, recordingReference: exercise, now: now)
+        #expect(suggestion?.weight == 41)
+        #expect(suggestion?.evidence.first?.description(unit: .kg, reference: exercise).contains("Right: 41") == true)
+        var simultaneous = exercise; simultaneous.weightRecording = .sides(execution: .together)
+        #expect(WeightSuggestionService().suggest(exerciseId: exercise.id, exerciseName: exercise.name, targetReps: 8,
+            recentWorkouts: workouts, overloadTrend: nil, recoveryStatus: nil, trainingLoad: nil, isDeload: false,
+            bodyWeightKg: 80, recordingReference: simultaneous, now: now) == nil)
+    }
+}
+
+extension SideLoggingTests {
+    @Test("Training load and quality IWV are invariant under side expansion, with half credit for a partial pair")
+    func intensityWeightedLoad() {
+        for config in [WeightRecording.sides(), .sides(execution: .together, weightEntry: .combined), .sides(resistance: .carriedPair, weightEntry: .combined)] {
+            for base in [Double?.none, 40] {
+                let collapsed = set()
+                var expanded = collapsed; expanded.separateSides(recording: config)
+                let a = AnalyticsCalculations.setIWV(for: collapsed, bestE1RM: 120, baseLoadPerRep: base, recording: config)
+                let b = AnalyticsCalculations.setIWV(for: expanded, bestE1RM: 120, baseLoadPerRep: base, recording: config)
+                #expect(abs(a - b) < 0.000001)
+                var sides = expanded.sideSets!
+                sides[1].effort.setCompleted(false); expanded.applySideSets(sides)
+                let partial = AnalyticsCalculations.setIWV(for: expanded, bestE1RM: 120, baseLoadPerRep: base, recording: config)
+                #expect(abs(partial - a / 2) < 0.000001)
+            }
+        }
+    }
+
+    @Test("Naming a one-side-only row never fabricates another side")
+    func nameSingleSide() {
+        var config = WeightRecording.sides(); config.repetitions = .oneSide
+        var unnamed = set()
+        unnamed.separateSides(recording: config)
+        #expect(unnamed.sideSets == nil)
+        unnamed.separateSides(recording: config, onlySide: .right)
+        #expect(unnamed.sideSets?.map(\.side) == [.right])
+        #expect(exercise(config).volume(of: unnamed, bodyWeightKg: 80) == 328)
+        #expect(unnamed.workingSetCredit == 0.5)
     }
 }

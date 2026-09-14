@@ -18,9 +18,12 @@ public struct WeightSuggestion: Sendable {
         public let reps: Int
         public let convertedWeight: Double
         public let estimatedStrength: Double
+        public var sourceSides: [SideSetEntry]? = nil
 
         public func description(unit: WeightUnit, reference: Exercise?) -> String {
-            let original = originalExercise.recordedPerformance(weight: originalWeight, reps: reps, unit: unit)
+            let original = sourceSides.map { sides in
+                sides.map { "\($0.side.title): \(unit.formatValue($0.effort.weight ?? 0)) \(originalExercise.strengthRecording?.sideWeightLabel(unit) ?? unit.symbol) × \($0.effort.reps ?? 0)" }.joined(separator: " · ") + "; lower-side estimate"
+            } ?? originalExercise.recordedPerformance(weight: originalWeight, reps: reps, unit: unit)
             guard let reference, reference.performanceConvention != originalExercise.performanceConvention else { return original }
             return "\(original) → \(reference.recordedPerformance(weight: convertedWeight, reps: reps, unit: unit))"
         }

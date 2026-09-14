@@ -19,6 +19,7 @@ struct SetRowGridView: View {
     var onSetTypeChange: (SetType) -> Void = { _ in }
     var onAddDropEntry: (() -> Void)? = nil
     var onToggleFailure: (() -> Void)? = nil
+    var labelOverride: String? = nil
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var showingWeightExplanation = false
 
@@ -55,7 +56,7 @@ struct SetRowGridView: View {
             } else {
                 STSetValuesEditor(weight: exerciseSet.weight, reps: exerciseSet.reps,
                     intensity: exerciseSet.intensityValue(for: intensityMetric), showIntensity: showRPE,
-                    intensityMetric: intensityMetric, weightUnit: weightUnit, weightLabel: weightLabel, repsLabel: repsLabel, context: "Set \(setNumber)",
+                    intensityMetric: intensityMetric, weightUnit: weightUnit, weightLabel: weightLabel, repsLabel: repsLabel, context: labelOverride ?? "Set \(setNumber)",
                     onWeightChange: onWeightChange, onRepsChange: onRepsChange, onIntensityChange: { onIntensityChange?($0) })
             }
         }
@@ -73,7 +74,7 @@ struct SetRowGridView: View {
         STCheckbox(isChecked: exerciseSet.isCompleted) {
             guard STNumericTextField.commitActiveInput() else { return }
             onToggleComplete()
-        }.accessibilityLabel("\(exerciseSet.isCompleted ? "Uncomplete" : "Complete") set \(setNumber)")
+        }.accessibilityLabel("\(exerciseSet.isCompleted ? "Uncomplete" : "Complete") \(labelOverride ?? "set \(setNumber)")")
     }
 
     @ViewBuilder private var failureButton: some View {
@@ -87,7 +88,7 @@ struct SetRowGridView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(isFailureOn ? "Unmark" : "Mark") set \(setNumber) as taken to failure")
+            .accessibilityLabel("\(isFailureOn ? "Unmark" : "Mark") \(labelOverride ?? "set \(setNumber)") as taken to failure")
             .accessibilityValue(isFailureOn ? "On" : "Off")
             .accessibilityIdentifier("set-failure-\(exerciseSet.id)")
         }
@@ -137,7 +138,7 @@ struct SetRowGridView: View {
             }
         } label: {
             HStack(spacing: 6) {
-                Text("Set \(setNumber) · \(setTypeLabel)")
+                Text("\(labelOverride ?? "Set \(setNumber)") · \(setTypeLabel)")
                     .fixedSize(horizontal: false, vertical: true)
                 Image(systemName: "chevron.down").font(.caption.weight(.semibold))
             }
@@ -151,7 +152,7 @@ struct SetRowGridView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Set \(setNumber), \(setTypeLabel)")
+        .accessibilityLabel("\(labelOverride ?? "Set \(setNumber)"), \(setTypeLabel)")
         .accessibilityHint("Opens set type and options")
         .accessibilityIdentifier("set-type-\(exerciseSet.id)")
     }

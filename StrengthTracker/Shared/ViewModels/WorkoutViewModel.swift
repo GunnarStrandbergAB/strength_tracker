@@ -94,6 +94,7 @@ public final class WorkoutViewModel {
     private let bodyWeightProvider: BodyWeightProvider?
     private let exerciseRepository: (any ExerciseRepository)?
     private var bodyweightLibrary: [Exercise] = []
+    public var onRecordingDefaultSaved: (@MainActor () async -> Void)?
 
     /// Single resolved body weight (HealthKit → prefs → default) shared with every screen.
     private var bodyWeightKg: Double {
@@ -253,8 +254,8 @@ public final class WorkoutViewModel {
         _ exercise: Exercise, sets: [ExerciseSet], restTimerSeconds: Int?, notes: String?
     ) -> (Workout, WorkoutExercise)? {
         guard var workout = currentWorkout else { return nil }
-        let exercise = workout.exercises.first(where: { $0.exercise.id == exercise.id })?.exercise
-            ?? exercise.resolvingBodyweight(from: bodyweightLibrary)
+        let exercise = workout.exercises.last(where: { $0.exercise.id == exercise.id })?.exercise
+            ?? (bodyweightLibrary.first { $0.id == exercise.id } ?? exercise).resolvingBodyweight(from: bodyweightLibrary)
         var numbered = sets
         for i in numbered.indices { numbered[i].order = i + 1 }
         let workoutExercise = WorkoutExercise(
@@ -274,10 +275,47 @@ public final class WorkoutViewModel {
 
     /// Swaps the exercise of a logged WorkoutExercise while keeping its id, order,
     /// notes and every set. Per-set PR flags are cleared (they belonged to the old exercise).
+    public func saveWeightRecordingDefault(exerciseId: UUID, recording: WeightRecording) async {
+        guard let exerciseRepository else { return }
+        do {
+            try recording.validate()
+            guard var exercise = try await exerciseRepository.fetchAll().first(where: { $0.id == exerciseId }) else { return }
+            exercise.weightRecording = recording
+            _ = try await exerciseRepository.save(exercise)
+            bodyweightLibrary = try await exerciseRepository.fetchAll()
+            await onRecordingDefaultSaved?()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
     public func updateWeightRecording(exerciseId: UUID, recording: WeightRecording) async {
         guard var workout = currentWorkout, let i = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
-              workout.exercises[i].exercise.isDumbbell else { return }
-        workout.exercises[i].exercise.weightRecording = recording
+              workout.exercises[i].exercise.supportsWeightRecording else { return }
+        do { try recording.validate() } catch { errorMessage = error.localizedDescription; return }
+        // Preserve completed or partially completed efforts in their original entry.
+        // A new entry carries only the unfinished targets under the new convention.
+        let original = workout.exercises[i]
+        var reference = original.exercise; reference.weightRecording = recording
+        let sideAwareChange = recording.hasSideConfiguration || original.exercise.weightRecording?.hasSideConfiguration == true
+        var revised = sideAwareChange ? WeightRecordingHistory.converted(original, to: reference) : original
+        if sideAwareChange && original.exercise.weightRecording != nil && original.exercise.performanceConvention != reference.performanceConvention && !WeightRecordingHistory.convertible(original.exercise, to: reference) {
+            for index in revised.sets.indices where !revised.sets[index].isCompleted {
+                revised.sets[index].weight = nil
+                if !revised.sets[index].dropSets.isEmpty { revised.sets[index].applyDropSets(revised.sets[index].dropSets.map { var part = $0; part.weight = nil; return part }) }
+            }
+        }
+        if original.exercise.weightRecording != recording, original.sets.contains(where: \.isCompleted) {
+            var pending = revised.sets.filter { !$0.isCompleted }
+            for index in pending.indices { pending[index].order = index + 1 }
+            workout.exercises[i].sets = original.sets.filter(\.isCompleted)
+            var next = original.exercise
+            next.weightRecording = recording
+            let entry = WorkoutExercise(id: UUID(), exercise: next, order: original.order + 1,
+                supersetGroup: original.supersetGroup, notes: original.notes,
+                restTimerSeconds: original.restTimerSeconds, sets: pending)
+            workout.exercises.insert(entry, at: i + 1)
+            for index in workout.exercises.indices { workout.exercises[index].order = index + 1 }
+            activeExerciseId = entry.id
+        } else { workout.exercises[i] = revised; workout.exercises[i].exercise.weightRecording = recording }
         exerciseCoachingCache[exerciseId] = nil
         previousSetDataCache = previousSetDataCache.filter { !$0.key.hasPrefix(exerciseId.uuidString + "-") }
         await persist(workout)
@@ -531,7 +569,11 @@ public final class WorkoutViewModel {
                 guard priorSet.isCompleted, let reps = priorSet.reps else { continue }
                 // Format with the source repetition convention: a separate-side
                 // observation must not be relabelled as a completed pair of sides.
-                cache["\(entry.id)-\(set.id)"] = prior.exercise.recordedPerformance(weight: priorSet.weight ?? 0, reps: reps, unit: unit)
+                if let sides = priorSet.sideSets {
+                    cache["\(entry.id)-\(set.id)"] = sides.filter { $0.effort.isCompleted }.map {
+                        "\($0.side.title): \(unit.formatValue($0.effort.weight ?? 0)) \(prior.exercise.strengthRecording?.sideWeightLabel(unit) ?? unit.symbol) × \($0.effort.reps ?? 0)"
+                    }.joined(separator: " · ")
+                } else { cache["\(entry.id)-\(set.id)"] = prior.exercise.recordedPerformance(weight: priorSet.weight ?? 0, reps: reps, unit: unit) }
             }
         }
     }
@@ -698,6 +740,13 @@ public final class WorkoutViewModel {
         await mutateSet(exerciseId: exerciseId, setId: setId) { set in
             set.applyDropSets(entries)
         }
+    }
+
+    public func replaceSideSets(exerciseId: UUID, setId: UUID, entries: [SideSetEntry]) async {
+        guard let entry = currentWorkout?.exercises.first(where: { $0.id == exerciseId }),
+              entry.exercise.strengthRecording?.supportsSeparateSides == true else { return }
+        await mutateSet(exerciseId: exerciseId, setId: setId) { $0.applySideSets(entries) }
+        await reelectPRs(exerciseId: exerciseId)
     }
 
     /// Appends pre-built sets (renumbered here) in one save. Returns the saved sets.
@@ -944,10 +993,15 @@ public final class WorkoutViewModel {
         let templateExercises = template.exercises.sorted { $0.order < $1.order }
         for (ei, we) in workout.exercises.enumerated() {
             guard let te = templateExercises.first(where: { $0.exercise.id == we.exercise.id }) else { continue }
-            for (si, set) in we.sets.enumerated() where !set.isCompleted {
+            guard te.exercise.performanceConvention == we.exercise.performanceConvention || WeightRecordingHistory.convertible(te.exercise, to: we.exercise) else { continue }
+            for (si, set) in we.sets.enumerated() where !set.isCompleted && set.sideSets == nil {
                 let target = te.setTargets.indices.contains(si) ? te.setTargets[si] : nil
-                workout.exercises[ei].sets[si].weight = target?.targetWeight ?? te.targetWeight
-                workout.exercises[ei].sets[si].reps = target?.targetReps ?? te.targetReps
+                let weight = target?.targetWeight ?? te.targetWeight
+                workout.exercises[ei].sets[si].weight = weight.flatMap { WeightRecordingHistory.convertWeight($0, from: te.exercise.strengthRecording, to: we.exercise.strengthRecording) }
+                let reps = target?.targetReps ?? te.targetReps
+                if te.exercise.strengthRecording?.repetitions != we.exercise.strengthRecording?.repetitions {
+                    workout.exercises[ei].sets[si].reps = reps.flatMap { te.exercise.strengthReps($0) }.map { we.exercise.strengthRecording?.repetitions == .totalAlternating ? $0 * 2 : $0 }
+                } else { workout.exercises[ei].sets[si].reps = reps }
             }
         }
         do {

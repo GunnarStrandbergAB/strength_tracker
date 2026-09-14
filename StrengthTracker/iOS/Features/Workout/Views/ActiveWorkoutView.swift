@@ -129,7 +129,7 @@ struct ActiveWorkoutView: View {
                         .foregroundStyle(STColors.textSecondary)
                 }
 
-                let totalSets = workout.exercises.reduce(0) { $0 + $1.sets.filter(\.isCompleted).count }
+                let totalSets = workout.exercises.reduce(0) { $0 + $1.sets.filter(\.isFullyCompleted).count }
                 Text("\(totalSets) sets completed")
                     .font(.subheadline)
                     .foregroundStyle(STColors.textSecondary)
@@ -449,7 +449,10 @@ struct ActiveWorkoutView: View {
             alwaysShowRPE: viewModel.userPreferencesService?.alwaysShowRPE ?? false,
             intensityMetric: intensityMetric,
             weightUnit: viewModel.userPreferencesService?.weightUnit ?? .kg,
-            onWeightRecordingChange: { recording in enqueueEdit { await viewModel.updateWeightRecording(exerciseId: workoutExercise.id, recording: recording) } }
+            onWeightRecordingChange: { recording in enqueueEdit { await viewModel.updateWeightRecording(exerciseId: workoutExercise.id, recording: recording) } },
+            onSideSetsChange: { setId, sides in enqueueEdit { await coordinator.updateSideSets(exerciseId: workoutExercise.id, setId: setId, entries: sides) } },
+            onSideRest: { setId in coordinator.restBetweenSides(exerciseId: workoutExercise.id, setId: setId) },
+            onSaveRecordingDefault: { recording in enqueueEdit { await viewModel.saveWeightRecordingDefault(exerciseId: workoutExercise.exercise.id, recording: recording) } }
         )
     }
 

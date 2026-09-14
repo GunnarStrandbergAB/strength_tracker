@@ -24,11 +24,11 @@ public final class RecoveryEstimationService: Sendable {
             var effortSum: [MuscleGroup: Double] = [:]
             for we in workout.exercises {
                 let sets = we.sets.filter { $0.isCompleted && $0.setType != .warmup }
-                let credits = AnalyticsCalculations.attributeHardSetCredits(hardSets: sets.count,
+                let credits = AnalyticsCalculations.attributeHardSetCredits(hardSets: we.workingSetCredits,
                     primaryMuscle: we.exercise.primaryMuscleGroup, secondaryMuscles: we.exercise.secondaryMuscleGroups)
                 let effort = sets.compactMap(\.rpe)
                 let mean = effort.isEmpty ? 0.8 : effort.reduce(0, +) / Double(effort.count) / 10
-                direct[we.exercise.primaryMuscleGroup, default: 0] += Double(sets.count)
+                direct[we.exercise.primaryMuscleGroup, default: 0] += we.workingSetCredits
                 for (muscle, dose) in credits {
                     doses[muscle, default: 0] += dose
                     effortSum[muscle, default: 0] += dose * mean

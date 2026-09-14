@@ -61,18 +61,25 @@ public enum AnalyticsCalculations {
     /// pct1RM = min(load / bestE1RM, 1.5), falling back to 0.75 when no e1RM is
     /// known — identical to the historical per-set loops this replaces.
     /// Returns 0 for incomplete or warmup sets.
-    public static func setIWV(for set: ExerciseSet, bestE1RM: Double?, baseLoadPerRep: Double?, modulateRPE: Bool = true) -> Double {
+    public static func setIWV(for set: ExerciseSet, bestE1RM: Double?, baseLoadPerRep: Double?, modulateRPE: Bool = true, recording: WeightRecording? = nil) -> Double {
         guard set.isCompleted, set.setType != .warmup else { return 0 }
-        return set.effectiveParts.reduce(0) { sum, part in
-            guard let load = part.effectiveLoad(baseLoadPerRep: baseLoadPerRep), load > 0,
-                  let reps = part.reps, reps > 0 else { return sum }
-            let pct1RM: Double
-            if let best = bestE1RM, best > 0 {
-                pct1RM = min(load / best, 1.5)
-            } else {
-                pct1RM = 0.75
+        func contribution(_ part: DropSetEntry, scale: Double, reps: Int?) -> Double {
+            let load = (baseLoadPerRep ?? 0) + (part.weight ?? 0) * scale
+            guard load > 0, let reps, reps > 0 else { return 0 }
+            let pct = bestE1RM.flatMap { $0 > 0 ? min(load / $0, 1.5) : nil } ?? 0.75
+            return setIWV(reps: reps, pct1RM: pct, rpe: modulateRPE ? part.rpe : nil)
+        }
+        if let sides = set.sideSets {
+            // Average a pair's effort, keeping half credit for a single performed
+            // side. Expanding the UI must not double the training load.
+            return sides.filter { $0.effort.isCompleted && $0.effort.setType != .warmup }.reduce(0) { total, side in
+                total + side.effort.effectiveParts.reduce(0) { $0 + contribution($1, scale: 1 / (recording?.sideWeightScale ?? 1), reps: $1.reps) * 0.5 }
             }
-            return sum + setIWV(reps: reps, pct1RM: pct1RM, rpe: modulateRPE ? part.rpe : nil)
+        }
+        let coverage = recording?.repetitions == .oneSide ? 0.5 : 1.0
+        return set.effectiveParts.reduce(0) { total, part in
+            let reps = part.reps.flatMap { recording == nil ? $0 : recording?.strengthReps($0) }
+            return total + contribution(part, scale: 1, reps: reps) * coverage
         }
     }
 
@@ -165,6 +172,12 @@ public enum AnalyticsCalculations {
         for muscle in secondaryMuscles {
             result[muscle, default: 0] += creditPerSecondary
         }
+        return result
+    }
+
+    public static func attributeHardSetCredits(hardSets: Double, primaryMuscle: MuscleGroup, secondaryMuscles: [MuscleGroup]) -> [MuscleGroup: Double] {
+        var result = [primaryMuscle: hardSets]
+        for muscle in secondaryMuscles { result[muscle, default: 0] += hardSets * 0.5 / Double(max(1, secondaryMuscles.count)) }
         return result
     }
 

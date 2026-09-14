@@ -5,6 +5,9 @@ struct WatchSetInputView: View {
     @State private var viewModel: WatchWorkoutViewModel
     @State private var weight: Double = 20.0
     @State private var reps: Double = 10.0
+    @State private var separateSides = false
+    @State private var selectedSide: BodySide = .left
+    @State private var sideError: String?
     @FocusState private var focusedField: Field?
 
     enum Field {
@@ -13,7 +16,7 @@ struct WatchSetInputView: View {
 
     private let weightUnit: WeightUnit
     private var weightStep: Double { weightUnit == .kg ? 2.5 : 5.0 }
-    private var weightLabel: String { viewModel.currentExercise?.exercise.weightEntryLabel(weightUnit) ?? weightUnit.symbol }
+    private var weightLabel: String { separateSides ? viewModel.currentExercise?.exercise.strengthRecording?.sideWeightLabel(weightUnit) ?? weightUnit.symbol : viewModel.currentExercise?.exercise.weightEntryLabel(weightUnit) ?? weightUnit.symbol }
 
     init(viewModel: WatchWorkoutViewModel, targetWeight: Double? = nil, targetReps: Int? = nil) {
         let prefs = UserPreferencesService()
@@ -31,6 +34,18 @@ struct WatchSetInputView: View {
 
     var body: some View {
         VStack(spacing: 6) {
+            if let recording = viewModel.currentExercise?.exercise.strengthRecording {
+                if recording.supportsSeparateSides {
+                    if separateSides {
+                        Picker("Side", selection: $selectedSide) { ForEach(BodySide.allCases, id: \.self) { Text($0.title).tag($0) } }
+                            .onChange(of: selectedSide) { _, _ in loadSide() }
+                    } else {
+                        Button("Log left / right separately") { separateSides = true; loadSide() }.font(.caption2)
+                        Text(recording.summary).font(.caption2).foregroundStyle(secondaryText)
+                    }
+                } else { Text(recording.summary).font(.caption2).foregroundStyle(secondaryText) }
+            }
+            if let sideError { Text(sideError).font(.caption2).foregroundStyle(.red) }
             // Weight / Reps grid
             HStack(spacing: 4) {
                 // Weight card
@@ -47,7 +62,7 @@ struct WatchSetInputView: View {
 
                 // Reps card
                 inputCard(
-                    label: viewModel.currentExercise?.exercise.repetitionsLabel ?? "Reps",
+                    label: separateSides ? "Reps/side" : viewModel.currentExercise?.exercise.repetitionsLabel ?? "Reps",
                     value: "\(Int(reps))",
                     isFocused: focusedField == .reps,
                     onTap: { focusedField = .reps },
@@ -95,7 +110,15 @@ struct WatchSetInputView: View {
                 Button {
                     // Convert the displayed value back to kg for storage.
                     let weightKg = weightUnit.toKg(weight)
-                    if viewModel.isEditingCompletedSet {
+                    if separateSides {
+                        Task {
+                            do {
+                                try await viewModel.logSide(selectedSide, weight: weightKg, reps: Int(reps))
+                                sideError = nil
+                                if let next = viewModel.visibleSet?.sideSets?.first(where: { !$0.effort.isCompleted }) { selectedSide = next.side; loadSide() }
+                            } catch { sideError = error.localizedDescription }
+                        }
+                    } else if viewModel.isEditingCompletedSet {
                         viewModel.updateSet(weight: weightKg, reps: Int(reps))
                     } else {
                         Task {
@@ -104,7 +127,7 @@ struct WatchSetInputView: View {
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        Text(viewModel.isEditingCompletedSet ? "UPDATE" : "FINISH SET")
+                        Text(separateSides ? "LOG \(selectedSide.rawValue.uppercased())" : viewModel.isEditingCompletedSet ? "UPDATE" : "FINISH SET")
                             .font(.system(size: 12, weight: .black))
                             .tracking(-0.5)
                         Image(systemName: viewModel.isEditingCompletedSet ? "pencil.circle.fill" : "checkmark.circle.fill")
@@ -135,9 +158,23 @@ struct WatchSetInputView: View {
         }
         .onAppear {
             focusedField = .weight
+            if let sides = viewModel.visibleSet?.sideSets {
+                separateSides = true
+                selectedSide = sides.first(where: { !$0.effort.isCompleted })?.side ?? .left
+                loadSide()
+            }
         }
     }
 
+    private func loadSide() {
+        if let effort = viewModel.visibleSet?.sideSets?.first(where: { $0.side == selectedSide })?.effort {
+            weight = weightUnit.fromKg(effort.weight ?? 0); reps = Double(effort.reps ?? 8)
+        } else {
+            let scale = viewModel.currentExercise?.exercise.strengthRecording?.sideWeightScale ?? 1
+            weight = weightUnit.fromKg((viewModel.currentTargetWeight ?? 0) * scale)
+            reps = Double(viewModel.currentExercise?.exercise.strengthReps(viewModel.currentTargetReps ?? 8) ?? 8)
+        }
+    }
     @ViewBuilder
     private func inputCard(
         label: String,

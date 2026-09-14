@@ -40,6 +40,7 @@ public enum ExerciseFactory {
             _ = try BodyweightPercentage.factor(percent: bodyweightPercent)
         }
 
+        if [.weightedReps, .bodyweightReps].contains(exerciseType) { try weightRecording?.validate() }
         return Exercise(
             id: id,
             name: trimmedName,
@@ -53,7 +54,7 @@ public enum ExerciseFactory {
             bodyweightFactor: resolvedBodyweightFactor(bodyweightPercent, exerciseType: exerciseType),
             equipmentBrand: resolvedBrand(equipmentBrand, category: category),
             loadingType: resolvedLoadingType(loadingType, category: category),
-            weightRecording: category == .dumbbell ? weightRecording : nil
+            weightRecording: [.weightedReps, .bodyweightReps].contains(exerciseType) ? weightRecording : nil
         )
     }
 

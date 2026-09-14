@@ -13,6 +13,7 @@ protocol WorkoutMutating: AnyObject {
     func updateSetIntensity(exerciseId: UUID, setId: UUID, value: Double?, metric: IntensityMetric) async
     func toggleSetFailure(exerciseId: UUID, setId: UUID) async
     func updateSetType(exerciseId: UUID, setId: UUID, setType: SetType) async
+    func replaceSideSets(exerciseId: UUID, setId: UUID, entries: [SideSetEntry]) async
     func replaceDropSets(exerciseId: UUID, setId: UUID, entries: [DropSetEntry]) async
     func removeSet(exerciseId: UUID, setId: UUID) async
     @discardableResult
@@ -37,6 +38,7 @@ enum WorkoutEditSupport {
         via mutator: any WorkoutMutating
     ) async {
         let setId = current.id
+        if let sides = changes.sideSets { await mutator.replaceSideSets(exerciseId: exerciseId, setId: setId, entries: sides) }
         var effectiveFailure = current.isFailure || current.setType == .failure
 
         if let segments = changes.dropSegments {

@@ -68,6 +68,7 @@ public final class HistoryWorkoutEditor: WorkoutEditor {
         guard let current = exercise.sets.first(where: { $0.id == setId }) else {
             throw WorkoutEditError.invalidArgument("The set is no longer in this workout.")
         }
+        if changes.sideSets != nil, exercise.exercise.strengthRecording?.supportsSeparateSides != true { throw WorkoutEditError.invalidArgument("Configure side logging on this exercise first.") }
         try validateDropSetEdit(current, exerciseName: exercise.exercise.name, changes: changes)
 
         try await perform {
@@ -75,9 +76,13 @@ public final class HistoryWorkoutEditor: WorkoutEditor {
             if let isCompleted = changes.isCompleted,
                let now = viewModel.selectedWorkout?.exercises
                     .first(where: { $0.id == exerciseId })?.sets.first(where: { $0.id == setId }),
-               now.isCompleted != isCompleted {
+               (isCompleted ? !now.isFullyCompleted : now.isCompleted) {
                 // Stamps the workout's own window (history rule), not "now".
-                await viewModel.toggleSetCompletion(exerciseId: exerciseId, setId: setId)
+                if !isCompleted, let sides = now.sideSets {
+                    await viewModel.replaceSideSets(exerciseId: exerciseId, setId: setId, entries: sides.map { side in
+                        var copy = side; copy.effort.setCompleted(false); return copy
+                    })
+                } else { await viewModel.toggleSetCompletion(exerciseId: exerciseId, setId: setId) }
             }
         }
 
@@ -85,6 +90,13 @@ public final class HistoryWorkoutEditor: WorkoutEditor {
             throw WorkoutEditError.invalidArgument("The set is no longer in this workout.")
         }
         return updated
+    }
+
+    public func configureWeightRecording(exerciseId: UUID, recording: WeightRecording) async throws {
+        let current = try exercise(id: exerciseId)
+        guard current.exercise.supportsWeightRecording else { throw WorkoutEditError.invalidArgument("Side logging requires a rep-based exercise.") }
+        try recording.validate()
+        try await perform { await viewModel.updateWeightRecording(exerciseId: exerciseId, recording: recording) }
     }
 
     public func setWorkoutNotes(_ notes: String?) async throws {

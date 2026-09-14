@@ -216,7 +216,7 @@ public enum DeloadDetectionService {
             for we in workout.exercises {
                 let base = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
                 for set in we.sets {
-                    sessionLoad += AnalyticsCalculations.setIWV(for: set, bestE1RM: conventionBests[WeightRecordingHistory.relativeKey(we.exercise)] ?? bestE1RM[we.exercise.id], baseLoadPerRep: base)
+                    sessionLoad += AnalyticsCalculations.setIWV(for: set, bestE1RM: conventionBests[WeightRecordingHistory.relativeKey(we.exercise)] ?? bestE1RM[we.exercise.id], baseLoadPerRep: base, recording: we.exercise.strengthRecording)
                 }
             }
             loadByWeek[weekStart, default: 0] += sessionLoad

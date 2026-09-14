@@ -278,10 +278,10 @@ private struct TemplateExerciseConfigView: View {
     var body: some View {
         NavigationStack {
             Form {
-                if templateExercise.exercise.isDumbbell {
+                if templateExercise.exercise.supportsWeightRecording {
                     Section("Weight logging") {
-                        Toggle("Confirm how these targets are recorded", isOn: Binding(get: { weightRecording != nil }, set: { weightRecording = $0 ? (weightRecording ?? DumbbellDefaults.recording(for: templateExercise.exercise.name) ?? .init()) : nil }))
-                        if weightRecording != nil { WeightRecordingFields(value: Binding(get: { weightRecording ?? .init() }, set: { weightRecording = $0 })) }
+                        Toggle("Confirm how these targets are recorded", isOn: Binding(get: { weightRecording != nil }, set: { weightRecording = $0 ? (weightRecording ?? templateExercise.exercise.defaultWeightRecording) : nil }))
+                        if weightRecording != nil { WeightRecordingFields(value: Binding(get: { weightRecording ?? templateExercise.exercise.defaultWeightRecording }, set: { weightRecording = $0 }), allowsLegacyDumbbells: templateExercise.exercise.isDumbbell) }
                         Text("This describes the numbers entered below. Changing it does not convert your targets.").font(.caption)
                     }
                 }

@@ -42,7 +42,7 @@ public enum TrainingStateService {
             workout.templateId?.uuidString ?? workout.exercises.map { $0.exercise.id.uuidString }.sorted().joined(separator: ":")
         }
         func count(_ workout: Workout) -> Double {
-            Double(workout.exercises.flatMap(\.sets).filter { $0.isCompleted && $0.setType != .warmup }.count)
+            workout.exercises.reduce(0) { $0 + $1.workingSetCredits }
         }
         return completed.filter { now.timeIntervalSince($0.trainingDate) <= 28 * 86400 }.compactMap { workout in
             if workout.isDeload { return NotableSession(workout: workout, detail: "Logged deload") }
@@ -68,7 +68,7 @@ public enum TrainingStateService {
             let sets = sessions.flatMap(\.exercises).flatMap(\.sets).filter { $0.isCompleted && $0.setType != .warmup }
             let reps = sets.compactMap(\.reps).sorted()
             let rpes = sets.compactMap(\.rpe)
-            return .init(start: start, end: end, sessions: sessions.count, weeklySets: Double(sets.count) / 4,
+            return .init(start: start, end: end, sessions: sessions.count, weeklySets: sessions.flatMap(\.exercises).reduce(0) { $0 + $1.workingSetCredits } / 4,
                 medianReps: reps.isEmpty ? 0 : Double(reps[reps.count / 2]), meanRPE: rpes.isEmpty ? nil : rpes.reduce(0, +) / Double(rpes.count))
         }
         let current = period(start, end), previous = period(prior, start)

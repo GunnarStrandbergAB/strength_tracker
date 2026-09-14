@@ -351,9 +351,25 @@ public final class HistoryViewModel {
     /// Swaps the exercise of a logged WorkoutExercise while keeping its id, order,
     /// notes, superset group and every set. PR rows are rebuilt by endEditing();
     /// per-set PR flags are cleared because they belonged to the old exercise.
+    public func replaceSideSets(exerciseId: UUID, setId: UUID, entries: [SideSetEntry]) async {
+        guard var workout = selectedWorkout,
+              let i = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
+              workout.exercises[i].exercise.strengthRecording?.supportsSeparateSides == true,
+              let j = workout.exercises[i].sets.firstIndex(where: { $0.id == setId }) else { return }
+        var entries = entries
+        let stamp = workout.completedAt ?? workout.startedAt
+        for index in entries.indices where entries[index].effort.isCompleted { entries[index].effort.completedAt = stamp }
+        workout.exercises[i].sets[j].applySideSets(entries)
+        await saveAndSync(workout)
+    }
+
     public func updateWeightRecording(exerciseId: UUID, recording: WeightRecording) async {
         guard var workout = selectedWorkout, let i = workout.exercises.firstIndex(where: { $0.id == exerciseId }),
-              workout.exercises[i].exercise.isDumbbell else { return }
+              workout.exercises[i].exercise.supportsWeightRecording else { return }
+        do { try recording.validate() } catch { errorMessage = error.localizedDescription; return }
+        if workout.exercises[i].sets.contains(where: { $0.sideSets != nil }), !recording.supportsSeparateSides {
+            errorMessage = "This entry contains named sides. Keep a side-aware recording setting."; return
+        }
         workout.exercises[i].exercise.weightRecording = recording
         await saveAndSync(workout)
     }

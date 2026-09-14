@@ -35,6 +35,7 @@ public struct WidgetActiveWorkout: Codable, Sendable {
     public let restEndDate: Date?     // for Text(timerInterval:)
     public let weightRecording: WeightRecording?
     public let dumbbellConventionUnconfirmed: Bool?
+    public let sideSummary: String?
     public let nextSetWeight: Double?
     public let nextSetReps: Int?
     public let nextExerciseName: String?
@@ -48,7 +49,7 @@ public struct WidgetActiveWorkout: Codable, Sendable {
         isResting: Bool, restEndDate: Date?,
         nextSetWeight: Double?, nextSetReps: Int?, nextExerciseName: String?,
         nextSetIndex: Int? = nil, nextExerciseId: String? = nil,
-        weightRecording: WeightRecording? = nil, dumbbellConventionUnconfirmed: Bool? = nil
+        weightRecording: WeightRecording? = nil, dumbbellConventionUnconfirmed: Bool? = nil, sideSummary: String? = nil
     ) {
         self.workoutName = workoutName
         self.currentExerciseName = currentExerciseName
@@ -58,6 +59,7 @@ public struct WidgetActiveWorkout: Codable, Sendable {
         self.startedAt = startedAt
         self.isResting = isResting
         self.restEndDate = restEndDate
+        self.sideSummary = sideSummary
         self.weightRecording = weightRecording
         self.dumbbellConventionUnconfirmed = dumbbellConventionUnconfirmed
         self.nextSetWeight = nextSetWeight
@@ -67,6 +69,7 @@ public struct WidgetActiveWorkout: Codable, Sendable {
         self.nextExerciseId = nextExerciseId
     }
     public var targetLabel: String? {
+        if let sideSummary { return sideSummary }
         guard let weight = nextSetWeight, let reps = nextSetReps else { return nil }
         let label = weightRecording?.weightLabel(.kg) ?? (dumbbellConventionUnconfirmed == true ? "kg ?" : "kg")
         return "\(String(format: "%g", weight)) \(label) × \(reps) \(weightRecording?.repsLabel.lowercased() ?? "reps")"

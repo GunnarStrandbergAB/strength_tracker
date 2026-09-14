@@ -213,10 +213,22 @@ enum ToolSchemas {
         AIToolRegistry.objectSchema(properties: [
             "equipment": AIToolRegistry.enumSchema(WeightRecording.Equipment.self),
             "weightEntry": AIToolRegistry.enumSchema(WeightRecording.WeightEntry.self),
-            "repetitions": AIToolRegistry.enumSchema(WeightRecording.Repetitions.self)
+            "repetitions": AIToolRegistry.enumSchema(WeightRecording.Repetitions.self),
+            "execution": AIToolRegistry.enumSchema(WeightRecording.Execution.self, description: "Together, sequential or alternating. Required for side-specific logging beyond legacy dumbbells."),
+            "resistance": AIToolRegistry.enumSchema(WeightRecording.Resistance.self, description: "Shared load, independent sides, or two weights carried for each side. Use with execution.")
         ], required: ["equipment", "weightEntry", "repetitions"])
     }
 
+    static var sideSet: JSONValue {
+        AIToolRegistry.objectSchema(properties: [
+            "side": AIToolRegistry.enumSchema(BodySide.self), "weight": weight,
+            "reps": AIToolRegistry.integerSchema("Reps for this side only"),
+            "rpe": AIToolRegistry.numberSchema("RPE 1–10"), "rir": AIToolRegistry.numberSchema("RIR 0–9"),
+            "completed": AIToolRegistry.boolSchema("Whether this side was performed; default true"),
+            "to_failure": AIToolRegistry.boolSchema("This side was taken to failure"),
+            "drop_segments": AIToolRegistry.arraySchema(of: dropSegment, description: "Optional drops for this side, including the top effort")
+        ], required: ["side", "reps"])
+    }
     static var dropSegment: JSONValue {
         AIToolRegistry.objectSchema(
             properties: [
@@ -267,7 +279,7 @@ enum WorkoutJSON {
             "id": .string(exercise.id.uuidString), "exercise_id": .string(exercise.exercise.id.uuidString),
             "name": .string(exercise.exercise.name),
             "sets": .array(exercise.sets.enumerated().map { set($1, number: $0 + 1) }),
-            "done": .string("\(exercise.sets.filter(\.isCompleted).count)/\(exercise.sets.count)")
+            "done": .string("\(exercise.sets.filter(\.isFullyCompleted).count)/\(exercise.sets.count)")
         ]
         object["weight_recording"] = recording(exercise.exercise)
         if let occurrence { object["occurrence"] = .number(Double(occurrence)) }
@@ -283,13 +295,17 @@ enum WorkoutJSON {
                 "bodyweight_percent": .number(exercise.resolvedBodyweightFactor * 100),
                 "weight_entry": .string("additional_weight"),
                 "performance_convention": .string(exercise.performanceConvention),
-                "explanation": .string(exercise.bodyweightExplanation ?? "")])
+                "explanation": .string(exercise.bodyweightExplanation ?? ""),
+                "sides": exercise.strengthRecording.map { .string($0.explanation) } ?? .null])
         }
-        guard exercise.isDumbbell else { return .object(["status": .string("standard")]) }
+        guard exercise.strengthRecording != nil || exercise.recordingNeedsConfirmation else { return .object(["status": .string("standard")]) }
         guard let config = exercise.weightRecording else { return .object(["status": .string("unconfirmed"), "volume_multiplier": .number(1)]) }
         return .object(["status": .string("confirmed"), "equipment": .string(config.equipment.rawValue),
             "weight_entry": .string(config.weightEntry.rawValue), "repetitions": .string(config.repetitions.rawValue),
-            "volume_multiplier": .number(exercise.volumeMultiplier), "explanation": .string(config.explanation)])
+            "volume_multiplier": .number(exercise.volumeMultiplier), "explanation": .string(config.explanation),
+            "execution": config.execution.map { .string($0.rawValue) } ?? .null,
+            "resistance": config.resistance.map { .string($0.rawValue) } ?? .null,
+            "supports_separate_sides": .bool(config.supportsSeparateSides)])
     }
 
     static func set(_ set: ExerciseSet, number: Int) -> JSONValue {
@@ -304,6 +320,11 @@ enum WorkoutJSON {
         if set.isCompleted { object["done"] = .bool(true) }
         if set.isFailure || set.setType == .failure { object["failure"] = .bool(true) }
         if set.isPersonalRecord { object["pr"] = .bool(true) }
+        if let sides = set.sideSets {
+            object["fully_completed"] = .bool(set.isFullyCompleted)
+            object["side_sets"] = .array(sides.map { .object(["side": .string($0.side.rawValue), "effort": self.set($0.effort, number: number)]) })
+            object["parent_values_are_summary"] = .bool(true)
+        }
         if !set.dropSets.isEmpty {
             object["drops"] = .array(set.dropSets.map { entry in
                 var drop: [String: JSONValue] = [:]
@@ -352,7 +373,9 @@ struct ReceiptText {
     }
 
     func load(weightKg: Double?, reps: Int?, exercise: Exercise? = nil) -> String? {
-        let suffix = exercise?.weightRecording.map { $0.weightEntry == .perDumbbell ? " each" : " total" } ?? ""
+        let suffix = exercise?.weightRecording.map { config in
+            switch config.weightEntry { case .perDumbbell: return " each"; case .perSide: return "/side"; case .combined: return " total"; case .displayed: return "" }
+        } ?? ""
         let repsSuffix = exercise?.weightRecording?.repetitions == .perSide ? "/side" : ""
         switch (weightKg, reps) {
         case (let w?, let r?): return "\(unit.format(w))\(suffix) × \(r)\(repsSuffix)"
@@ -364,6 +387,11 @@ struct ReceiptText {
 
     /// e.g. ["85 kg × 8", "RPE 9 · to failure"] or ["85 kg × 8 → 70 kg × 6", …]
     func lines(for set: ExerciseSet, exercise: Exercise? = nil) -> [String] {
+        if let sides = set.sideSets {
+            return sides.flatMap { side in
+                ["\(side.side.title) · \(side.effort.isCompleted ? "done" : "not completed")"] + self.lines(for: side.effort)
+            }
+        }
         var lines: [String] = []
         if !set.dropSets.isEmpty {
             let segments = set.dropSets.compactMap { load(weightKg: $0.weight, reps: $0.reps, exercise: exercise) }
@@ -390,5 +418,36 @@ struct ReceiptText {
     /// Short inline form for summaries: "85 kg × 8, RPE 9".
     func inline(_ set: ExerciseSet, exercise: Exercise? = nil) -> String {
         lines(for: set, exercise: exercise).joined(separator: ", ")
+    }
+}
+
+struct SideSetArgument: Decodable {
+    let side: BodySide
+    let weight: WeightArgument?
+    let reps: Int
+    let rpe: Double?
+    let rir: Double?
+    let completed: Bool?
+    let to_failure: Bool?
+    let drop_segments: [DropSegmentArgument]?
+    func entry() throws -> SideSetEntry {
+        guard (0...999).contains(reps) else { throw AIToolError("Side reps must be between 0 and 999.") }
+        var rawWeight = weight
+        if let entry = rawWeight?.entry {
+            guard entry == .perSide || entry == .displayed else { throw AIToolError("side_sets weights describe one side. Omit entry or use perSide / displayed.") }
+            rawWeight?.entry = nil
+        }
+        let kg = try rawWeight?.kilograms()
+        if let kg, !(0...999.99).contains(kg) { throw AIToolError("Side load must be between 0 and 999.99 Kg.") }
+        var effort = ExerciseSet(id: UUID(), order: 1, setType: .normal, weight: kg, reps: reps,
+            durationSeconds: nil, distanceMeters: nil, rpe: nil, isCompleted: completed ?? true,
+            isPersonalRecord: false, completedAt: completed == false ? nil : Date())
+        if let intensity = try ToolArguments.intensity(rpe: rpe, rir: rir) { effort.applyIntensity(intensity.value, metric: intensity.metric) }
+        effort.setFailureFlag(to_failure ?? false)
+        if let drops = drop_segments {
+            guard drops.count >= 2 else { throw AIToolError("A side drop set needs at least two segments.") }
+            effort.applyDropSets(try drops.map { try $0.segment().makeEntry() })
+        }
+        return SideSetEntry(side: side, effort: effort)
     }
 }
