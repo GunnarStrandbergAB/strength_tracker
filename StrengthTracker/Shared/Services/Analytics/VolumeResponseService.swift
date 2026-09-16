@@ -94,7 +94,7 @@ public enum VolumeResponseService {
             guard let weekStart = calendar.dateInterval(of: .weekOfYear, for: workoutDate)?.start else { continue }
 
             for we in workout.exercises {
-                let hardSets = we.sets.filter { $0.isCompleted && $0.setType != .warmup }.count
+                let hardSets = we.workingSetCredits
                 guard hardSets > 0 else { continue }
 
                 let primary = we.exercise.primaryMuscleGroup.rawValue

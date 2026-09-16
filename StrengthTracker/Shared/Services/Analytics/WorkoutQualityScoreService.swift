@@ -243,7 +243,7 @@ public final class WorkoutQualityScoreService: Sendable {
             for we in workout.exercises {
                 let baseLoad = we.exercise.baseLoadPerRep(bodyWeightKg: resolvedBodyWeightKg)
                 for set in we.sets {
-                    let setIWV = AnalyticsCalculations.setIWV(for: set, bestE1RM: conventionBests[WeightRecordingHistory.relativeKey(we.exercise)] ?? bestE1RM[we.exercise.id], baseLoadPerRep: baseLoad)
+                    let setIWV = AnalyticsCalculations.setIWV(for: set, bestE1RM: conventionBests[WeightRecordingHistory.relativeKey(we.exercise)] ?? bestE1RM[we.exercise.id], baseLoadPerRep: baseLoad, recording: we.exercise.strengthRecording)
                     guard setIWV > 0 else { continue }
 
                     let attributed = AnalyticsCalculations.attributeVolume(

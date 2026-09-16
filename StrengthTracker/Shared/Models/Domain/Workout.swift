@@ -77,9 +77,8 @@ extension Workout {
     public mutating func toggleSetCompletion(exerciseId: UUID, setId: UUID, at date: Date = Date()) -> Bool? {
         guard let ei = exercises.firstIndex(where: { $0.id == exerciseId }),
               let si = exercises[ei].sets.firstIndex(where: { $0.id == setId }) else { return nil }
-        let wasCompleted = exercises[ei].sets[si].isCompleted
-        exercises[ei].sets[si].isCompleted = !wasCompleted
-        exercises[ei].sets[si].completedAt = wasCompleted ? nil : date
+        let wasCompleted = exercises[ei].sets[si].isFullyCompleted
+        exercises[ei].sets[si].setCompleted(!wasCompleted, at: date)
         return !wasCompleted
     }
 
@@ -87,9 +86,8 @@ extension Workout {
     /// where all sets happened inside the workout's historical window.
     public mutating func completeAllSets(at date: Date) {
         for ei in exercises.indices {
-            for si in exercises[ei].sets.indices where !exercises[ei].sets[si].isCompleted {
-                exercises[ei].sets[si].isCompleted = true
-                exercises[ei].sets[si].completedAt = date
+            for si in exercises[ei].sets.indices where !exercises[ei].sets[si].isFullyCompleted {
+                exercises[ei].sets[si].setCompleted(true, at: date)
             }
         }
     }
@@ -111,14 +109,14 @@ extension Workout {
         if let preferredId, let preferred = exercises.first(where: { $0.id == preferredId }) {
             return preferred
         }
-        return exercises.first { $0.sets.contains { !$0.isCompleted } } ?? exercises.last
+        return exercises.first { $0.sets.contains { !$0.isFullyCompleted } } ?? exercises.last
     }
 
     /// Next incomplete exercise strictly after the given one in order (wrapping,
     /// excluding it). Nil when the id is unknown or no other exercise has work left.
     public func nextIncompleteExercise(afterId id: UUID?) -> WorkoutExercise? {
         guard let id, let idx = exercises.firstIndex(where: { $0.id == id }) else { return nil }
-        func hasIncomplete(_ ex: WorkoutExercise) -> Bool { ex.sets.contains { !$0.isCompleted } }
+        func hasIncomplete(_ ex: WorkoutExercise) -> Bool { ex.sets.contains { !$0.isFullyCompleted } }
         return exercises[(idx + 1)...].first(where: hasIncomplete)
             ?? exercises[..<idx].first(where: hasIncomplete)
     }

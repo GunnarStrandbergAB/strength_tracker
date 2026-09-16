@@ -69,7 +69,10 @@ public final class ActiveWorkoutEditor: WorkoutEditor {
         }
         try validateDropSetEdit(current, exerciseName: exercise.exercise.name, changes: changes)
 
-        await WorkoutEditSupport.applySetChanges(changes, to: current, exerciseId: exerciseId, via: viewModel)
+        if let sides = changes.sideSets {
+            guard exercise.exercise.strengthRecording?.supportsSeparateSides == true else { throw WorkoutEditError.invalidArgument("Configure side logging on this exercise first.") }
+            await coordinator.updateSideSets(exerciseId: exerciseId, setId: setId, entries: sides)
+        } else { await WorkoutEditSupport.applySetChanges(changes, to: current, exerciseId: exerciseId, via: viewModel) }
         try checkSave()
 
         // Completion last, so the rest timer / widget see the final values.
@@ -86,6 +89,14 @@ public final class ActiveWorkoutEditor: WorkoutEditor {
             throw WorkoutEditError.invalidArgument("The set is no longer in this workout.")
         }
         return updated
+    }
+
+    public func configureWeightRecording(exerciseId: UUID, recording: WeightRecording) async throws {
+        let current = try exercise(id: exerciseId)
+        guard current.exercise.supportsWeightRecording else { throw WorkoutEditError.invalidArgument("Side logging requires a rep-based exercise.") }
+        try recording.validate()
+        await viewModel.updateWeightRecording(exerciseId: exerciseId, recording: recording)
+        try checkSave()
     }
 
     public func setWorkoutNotes(_ notes: String?) async throws {

@@ -78,7 +78,7 @@ struct AddExerciseView: View {
             }
             _equipmentBrand = State(initialValue: source.equipmentBrand ?? "")
             _loadingType = State(initialValue: source.loadingType)
-            _weightRecording = State(initialValue: source.weightRecording ?? DumbbellDefaults.recording(for: source.name) ?? WeightRecording())
+            _weightRecording = State(initialValue: source.defaultWeightRecording)
             _recordingConfirmed = State(initialValue: source.weightRecording != nil)
         }
     }
@@ -120,10 +120,10 @@ struct AddExerciseView: View {
                     Section { Text(error).foregroundStyle(.red) }
                 }
 
-                if category == .dumbbell {
-                    Section("Weight logging") {
+                if [.weightedReps, .bodyweightReps].contains(exerciseType) {
+                    Section("Sides & weight logging") {
                         Toggle("Confirm how weights and reps are entered", isOn: $recordingConfirmed)
-                        if recordingConfirmed { WeightRecordingFields(value: $weightRecording) }
+                        if recordingConfirmed { WeightRecordingFields(value: $weightRecording, allowsLegacyDumbbells: category == .dumbbell) }
                         Text("Applies to this exercise's future uses. Existing workouts and template targets retain their convention; review them in Settings → Weight logging.").font(.caption)
                     }
                 }
@@ -177,11 +177,14 @@ struct AddExerciseView: View {
                         HStack {
                             TextField("e.g. 100", text: $known1RM)
                                 .keyboardType(.decimalPad)
-                            Text(category == .dumbbell && recordingConfirmed ? weightRecording.weightLabel(weightUnit) : weightUnit.symbol)
+                            Text(recordingConfirmed ? weightRecording.weightLabel(weightUnit) : weightUnit.symbol)
                                 .foregroundStyle(.secondary)
                         }
                     }
                 }
+            }
+            .onChange(of: category) { _, new in
+                if !recordingConfirmed { weightRecording = new == .dumbbell ? .init() : .sides(execution: .together, resistance: .shared, weightEntry: .displayed) }
             }
             .onChange(of: primaryMuscleGroup) { _, newValue in
                 secondaryMuscleGroups.remove(newValue)
@@ -209,7 +212,7 @@ struct AddExerciseView: View {
                             bodyweightPercent: try? BodyweightPercentage.parse(bodyweightPercent),
                             equipmentBrand: equipmentBrand,
                             loadingType: loadingType,
-                            weightRecording: recordingConfirmed && category == .dumbbell ? weightRecording : nil,
+                            weightRecording: recordingConfirmed ? weightRecording : nil,
                             isArchived: existing?.isArchived ?? false
                         ) else { return }
                         isSaving = true
@@ -259,13 +262,42 @@ struct AddExerciseView: View {
 /// Used in creation and the reviewed historical correction flow.
 struct WeightRecordingFields: View {
     @Binding var value: WeightRecording
+    var allowsLegacyDumbbells = true
     var body: some View {
-        choice("Dumbbells moving per repetition", selection: $value.equipment, options: WeightRecording.Equipment.allCases) { $0.title }
-        choice("Weight entry", selection: $value.weightEntry, options: WeightRecording.WeightEntry.allCases) { $0.title }
-        choice("Repetition entry", selection: $value.repetitions, options: WeightRecording.Repetitions.allCases) { $0.title }
+        if allowsLegacyDumbbells {
+        Toggle("Specify how sides are performed", isOn: Binding(get: { value.hasSideConfiguration }, set: { enabled in
+            if enabled {
+                value.execution = value.repetitions == .standard ? .together : value.repetitions == .totalAlternating ? .alternating : .sequential
+                value.resistance = value.repetitions == .perSide && value.equipment == .pair ? .carriedPair : .independent
+                value.equipment = .pair
+            } else { value.execution = nil; value.resistance = nil }
+        }))
+        }
+        if value.hasSideConfiguration {
+            choice("Movement", selection: Binding(get: { value.execution ?? .sequential }, set: {
+                value.execution = $0
+                value.repetitions = $0 == .together ? .standard : .perSide
+            }), options: WeightRecording.Execution.allCases) { $0.title }
+            choice("Resistance", selection: Binding(get: { value.resistance ?? .independent }, set: {
+                value.resistance = $0; value.equipment = $0 == .shared ? .single : .pair
+                value.weightEntry = $0 == .shared ? .displayed : $0 == .carriedPair ? .combined : value.execution == .together ? .combined : .perSide
+            }), options: WeightRecording.Resistance.allCases) { $0.title }
+            choice("Weight entry", selection: $value.weightEntry, options: weightOptions) { $0.title }
+            if value.execution != .together {
+                choice("Repetition entry", selection: $value.repetitions, options: value.execution == .alternating ? [.perSide, .totalAlternating, .oneSide] : [.perSide, .oneSide]) { $0.title }
+            }
+        } else {
+            choice("Dumbbells moving per repetition", selection: $value.equipment, options: WeightRecording.Equipment.allCases) { $0.title }
+            choice("Weight entry", selection: $value.weightEntry, options: [.perDumbbell, .combined]) { $0.title }
+            choice("Repetition entry", selection: $value.repetitions, options: WeightRecording.Repetitions.allCases) { $0.title }
+            Text("For lunges holding two dumbbells, choose two weights per repetition. Existing records keep their original interpretation.").font(.caption).foregroundStyle(.secondary)
+        }
         Text(value.explanation).font(.caption).foregroundStyle(.secondary)
-        Text("For alternating curls, choose one dumbbell per repetition. For lunges holding two, choose two. Choose per-side reps only when one row covers both sides.")
-            .font(.caption).foregroundStyle(.secondary)
+    }
+    private var weightOptions: [WeightRecording.WeightEntry] {
+        if value.resistance == .shared { return [.displayed] }
+        if value.resistance == .carriedPair { return [.perDumbbell, .combined] }
+        return [.perSide, .combined]
     }
     private func choice<T: Hashable>(_ title: String, selection: Binding<T>, options: [T], label: @escaping (T) -> String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -288,21 +320,35 @@ struct WeightRecordingFields: View {
 struct WeightRecordingEditorSheet: View {
     let exercise: Exercise
     let save: (WeightRecording) -> Void
+    var scopeDescription: String
+    var saveDefault: ((WeightRecording) -> Void)?
+    @State private var rememberDefault = true
     @State private var value: WeightRecording
     @Environment(\.dismiss) private var dismiss
-    init(exercise: Exercise, save: @escaping (WeightRecording) -> Void) {
-        self.exercise = exercise; self.save = save
-        _value = State(initialValue: exercise.weightRecording ?? DumbbellDefaults.recording(for: exercise.name) ?? WeightRecording())
+    init(exercise: Exercise, scopeDescription: String = "Applies to unfinished sets. Completed sides and sets keep their original convention in a separate exercise entry. Changing movement clears unfinished weight targets; changing only individual/combined entry converts them. Existing template and plan targets keep their saved convention.", saveDefault: ((WeightRecording) -> Void)? = nil, save: @escaping (WeightRecording) -> Void) {
+        self.exercise = exercise; self.save = save; self.scopeDescription = scopeDescription; self.saveDefault = saveDefault
+        _value = State(initialValue: exercise.defaultWeightRecording)
     }
     var body: some View {
         NavigationStack {
             Form {
-                Section(exercise.name) { WeightRecordingFields(value: $value) }
-                Section { Text("Applies to every set in this exercise entry, including drop segments. Entered numbers stay the same; this clarifies what they mean. Use Settings to review other workouts.") }
-            }.navigationTitle("Weight logging").navigationBarTitleDisplayMode(.inline)
+                Section(exercise.name) { WeightRecordingFields(value: $value, allowsLegacyDumbbells: exercise.isDumbbell) }
+                if saveDefault != nil {
+                    Section {
+                        Toggle("Remember for this exercise", isOn: $rememberDefault)
+                        Text("Used when adding this exercise in future. Existing templates, plan targets and history keep their convention.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Section {
+                    Text(scopeDescription)
+                    if !value.hasSideConfiguration {
+                        Text("Legacy dumbbell correction clarifies the numbers already entered; it does not convert them.").font(.caption)
+                    }
+                }
+            }.navigationTitle("Sides & weight logging").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Apply") { save(value); dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Apply") { save(value); if rememberDefault { saveDefault?(value) }; dismiss() } }
             }
         }.preferredColorScheme(.dark)
     }

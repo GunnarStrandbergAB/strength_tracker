@@ -64,7 +64,7 @@ public final class VolumeLandmarkService: Sendable {
         var totalCredits: [String: Double] = [:]
         for workout in workouts {
             for we in workout.exercises {
-                let hardSets = we.sets.filter { $0.isCompleted && $0.setType != .warmup }.count
+                let hardSets = we.workingSetCredits
                 guard hardSets > 0 else { continue }
 
                 let credits = AnalyticsCalculations.attributeHardSetCredits(

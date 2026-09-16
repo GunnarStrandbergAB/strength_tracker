@@ -37,7 +37,11 @@ public final class WorkoutVectorizer: Sendable {
         let weights = zip(workout.exercises, workout.exercises.map { ex -> [Double] in
             let baseLoad = ex.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
             return ex.sets.filter(\.isCompleted).map { s in
-                s.effectiveParts.first?.effectiveLoad(baseLoadPerRep: baseLoad) ?? 0.0
+                if s.sideSets != nil {
+                    return s.strengthParts(baseLoadPerRep: baseLoad, recording: ex.exercise.strengthRecording).first?.load
+                        ?? ((baseLoad ?? 0) + (s.weight ?? 0) / (ex.exercise.strengthRecording?.sideWeightScale ?? 1))
+                }
+                return s.effectiveParts.first?.effectiveLoad(baseLoadPerRep: baseLoad) ?? 0.0
             }
         }).flatMap(\.1)
         let avgWeight = weights.isEmpty ? 0.0 : weights.reduce(0, +) / Double(weights.count)

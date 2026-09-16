@@ -59,10 +59,10 @@ public final class MuscleBalanceService: Sendable {
         }
 
         // Count sets per muscle group
-        var muscleSets: [MuscleGroup: Int] = [:]
+        var muscleSets: [MuscleGroup: Double] = [:]
         for workout in recentWorkouts {
             for exercise in workout.exercises {
-                let completedSets = exercise.sets.filter { $0.isCompleted && $0.setType != .warmup }.count
+                let completedSets = exercise.workingSetCredits
                 muscleSets[exercise.exercise.primaryMuscleGroup, default: 0] += completedSets
             }
         }
@@ -70,7 +70,7 @@ public final class MuscleBalanceService: Sendable {
         var indirect: [MuscleGroup: Double] = [:]
         for workout in recentWorkouts {
             for we in workout.exercises {
-                let sets = we.sets.filter { $0.isCompleted && $0.setType != .warmup }.count
+                let sets = we.workingSetCredits
                 let credits = AnalyticsCalculations.attributeHardSetCredits(hardSets: sets, primaryMuscle: we.exercise.primaryMuscleGroup, secondaryMuscles: we.exercise.secondaryMuscleGroups)
                 for muscle in we.exercise.secondaryMuscleGroups { indirect[muscle, default: 0] += credits[muscle] ?? 0 }
             }
@@ -79,7 +79,7 @@ public final class MuscleBalanceService: Sendable {
         let groups = Set(muscleSets.keys).union(indirect.keys)
         let groupVolumes: [MuscleGroupVolume] = groups.map { group in
             MuscleGroupVolume(muscleGroup: group.rawValue, weeklyVolume: muscleVolumes[group] ?? 0,
-                weeklySetCount: muscleSets[group] ?? 0,
+                weeklySetCount: Int((muscleSets[group] ?? 0).rounded()),
                 trend: trend(current: muscleVolumes[group] ?? 0, previous: previousVolumes[group]),
                 directWeeklySets: Double(muscleSets[group] ?? 0) / weeks,
                 indirectWeeklySets: indirect[group, default: 0] / weeks)

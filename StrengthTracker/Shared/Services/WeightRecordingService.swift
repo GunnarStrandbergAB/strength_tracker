@@ -50,8 +50,9 @@ public final class WeightRecordingService {
         return try? JSONDecoder().decode(Journal.self, from: data)
     }
     private func store(_ value: Journal) throws { defaults.set(try JSONEncoder().encode(value), forKey: key) }
-    public func catalog() async throws -> [Exercise] { try await exercises.fetchAll().filter { $0.isDumbbell }.sorted { $0.name < $1.name } }
+    public func catalog() async throws -> [Exercise] { try await exercises.fetchAll().filter { $0.supportsWeightRecording }.sorted { $0.name < $1.name } }
     public func preview(selections: [UUID: WeightRecording], history: DateInterval?, updateFuture: Bool, bodyWeightKg: Double) async throws -> Preview {
+        for recording in selections.values { try recording.validate() }
         let state = try await stateSnapshot()
         let all = state.workouts
         var changes: [Change] = [], count = 0, before = 0.0, after = 0.0
@@ -59,7 +60,10 @@ public final class WeightRecordingService {
             let original = workout
             for i in workout.exercises.indices {
                 let e = workout.exercises[i]
-                guard let config = selections[e.exercise.id], e.exercise.isDumbbell, config != e.exercise.weightRecording else { continue }
+                guard let config = selections[e.exercise.id], e.exercise.supportsWeightRecording, config != e.exercise.weightRecording else { continue }
+                if e.sets.contains(where: { $0.sideSets != nil }), !config.supportsSeparateSides {
+                    throw WorkoutEditError.invalidArgument("\(e.exercise.name) contains named sides. Keep side-aware logging for those historical sets.")
+                }
                 changes.append(Change(kind: .workout, parentId: workout.id, entryId: e.id, before: e.exercise.weightRecording, after: config))
                 workout.exercises[i].exercise.weightRecording = config
             }
@@ -68,7 +72,7 @@ public final class WeightRecordingService {
             }
         }
         if updateFuture {
-            for e in state.exercises where e.isDumbbell {
+            for e in state.exercises where e.supportsWeightRecording {
                 guard let config = selections[e.id], e.weightRecording != config else { continue }
                 changes.append(Change(kind: .library, parentId: e.id, entryId: e.id, before: e.weightRecording, after: config))
             }

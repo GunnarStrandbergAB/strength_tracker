@@ -750,3 +750,35 @@ final class WeightHintRenderingTests: XCTestCase {
         }
     }
 }
+
+@MainActor
+final class SideLoggingRenderingTests: XCTestCase {
+    func testSideCardsAtCompactAndAccessibilitySizes() async throws {
+        var exercise = AnalyticsTestHelpers.makeExercise(name: "Kneeling iso-lateral cable row")
+        exercise.category = .cable; exercise.weightRecording = .sides()
+        var collapsed = AnalyticsTestHelpers.makeCompletedSet(weight: 41, reps: 8)
+        collapsed.setCompleted(false)
+        var expanded = AnalyticsTestHelpers.makeCompletedSet(weight: 41, reps: 8)
+        expanded.setCompleted(false); expanded.separateSides(recording: exercise.weightRecording!)
+        exercise.primaryMuscleGroup = .back; exercise.secondaryMuscleGroups = [.biceps]
+        for (name, width, typeSize) in [("compact", 375.0, DynamicTypeSize.large), ("accessibility", 430.0, DynamicTypeSize.accessibility2)] {
+            let entry = AnalyticsTestHelpers.makeWorkoutExercise(exercise: exercise, sets: [collapsed, expanded])
+            let content = ExerciseCardView(workoutExercise: entry, onWeightChange: { _, _ in }, onRepsChange: { _, _ in },
+                onToggleComplete: { _ in }, onAddSet: {}, onToggleFailure: { _ in }, alwaysShowRPE: true,
+                onWeightRecordingChange: { _ in }, onSideSetsChange: { _, _ in }, onSideRest: { _ in })
+                .padding(16).background(STColors.background).foregroundStyle(STColors.textPrimary)
+                .environment(\.dynamicTypeSize, typeSize).environment(\.colorScheme, .dark)
+            let host = UIHostingController(rootView: content)
+            let size = host.sizeThatFits(in: CGSize(width: width, height: 5000))
+            XCTAssertLessThanOrEqual(size.width, width + 1)
+            XCTAssertGreaterThan(size.height, 500)
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: width, height: size.height))
+            window.rootViewController = host; window.isHidden = false
+            host.view.frame = window.bounds; host.view.layoutIfNeeded()
+            await Task.yield()
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in host.view.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+            let attachment = XCTAttachment(image: image); attachment.name = "side-logging-\(name)"; attachment.lifetime = .keepAlways; add(attachment)
+            window.isHidden = true
+        }
+    }
+}

@@ -83,7 +83,24 @@ extension DropSetEntry {
 extension ExerciseSet {
     /// Strength-only interpretation; volume and recorded rep history stay intact.
     public func strengthParts(baseLoadPerRep: Double?, recording: WeightRecording? = nil) -> [(load: Double, reps: Int)] {
-        effectiveLoadParts(baseLoadPerRep: baseLoadPerRep).compactMap { part in
+        if let sides = sideSets {
+            // A combined suggestion must never borrow the stronger side's performance.
+            // Named raw observations remain available for side-specific drill-down.
+            guard sides.count == 2, sides.allSatisfy({ $0.effort.isCompleted && $0.effort.setType != .warmup }) else { return [] }
+            let candidates = sides.map { side -> [(load: Double, reps: Int)] in
+                side.effort.effectiveLoadParts(baseLoadPerRep: baseLoadPerRep.map { $0 * (recording?.sideBaseMultiplier ?? 1) }).map { part in
+                    let base = baseLoadPerRep ?? 0
+                    let sideBase = base * (recording?.sideBaseMultiplier ?? 1)
+                    return (base + (part.load - sideBase) / (recording?.sideWeightScale ?? 1), part.reps)
+                }
+            }
+            return candidates.min { a, b in
+                let bestA = a.map { AnalyticsCalculations.calculateOneRM(weight: $0.load, reps: $0.reps) }.max() ?? 0
+                let bestB = b.map { AnalyticsCalculations.calculateOneRM(weight: $0.load, reps: $0.reps) }.max() ?? 0
+                return bestA < bestB
+            } ?? []
+        }
+        return effectiveLoadParts(baseLoadPerRep: baseLoadPerRep).compactMap { part in
             guard part.load.isFinite else { return nil }
             let reps: Int? = recording == nil ? part.reps : recording?.strengthReps(part.reps)
             guard let reps, reps > 0 else { return nil }

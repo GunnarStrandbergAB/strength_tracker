@@ -540,3 +540,109 @@ struct WorkoutEditToolsTests {
         }
     }
 }
+
+extension WorkoutEditToolsTests {
+    @Test("Grok configures a cable-style movement and logs distinct sides with one rest after the pair")
+    func sideToolFlow() async throws {
+        try await withStack { s in
+            let row = try await s.startActive(exerciseName: "Kneeling row", weightKg: 41)
+            let configure = ConfigureWeightRecordingTool(resolver: s.resolver)
+            _ = try await configure.call(argumentsJSON: """
+            {"exercise_name":"Kneeling row","weight_recording":{"equipment":"pair","weightEntry":"perSide","repetitions":"perSide","execution":"sequential","resistance":"independent"}}
+            """)
+            let tool = LogSetTool(resolver: s.resolver, userPreferencesService: s.prefs)
+            _ = try await tool.call(argumentsJSON: """
+            {"exercise_name":"Kneeling row","side_sets":[{"side":"left","weight":{"value":41,"unit":"kg","entry":"perSide"},"reps":8},{"side":"right","weight":{"value":36,"unit":"kg"},"reps":6,"completed":false}]}
+            """)
+            #expect(s.vm.currentWorkout?.exercises[0].sets[0].completedSideCount == 1)
+            #expect(s.timer.starts.isEmpty)
+            let second = try await tool.call(argumentsJSON: """
+            {"exercise_name":"Kneeling row","side_sets":[{"side":"left","weight":{"value":41,"unit":"kg"},"reps":8},{"side":"right","weight":{"value":36,"unit":"kg"},"reps":6}]}
+            """)
+            let current = try #require(s.vm.currentWorkout)
+            #expect(current.exercises[0].sets[0].isFullyCompleted)
+            #expect(current.exercises[0].sets[1].isCompleted == false)
+            #expect(current.totalVolume(bodyWeightKg: 80) == 544)
+            #expect(s.timer.starts.count == 1)
+            #expect(second.outputForModel.contains("side_sets"))
+            #expect(second.outputForModel.contains("right"))
+            // Unticking a partial or full pair must clear both, never complete its other side.
+            try await s.coordinator.uncompleteSet(exerciseId: row.id, setId: row.sets[0].id)
+            #expect(s.vm.currentWorkout?.totalVolume(bodyWeightKg: 80) == 0)
+            #expect(s.timer.starts.count == 1)
+        }
+    }
+
+    @Test("Side tools reject ambiguous parent writes, duplicate sides and incompatible setup")
+    func invalidSideToolArguments() async throws {
+        try await withStack { s in
+            _ = try await s.startActive(exerciseName: "Row")
+            let log = LogSetTool(resolver: s.resolver, userPreferencesService: s.prefs)
+            await #expect(throws: (any Error).self) {
+                _ = try await log.call(argumentsJSON: """
+                {"exercise_name":"Row","side_sets":[{"side":"left","reps":8}]}
+                """)
+            }
+            let config = ConfigureWeightRecordingTool(resolver: s.resolver)
+            _ = try await config.call(argumentsJSON: """
+            {"exercise_name":"Row","weight_recording":{"equipment":"pair","weightEntry":"perSide","repetitions":"perSide","execution":"sequential","resistance":"independent"}}
+            """)
+            for payload in [
+                "{\"exercise_name\":\"Row\",\"side_sets\":[{\"side\":\"left\",\"reps\":8},{\"side\":\"left\",\"reps\":8}]}",
+                "{\"exercise_name\":\"Row\",\"weight\":{\"value\":82,\"unit\":\"kg\"},\"side_sets\":[{\"side\":\"left\",\"reps\":8}]}",
+                "{\"exercise_name\":\"Row\",\"completed\":true,\"side_sets\":[{\"side\":\"left\",\"reps\":8}]}"
+            ] {
+                await #expect(throws: (any Error).self) { _ = try await log.call(argumentsJSON: payload) }
+            }
+            #expect(s.vm.currentWorkout?.exercises[0].sets.allSatisfy { !$0.isCompleted } == true)
+            #expect(s.timer.starts.isEmpty)
+        }
+    }
+
+    @Test("Changing execution keeps completed sets untouched and separates remaining targets")
+    func configurationMidWorkout() async throws {
+        try await withStack { s in
+            let row = try await s.startActive(exerciseName: "Row", weightKg: 41)
+            await s.vm.updateWeightRecording(exerciseId: row.id, recording: .sides())
+            try await s.coordinator.completeSet(exerciseId: row.id, setId: row.sets[0].id)
+            await s.vm.updateWeightRecording(exerciseId: row.id, recording: .sides(execution: .together, weightEntry: .combined))
+            let workout = try #require(s.vm.currentWorkout)
+            #expect(workout.exercises.count == 2)
+            #expect(workout.exercises[0].sets.count == 1)
+            #expect(workout.exercises[0].exercise.weightRecording?.execution == .sequential)
+            #expect(workout.exercises[0].sets[0].weight == 41)
+            #expect(workout.exercises[1].sets.count == 2)
+            #expect(workout.exercises[1].sets.allSatisfy { $0.weight == nil })
+            #expect(workout.exercises[1].sets.map(\.order) == [1, 2])
+            #expect(workout.totalVolume(bodyWeightKg: 80) == 656)
+        }
+    }
+
+    @Test("Changing only entry basis converts unfinished targets without changing history")
+    func entryBasisConversion() async throws {
+        try await withStack { s in
+            let row = try await s.startActive(exerciseName: "Row", weightKg: 41)
+            await s.vm.updateWeightRecording(exerciseId: row.id, recording: .sides(execution: .together))
+            await s.vm.updateWeightRecording(exerciseId: row.id, recording: .sides(execution: .together, weightEntry: .combined))
+            #expect(s.vm.currentWorkout?.exercises.count == 1)
+            #expect(s.vm.currentWorkout?.exercises[0].sets[0].weight == 82)
+        }
+    }
+}
+
+extension WorkoutEditToolsTests {
+    @Test("Clearing a partially logged pair does not complete the other side")
+    func uncompletePartialPair() async throws {
+        try await withStack { s in
+            let row = try await s.startActive(exerciseName: "Row", weightKg: 41)
+            await s.vm.updateWeightRecording(exerciseId: row.id, recording: .sides())
+            var parent = row.sets[0]; parent.separateSides(recording: .sides())
+            var sides = parent.sideSets!
+            sides[0].effort.setCompleted(true)
+            await s.coordinator.updateSideSets(exerciseId: row.id, setId: parent.id, entries: sides)
+            try await s.coordinator.uncompleteSet(exerciseId: row.id, setId: parent.id)
+            #expect(s.vm.currentWorkout?.exercises[0].sets[0].completedSideCount == 0)
+            #expect(s.timer.starts.isEmpty)
+        }
+    }
+}

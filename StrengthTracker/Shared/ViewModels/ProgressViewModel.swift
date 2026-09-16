@@ -160,11 +160,13 @@ public struct ExerciseHistorySession: Identifiable, Sendable {
     }
     public var loadParts: [(load: Double, reps: Int)] {
         if let performanceEntries {
-            return performanceEntries.flatMap { entry in entry.sets.flatMap(\.effectiveParts).compactMap { part in
+            return performanceEntries.flatMap { entry in entry.sets.flatMap { set -> [(load: Double, reps: Int)] in
+                if set.sideSets != nil { return set.strengthParts(baseLoadPerRep: entry.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg), recording: entry.exercise.strengthRecording) }
+                return set.effectiveParts.compactMap { part in
                 guard let load = part.effectiveLoad(baseLoadPerRep: entry.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)), load.isFinite, load >= 0,
                       let reps = part.reps, reps > 0 else { return nil }
                 return (load, reps)
-            } }
+            } } }
         }
         return sets.flatMap(\.effectiveParts).compactMap { part in
             guard let load = part.effectiveLoad(baseLoadPerRep: baseLoad), load.isFinite, load >= 0,
@@ -176,7 +178,7 @@ public struct ExerciseHistorySession: Identifiable, Sendable {
     public var recordedReps: Int { loadParts.reduce(0) { $0 + $1.reps } }
     /// Only complete sets contribute to per-set averages; a partially recorded drop set is not a complete set.
     public var completeLoadSets: [ExerciseSet] {
-        sets.filter { set in set.effectiveParts.allSatisfy { part in
+        sets.filter { set in set.isFullyCompleted && set.effectiveParts.allSatisfy { part in
             guard let reps = part.reps, reps > 0, let load = part.effectiveLoad(baseLoadPerRep: baseLoad) else { return false }
             return load.isFinite && load >= 0
         } }
@@ -193,8 +195,19 @@ public struct ExerciseHistorySession: Identifiable, Sendable {
             return loadParts.filter { $0.load > 0 }.map { AnalyticsCalculations.calculateOneRM(weight: $0.load, reps: min($0.reps, 15)) }.max()
         case .weightAtReps: return loadParts.filter { $0.reps == targetReps }.map(\.load).max()
         case .repsAtWeight: return loadParts.filter { abs($0.load - targetWeightKg) < 0.000001 }.map { Double($0.reps) }.max()
-        case .volume: return loadParts.isEmpty ? nil : recordedVolume
-        case .sets: return Double(sets.count)
+        case .volume:
+            if let entries {
+                let hasEvidence = entries.contains { entry in
+                    entry.sets.contains { set in
+                        set.isCompleted && set.setType != .warmup && set.effectiveParts.contains { part in
+                            (part.reps ?? 0) > 0 && part.effectiveLoad(baseLoadPerRep: entry.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)) != nil
+                        }
+                    }
+                }
+                return hasEvidence ? recordedVolume : nil
+            }
+            return loadParts.isEmpty ? nil : recordedVolume
+        case .sets: return entries?.reduce(0) { $0 + $1.workingSetCredits } ?? Double(sets.count)
         case .duration:
             let values = sets.compactMap(\.durationSeconds).filter { $0 > 0 }
             return values.isEmpty ? nil : Double(values.reduce(0, +))
@@ -305,7 +318,7 @@ public enum MuscleHistoryCalculator {
         for workout in workouts where workout.completedAt != nil && workout.trainingDate >= interval.start && workout.trainingDate <= interval.end {
             let date = calendar.dateInterval(of: .weekOfYear, for: workout.trainingDate)!.start
             for entry in workout.exercises {
-                let count = entry.sets.filter { $0.isCompleted && $0.setType != .warmup }.count
+                let count = entry.workingSetCredits
                 if entry.exercise.primaryMuscleGroup == muscle { byWeek[date]?.direct += Double(count) }
                 if entry.exercise.secondaryMuscleGroups.contains(muscle) {
                     let credits = AnalyticsCalculations.attributeHardSetCredits(hardSets: count, primaryMuscle: entry.exercise.primaryMuscleGroup, secondaryMuscles: entry.exercise.secondaryMuscleGroups)

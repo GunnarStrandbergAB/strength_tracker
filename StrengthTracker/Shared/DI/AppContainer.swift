@@ -381,6 +381,10 @@ public final class AppContainer: Sendable {
             await recordingPlanVM.onPlanChanged?()
             await exerciseWidgetRefresh.refresh()
         }
+        workoutViewModel.onRecordingDefaultSaved = { [weak savedExerciseVM] in
+            await savedExerciseVM?.loadExercises()
+            await savedExerciseVM?.didSave?()
+        }
         aiFinalizerBox.finalizer = workoutFinalizer
 
         // AI assistant: workout editing seams (the AI writes through the same
@@ -469,6 +473,7 @@ public final class AppContainer: Sendable {
             ForgetMemoryTool(memoryService: aiMemoryService),
             // Workout editing (active or by date) and session control.
             GetWorkoutTool(resolver: workoutEditorResolver),
+            ConfigureWeightRecordingTool(resolver: workoutEditorResolver),
             LogSetTool(resolver: workoutEditorResolver, userPreferencesService: userPreferencesService),
             AddSetsTool(resolver: workoutEditorResolver, userPreferencesService: userPreferencesService),
             RemoveSetTool(resolver: workoutEditorResolver, userPreferencesService: userPreferencesService),

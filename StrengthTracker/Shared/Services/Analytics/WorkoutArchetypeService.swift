@@ -50,11 +50,11 @@ public final class WorkoutArchetypeService: Sendable {
         let push: Set<MuscleGroup> = [.chest, .shoulders, .triceps]
         let pull: Set<MuscleGroup> = [.back, .lats, .traps, .biceps, .forearms]
         func focus(_ workout: Workout) -> String {
-            var counts: [String: Int] = [:]
+            var counts: [String: Double] = [:]
             for exercise in workout.exercises {
                 let muscle = exercise.exercise.primaryMuscleGroup
                 let key = lower.contains(muscle) ? "Lower body" : push.contains(muscle) ? "Push" : pull.contains(muscle) ? "Pull" : [.core, .obliques, .lowerBack].contains(muscle) ? "Core" : "Mixed / other"
-                counts[key, default: 0] += exercise.sets.filter { $0.isCompleted && $0.setType != .warmup }.count
+                counts[key, default: 0] += exercise.workingSetCredits
             }
             let total = Double(counts.values.reduce(0, +))
             guard total > 0 else { return "Mixed / other" }

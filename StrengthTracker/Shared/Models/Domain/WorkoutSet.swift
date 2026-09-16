@@ -97,6 +97,27 @@ public struct DropSetEntry: Identifiable, Hashable, Sendable, Codable, Intensity
     }
 }
 
+// MARK: - Side efforts
+
+public enum BodySide: String, Codable, CaseIterable, Sendable {
+    case left, right
+    public var title: String { rawValue.capitalized }
+}
+
+/// A named side inside ONE logical set. A side may itself contain drop segments.
+/// Keeping this separate from DropSetEntry prevents treating L/R as descending loads.
+public struct SideSetEntry: Identifiable, Hashable, Sendable, Codable {
+    public var side: BodySide
+    public var effort: ExerciseSet
+    public var id: BodySide { side }
+    public init(side: BodySide, effort: ExerciseSet) {
+        self.side = side
+        var copy = effort
+        copy.sideSets = nil
+        self.effort = copy
+    }
+}
+
 // MARK: - Exercise Set
 
 public struct ExerciseSet: Identifiable, Hashable, Sendable, Codable, IntensityRecording {
@@ -113,6 +134,17 @@ public struct ExerciseSet: Identifiable, Hashable, Sendable, Codable, IntensityR
     public var isPersonalRecord: Bool
     public var isFailure: Bool
     public var completedAt: Date?
+    /// nil is the ordinary compact row. Values contain each side's actual load,
+    /// reps, effort and completion; the parent is a compatibility summary only.
+    public fileprivate(set) var sideSets: [SideSetEntry]?
+    public var isFullyCompleted: Bool { sideSets.map { !$0.isEmpty && $0.allSatisfy { $0.effort.isCompleted } } ?? isCompleted }
+    public var completedSideCount: Int { sideSets?.filter { $0.effort.isCompleted }.count ?? 0 }
+    public var hasStartedSides: Bool { sideSets?.contains { $0.effort.isCompleted } == true }
+    public var workingSetCredit: Double {
+        guard setType != .warmup else { return 0 }
+        if sideSets != nil { return Double(sideSets?.filter { $0.effort.isCompleted && $0.effort.setType != .warmup }.count ?? 0) / 2 }
+        return isCompleted ? 1 : 0
+    }
     /// Drop-set segments, INCLUDING the first/top one. Invariant (maintained by
     /// `applyDropSets(_:)`, the only mutation path): when non-empty, `setType` is
     /// `.dropset` and the parent `weight/reps/rpe/rir/isFailure` mirror `dropSets[0]`
@@ -128,7 +160,8 @@ public struct ExerciseSet: Identifiable, Hashable, Sendable, Codable, IntensityR
     /// from the set's own fields (`id` == set id). Calculation sites that care about
     /// individual efforts (PRs, e1RM candidates, rep totals) iterate this.
     public var effectiveParts: [DropSetEntry] {
-        dropSets.isEmpty
+        if let sideSets { return sideSets.filter { $0.effort.isCompleted }.flatMap { $0.effort.effectiveParts } }
+        return dropSets.isEmpty
             ? [DropSetEntry(id: id, weight: weight, reps: reps, rpe: rpe, rir: rir, isFailure: isFailure)]
             : dropSets
     }
@@ -145,10 +178,84 @@ public struct ExerciseSet: Identifiable, Hashable, Sendable, Codable, IntensityR
     /// exercises. Returns 0 unless the set is completed and non-warmup.
     /// There is deliberately NO body-weight-blind variant — volume cannot be computed
     /// without knowing the base load.
-    public func setVolume(baseLoadPerRep: Double?, multiplier: Double = 1) -> Double {
+    public func setVolume(baseLoadPerRep: Double?, multiplier: Double = 1, recording: WeightRecording? = nil) -> Double {
         guard isCompleted, setType != .warmup else { return 0 }
-        return effectiveParts.reduce(0) {
-            $0 + ($1.effectiveLoad(baseLoadPerRep: baseLoadPerRep) ?? 0) * Double($1.reps ?? 0) * multiplier
+        if let sideSets {
+            var total = 0.0
+            let loadMultiplier = recording?.sideExternalMultiplier ?? 1
+            for side in sideSets where side.effort.isCompleted && side.effort.setType != .warmup {
+                for part in side.effort.effectiveParts {
+                    let load = (baseLoadPerRep ?? 0) * (recording?.sideBaseMultiplier ?? 1) + (part.weight ?? 0) * loadMultiplier
+                    total += load * Double(part.reps ?? 0)
+                }
+            }
+            return total
+        }
+        return effectiveParts.reduce(0) { sum, part in
+            guard let recording else { return sum + (part.effectiveLoad(baseLoadPerRep: baseLoadPerRep) ?? 0) * Double(part.reps ?? 0) * multiplier }
+            let load = (baseLoadPerRep ?? 0) + (part.weight ?? 0) * recording.externalLoadMultiplier
+            return sum + load * Double(part.reps ?? 0) * recording.repetitionMultiplier
+        }
+    }
+
+    public mutating func applySideSets(_ entries: [SideSetEntry]?) {
+        guard let entries, !entries.isEmpty else { sideSets = nil; return }
+        // No duplicate sides or recursively nested sets can enter calculations.
+        var seen = Set<BodySide>()
+        sideSets = entries.filter { seen.insert($0.side).inserted }.map { SideSetEntry(side: $0.side, effort: $0.effort) }
+        dropSets = []
+        setType = sideSets!.allSatisfy { $0.effort.setType == .warmup } ? .warmup : .normal
+        let completed = sideSets!.filter { $0.effort.isCompleted }
+        isCompleted = !completed.isEmpty
+        completedAt = completed.compactMap { $0.effort.completedAt }.max()
+        // A conservative summary for legacy consumers; side-aware readers use the entries.
+        let summary = completed.min { ($0.effort.weight ?? 0) < ($1.effort.weight ?? 0) } ?? sideSets!.first!
+        weight = summary.effort.weight
+        reps = summary.effort.reps
+        let efforts = completed.compactMap { $0.effort.rpe }
+        rpe = efforts.isEmpty ? nil : efforts.reduce(0, +) / Double(efforts.count)
+        rir = rpe.map(IntensityMetric.rir(fromRPE:))
+        isFailure = completed.contains { $0.effort.isFailure }
+    }
+
+    public func canSeparateSides(recording: WeightRecording) -> Bool {
+        sideSets == nil && recording.supportsSeparateSides && effectiveParts.allSatisfy { $0.reps == nil || recording.strengthReps($0.reps!) != nil }
+    }
+    public mutating func separateSides(recording: WeightRecording, onlySide: BodySide? = nil) {
+        guard canSeparateSides(recording: recording), recording.repetitions != .oneSide || onlySide != nil else { return }
+        var effort = self
+        let scale = recording.sideWeightScale
+        effort.weight = weight.map { $0 * scale }
+        effort.reps = reps.flatMap { recording.strengthReps($0) }
+        if !dropSets.isEmpty {
+            effort.applyDropSets(dropSets.map { part in
+                var copy = part
+                copy.weight = part.weight.map { $0 * scale }
+                copy.reps = part.reps.flatMap { recording.strengthReps($0) }
+                return copy
+            })
+        }
+        applySideSets((onlySide.map { [$0] } ?? BodySide.allCases).map { side in
+            let copy = ExerciseSet(id: UUID(), order: effort.order, setType: effort.setType,
+                weight: effort.weight, reps: effort.reps, durationSeconds: effort.durationSeconds, distanceMeters: effort.distanceMeters,
+                rpe: effort.rpe, rir: effort.rir, isCompleted: effort.isCompleted, isPersonalRecord: false,
+                isFailure: effort.isFailure, completedAt: effort.completedAt,
+                dropSets: effort.dropSets.map { DropSetEntry(weight: $0.weight, reps: $0.reps, rpe: $0.rpe, rir: $0.rir, isFailure: $0.isFailure) })
+            return SideSetEntry(side: side, effort: copy)
+        })
+    }
+
+    public mutating func setCompleted(_ completed: Bool, at date: Date = Date()) {
+        if let sides = sideSets {
+            applySideSets(sides.map { side in
+                var copy = side
+                copy.effort.isCompleted = completed
+                copy.effort.completedAt = completed ? (copy.effort.completedAt ?? date) : nil
+                return copy
+            })
+        } else {
+            isCompleted = completed
+            completedAt = completed ? date : nil
         }
     }
 
@@ -158,6 +265,7 @@ public struct ExerciseSet: Identifiable, Hashable, Sendable, Codable, IntensityR
     /// and a `.dropset` type reverts to `.normal` (parent fields keep their last
     /// mirrored values).
     public mutating func applyDropSets(_ entries: [DropSetEntry]) {
+        guard sideSets == nil else { return }
         dropSets = entries
         if let top = entries.first {
             setType = .dropset
@@ -185,7 +293,8 @@ public struct ExerciseSet: Identifiable, Hashable, Sendable, Codable, IntensityR
         isPersonalRecord: Bool,
         isFailure: Bool = false,
         completedAt: Date?,
-        dropSets: [DropSetEntry] = []
+        dropSets: [DropSetEntry] = [],
+        sideSets: [SideSetEntry]? = nil
     ) {
         self.id = id
         self.order = order
@@ -201,11 +310,13 @@ public struct ExerciseSet: Identifiable, Hashable, Sendable, Codable, IntensityR
         self.isFailure = isFailure
         self.completedAt = completedAt
         self.dropSets = dropSets
+        self.sideSets = nil
+        if let sideSets { applySideSets(sideSets) }
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, order, setType, weight, reps, durationSeconds, distanceMeters
-        case rpe, rir, isCompleted, isPersonalRecord, isFailure, completedAt, dropSets
+        case rpe, rir, isCompleted, isPersonalRecord, isFailure, completedAt, dropSets, sideSets
     }
 
     // Custom decoding for backward compatibility — JSON logged before drop sets / RIR /
@@ -227,6 +338,8 @@ public struct ExerciseSet: Identifiable, Hashable, Sendable, Codable, IntensityR
         isFailure = try container.decodeIfPresent(Bool.self, forKey: .isFailure) ?? (setType == .failure)
         completedAt = try container.decodeIfPresent(Date.self, forKey: .completedAt)
         dropSets = try container.decodeIfPresent([DropSetEntry].self, forKey: .dropSets) ?? []
+        sideSets = nil
+        if let sides = try container.decodeIfPresent([SideSetEntry].self, forKey: .sideSets) { applySideSets(sides) }
     }
 }
 
@@ -240,6 +353,12 @@ public struct WorkoutExercise: Identifiable, Hashable, Sendable, Codable {
     public var notes: String?
     public var restTimerSeconds: Int?
     public var sets: [ExerciseSet]
+
+    public var workingSetCredits: Double {
+        sets.reduce(0) { total, set in
+            total + set.workingSetCredit * (set.sideSets == nil && exercise.strengthRecording?.repetitions == .oneSide ? 0.5 : 1)
+        }
+    }
 
     /// Effective-load volume: bodyweight-rep exercises count bw × factor + extra kg
     /// per rep (drop-set segments individually); external-load exercises are unchanged.

@@ -48,7 +48,7 @@ struct CompleteSetIntent: AppIntent {
             nextExerciseName: active.nextExerciseName,
             nextSetIndex: active.nextSetIndex.map { $0 + 1 },
             nextExerciseId: active.nextExerciseId,
-            weightRecording: active.weightRecording, dumbbellConventionUnconfirmed: active.dumbbellConventionUnconfirmed
+            weightRecording: active.weightRecording, dumbbellConventionUnconfirmed: active.dumbbellConventionUnconfirmed, sideSummary: active.sideSummary
         )
         service.updateActiveWorkoutState(updated)
 
@@ -133,7 +133,7 @@ struct SkipRestTimerIntent: AppIntent {
             nextExerciseName: active.nextExerciseName,
             nextSetIndex: active.nextSetIndex,
             nextExerciseId: active.nextExerciseId,
-            weightRecording: active.weightRecording, dumbbellConventionUnconfirmed: active.dumbbellConventionUnconfirmed
+            weightRecording: active.weightRecording, dumbbellConventionUnconfirmed: active.dumbbellConventionUnconfirmed, sideSummary: active.sideSummary
         )
         service.updateActiveWorkoutState(updated)
 
@@ -189,7 +189,7 @@ struct AddRestTimeIntent: AppIntent {
             nextExerciseName: active.nextExerciseName,
             nextSetIndex: active.nextSetIndex,
             nextExerciseId: active.nextExerciseId,
-            weightRecording: active.weightRecording, dumbbellConventionUnconfirmed: active.dumbbellConventionUnconfirmed
+            weightRecording: active.weightRecording, dumbbellConventionUnconfirmed: active.dumbbellConventionUnconfirmed, sideSummary: active.sideSummary
         )
         service.updateActiveWorkoutState(updated)
 

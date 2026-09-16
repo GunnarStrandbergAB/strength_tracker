@@ -95,7 +95,7 @@ public enum TrainingLoadService {
         for we in workout.exercises {
             let base = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
             for set in we.sets {
-                load += AnalyticsCalculations.setIWV(for: set, bestE1RM: conventionBests[WeightRecordingHistory.relativeKey(we.exercise)] ?? bestE1RM[we.exercise.id], baseLoadPerRep: base, modulateRPE: false)
+                load += AnalyticsCalculations.setIWV(for: set, bestE1RM: conventionBests[WeightRecordingHistory.relativeKey(we.exercise)] ?? bestE1RM[we.exercise.id], baseLoadPerRep: base, modulateRPE: false, recording: we.exercise.strengthRecording)
             }
         }
         return load
@@ -124,7 +124,7 @@ public enum TrainingLoadService {
                 var muscleLoad = 0.0
                 let base = we.exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
                 for set in we.sets {
-                    muscleLoad += AnalyticsCalculations.setIWV(for: set, bestE1RM: conventionBests[WeightRecordingHistory.relativeKey(we.exercise)] ?? bestE1RM[we.exercise.id], baseLoadPerRep: base, modulateRPE: false)
+                    muscleLoad += AnalyticsCalculations.setIWV(for: set, bestE1RM: conventionBests[WeightRecordingHistory.relativeKey(we.exercise)] ?? bestE1RM[we.exercise.id], baseLoadPerRep: base, modulateRPE: false, recording: we.exercise.strengthRecording)
                 }
 
                 let muscle = we.exercise.primaryMuscleGroup.rawValue

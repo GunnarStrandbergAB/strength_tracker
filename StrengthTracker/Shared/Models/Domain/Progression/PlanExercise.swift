@@ -79,6 +79,7 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
         if exercise.strengthRecording?.repetitions == .totalAlternating,
            (strengthModelVersion ?? 0) < 4 { return false }
         guard exercise.exerciseType == .bodyweightReps else { return true }
+        guard (weightRecording?.hasSideConfiguration == true ? weightRecording?.performanceKey : nil) == exercise.strengthRecording?.performanceKey else { return false }
         let baseline = bodyweightFactor ?? ExerciseSeedData.allExercises.first { $0.id == exerciseId }?.bodyweightFactor
         guard let baseline else { return false }
         return abs(baseline - exercise.resolvedBodyweightFactor) < 0.000001

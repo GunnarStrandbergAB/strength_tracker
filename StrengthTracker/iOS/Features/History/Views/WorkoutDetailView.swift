@@ -117,7 +117,9 @@ struct WorkoutDetailView: View {
             },
             onRemoveDropEntry: { entryId in
                 inputEdits.enqueue { await hvm.removeDropEntry(exerciseId: exerciseId, setId: setId, entryId: entryId) }
-            }
+            },
+            recording: workoutExercise.exercise.strengthRecording,
+            onSideSetsChange: { sides in inputEdits.enqueue { await hvm.replaceSideSets(exerciseId: exerciseId, setId: setId, entries: sides) } }
         )
     }
 
@@ -218,18 +220,27 @@ struct WorkoutDetailView: View {
             ForEach(displayedWorkout.exercises) { workoutExercise in
                 Section(workoutExercise.exercise.name) {
                     if let explanation = workoutExercise.exercise.weightRecordingExplanation { Text(explanation).font(.caption) }
-                    if isEditing && workoutExercise.exercise.isDumbbell { Button("Weight logging…") { recordingExercise = workoutExercise } }
+                    if isEditing && workoutExercise.exercise.supportsWeightRecording { Button("Weight logging…") { recordingExercise = workoutExercise } }
                     if isEditing, let hvm = historyViewModel {
                         editableSetRows(for: workoutExercise, hvm: hvm)
                         exerciseActionRow(for: workoutExercise, hvm: hvm)
                     } else {
                         ForEach(Array(workoutExercise.sets.enumerated()), id: \.element.id) { index, exerciseSet in
+                            if let sides = exerciseSet.sideSets {
+                                ForEach(sides) { side in
+                                    VStack(alignment: .leading) {
+                                        Text(side.side.title).font(.headline)
+                                        SetRowView(exerciseSet: side.effort, weightUnit: weightUnit, intensityMetric: intensityMetric, setNumber: index + 1)
+                                    }
+                                }
+                            } else {
                             SetRowView(
                                 exerciseSet: exerciseSet,
                                 weightUnit: historyViewModel?.userPreferencesService?.weightUnit ?? .kg,
                                 intensityMetric: intensityMetric,
                                 setNumber: index + 1
                             )
+                            }
                         }
                     }
 
@@ -281,7 +292,7 @@ struct WorkoutDetailView: View {
             }
         }
         .sheet(item: $recordingExercise) { entry in
-            WeightRecordingEditorSheet(exercise: entry.exercise) { recording in
+            WeightRecordingEditorSheet(exercise: entry.exercise, scopeDescription: "Corrects this historical entry only, preserving entered numbers. All its sets are interpreted using this setting. Other workouts and defaults are unchanged.") { recording in
                 inputEdits.enqueue { await historyViewModel?.updateWeightRecording(exerciseId: entry.id, recording: recording) }
             }
         }

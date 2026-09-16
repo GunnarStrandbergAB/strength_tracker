@@ -179,8 +179,8 @@ public final class PersonalRecordService {
     static func candidateRecords(exerciseId: UUID, exercise: Exercise, set: ExerciseSet, bodyWeightKg: Double) -> [PersonalRecord] {
         let convention = exercise.personalRecordConvention
         let base = exercise.baseLoadPerRep(bodyWeightKg: bodyWeightKg)
-        let loadParts = set.effectiveLoadParts(baseLoadPerRep: base)
-        let parts = set.effectiveParts
+        let loadParts = set.sideSets == nil ? set.effectiveLoadParts(baseLoadPerRep: base) : set.strengthParts(baseLoadPerRep: base, recording: exercise.strengthRecording)
+        let parts = set.sideSets == nil ? set.effectiveParts : loadParts.map { DropSetEntry(weight: $0.load, reps: $0.reps) }
         let achievedAt = set.completedAt ?? Date()
         var records: [PersonalRecord] = []
 

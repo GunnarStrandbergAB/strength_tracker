@@ -29,6 +29,9 @@ struct SetRowGroupView: View {
     let onDropEntryIntensityChange: ((UUID, Double?) -> Void)?
     let onDropEntryToggleFailure: ((UUID) -> Void)?
     let onRemoveDropEntry: ((UUID) -> Void)?
+    var recording: WeightRecording?
+    var onSideSetsChange: (([SideSetEntry]) -> Void)?
+    var onSideRest: (() -> Void)?
 
     init(
         setNumber: Int,
@@ -51,7 +54,10 @@ struct SetRowGroupView: View {
         onDropEntryRepsChange: ((UUID, Int?) -> Void)? = nil,
         onDropEntryIntensityChange: ((UUID, Double?) -> Void)? = nil,
         onDropEntryToggleFailure: ((UUID) -> Void)? = nil,
-        onRemoveDropEntry: ((UUID) -> Void)? = nil
+        onRemoveDropEntry: ((UUID) -> Void)? = nil,
+        recording: WeightRecording? = nil,
+        onSideSetsChange: (([SideSetEntry]) -> Void)? = nil,
+        onSideRest: (() -> Void)? = nil
     ) {
         self.setNumber = setNumber
         self.exerciseSet = exerciseSet
@@ -74,12 +80,20 @@ struct SetRowGroupView: View {
         self.onDropEntryIntensityChange = onDropEntryIntensityChange
         self.onDropEntryToggleFailure = onDropEntryToggleFailure
         self.onRemoveDropEntry = onRemoveDropEntry
+        self.recording = recording
+        self.onSideSetsChange = onSideSetsChange
+        self.onSideRest = onSideRest
     }
 
     private var hasDropEntries: Bool { !exerciseSet.dropSets.isEmpty }
 
     var body: some View {
         VStack(spacing: 0) {
+            if let sides = exerciseSet.sideSets {
+                SideSetRowsView(setNumber: setNumber, parent: exerciseSet, sides: sides,
+                    recording: recording, showIntensity: showIntensity, intensityMetric: intensityMetric,
+                    weightUnit: weightUnit, onChange: onSideSetsChange, onRest: onSideRest)
+            } else {
             SetRowGridView(
                 setNumber: setNumber,
                 exerciseSet: exerciseSet,
@@ -116,6 +130,32 @@ struct SetRowGroupView: View {
                 )
                 .id("\(entry.id)-\(intensityMetric.rawValue)-\(entry.isFailure)")
             }
+            }
+            if exerciseSet.sideSets == nil, let recording, recording.supportsSeparateSides, let onSideSetsChange {
+                if recording.repetitions == .oneSide {
+                    Menu("Choose left or right side") {
+                        ForEach(BodySide.allCases, id: \.self) { side in
+                            Button(side.title) {
+                                guard STNumericTextField.commitActiveInput() else { return }
+                                var copy = exerciseSet; copy.separateSides(recording: recording, onlySide: side)
+                                if let sides = copy.sideSets { onSideSetsChange(sides) }
+                            }
+                        }
+                    }.font(.caption).frame(minHeight: 44).padding(.horizontal, STSpacing.setRowHorizontal)
+                } else {
+                Button("Log sides separately", systemImage: "rectangle.split.2x1") {
+                    guard STNumericTextField.commitActiveInput() else { return }
+                    var copy = exerciseSet; copy.separateSides(recording: recording)
+                    if let sides = copy.sideSets { onSideSetsChange(sides) }
+                }.font(.caption).frame(minHeight: 44).padding(.horizontal, STSpacing.setRowHorizontal)
+                    .disabled(!exerciseSet.canSeparateSides(recording: recording))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if !exerciseSet.canSeparateSides(recording: recording) {
+                    Text("Enter an even alternating rep total before splitting it into left and right.")
+                        .font(.caption).foregroundStyle(STColors.textSecondary).padding(.horizontal, STSpacing.setRowHorizontal)
+                }
+            }
         }
         .background(hasDropEntries ? Color.purple.opacity(0.04) : Color.clear)
         .overlay(alignment: .leading) {
@@ -137,4 +177,90 @@ struct SetRowGroupView: View {
     }
 }
 
+/// Named sides remain within the same logical set; each has its own completion
+/// and optional drops. Only a fully completed pair starts the normal rest timer.
+struct SideSetRowsView: View {
+    let setNumber: Int
+    let parent: ExerciseSet
+    let sides: [SideSetEntry]
+    let recording: WeightRecording?
+    let showIntensity: Bool
+    let intensityMetric: IntensityMetric
+    let weightUnit: WeightUnit
+    let onChange: (([SideSetEntry]) -> Void)?
+    let onRest: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Set \(setNumber) · \(parent.completedSideCount)/\(sides.count) sides complete")
+                .font(.headline)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, STSpacing.setRowHorizontal).padding(.top, 12)
+            ForEach(sides) { side in
+                VStack(alignment: .leading, spacing: 0) {
+                    SetRowGridView(setNumber: setNumber, exerciseSet: side.effort,
+                        showRPE: showIntensity, intensityMetric: intensityMetric, weightUnit: weightUnit,
+                        weightLabel: recording?.sideWeightLabel(weightUnit), repsLabel: "Reps/side",
+                        onWeightChange: { value in change(side.side) { $0.weight = value } },
+                        onRepsChange: { value in change(side.side) { $0.reps = value } },
+                        onIntensityChange: { value in change(side.side) { $0.applyIntensity(value, metric: intensityMetric) } },
+                        onToggleComplete: { change(side.side) { $0.setCompleted(!$0.isCompleted) } },
+                        onSetTypeChange: { value in change(side.side) { $0.setType = value } },
+                        onAddDropEntry: { change(side.side) { effort in
+                            var entries = effort.dropSets.isEmpty ? effort.effectiveParts : effort.dropSets
+                            entries.append(DropSetEntry(weight: entries.last?.weight, reps: entries.last?.reps))
+                            effort.applyDropSets(entries)
+                        } },
+                        onToggleFailure: { change(side.side) { $0.setFailureFlag(!$0.isFailure) } },
+                        labelOverride: side.side.title)
+                    ForEach(Array(side.effort.dropSets.enumerated()), id: \.element.id) { index, drop in
+                        DropSetRowView(label: "\(side.side.title) \(index + 1)", entry: drop,
+                            showIntensity: showIntensity, intensityMetric: intensityMetric, weightUnit: weightUnit,
+                            weightLabel: recording?.sideWeightLabel(weightUnit), repsLabel: "Reps/side",
+                            onWeightChange: { value in changeDrop(side.side, drop.id) { $0.weight = value } },
+                            onRepsChange: { value in changeDrop(side.side, drop.id) { $0.reps = value } },
+                            onIntensityChange: { value in changeDrop(side.side, drop.id) { $0.applyIntensity(value, metric: intensityMetric) } },
+                            onToggleFailure: { changeDrop(side.side, drop.id) { $0.setFailureFlag(!$0.isFailure) } },
+                            onRemove: { change(side.side) { $0.applyDropSets($0.dropSets.filter { $0.id != drop.id }) } })
+                    }
+                }
+            }
+            if let onRest, recording?.execution != .together, parent.hasStartedSides, !parent.isFullyCompleted {
+                Button("Rest between sides", systemImage: "timer", action: onRest)
+                    .font(.callout).frame(minHeight: 44).padding(.horizontal, STSpacing.setRowHorizontal)
+            }
+            if onChange != nil {
+                Menu {
+                    if sides.count == 2 {
+                        ForEach(sides.filter { !$0.effort.isCompleted }) { side in
+                            Button("Only log \(side.side == .left ? "right" : "left") side") {
+                                onChange?(sides.filter { $0.side != side.side })
+                            }
+                        }
+                    } else if let first = sides.first {
+                        Button("Add \(first.side == .left ? "right" : "left") side") {
+                            var effort = first.effort; effort.setCompleted(false)
+                            onChange?(sides + [SideSetEntry(side: first.side == .left ? .right : .left, effort: effort)])
+                        }
+                    }
+                } label: { Label("Sides in this set", systemImage: "ellipsis.circle").font(.caption).frame(minHeight: 44) }
+                    .padding(.horizontal, STSpacing.setRowHorizontal)
+            }
+        }.disabled(onChange == nil)
+    }
+    private func change(_ side: BodySide, _ update: (inout ExerciseSet) -> Void) {
+        var copy = sides
+        guard let i = copy.firstIndex(where: { $0.side == side }) else { return }
+        update(&copy[i].effort)
+        onChange?(copy)
+    }
+    private func changeDrop(_ side: BodySide, _ id: UUID, _ update: (inout DropSetEntry) -> Void) {
+        change(side) { effort in
+            var drops = effort.dropSets
+            guard let i = drops.firstIndex(where: { $0.id == id }) else { return }
+            update(&drops[i]); effort.applyDropSets(drops)
+        }
+    }
+}
 #endif

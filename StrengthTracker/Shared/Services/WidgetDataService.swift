@@ -207,12 +207,12 @@ public final class WidgetDataService: Sendable {
     ) -> WidgetActiveWorkout {
         let currentExercise = workout.activeExercise(preferredId: activeExerciseId)
 
-        let completedSets = workout.exercises.reduce(0) { $0 + $1.sets.filter(\.isCompleted).count }
+        let completedSets = workout.exercises.reduce(0) { $0 + $1.sets.filter(\.isFullyCompleted).count }
         let totalSets = workout.exercises.reduce(0) { $0 + $1.sets.count }
 
         // Find next incomplete set for targets
-        let nextSet = currentExercise?.sets.first { !$0.isCompleted }
-        let nextSetIndex = currentExercise?.sets.firstIndex { !$0.isCompleted }
+        let nextSet = currentExercise?.sets.first { !$0.isFullyCompleted }
+        let nextSetIndex = currentExercise?.sets.firstIndex { !$0.isFullyCompleted }
 
         let nextExercise = workout.nextIncompleteExercise(afterId: currentExercise?.id)
 
@@ -231,7 +231,8 @@ public final class WidgetDataService: Sendable {
             nextSetIndex: nextSetIndex,
             nextExerciseId: nextExercise?.id.uuidString,
             weightRecording: currentExercise?.exercise.weightRecording,
-            dumbbellConventionUnconfirmed: currentExercise?.exercise.isDumbbell == true && currentExercise?.exercise.weightRecording == nil
+            dumbbellConventionUnconfirmed: currentExercise?.exercise.isDumbbell == true && currentExercise?.exercise.weightRecording == nil,
+            sideSummary: nextSet?.sideSets != nil ? "\(nextSet?.completedSideCount ?? 0)/\(nextSet?.sideSets?.count ?? 2) sides done · Complete remaining sides" : currentExercise?.exercise.strengthRecording?.supportsSeparateSides == true ? "\(currentExercise!.exercise.recordedPerformance(weight: nextSet?.weight ?? 0, reps: nextSet?.reps ?? 0, unit: .kg)) · \(currentExercise?.exercise.strengthRecording?.repetitions == .oneSide ? "Complete one side" : "Complete both sides")" : nil
         )
     }
 
