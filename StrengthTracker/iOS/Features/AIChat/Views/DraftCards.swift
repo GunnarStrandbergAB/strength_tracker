@@ -52,14 +52,7 @@ struct DraftCardView: View {
             if case .editPlan(let preview) = action.kind {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(action.title).font(.headline).foregroundStyle(STColors.textPrimary)
-                    ForEach(Array(preview.summaryLines.enumerated()), id: \.offset) { _, line in
-                        Text(line).font(.subheadline).foregroundStyle(STColors.textSecondary)
-                    }
-                    DisclosureGroup("Session details") {
-                        ForEach(Array((preview.detailLines ?? []).enumerated()), id: \.offset) { _, line in
-                            Text(line).font(.subheadline).foregroundStyle(STColors.textSecondary).padding(.vertical, 4)
-                        }
-                    }.font(.subheadline).tint(STColors.primary)
+                    PlanEditReviewContent(preview: preview)
                 }
             } else { ActionConfirmContent(action: action) }
         }
@@ -346,6 +339,52 @@ private struct PlanDraftContent: View {
         parameters.primaryGoal.rawValue
             .replacingOccurrences(of: "([A-Z])", with: " $1", options: .regularExpression)
             .capitalized
+    }
+}
+#endif
+
+#if canImport(SwiftUI)
+/// The same concrete review is used by Grok and the manual structural editor.
+struct PlanEditReviewContent: View {
+    let preview: PlanEditPreview
+    private var changedWeeks: [TrainingWeek] {
+        guard let after = preview.changeRecord?.after else { return [] }
+        let dates = Set((preview.sessionChanges ?? []).flatMap { [$0.before?.scheduledDate, $0.after?.scheduledDate].compactMap { $0 }.map { CalendarWeekBucketer.weekStart(of: $0) } })
+        let all = after.blocks.flatMap(\.weeks)
+        return Set(all.map(\.absoluteWeekNumber)).sorted().compactMap { number in
+            let group = all.filter { $0.absoluteWeekNumber == number }
+            guard let first = group.first, dates.isEmpty || first.weekStartDate.map(dates.contains) == true else { return nil }
+            var result = first; result.sessions = group.flatMap(\.sessions).filter { !$0.isOmitted }
+            return result
+        }
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(preview.summaryLines.dropFirst().enumerated()), id: \.offset) { _, line in
+                Text(line).font(.subheadline).foregroundStyle(STColors.textSecondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if preview.changeRecord != nil {
+                DisclosureGroup("Resulting schedule") {
+                    ForEach(changedWeeks) { week in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Week \(week.absoluteWeekNumber) · \(week.sessions.isEmpty ? "Rest week" : "\(week.sessions.count) sessions")").font(.headline)
+                            ForEach(week.sessions.sorted { ($0.scheduledDate ?? .distantFuture) < ($1.scheduledDate ?? .distantFuture) }) { session in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(session.displayLabel).fontWeight(.medium)
+                                    Text([session.scheduledDate?.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)), session.isDeload ? "Deload" : nil, session.isSkipped ? "Skipped" : nil, session.isCompleted ? "Completed" : nil].compactMap { $0 }.joined(separator: " · "))
+                                        .font(.caption).foregroundStyle(STColors.textSecondary)
+                                }.fixedSize(horizontal: false, vertical: true)
+                            }
+                        }.padding(.vertical, 8)
+                    }
+                }.tint(STColors.primary)
+            }
+            DisclosureGroup("Before and after") {
+                ForEach(Array((preview.detailLines ?? []).enumerated()), id: \.offset) { _, line in
+                    Text(line).font(.subheadline).foregroundStyle(STColors.textSecondary).fixedSize(horizontal: false, vertical: true).padding(.vertical, 4)
+                }
+            }.tint(STColors.primary)
+        }
     }
 }
 #endif

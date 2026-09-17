@@ -14,6 +14,8 @@ public struct TrainingWeek: Identifiable, Codable, Equatable, Sendable {
     public var isDeload: Bool
     public var isCompleted: Bool
     public var completedAt: Date?
+    /// Explicit calendar identity also represents a week with no workouts.
+    public var calendarStartDate: Date?
 
     public init(
         id: UUID = UUID(),
@@ -22,7 +24,8 @@ public struct TrainingWeek: Identifiable, Codable, Equatable, Sendable {
         sessions: [PlannedSession] = [],
         isDeload: Bool = false,
         isCompleted: Bool = false,
-        completedAt: Date? = nil
+        completedAt: Date? = nil,
+        calendarStartDate: Date? = nil
     ) {
         self.id = id
         self.weekNumber = weekNumber
@@ -31,6 +34,7 @@ public struct TrainingWeek: Identifiable, Codable, Equatable, Sendable {
         self.isDeload = isDeload
         self.isCompleted = isCompleted
         self.completedAt = completedAt
+        self.calendarStartDate = calendarStartDate
     }
 
     public var completedSessions: Int {
@@ -43,7 +47,12 @@ public struct TrainingWeek: Identifiable, Codable, Equatable, Sendable {
 
     /// All sessions completed or skipped — the week no longer expects user action.
     public var allSessionsClosed: Bool {
-        !sessions.isEmpty && sessions.allSatisfy { $0.isClosed }
+        if sessions.isEmpty {
+            guard let start = calendarStartDate,
+                  let end = CalendarWeekBucketer.mondayCalendar.date(byAdding: .day, value: 7, to: start) else { return false }
+            return end <= Date()
+        }
+        return sessions.allSatisfy { $0.isClosed }
     }
 
     /// True when any session in this week is a deload session (week may be a partial deload).
@@ -53,13 +62,17 @@ public struct TrainingWeek: Identifiable, Codable, Equatable, Sendable {
 
     /// Monday-anchored start of the calendar week containing this week's earliest session.
     public var weekStartDate: Date? {
-        sessions.compactMap(\.scheduledDate).min().map { CalendarWeekBucketer.weekStart(of: $0) }
+        calendarStartDate ?? sessions.compactMap(\.scheduledDate).min().map { CalendarWeekBucketer.weekStart(of: $0) }
     }
 
     /// Span from the earliest to the latest scheduled session date in this week.
     public var dateRange: ClosedRange<Date>? {
         let dates = sessions.compactMap(\.scheduledDate)
-        guard let min = dates.min(), let max = dates.max() else { return nil }
+        guard let min = dates.min(), let max = dates.max() else {
+            guard let start = calendarStartDate,
+                  let end = CalendarWeekBucketer.mondayCalendar.date(byAdding: .day, value: 6, to: start) else { return nil }
+            return start...end
+        }
         return min...max
     }
 

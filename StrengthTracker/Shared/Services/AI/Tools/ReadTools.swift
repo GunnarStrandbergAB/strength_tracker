@@ -518,25 +518,36 @@ public final class GetPersonalRecordsTool: AITool {
 public final class GetActivePlanTool: AITool {
     private let progressionPlanRepository: any ProgressionPlanRepository
     private let userPreferencesService: UserPreferencesService
+    private let viewModel: ProgressionPlanViewModel?
 
     public init(
         progressionPlanRepository: any ProgressionPlanRepository,
-        userPreferencesService: UserPreferencesService
+        userPreferencesService: UserPreferencesService,
+        viewModel: ProgressionPlanViewModel? = nil
     ) {
         self.progressionPlanRepository = progressionPlanRepository
         self.userPreferencesService = userPreferencesService
+        self.viewModel = viewModel
     }
 
     public let name = "get_active_plan"
-    public let description = "Active plan with version, calendar/programming week numbers, session IDs, dates and prescriptions. Schedule pages of 30 sessions; use offset/limit and week filters. Read before proposing edits."
+    public let description = "Active plan with version, calendar/programming week numbers, session IDs, dates and prescriptions. Schedule pages of 30 sessions; use offset/limit and week filters. Read before proposing edits. Includes calendar summaries and undo history. Use session_id/include_details for full effective workout contents and editable_contents; date/status filters narrow the schedule."
 
     public var parametersSchema: JSONValue {
         AIToolRegistry.objectSchema(properties: ["offset": AIToolRegistry.integerSchema("Session offset, default 0"),
             "limit": AIToolRegistry.integerSchema("1–100 sessions, default 30"),
-            "week": AIToolRegistry.integerSchema("Optional displayed calendar week number")])
+            "week": AIToolRegistry.integerSchema("Optional displayed calendar week number"),
+            "session_id": AIToolRegistry.stringSchema("Read one session by stable UUID"),
+            "from_date": AIToolRegistry.stringSchema("Inclusive local yyyy-MM-dd"),
+            "to_date": AIToolRegistry.stringSchema("Inclusive local yyyy-MM-dd"),
+            "status": AIToolRegistry.stringSchema("all (default), upcoming, completed, skipped or overdue"),
+            "include_details": AIToolRegistry.boolSchema("Include full effective workout and editable contents; also enabled by session_id")])
     }
 
-    private struct Arguments: Decodable { var offset: Int?; var limit: Int?; var week: Int? }
+    private struct Arguments: Decodable {
+        var offset: Int?; var limit: Int?; var week: Int?; var session_id: UUID?
+        var from_date: String?; var to_date: String?; var status: String?; var include_details: Bool?
+    }
     public func call(argumentsJSON: String) async throws -> AIToolResult {
         let args = try decodeArguments(Arguments.self, from: argumentsJSON)
         let offset = args.offset ?? 0, limit = args.limit ?? 30
@@ -548,6 +559,14 @@ public final class GetActivePlanTool: AITool {
             )
         }
 
+        let from = args.from_date.flatMap(AIJSON.parseDate), to = args.to_date.flatMap(AIJSON.parseDate)
+        guard (args.from_date == nil || from.map(AIJSON.dateString) == args.from_date),
+              (args.to_date == nil || to.map(AIJSON.dateString) == args.to_date),
+              from == nil || to == nil || from! <= to! else { throw AIToolError("Use a valid inclusive yyyy-MM-dd date range.") }
+        guard ["all", "upcoming", "completed", "skipped", "overdue"].contains(args.status ?? "all") else { throw AIToolError("Unknown session status filter.") }
+        let today = CalendarWeekBucketer.mondayCalendar.startOfDay(for: Date())
+        let protected = await viewModel?.planSessionsInUse() ?? []
+        let catalog = try await viewModel?.planEditCatalog()
         let currentWeekNumber = plan.currentWeek?.absoluteWeekNumber
         // PlanExercise 1RM values follow the app-wide kg convention.
         let exercises = plan.exercises.sorted { $0.order < $1.order }.map { exercise -> JSONValue in
@@ -576,18 +595,53 @@ public final class GetActivePlanTool: AITool {
         payload["configuration"] = try AIToolData.json(plan.configuration)
         payload["week_semantics"] = .string("week is the displayed Monday–Sunday calendar bucket. programmingWeekNumber/ID retain the original programme; insertions never truncate remaining sessions.")
         payload["current_deload_settings"] = .object(["weight_percent": .number(Double(userPreferencesService.deloadWeightPercentage)), "rest_percent": .number(Double(userPreferencesService.deloadRestPercentage))])
+        payload["deload_days"] = try AIToolData.json(plan.deloadDays)
+        payload["week_summaries"] = try AIToolData.json(PlanEditingService.weekSummaries(plan))
+        payload["frequency_semantics"] = .string("weekly_frequency is the usual schedule; week_summaries give the actual programmed count, including exceptions and rest weeks.")
         let scheduled = plan.blocks.flatMap { block in block.weeks.flatMap { week in
             week.sessions.map { (block: block, week: week, session: $0) }
         }}.filter { args.week == nil || $0.week.absoluteWeekNumber == args.week }
             .sorted { ($0.session.scheduledDate ?? .distantFuture) < ($1.session.scheduledDate ?? .distantFuture) }
-        payload["schedule_total"] = .number(Double(scheduled.count))
-        payload["next_offset"] = offset + limit < scheduled.count ? .number(Double(offset + limit)) : .null
-        payload["sessions"] = .array(try scheduled.dropFirst(offset).prefix(limit).map { row in
-            .object(["calendar_week": .number(Double(row.week.absoluteWeekNumber)), "block": .string(row.block.name),
+        let filtered = scheduled.filter { row in
+            let s = row.session, date = row.session.scheduledDate ?? .distantPast
+            guard args.session_id == nil || s.id == args.session_id,
+                  from == nil || date >= from!, to == nil || Calendar.current.startOfDay(for: date) <= to! else { return false }
+            switch args.status ?? "all" {
+            case "upcoming": return !s.isClosed && date >= today
+            case "completed": return s.isCompleted
+            case "skipped": return s.isSkipped
+            case "overdue": return !s.isClosed && date < today
+            default: return true
+            }
+        }
+        payload["schedule_total"] = .number(Double(filtered.count))
+        payload["next_offset"] = offset + limit < filtered.count ? .number(Double(offset + limit)) : .null
+        payload["sessions"] = .array(try filtered.dropFirst(offset).prefix(limit).map { row in
+            var output: [String: JSONValue] = ["calendar_week": .number(Double(row.week.absoluteWeekNumber)), "block": .string(row.block.name),
                 "session": try AIToolData.json(row.session), "omitted": .bool(row.session.isOmitted),
-                "completed": .bool(row.session.isCompleted)])
+                "completed": .bool(row.session.isCompleted)]
+            let reason = row.session.isCompleted ? "Completed workout" : protected.contains(row.session.id) ? "Workout in progress or already logged" : (row.session.scheduledDate ?? .distantPast) < today ? "Overdue: reschedule/skip, or explicitly correct removal" : nil
+            output["editable"] = .bool(reason == nil)
+            output["editability_reason"] = reason.map(JSONValue.string) ?? .null
+            if args.include_details == true || args.session_id != nil, let catalog {
+                let effective = row.session.resolvedTemplate(linked: catalog.templates.first { $0.id == row.session.templateId }, exercises: catalog.exercises, planExercises: plan.exercises)
+                output["effective_workout"] = try AIToolData.json(effective)
+                do { output["editable_contents"] = try AIToolData.json(PlanEditingService.editableContents(for: row.session, plan: plan, templates: catalog.templates, exercises: catalog.exercises)) }
+                catch { output["contents_edit_error"] = .string(error.localizedDescription) }
+            }
+            return .object(output)
         })
-        payload["adjustments"] = try AIToolData.json(Array(plan.adjustments.suffix(10)))
+        payload["adjustments"] = .array(try plan.adjustments.suffix(20).map { adjustment in
+            var output: [String: JSONValue] = ["id": .string(adjustment.id.uuidString), "description": .string(adjustment.description),
+                "applied_at": try AIToolData.json(adjustment.appliedAt), "undo_available": .bool(adjustment.editRecord?.after == PlanScheduleSnapshot(plan))]
+            if let record = adjustment.editRecord {
+                let currentIDs = Set(PlanEditingService.sessions(plan).map(\.id))
+                output["removed_sessions"] = try AIToolData.json(record.before.sessions.filter { old in !record.after.sessions.contains { $0.id == old.id } && !currentIDs.contains(old.id) }.map {
+                    PlanSessionSummary(id: $0.id, date: $0.scheduledDate, name: $0.displayLabel, deload: $0.isDeload)
+                })
+            }
+            return .object(output)
+        })
         if let currentWeekNumber {
             payload["current_week"] = .number(Double(currentWeekNumber))
         }

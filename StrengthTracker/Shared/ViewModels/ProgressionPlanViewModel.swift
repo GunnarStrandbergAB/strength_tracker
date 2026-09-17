@@ -1269,118 +1269,36 @@ public final class ProgressionPlanViewModel {
     // MARK: - Template Merge
 
     public func mergeSessionIntoTemplate(session: PlannedSession, template: WorkoutTemplate, exercises: [Exercise]) -> WorkoutTemplate {
-        let plannedLookup = Dictionary(
-            session.plannedExercises.map { ($0.exerciseId, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        // Name fallback only for UNIQUELY named planned exercises — two variants
-        // of the same movement (e.g. plate-loaded vs cable machine) share a name
-        // but must never cross-apply each other's targets.
-        var nameCounts: [String: Int] = [:]
-        for planned in session.plannedExercises {
-            nameCounts[planned.exerciseName.lowercased(), default: 0] += 1
-        }
-        let plannedByName = Dictionary(
-            uniqueKeysWithValues: session.plannedExercises
-                .filter { nameCounts[$0.exerciseName.lowercased()] == 1 }
-                .map { ($0.exerciseName.lowercased(), $0) }
-        )
-
-        var mergedExercises = template.exercises.map { original -> TemplateExercise in
-            var te = original
-            te.exercise = te.exercise.resolvingBodyweight(from: exercises)
-            let planned = plannedLookup[te.exercise.id]
-                ?? plannedByName[te.exercise.name.lowercased()]
-            guard let planned else {
-                if session.isDeload {
-                    if let policy = session.deloadPrescription {
-                        var copy = te
-                        let factor = Double(policy.weightPercentage) / 100
-                        copy.targetWeight = copy.targetWeight.map { ($0 * factor * 100).rounded() / 100 }
-                        copy.setTargets = copy.setTargets.map { target in
-                            var t = target; t.targetWeight = t.targetWeight.map { ($0 * factor * 100).rounded() / 100 }; return t
-                        }
-                        return copy
-                    }
-                    return te.deloaded()
-                }
-                return te
-            }
-            te.exercise.weightRecording = planned.weightRecording ?? activePlan?.exercises.first { $0.exerciseId == planned.exerciseId }?.weightRecording
-            return TemplateExercise(
-                id: te.id,
-                exercise: te.exercise,
-                order: te.order,
-                supersetGroup: te.supersetGroup,
-                notes: planned.notes ?? te.notes,
-                restTimerSeconds: planned.restSeconds,
-                targetSets: planned.sets,
-                targetReps: planned.targetReps,
-                targetWeight: planned.targetWeight,
-                targetDurationSeconds: te.targetDurationSeconds,
-                targetDistanceMeters: te.targetDistanceMeters,
-                setTargets: planned.generateSetTargets(),
-                isWarmUp: planned.isWarmup
-            )
-        }
-
-        // Append plan exercises not already covered by the template
-        let coveredIds = Set(template.exercises.map { $0.exercise.id })
-        let exerciseLookup = Dictionary(exercises.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        var nextOrder = mergedExercises.count
-
-        for planned in session.plannedExercises where !coveredIds.contains(planned.exerciseId) {
-            var exercise = exerciseLookup[planned.exerciseId] ?? Exercise(
-                id: planned.exerciseId,
-                name: planned.exerciseName,
-                primaryMuscleGroup: .other,
-                secondaryMuscleGroups: [],
-                category: .barbell,
-                exerciseType: .weightedReps,
-                instructions: nil,
-                isCustom: false,
-                isArchived: false
-            )
-            exercise.weightRecording = planned.weightRecording ?? activePlan?.exercises.first { $0.exerciseId == planned.exerciseId }?.weightRecording
-            if planned.weightRecording != nil { exercise.category = .dumbbell }
-            mergedExercises.append(TemplateExercise(
-                id: planned.id,
-                exercise: exercise,
-                order: nextOrder,
-                supersetGroup: nil,
-                notes: planned.notes,
-                restTimerSeconds: planned.restSeconds,
-                targetSets: planned.sets,
-                targetReps: planned.targetReps,
-                targetWeight: planned.targetWeight,
-                targetDurationSeconds: nil,
-                targetDistanceMeters: nil,
-                setTargets: planned.generateSetTargets(),
-                isWarmUp: planned.isWarmup
-            ))
-            nextOrder += 1
-        }
-
-        return WorkoutTemplate(
-            id: UUID(),
-            name: template.name,
-            notes: template.notes,
-            sortOrder: 0,
-            lastUsedAt: nil,
-            timesUsed: 0,
-            exercises: mergedExercises, deloadRestPercentage: session.deloadPrescription?.restPercentage
-        )
+        session.resolvedTemplate(linked: template, exercises: exercises, planExercises: activePlan?.exercises ?? [])
     }
     public func planEditCatalog() async throws -> (templates: [WorkoutTemplate], exercises: [Exercise]) {
         (try await templateRepository.fetchAll(), try await exerciseRepository.fetchAll().filter { !$0.isArchived })
     }
 
-    public func previewPlanEdit(_ request: PlanEditRequest) async throws -> PlanEditPreview {
+    public var currentPlanEditSettings: PlanConfiguration {
+        PlanConfiguration(durationWeeks: activePlan?.configuration?.durationWeeks ?? activePlan?.totalWeeks ?? 12,
+            deloadWeightPercentage: userPreferencesService?.deloadWeightPercentage ?? 50,
+            deloadRestPercentage: userPreferencesService?.deloadRestPercentage ?? 75)
+    }
+
+    public func planSessionsInUse() async -> Set<UUID> {
+        var result = protectedPlanSessions?() ?? []
+        if let workoutRepository, let workouts = try? await workoutRepository.fetchAll() {
+            result.formUnion(workouts.compactMap(\.plannedSessionId))
+        }
+        return result
+    }
+
+    public private(set) var lastAppliedPlanEditContext: String?
+
+    public func previewPlanEdit(_ request: PlanEditRequest, planID: UUID? = nil, expectedVersion: String? = nil) async throws -> PlanEditPreview {
         guard canEditPlan?() ?? true else { throw PlanEditError("Training plans require Pro access.") }
         guard let plan = try await progressionPlanRepository.fetchActive() else { throw PlanEditError("No active plan.") }
+        if let planID, planID != plan.id { throw PlanEditError("The active plan changed. Read it again.") }
+        if let expectedVersion, expectedVersion != PlanEditingService.version(plan) { throw PlanEditError("The plan changed since it was read. Read it again before proposing changes.") }
         let templates = try await templateRepository.fetchAll()
         let exercises = try await exerciseRepository.fetchAll()
-        var protected = protectedPlanSessions?() ?? []
+        var protected = await planSessionsInUse()
         if let workoutRepository, let active = try await workoutRepository.fetchActive(), let id = active.plannedSessionId { protected.insert(id) }
         let settings = PlanConfiguration(durationWeeks: plan.configuration?.durationWeeks ?? plan.totalWeeks,
             deloadWeightPercentage: userPreferencesService?.deloadWeightPercentage ?? 50,
@@ -1399,13 +1317,46 @@ public final class ProgressionPlanViewModel {
               PlanEditingService.dependencies(templates: templates, exercises: exercises) == preview.dependencyVersion else {
             throw PlanEditError("The plan or exercise/template data changed. Request a fresh preview before applying.")
         }
-        var protected = protectedPlanSessions?() ?? []
+        var protected = await planSessionsInUse()
         if let workoutRepository, let active = try await workoutRepository.fetchActive(), let id = active.plannedSessionId { protected.insert(id) }
-        let changed = try PlanEditingService.applying(preview.request, to: plan, settings: preview.settings,
-            templates: templates, exercises: exercises, protectedSessionIDs: protected, operationID: preview.id)
+        var changed: ProgressionPlan
+        if let record = preview.changeRecord {
+            guard PlanScheduleSnapshot(plan) == record.before else { throw PlanEditError("The schedule changed. Request a fresh preview.") }
+            let today = CalendarWeekBucketer.mondayCalendar.startOfDay(for: Date())
+            let previewDay = CalendarWeekBucketer.mondayCalendar.startOfDay(for: preview.proposedAt)
+            for change in PlanEditingService.changes(from: record.before, to: record.after) {
+                if let date = change.after?.scheduledDate, date >= previewDay, date < today {
+                    throw PlanEditError("A proposed session is now in the past. Request a fresh preview.")
+                }
+            }
+            changed = plan
+            record.after.install(on: &changed)
+            try PlanEditingService.validateResult(changed, original: plan, protected: protected)
+            var adjustment = PlanAdjustment(id: preview.id, adjustmentType: .reforecast, trigger: .userManual,
+                description: preview.request.operation.displayName, previousValues: ["endDate": PlanEditingService.dateLabel(plan.targetEndDate)],
+                newValues: ["endDate": PlanEditingService.dateLabel(changed.targetEndDate)], wasAccepted: true)
+            adjustment.editRecord = record
+            changed.adjustments.append(adjustment)
+            let journalIndices = changed.adjustments.indices.filter { changed.adjustments[$0].editRecord != nil }
+            for i in journalIndices.dropLast(10) { changed.adjustments[i].editRecord = nil }
+            changed.updatedAt = Date()
+        } else {
+            // Previously saved chat proposals retain their original one-operation path.
+            changed = try PlanEditingService.applying(preview.request, to: plan, settings: preview.settings,
+                templates: templates, exercises: exercises, protectedSessionIDs: protected, operationID: preview.id)
+        }
         try await progressionPlanRepository.save(changed)
         await loadActivePlan()
         await onPlanChanged?()
+        if let saved = activePlan {
+            let changes = PlanEditingService.changes(from: .init(plan), to: .init(saved))
+            lastAppliedPlanEditContext = AIJSON.string(.object([
+                "plan_id": .string(saved.id.uuidString), "version": .string(PlanEditingService.version(saved)),
+                "total_weeks": .number(Double(saved.totalWeeks)), "end_date": .string(PlanEditingService.dateLabel(saved.targetEndDate)),
+                "saved_changes": try AIToolData.json(changes)
+            ]))
+        }
+
     }
 
 }

@@ -456,7 +456,8 @@ public final class AppContainer: Sendable {
             ),
             GetActivePlanTool(
                 progressionPlanRepository: progressionPlanRepository,
-                userPreferencesService: userPreferencesService
+                userPreferencesService: userPreferencesService,
+                viewModel: progressionPlanViewModel
             ),
             ProposeExerciseTool(exerciseRepository: exerciseRepository),
             ProposeTemplateTool(
@@ -529,6 +530,7 @@ public final class AppContainer: Sendable {
         let planRepo = progressionPlanRepository
         let proGate = proFeatureGate
         let actionExecutor = aiPendingActionExecutor
+        aiChatViewModel.appliedPlanContext = { [weak progressionVM] in progressionVM?.lastAppliedPlanEditContext }
         aiChatViewModel.onSaveDraft = { [weak exerciseVM, weak templateVM, weak progressionVM] draft in
             switch draft {
             case .action(let action):
@@ -685,7 +687,7 @@ public final class AppContainer: Sendable {
                         if let linked = templates.first(where: { $0.id == session.templateId }) {
                             template = progressionPlanViewModel.mergeSessionIntoTemplate(session: session, template: linked, exercises: exercises)
                         } else { template = session.toWorkoutTemplate(exercises: exercises) }
-                        sync.append(.init(id: session.id, planId: plan.id, planName: plan.name, sessionLabel: session.sessionLabel,
+                        sync.append(.init(id: session.id, planId: plan.id, planName: plan.name, sessionLabel: session.displayLabel,
                             weekLabel: "Week \(week.absoluteWeekNumber)", blockName: block.name, isDeload: session.isDeload, template: template))
                     }
                 }

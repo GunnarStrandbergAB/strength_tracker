@@ -560,3 +560,31 @@ final class EnhancedPlanPersistenceTests: XCTestCase {
     }
 }
 #endif
+
+#if canImport(SwiftData)
+extension EnhancedPlanPersistenceTests {
+    func testStructuralEditsPersistRestWeeksSnapshotsAndUndoJournal() async throws {
+        let helper = PlanStructureEditingTests()
+        let (plan, templates, exercises) = helper.fixture()
+        let source = helper.week(plan, 5)[0]
+        let contents = try PlanEditingService.editableContents(for: source, plan: plan, templates: templates, exercises: exercises)
+        let edited = try helper.apply(.init(operation: .batch, operations: [
+            .init(operation: .setSessionExercises, sessionID: source.id, scope: .session, contents: [contents[0]]),
+            .init(operation: .setWeekSchedule, week: 6, schedule: [])]), plan, templates: templates, exercises: exercises)
+        let container = try ModelContainer(for: ProgressionPlanEntity.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let repo = SwiftDataProgressionPlanRepository(modelContext: ModelContext(container))
+        try await repo.save(edited)
+        let read = try await repo.fetchActive()
+        let saved = try XCTUnwrap(read)
+        XCTAssertEqual(saved.blocks, edited.blocks)
+        XCTAssertEqual(saved.adjustments.last?.editRecord, edited.adjustments.last?.editRecord)
+        XCTAssertEqual(saved.configuration?.calendarAnchorDate, helper.now)
+        let template = helper.week(saved, 5)[0].toWorkoutTemplate(exercises: exercises)
+        let dto = PlannedSessionSync(id: source.id, planId: saved.id, planName: saved.name, sessionLabel: source.displayLabel,
+            weekLabel: "Week 5", blockName: nil, template: template)
+        let watch = try JSONDecoder().decode(PlannedSessionSync.self, from: JSONEncoder().encode(dto))
+        XCTAssertEqual(watch.template.exercises.count, 1)
+        XCTAssertEqual(watch.template.exercises[0].exercise.category, .cable)
+    }
+}
+#endif
