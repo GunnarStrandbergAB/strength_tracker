@@ -22,6 +22,7 @@ public final class AIChatViewModel {
     private let userPreferencesService: UserPreferencesService
 
     /// Routes accepted drafts into the app (wired by AppContainer).
+    public var appliedPlanContext: (@MainActor () -> String?)?
     public var onSaveDraft: (@MainActor (AIDraft) async throws -> Void)?
     /// Per-turn app-state note (e.g. the active workout), prepended to every
     /// turn's input because the system prompt is frozen per conversation.
@@ -156,6 +157,9 @@ public final class AIChatViewModel {
     private func acceptanceNote(for draft: AIDraft, accepted: Bool) -> String {
         switch draft {
         case .action(let action):
+            if accepted, case .editPlan = action.kind, let result = appliedPlanContext?() {
+                return "[Plan edit applied successfully. Actual saved result: \(result)]"
+            }
             return accepted
                 ? "[User confirmed and the app executed the action '\(action.title)'.]"
                 : "[User declined the action '\(action.title)'. Nothing was changed.]"

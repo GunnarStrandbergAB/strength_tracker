@@ -79,7 +79,7 @@ public enum CalendarWeekBucketer {
             .flatMap(\.weeks)
             .flatMap(\.sessions)
             .compactMap(\.scheduledDate)
-        guard let earliest = allDates.min() else { return blocks }
+        guard let earliest = (allDates + blocks.flatMap(\.weeks).compactMap(\.calendarStartDate)).min() else { return blocks }
         let anchor = weekStart(of: earliest, calendar: calendar)
 
         return blocks.map { block in
@@ -96,8 +96,7 @@ public enum CalendarWeekBucketer {
         // dated session. Enables id reuse and field preservation across re-runs.
         var existingWeekByStart: [Date: TrainingWeek] = [:]
         for week in block.weeks {
-            guard let earliest = week.sessions.compactMap(\.scheduledDate).min() else { continue }
-            let key = weekStart(of: earliest, calendar: calendar)
+            guard let key = week.weekStartDate else { continue }
             if existingWeekByStart[key] == nil {
                 existingWeekByStart[key] = week
             }
@@ -107,12 +106,12 @@ public enum CalendarWeekBucketer {
         var buckets: [Date: [PlannedSession]] = [:]
         var undatedWeeks: [TrainingWeek] = []
         for week in block.weeks {
-            let fallbackKey = week.sessions.compactMap(\.scheduledDate).min()
-                .map { weekStart(of: $0, calendar: calendar) }
+            let fallbackKey = week.weekStartDate
             guard let fallbackKey else {
                 undatedWeeks.append(week)
                 continue
             }
+            if week.sessions.isEmpty { buckets[fallbackKey, default: []] = [] }
             for session in week.sessions {
                 let key = session.scheduledDate.map { weekStart(of: $0, calendar: calendar) } ?? fallbackKey
                 buckets[key, default: []].append(session)
@@ -132,7 +131,7 @@ public enum CalendarWeekBucketer {
                 sessions: sessions,
                 isDeload: !sessions.isEmpty && sessions.allSatisfy(\.isDeload),
                 isCompleted: existing?.isCompleted ?? false,
-                completedAt: existing?.completedAt
+                completedAt: existing?.completedAt, calendarStartDate: existing?.calendarStartDate
             )
         }
         newWeeks.append(contentsOf: undatedWeeks)

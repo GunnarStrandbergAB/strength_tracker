@@ -535,3 +535,66 @@ extension CreatePlanTests {
         }
     }
 }
+
+extension CreatePlanTests {
+    @Test("A structural batch is one frozen preview; exact IDs survive Apply and retries")
+    func structuralPreview() async throws {
+        let (vm, repo) = makeViewModel()
+        let plan = try await vm.createPlan(from: .init(name: "Batch", trainingStatus: .advanced, programType: .linear,
+            primaryGoal: .strength, weeklyFrequency: 3, trainingDays: [2,4,6], exercises: [ProgressionTestHelpers.makeTestPlanExercise()],
+            creationSource: .structuredFlow, durationWeeks: 12))
+        let source = try #require(plan.blocks.flatMap(\.weeks).first { $0.absoluteWeekNumber == 5 }?.sessions.first)
+        let newDate = Calendar.current.date(byAdding: .day, value: 1, to: source.scheduledDate!)!
+        let json = """
+        {"operation":"batch","plan_id":"\(plan.id)","expected_version":"\(PlanEditingService.version(plan))","operations":[
+          {"operation":"duplicateSession","session_id":"\(source.id)","new_date":"\(AIJSON.dateString(newDate))","label":"Extra"},
+          {"operation":"updateSession","session_id":"\(source.id)","label":"Main"}]}
+        """
+        let result = try await ProposePlanEditTool(viewModel: vm).call(argumentsJSON: json)
+        guard case .action(let action) = result.draft, case .editPlan(let preview) = action.kind else { Issue.record("Expected preview"); return }
+        #expect(try await repo.fetchActive()?.blocks == plan.blocks)
+        #expect(result.outputForModel.contains("resulting_schedule"))
+        try await vm.applyPlanEdit(preview)
+        let saved = try #require(try await repo.fetchActive())
+        #expect(PlanScheduleSnapshot(saved) == preview.changeRecord?.after)
+        #expect(saved.adjustments.filter { $0.id == preview.id }.count == 1)
+        try await vm.applyPlanEdit(preview)
+        #expect(try await repo.fetchActive()?.adjustments.count == saved.adjustments.count)
+        #expect(vm.lastAppliedPlanEditContext?.contains("Extra") == true)
+    }
+
+    @Test("Structural tools require a fresh plan binding and reject unknown fields")
+    func toolBinding() async throws {
+        let (vm, _) = makeViewModel()
+        let p = try await vm.createPlan(from: .init(name: "Bound", trainingStatus: .advanced, programType: .linear,
+            primaryGoal: .strength, weeklyFrequency: 3, exercises: [ProgressionTestHelpers.makeTestPlanExercise()], creationSource: .structuredFlow))
+        let tool = ProposePlanEditTool(viewModel: vm)
+        await #expect(throws: (any Error).self) { try await tool.call(argumentsJSON: #"{"operation":"setWeekSchedule","week":5,"schedule":[]}"#) }
+        await #expect(throws: (any Error).self) { try await tool.call(argumentsJSON: """
+        {"operation":"setWeekSchedule","plan_id":"\(p.id)","expected_version":"stale","week":5,"schedule":[]}
+        """) }
+        await #expect(throws: (any Error).self) { try await tool.call(argumentsJSON: #"{"operation":"convertDeload","week":5,"delete_everything":true}"#) }
+        await #expect(throws: (any Error).self) { try await tool.call(argumentsJSON: #"{"operation":"rescheduleSession","new_date":"2026-02-30"}"#) }
+        for binding in [#""plan_id":"not-a-uuid""#, #""plan_id":12"#, #""expected_version":42"#, #""expected_version":" ""#] {
+            await #expect(throws: (any Error).self) { try await tool.call(argumentsJSON: "{\"operation\":\"convertDeload\",\"week\":5,\(binding)}") }
+        }
+    }
+
+    @Test("Read tool exposes actual counts, rest weeks and bounded edit history")
+    func structuralRead() async throws {
+        let (vm, repo) = makeViewModel()
+        _ = try await vm.createPlan(from: .init(name: "Read", trainingStatus: .advanced, programType: .linear,
+            primaryGoal: .strength, weeklyFrequency: 3, exercises: [ProgressionTestHelpers.makeTestPlanExercise()], creationSource: .structuredFlow))
+        let preview = try await vm.previewPlanEdit(.init(operation: .setWeekSchedule, week: 5, schedule: []))
+        try await vm.applyPlanEdit(preview)
+        let read = GetActivePlanTool(progressionPlanRepository: repo, userPreferencesService: UserPreferencesService(), viewModel: vm)
+        let result = try await read.call(argumentsJSON: #"{"week":5}"#)
+        let json = try JSONSerialization.jsonObject(with: Data(result.outputForModel.utf8)) as! [String: Any]
+        let plan = json["active_plan"] as! [String: Any]
+        #expect(plan["schedule_total"] as? Int == 0)
+        let summary = (plan["week_summaries"] as! [[String: Any]]).first { $0["week"] as? Int == 5 }
+        #expect(summary?["restWeek"] as? Bool == true)
+        #expect(result.outputForModel.contains("removed_sessions"))
+        #expect(!result.outputForModel.contains("normalExercises"))
+    }
+}

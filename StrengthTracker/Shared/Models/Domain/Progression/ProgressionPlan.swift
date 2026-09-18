@@ -162,7 +162,7 @@ public struct ProgressionPlan: Identifiable, Codable, Equatable, Sendable {
 
     public func elapsedCalendarWeeks(asOf now: Date = Date()) -> Int {
         let earliest = blocks.flatMap(\.weeks).flatMap(\.sessions).compactMap(\.scheduledDate).min()
-        let anchorWeekStart = CalendarWeekBucketer.weekStart(of: earliest ?? startDate)
+        let anchorWeekStart = configuration?.calendarAnchorDate ?? blocks.flatMap(\.weeks).compactMap(\.calendarStartDate).min() ?? CalendarWeekBucketer.weekStart(of: earliest ?? startDate)
         let nowWeekStart = CalendarWeekBucketer.weekStart(of: now)
         let days = CalendarWeekBucketer.mondayCalendar
             .dateComponents([.day], from: anchorWeekStart, to: nowWeekStart).day ?? 0

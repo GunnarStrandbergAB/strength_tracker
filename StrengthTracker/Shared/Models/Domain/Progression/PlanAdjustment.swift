@@ -13,6 +13,8 @@ public struct PlanAdjustment: Identifiable, Codable, Equatable, Sendable {
     public var appliedAt: Date
     public var wasAccepted: Bool?
     public var coachingExplanation: String?
+    /// Reversible plan data only; never includes workout history or nested journals.
+    public var editRecord: PlanEditRecord?
 
     public init(
         id: UUID = UUID(),

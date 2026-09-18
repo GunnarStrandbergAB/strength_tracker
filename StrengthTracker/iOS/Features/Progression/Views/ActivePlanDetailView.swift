@@ -414,7 +414,7 @@ struct ActivePlanDetailView: View {
 
                     Spacer()
 
-                    Text("\(week.completedSessions)/\(week.sessions.count) sessions")
+                    Text(week.sessions.allSatisfy(\.isOmitted) ? "Rest week" : "\(week.completedSessions)/\(week.sessions.filter { !$0.isOmitted }.count) sessions")
                         .font(.system(size: 12))
                         .foregroundStyle(STColors.textTertiary)
 
@@ -433,7 +433,7 @@ struct ActivePlanDetailView: View {
             // Expanded session cards
             if isExpanded {
                 VStack(spacing: 8) {
-                    ForEach(week.sessions) { session in
+                    ForEach(week.sessions.filter { !$0.isOmitted }) { session in
                         sessionCard(session, plan: plan, weekIsDeload: week.isDeload)
                     }
                 }
@@ -456,7 +456,7 @@ struct ActivePlanDetailView: View {
             // Header: label + linked badge + completion/skipped badge
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(session.sessionLabel)
+                    Text(session.displayLabel)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(isMuted ? STColors.textTertiary : STColors.textPrimary)
 
@@ -768,9 +768,15 @@ struct PlanScheduleEditor: View {
                         Button("Back to editing") { self.preview = nil; error = nil }.disabled(busy)
                     }
                 } else {
+                    Section {
+                        NavigationLink("Edit schedule, sessions and contents") {
+                            PlanStructureEditor(viewModel: viewModel)
+                        }
+                        Text("Replace a whole week, remove or restore sessions, change training days, or edit exercises.").font(.caption)
+                    }
                     Section("Change") {
                         Picker("Action", selection: $operation) {
-                            ForEach(PlanEditRequest.Operation.allCases, id: \.self) { Text(labels[$0] ?? $0.rawValue).tag($0) }
+                            ForEach([PlanEditRequest.Operation.convertDeload, .insertDeload, .moveDeload, .removeDeload, .repeatWeek, .extendPlan, .rescheduleSession, .skipSession, .changeTemplate, .changeExercise, .changeTargets], id: \.self) { Text(labels[$0] ?? $0.rawValue).tag($0) }
                         }
                         Text(operation == .insertDeload ? "Adds time and preserves every original session. Deload uses your Settings percentages." : "Calendar weeks match the plan schedule. Completed and in-progress workouts are preserved.")
                             .font(.caption).foregroundStyle(STColors.textSecondary)
@@ -872,6 +878,281 @@ struct PlanScheduleEditor: View {
             defer { busy = false }
             do { try await viewModel.applyPlanEdit(preview); dismiss() }
             catch { self.error = error.localizedDescription }
+        }
+    }
+}
+#endif
+
+#if os(iOS)
+/// Essential structural operations share Grok's transaction, preview and undo.
+struct PlanStructureEditor: View {
+    let viewModel: ProgressionPlanViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var operation: PlanEditRequest.Operation = .setWeekSchedule
+    @State private var week = 1
+    @State private var endWeek = 1
+    @State private var sessionID: UUID?
+    @State private var templateID: UUID?
+    @State private var editID: UUID?
+    @State private var name = ""
+    @State private var notes = ""
+    @State private var correction = ""
+    @State private var date = Date()
+    @State private var days = 7
+    @State private var restWeeks = 1
+    @State private var makeDeload = false
+    @State private var weightPercent = 50
+    @State private var restPercent = 75
+    @State private var placements: [PlanSessionPlacement] = []
+    @State private var rules: [PlanDayRule] = []
+    @State private var contents: [PlanExercisePrescription] = []
+    @State private var addExerciseID: UUID?
+    @State private var templates: [WorkoutTemplate] = []
+    @State private var exercises: [Exercise] = []
+    @State private var preview: PlanEditPreview?
+    @State private var error: String?
+    @State private var busy = false
+    @FocusState private var editingNumber: Bool
+
+    private var sessions: [PlannedSession] { viewModel.activePlan.map(PlanEditingService.sessions) ?? [] }
+    private var actions: [PlanEditRequest.Operation] {
+        [.setWeekSchedule, .removeSessions, .addSession, .duplicateSession, .updateSession, .setSessionExercises,
+         .changeSchedule, .shiftSchedule, .insertRestWeek, .shortenPlan, .undoEdit, .restoreSession]
+    }
+    private var history: [PlanAdjustment] { viewModel.activePlan?.adjustments.reversed().filter { $0.editRecord != nil } ?? [] }
+    private var removedSessions: [PlannedSession] {
+        guard let record = history.first(where: { $0.id == editID })?.editRecord else { return [] }
+        return record.before.sessions.filter { old in !record.after.sessions.contains { $0.id == old.id } && !sessions.contains { $0.id == old.id } }
+    }
+    var body: some View {
+        Form {
+            if let preview { review(preview) }
+            else {
+                Section("Change") {
+                    Picker("Action", selection: $operation) { ForEach(actions, id: \.self) { Text($0.displayName).tag($0) } }
+                }
+                selection
+                if operation == .setWeekSchedule { weekSchedule }
+                if operation == .changeSchedule { recurringSchedule }
+                if operation == .setSessionExercises { exerciseContents }
+                if [.setWeekSchedule, .changeSchedule, .addSession, .duplicateSession].contains(operation) {
+                    Section("Deload") {
+                        Toggle("Apply deload to these sessions", isOn: $makeDeload)
+                        if makeDeload {
+                            Stepper("Weight: \(weightPercent)% of normal", value: $weightPercent, in: 10...100, step: 5)
+                            Stepper("Rest: \(restPercent)% of normal", value: $restPercent, in: 25...100, step: 5)
+                            Text("Starts with your Settings values. Sets and reps stay the same unless you edit the contents.").font(.caption)
+                        } else { Text("Existing deload prescriptions are preserved.").font(.caption) }
+                    }
+                }
+                Section { Button("Preview changes", action: makePreview).disabled(busy) }
+            }
+            if let error { Section { Text(error).foregroundStyle(STColors.danger) } }
+            if busy { ProgressView() }
+        }
+        .navigationTitle("Schedule & sessions").navigationBarTitleDisplayMode(.inline)
+        .scrollContentBackground(.hidden).background(STColors.background)
+        .foregroundStyle(STColors.textPrimary).tint(STColors.primary)
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar { ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Done") { editingNumber = false } } }
+        .task {
+            week = viewModel.activePlan?.currentWeek?.absoluteWeekNumber ?? 1
+            endWeek = max(week, viewModel.activePlan?.totalWeeks ?? week)
+            weightPercent = viewModel.activePlan?.configuration?.deloadWeightPercentage ?? 50
+            restPercent = viewModel.activePlan?.configuration?.deloadRestPercentage ?? 75
+            do {
+                let catalog = try await viewModel.planEditCatalog(); templates = catalog.templates; exercises = catalog.exercises
+                let settings = viewModel.currentPlanEditSettings
+                weightPercent = settings.deloadWeightPercentage; restPercent = settings.deloadRestPercentage
+                resetWeek()
+            } catch { self.error = error.localizedDescription }
+        }
+        .onChange(of: week) { _, _ in resetWeek() }
+        .onChange(of: operation) { _, _ in error = nil; preview = nil; sessionID = nil; name = ""; notes = ""; contents = []; resetWeek() }
+        .onChange(of: sessionID) { _, _ in loadContents() }
+    }
+    @ViewBuilder private var selection: some View {
+        Section("Where") {
+            if [.setWeekSchedule, .changeSchedule, .insertRestWeek].contains(operation) {
+                Stepper("Calendar week \(week)", value: $week, in: 1...max(1, viewModel.activePlan?.totalWeeks ?? 1))
+                if operation == .changeSchedule { Stepper("Through week \(endWeek)", value: $endWeek, in: week...max(week, viewModel.activePlan?.totalWeeks ?? week)) }
+            }
+            if [.undoEdit, .restoreSession].contains(operation) {
+                Picker("Edit history", selection: $editID) {
+                    Text("Choose edit").tag(Optional<UUID>.none)
+                    ForEach(history) { Text("\(PlanEditingService.dateLabel($0.appliedAt)) · \($0.description)").tag(Optional($0.id)) }
+                }
+            }
+            if [.removeSessions, .duplicateSession, .updateSession, .setSessionExercises, .restoreSession].contains(operation) {
+                Picker("Session", selection: $sessionID) {
+                    Text("Choose session").tag(Optional<UUID>.none)
+                    ForEach(operation == .restoreSession ? removedSessions : sessions.filter { !$0.isCompleted || operation == .duplicateSession }) {
+                        Text("\(PlanEditingService.dateLabel($0.scheduledDate)) · \($0.displayLabel)").tag(Optional($0.id))
+                    }
+                }
+            }
+            if operation == .addSession {
+                Picker("Template", selection: $templateID) { templateOptions }
+            }
+            if [.addSession, .duplicateSession, .restoreSession, .shiftSchedule, .shortenPlan].contains(operation) {
+                DatePicker(operation == .shiftSchedule ? "Shift from" : operation == .shortenPlan ? "Finish on" : "Date", selection: $date, in: Date()..., displayedComponents: .date)
+            }
+            if [.updateSession, .addSession, .duplicateSession].contains(operation) { TextField("Workout name", text: $name) }
+            if operation == .updateSession { TextField("Notes", text: $notes, axis: .vertical) }
+            if operation == .removeSessions {
+                Text("Removes the planned session, not a logged workout. It will not count as missed training. You can restore it from edit history.").font(.caption)
+                TextField("Reason if correcting an overdue session", text: $correction, axis: .vertical)
+            }
+            if operation == .insertRestWeek { Stepper("\(restWeeks) rest week(s)", value: $restWeeks, in: 1...12) }
+            if operation == .shiftSchedule { Stepper("Shift by \(days) days", value: $days, in: -364...364) }
+        }
+    }
+    @ViewBuilder private var templateOptions: some View {
+        Text("Choose template").tag(Optional<UUID>.none)
+        ForEach(templates) { Text($0.name).tag(Optional($0.id)) }
+    }
+    private var weekSchedule: some View {
+        Section("Complete upcoming schedule") {
+            Text("Completed, active and past sessions are preserved. Remove rows to reduce training; remove every upcoming row for planned rest.").font(.caption)
+            ForEach(placements.indices, id: \.self) { i in
+                VStack(alignment: .leading) {
+                    if let id = placements[i].sessionID { Text(sessions.first { $0.id == id }?.displayLabel ?? "Session").font(.headline) }
+                    Picker("Template", selection: $placements[i].templateID) {
+                        Text(placements[i].sessionID == nil ? "Choose template" : "Keep current contents").tag(Optional<UUID>.none)
+                        ForEach(templates) { Text($0.name).tag(Optional($0.id)) }
+                    }
+                    DatePicker("Date", selection: $placements[i].date, displayedComponents: .date)
+                    TextField("Optional new name", text: Binding(get: { placements[i].label ?? "" }, set: { placements[i].label = $0.isEmpty ? nil : $0 }))
+                    Button("Remove from this week", role: .destructive) { placements.remove(at: i) }
+                }
+            }
+            Button("Add session") { placements.append(.init(date: selectedWeekStart)) }
+            if placements.isEmpty { Text("Rest week · no upcoming workouts").foregroundStyle(STColors.textSecondary) }
+        }
+    }
+    private var recurringSchedule: some View {
+        Section("Weekly pattern") {
+            Text("Each source day is retained on its new day. Unlisted days are removed for the selected weeks. Use an explicit week schedule for weeks with exceptions.").font(.caption)
+            ForEach(rules.indices, id: \.self) { i in
+                VStack {
+                    Picker("Keep session from", selection: $rules[i].sourceWeekday) {
+                        Text("New from template").tag(Optional<Int>.none)
+                        ForEach(1...7, id: \.self) { Text(dayName($0)).tag(Optional($0)) }
+                    }
+                    Picker("Train on", selection: $rules[i].weekday) { ForEach(1...7, id: \.self) { Text(dayName($0)).tag($0) } }
+                    Picker("Template", selection: $rules[i].templateID) {
+                        Text("Keep current").tag(Optional<UUID>.none)
+                        ForEach(templates) { Text($0.name).tag(Optional($0.id)) }
+                    }
+                    Button("Remove day", role: .destructive) { rules.remove(at: i) }
+                }
+            }
+            Button("Add training day") { rules.append(.init(weekday: 2)) }
+        }
+    }
+    private var exerciseContents: some View {
+        Section("Ordered exercises") {
+            Text("Targets are normal targets before a deload. Loads follow each exercise's each/total/side convention.").font(.caption)
+            ForEach(contents.indices, id: \.self) { i in
+                prescriptionRow(i)
+            }
+            .onMove { source, destination in contents.move(fromOffsets: source, toOffset: destination) }
+            Picker("Add exercise", selection: $addExerciseID) {
+                Text("Choose exercise").tag(Optional<UUID>.none)
+                ForEach(exercises) { Text($0.name).tag(Optional($0.id)) }
+            }
+            Button("Add selected exercise") {
+                if let id = addExerciseID { contents.append(.init(exerciseID: id, sets: 3, restSeconds: 120)); addExerciseID = nil }
+            }.disabled(addExerciseID == nil)
+        }
+    }
+    private func prescriptionRow(_ i: Int) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(exercises.first { $0.id == contents[i].exerciseID }?.name ?? "Exercise").font(.headline)
+            let exercise = exercises.first { $0.id == contents[i].exerciseID }
+            intField("Sets", value: $contents[i].sets)
+            if exercise?.exerciseType == .weightedReps || exercise?.exerciseType == .bodyweightReps {
+                intField("Reps", value: $contents[i].reps)
+                decimalField("Normal \(exercise?.strengthRecording?.weightLabel(.kg) ?? "Kg")", value: $contents[i].weightKg)
+            }
+            if exercise?.exerciseType == .weightedCardio { decimalField("Normal Kg", value: $contents[i].weightKg) }
+            intField("Rest seconds", value: $contents[i].restSeconds)
+            decimalField("Target RPE", value: $contents[i].targetRPE)
+            if [.duration, .distance, .cardio, .weightedCardio].contains(exercise?.exerciseType ?? .weightedReps) {
+                intField("Duration seconds", value: $contents[i].durationSeconds)
+                if exercise?.exerciseType != .duration { decimalField("Distance metres", value: $contents[i].distanceMeters) }
+            }
+            HStack {
+                Button("Move up") { if i > 0 { contents.swapAt(i, i - 1) } }.disabled(i == 0)
+                Spacer()
+                Button("Remove", role: .destructive) { contents.remove(at: i) }
+            }.buttonStyle(.borderless)
+        }
+    }
+    private func intField(_ title: String, value: Binding<Int?>) -> some View {
+        HStack { Text(title); Spacer(); TextField("—", value: value, format: .number).multilineTextAlignment(.trailing)
+            .keyboardType(.numberPad).focused($editingNumber).frame(maxWidth: 110) }
+    }
+    private func decimalField(_ title: String, value: Binding<Double?>) -> some View {
+        HStack { Text(title); Spacer(); TextField("—", value: value, format: .number).multilineTextAlignment(.trailing)
+            .keyboardType(.decimalPad).focused($editingNumber).frame(maxWidth: 110) }
+    }
+    private var selectedWeekStart: Date {
+        let anchor = viewModel.activePlan.map(PlanEditingService.anchor) ?? CalendarWeekBucketer.weekStart(of: Date())
+        return CalendarWeekBucketer.mondayCalendar.date(byAdding: .day, value: (week - 1) * 7, to: anchor)!
+    }
+    private func dayName(_ number: Int) -> String { Calendar.current.weekdaySymbols[number - 1] }
+    private func resetWeek() {
+        let today = Calendar.current.startOfDay(for: Date())
+        placements = sessions.filter { !$0.isCompleted && ($0.scheduledDate ?? .distantPast) >= today && CalendarWeekBucketer.weekStart(of: $0.scheduledDate ?? .distantPast) == selectedWeekStart }
+            .map { .init(sessionID: $0.id, date: $0.scheduledDate!) }
+        rules = Array(Set(placements.compactMap { p in sessions.first { $0.id == p.sessionID }?.dayOfWeek })).sorted().map { .init(sourceWeekday: $0, weekday: $0) }
+        endWeek = max(week, endWeek)
+        Task {
+            let protected = await viewModel.planSessionsInUse()
+            placements.removeAll { $0.sessionID.map(protected.contains) ?? false }
+        }
+    }
+    private func loadContents() {
+        guard let id = sessionID, let plan = viewModel.activePlan, let s = sessions.first(where: { $0.id == id }) else { return }
+        name = s.displayLabel; notes = s.notes ?? ""
+        guard operation == .setSessionExercises else { return }
+        do { contents = try PlanEditingService.editableContents(for: s, plan: plan, templates: templates, exercises: exercises) }
+        catch { self.error = error.localizedDescription }
+    }
+    private func makePreview() {
+        busy = true; error = nil
+        Task {
+            defer { busy = false }
+            do {
+                let request = PlanEditRequest(operation: operation,
+                    week: [.setWeekSchedule, .changeSchedule, .insertRestWeek].contains(operation) ? week : nil,
+                    sessionID: sessionID, newDate: [.addSession, .duplicateSession, .restoreSession, .shiftSchedule, .shortenPlan].contains(operation) ? date : nil,
+                    weeks: restWeeks, scope: sessionID == nil ? .week : .session, templateID: templateID,
+                    schedule: operation == .setWeekSchedule ? placements : nil,
+                    weeklySchedule: operation == .changeSchedule ? rules : nil,
+                    contents: operation == .setSessionExercises ? contents : nil,
+                    label: name.isEmpty ? nil : name, notes: operation == .updateSession ? notes : nil,
+                    endWeek: operation == .changeSchedule ? endWeek : nil, days: days, editID: editID,
+                    isDeload: makeDeload ? true : nil, deloadWeightPercentage: makeDeload ? weightPercent : nil,
+                    deloadRestPercentage: makeDeload ? restPercent : nil, remainingOnly: [.setWeekSchedule, .changeSchedule].contains(operation) ? true : nil,
+                    correctionReason: correction.isEmpty ? nil : correction)
+                preview = try await viewModel.previewPlanEdit(request)
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+    private func review(_ preview: PlanEditPreview) -> some View {
+        Section("Review changes") {
+            PlanEditReviewContent(preview: preview)
+            Button("Apply changes") {
+                busy = true
+                Task {
+                    defer { busy = false }
+                    do { try await viewModel.applyPlanEdit(preview); dismiss() }
+                    catch { self.error = error.localizedDescription }
+                }
+            }.disabled(busy)
+            Button("Back to editing") { self.preview = nil }
         }
     }
 }

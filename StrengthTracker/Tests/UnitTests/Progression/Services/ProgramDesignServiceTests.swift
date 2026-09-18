@@ -669,3 +669,310 @@ extension EnhancedPlanEditingTests {
         #expect(changed.totalWeeks == p.totalWeeks + 1)
     }
 }
+
+@Suite("Structural plan edits")
+struct PlanStructureEditingTests {
+    let cal = CalendarWeekBucketer.mondayCalendar
+    var now: Date { CalendarWeekBucketer.weekStart(of: ProgressionTestHelpers.fixedMondayStart) }
+    let settings = PlanConfiguration(durationWeeks: 12, deloadWeightPercentage: 50, deloadRestPercentage: 75)
+    func date(_ days: Int) -> Date { cal.date(byAdding: .day, value: days, to: now)! }
+    func fixture() -> (ProgressionPlan, [WorkoutTemplate], [Exercise]) {
+        let row = Exercise(id: UUID(), name: "Iso-lateral row", primaryMuscleGroup: .back, secondaryMuscleGroups: [],
+            category: .cable, exerciseType: .weightedReps, instructions: nil, isCustom: true, isArchived: false,
+            weightRecording: .sides())
+        let press = Exercise(id: UUID(), name: "Press", primaryMuscleGroup: .chest, secondaryMuscleGroups: [],
+            category: .machine, exerciseType: .weightedReps, instructions: nil, isCustom: true, isArchived: false)
+        let template = WorkoutTemplate(id: UUID(), name: "Push", notes: nil, sortOrder: 0, lastUsedAt: nil, timesUsed: 0,
+            exercises: [row, press].enumerated().map { index, e in
+                .init(id: UUID(), exercise: e, order: index, supersetGroup: nil, notes: nil, restTimerSeconds: 120,
+                    targetSets: 3, targetReps: 8, targetWeight: 41, targetDurationSeconds: nil, targetDistanceMeters: nil)
+            })
+        let pe = PlanExercise(exerciseId: row.id, exerciseName: row.name, primaryMuscleGroup: .back, category: .cable,
+            estimated1RM: 50, oneRMSource: .userInput, current1RM: 50, isCompound: true, order: 0, weightRecording: row.weightRecording)
+        let weeks: [TrainingWeek] = (1...12).map { week in
+            let values = [0, 2, 3, 5, 6].map { offset in
+                let d = date((week - 1) * 7 + offset)
+                return PlannedSession(dayOfWeek: cal.component(.weekday, from: d), scheduledDate: d,
+                    sessionLabel: "Monday - Power", plannedExercises: [.init(planExerciseId: pe.id, exerciseId: row.id,
+                        exerciseName: row.name, sets: 3, targetReps: 8, targetWeight: 41, percentageOf1RM: 0.8, weightRecording: row.weightRecording)],
+                    templateId: template.id, programmingWeekID: UUID(), programmingWeekNumber: week)
+            }
+            return TrainingWeek(weekNumber: week, absoluteWeekNumber: week, sessions: values)
+        }
+        let plan = ProgressionPlan(name: "Twelve weeks", status: .active, trainingStatus: .advanced, programType: .linear,
+            primaryGoal: .strength, weeklyFrequency: 5, trainingDays: [2, 4, 5, 7, 1], startDate: now,
+            targetEndDate: date(83), exercises: [pe], blocks: [.init(name: "Training", order: 0, durationWeeks: 12, weeks: weeks)], configuration: settings)
+        return (plan, [template], [row, press])
+    }
+    func apply(_ request: PlanEditRequest, _ plan: ProgressionPlan, templates: [WorkoutTemplate] = [], exercises: [Exercise] = [], protected: Set<UUID> = []) throws -> ProgressionPlan {
+        try PlanEditingService.applying(request, to: plan, settings: settings, templates: templates, exercises: exercises, protectedSessionIDs: protected, now: now)
+    }
+    func week(_ plan: ProgressionPlan, _ number: Int) -> [PlannedSession] { plan.blocks.flatMap(\.weeks).filter { $0.absoluteWeekNumber == number }.flatMap(\.sessions) }
+
+    @Test("Five sessions become three dated deload sessions in one reversible change")
+    func threeSessionDeload() throws {
+        let (p, templates, exercises) = fixture(); let before = week(p, 5)
+        let placements = [0, 2, 4].enumerated().map { offset, index in
+            PlanSessionPlacement(sessionID: before[index].id, date: date(28 + [1, 4, 6][offset]))
+        }
+        let edited = try apply(.init(operation: .setWeekSchedule, week: 5, schedule: placements, isDeload: true), p, templates: templates, exercises: exercises)
+        let actual = week(edited, 5)
+        #expect(actual.count == 3)
+        #expect(actual.allSatisfy { $0.isDeload && !$0.isSkipped && !$0.isOmitted })
+        #expect(actual.allSatisfy { $0.plannedExercises[0].targetWeight == 20.5 && $0.deloadPrescription?.restPercentage == 75 })
+        #expect(actual[0].displayLabel == "Push")
+        #expect(actual.map(\.id) == placements.map { $0.sessionID! })
+        #expect(edited.totalWeeks == 12 && edited.targetEndDate == p.targetEndDate)
+        #expect(week(edited, 6) == week(p, 6))
+        let restored = try apply(.init(operation: .undoEdit, editID: edited.adjustments.last!.id), edited)
+        #expect(PlanScheduleSnapshot(restored) == PlanScheduleSnapshot(p))
+    }
+
+    @Test("An empty first or last week stays dated without changing numbering or finish", arguments: [1, 12])
+    func restWeek(number: Int) throws {
+        let (p, _, _) = fixture()
+        let changed = try apply(.init(operation: .setWeekSchedule, week: number, schedule: []), p)
+        #expect(week(changed, number).isEmpty)
+        #expect(changed.totalWeeks == 12 && changed.targetEndDate == p.targetEndDate)
+        #expect(changed.blocks.flatMap(\.weeks).first { $0.absoluteWeekNumber == number }?.weekStartDate == date((number - 1) * 7))
+        let rebucketed = CalendarWeekBucketer.rebucket(changed.blocks)
+        #expect(rebucketed.flatMap(\.weeks).contains { $0.absoluteWeekNumber == number && $0.sessions.isEmpty })
+        #expect(PlanEditingService.weekSummaries(changed).first { $0.week == number }?.restWeek == true)
+    }
+
+    @Test("Atomic batch moves, renames and removes; failed operation leaves source intact")
+    func atomicBatch() throws {
+        let (p, _, _) = fixture(); let first = week(p, 5)[0], remove = week(p, 5)[1]
+        let batch = PlanEditRequest(operation: .batch, operations: [
+            .init(operation: .rescheduleSession, sessionID: first.id, newDate: date(29), scope: .session),
+            .init(operation: .updateSession, sessionID: first.id, scope: .session, label: "Push A"),
+            .init(operation: .removeSessions, sessionIDs: [remove.id])])
+        let changed = try apply(batch, p)
+        #expect(changed.adjustments.count == p.adjustments.count + 1)
+        #expect(week(changed, 5).first { $0.id == first.id }?.sessionLabel == "Push A")
+        var invalid = batch; invalid.operations?.append(.init(operation: .removeSessions, sessionIDs: [UUID()]))
+        #expect(throws: PlanEditError.self) { try apply(invalid, p) }
+        #expect(throws: PlanEditError.self) {
+            try apply(.init(operation: .updateSession, sessionID: first.id, operations: batch.operations, label: "Ignored batch"), p)
+        }
+        #expect(week(p, 5).count == 5)
+    }
+
+    @Test("Partial weeks preserve completed and active sessions")
+    func partialWeek() throws {
+        var (p, _, _) = fixture(); let ids = week(p, 5).map(\.id)
+        p.blocks[0].weeks[4].sessions[0].completedWorkoutId = UUID()
+        let source = p
+        #expect(throws: PlanEditError.self) { try apply(.init(operation: .setWeekSchedule, week: 5, schedule: []), source, protected: [ids[1]]) }
+        let changed = try apply(.init(operation: .setWeekSchedule, week: 5, schedule: [], remainingOnly: true), p, protected: [ids[1]])
+        #expect(week(changed, 5).map(\.id) == Array(ids.prefix(2)))
+        #expect(week(changed, 5)[0] == week(p, 5)[0])
+        #expect(throws: PlanEditError.self) { try apply(.init(operation: .removeSessions, sessionIDs: [ids[1]]), source, protected: [ids[1]]) }
+    }
+
+    @Test("Removed session restores with the same identity, with conflict-aware undo")
+    func restoreAndConflict() throws {
+        let (p, _, _) = fixture(); let s = week(p, 5)[0]
+        let removed = try apply(.init(operation: .removeSessions, sessionIDs: [s.id]), p)
+        let renamed = try apply(.init(operation: .updateSession, sessionID: week(p, 6)[0].id, scope: .session, label: "New name"), removed)
+        #expect(throws: PlanEditError.self) { try apply(.init(operation: .undoEdit, editID: removed.adjustments.last!.id), renamed) }
+        let restored = try apply(.init(operation: .restoreSession, sessionID: s.id, editID: removed.adjustments.last!.id), renamed)
+        #expect(week(restored, 5).contains(s))
+        #expect(throws: PlanEditError.self) { try apply(.init(operation: .restoreSession, sessionID: s.id, editID: removed.adjustments.last!.id), restored) }
+    }
+
+    @Test("Recurring three-day schedule leaves earlier weeks intact")
+    func recurring() throws {
+        let (p, _, _) = fixture()
+        let rules: [PlanDayRule] = [.init(sourceWeekday: 2, weekday: 3), .init(sourceWeekday: 5, weekday: 5), .init(sourceWeekday: 1, weekday: 1)]
+        let changed = try apply(.init(operation: .changeSchedule, week: 5, weeklySchedule: rules), p)
+        #expect(changed.weeklyFrequency == 3 && changed.trainingDays == [1, 3, 5])
+        #expect(week(changed, 4) == week(p, 4))
+        #expect((5...12).allSatisfy { week(changed, $0).count == 3 })
+        #expect(week(changed, 5).map(\.dayOfWeek) == [3, 5, 1])
+    }
+
+    @Test("Rest insertion shifts remaining training without losing sessions")
+    func insertRest() throws {
+        let (p, _, _) = fixture()
+        let changed = try apply(.init(operation: .insertRestWeek, week: 5, weeks: 2), p)
+        #expect(changed.totalWeeks == 14)
+        #expect(week(changed, 5).isEmpty && week(changed, 6).isEmpty)
+        #expect(Set(PlanEditingService.sessions(changed).map(\.id)) == Set(PlanEditingService.sessions(p).map(\.id)))
+        #expect(week(changed, 7).map(\.id) == week(p, 5).map(\.id))
+        #expect(changed.targetEndDate == date(97))
+    }
+
+    @Test("Explicit shortening removes only the future tail; ordinary removal preserves end")
+    func shorten() throws {
+        let (p, _, _) = fixture()
+        let changed = try apply(.init(operation: .shortenPlan, newDate: date(55)), p)
+        #expect(changed.totalWeeks == 8 && changed.targetEndDate == date(55))
+        #expect(week(changed, 8) == week(p, 8))
+        let removed = try apply(.init(operation: .removeSessions, sessionIDs: week(p, 12).map(\.id)), p)
+        #expect(removed.totalWeeks == 12 && removed.targetEndDate == p.targetEndDate)
+    }
+
+    @Test("Added and duplicated sessions get fresh identities and no completion links")
+    func addAndDuplicate() throws {
+        let (p, templates, exercises) = fixture()
+        let added = try apply(.init(operation: .addSession, newDate: date(29), templateID: templates[0].id, label: "Extra"), p, templates: templates, exercises: exercises)
+        #expect(week(added, 5).count == 6)
+        #expect(week(added, 5).first { $0.displayLabel == "Extra" }?.exerciseSnapshot != nil)
+        let duplicated = try apply(.init(operation: .duplicateSession, sessionID: week(p, 5)[0].id, newDate: date(30)), p)
+        let fresh = try #require(week(duplicated, 5).first { !week(p, 5).map(\.id).contains($0.id) })
+        #expect(fresh.completedWorkoutId == nil && !fresh.isSkipped)
+        #expect(fresh.plannedExercises == week(p, 5)[0].plannedExercises)
+    }
+
+    @Test("Reordered/removed exercises stay authoritative when a linked template changes")
+    func explicitContents() throws {
+        let (p, templates, exercises) = fixture(); let source = week(p, 5)[0]
+        let all = try PlanEditingService.editableContents(for: source, plan: p, templates: templates, exercises: exercises)
+        #expect(all.count == 2)
+        let edited = try apply(.init(operation: .setSessionExercises, sessionID: source.id, scope: .session, contents: [all[0]]), p, templates: templates, exercises: exercises)
+        let s = try #require(week(edited, 5).first { $0.id == source.id })
+        let actual = s.resolvedTemplate(linked: templates[0], exercises: exercises)
+        #expect(actual.exercises.count == 1)
+        #expect(actual.exercises[0].exercise.category == .cable)
+        #expect(actual.exercises[0].exercise.weightRecording == .sides())
+        #expect(actual.instantiateExercises()[0].sets[0].weight == 41)
+        #expect(templates[0].exercises.count == 2)
+    }
+
+    @Test("Exercise swap cannot reintroduce the original template exercise")
+    func swapLaunch() throws {
+        let (p, templates, exercises) = fixture(); let s = week(p, 5)[0]
+        let changed = try apply(.init(operation: .changeExercise, sessionID: s.id, scope: .session,
+            exerciseID: exercises[0].id, replacementExerciseID: exercises[1].id, reps: 6, weightKg: 30), p, templates: templates, exercises: exercises)
+        let launched = week(changed, 5)[0].resolvedTemplate(linked: templates[0], exercises: exercises)
+        #expect(!launched.exercises.contains { $0.exercise.id == exercises[0].id })
+        #expect(launched.exercises[0].exercise.category == .machine)
+        #expect(launched.exercises[0].targetWeight == 30)
+    }
+
+    @Test("Deload content edits use normal loads once and restore the normal prescription")
+    func normalDeloadTargets() throws {
+        let (p, templates, exercises) = fixture(); let s = week(p, 5)[0]
+        let deloaded = try apply(.init(operation: .convertDeload, week: 5), p)
+        let changed = try apply(.init(operation: .changeTargets, sessionID: s.id, scope: .session, exerciseID: exercises[0].id, weightKg: 42), deloaded, templates: templates, exercises: exercises)
+        let actual = week(changed, 5)[0].resolvedTemplate(linked: templates[0], exercises: exercises)
+        #expect(actual.exercises[0].targetWeight == 21)
+        #expect(actual.exercises[0].setTargets.allSatisfy { $0.targetWeight == 21 })
+        let normal = try apply(.init(operation: .removeDeload, week: 5), changed, templates: templates, exercises: exercises)
+        #expect(week(normal, 5)[0].resolvedTemplate(linked: templates[0], exercises: exercises).exercises[0].targetWeight == 42)
+    }
+
+    @Test("Renaming does not change template or targets and preserves custom labels when moving")
+    func renameMove() throws {
+        let (p, templates, exercises) = fixture(); let s = week(p, 5)[0]
+        let request = PlanEditRequest(operation: .updateSession, sessionID: s.id, scope: .session, label: "Monday favourite", notes: "Keep two reps in reserve")
+        let renamed = try apply(request, p)
+        let moved = try apply(.init(operation: .rescheduleSession, sessionID: s.id, newDate: date(29), scope: .session), renamed, templates: templates)
+        let actual = week(moved, 5)[0]
+        #expect(actual.sessionLabel == "Monday favourite")
+        #expect(actual.templateId == s.templateId && actual.plannedExercises == s.plannedExercises)
+        #expect(actual.resolvedTemplate(linked: templates[0], exercises: exercises).notes == "Keep two reps in reserve")
+        #expect(templates[0].notes == nil)
+        let preview = try PlanEditingService.preview(plan: p, request: request, settings: settings, templates: templates, exercises: exercises, now: now)
+        #expect(preview.detailLines?.first?.contains("Notes: Keep two reps in reserve") == true)
+    }
+
+    @Test("Review shows before and after targets, side conventions, rest and effort")
+    func detailedTargetReview() throws {
+        let (p, templates, exercises) = fixture(); let s = week(p, 5)[0]
+        let preview = try PlanEditingService.preview(plan: p, request: .init(operation: .changeTargets,
+            sessionID: s.id, scope: .session, exerciseID: exercises[0].id, reps: 10, weightKg: 42, restSeconds: 90, targetRPE: 8),
+            settings: settings, templates: templates, exercises: exercises, now: now)
+        let detail = try #require(preview.detailLines?.first)
+        for expected in ["Before:", "After:", "41 Kg/side", "42 Kg/side", "8 Reps/side", "10 Reps/side", "Rest 90 sec", "Target RPE 8"] {
+            #expect(detail.contains(expected))
+        }
+    }
+
+    @Test("Past unperformed sessions can move; removing them requires an explicit correction")
+    func overdue() throws {
+        let (p, _, _) = fixture(); let s = week(p, 1)[0]; let later = date(3)
+        let request = PlanEditRequest(operation: .rescheduleSession, sessionID: s.id, newDate: date(5), scope: .session)
+        let moved = try PlanEditingService.applying(request, to: p, settings: settings, now: later)
+        #expect(PlanEditingService.sessions(moved).first { $0.id == s.id }?.scheduledDate == date(5))
+        #expect(throws: PlanEditError.self) { try PlanEditingService.applying(.init(operation: .removeSessions, sessionIDs: [s.id]), to: p, settings: settings, now: later) }
+        let preview = try PlanEditingService.preview(plan: p, request: .init(operation: .removeSessions, sessionIDs: [s.id], correctionReason: "Session was added accidentally"), settings: settings, now: later)
+        #expect(preview.summaryLines.contains { $0.contains("adherence") })
+    }
+
+    @Test("Edit journal and frozen preview survive Codable without rewriting legacy data")
+    func coding() throws {
+        let (p, _, _) = fixture()
+        let preview = try PlanEditingService.preview(plan: p, request: .init(operation: .setWeekSchedule, week: 5, schedule: []), settings: settings, now: now)
+        let copy = try JSONDecoder().decode(PlanEditPreview.self, from: JSONEncoder().encode(preview))
+        #expect(copy == preview)
+        let edited = try apply(.init(operation: .setWeekSchedule, week: 5, schedule: []), p)
+        #expect(try JSONDecoder().decode(ProgressionPlan.self, from: JSONEncoder().encode(edited)) == edited)
+    }
+}
+
+extension PlanStructureEditingTests {
+    @Test("Template replacement preserves distinct repeated exercise occurrences and timed targets")
+    func repeatedAndTimedTemplate() throws {
+        let (p, _, exercises) = fixture(); let s = week(p, 5)[0]
+        let timer = Exercise(id: UUID(), name: "Plank", primaryMuscleGroup: .core, secondaryMuscleGroups: [], category: .bodyweight,
+            exerciseType: .duration, instructions: nil, isCustom: true, isArchived: false)
+        let template = WorkoutTemplate(id: UUID(), name: "Mixed", notes: nil, sortOrder: 0, lastUsedAt: nil, timesUsed: 0, exercises: [
+            .init(id: UUID(), exercise: exercises[0], order: 0, supersetGroup: nil, notes: nil, restTimerSeconds: 60, targetSets: 1, targetReps: 10, targetWeight: 10, targetDurationSeconds: nil, targetDistanceMeters: nil, isWarmUp: true),
+            .init(id: UUID(), exercise: exercises[0], order: 1, supersetGroup: nil, notes: nil, restTimerSeconds: 120, targetSets: 3, targetReps: 8, targetWeight: 41, targetDurationSeconds: nil, targetDistanceMeters: nil),
+            .init(id: UUID(), exercise: timer, order: 2, supersetGroup: nil, notes: nil, restTimerSeconds: 60, targetSets: 2, targetReps: nil, targetWeight: nil, targetDurationSeconds: 45, targetDistanceMeters: nil)
+        ])
+        let changed = try apply(.init(operation: .changeTemplate, sessionID: s.id, scope: .session, templateID: template.id), p, templates: [template], exercises: exercises + [timer])
+        let actual = week(changed, 5)[0].resolvedTemplate(linked: template, exercises: exercises + [timer])
+        #expect(actual.exercises.count == 3)
+        #expect(Set(actual.exercises.map(\.id)).count == 3)
+        #expect(actual.exercises[0].isWarmUp)
+        #expect(actual.instantiateExercises()[2].sets[0].durationSeconds == 45)
+        #expect(actual.exercises[0].exercise.category == .cable)
+        let preview = try PlanEditingService.preview(plan: p, request: .init(operation: .changeTemplate, sessionID: s.id, scope: .session, templateID: template.id),
+            settings: settings, templates: [template], exercises: exercises + [timer], now: now)
+        #expect(preview.detailLines?.first?.contains("Plank: 2 sets · 45 sec") == true)
+    }
+
+    @Test("Moving retained omitted deload sessions schedules them and preserves the captured policy")
+    func retainedDeloadPolicy() throws {
+        var (p, templates, exercises) = fixture(); p.deloadDays = [2]
+        let deloaded = try apply(.init(operation: .convertDeload, week: 5, deloadWeightPercentage: 60, deloadRestPercentage: 50), p)
+        let source = week(deloaded, 5)[1]
+        #expect(source.isOmitted)
+        let schedule = [PlanSessionPlacement(sessionID: source.id, templateID: templates[0].id, date: date(29))]
+        let changed = try apply(.init(operation: .setWeekSchedule, week: 5, schedule: schedule), deloaded, templates: templates, exercises: exercises)
+        let actual = try #require(week(changed, 5).first)
+        #expect(actual.isDeload && !actual.isOmitted)
+        #expect(actual.deloadPrescription?.weightPercentage == 60)
+        #expect(actual.plannedExercises[0].targetWeight == 24.6)
+    }
+
+    @Test("Moving a schedule uses calendar days across clock and month boundaries")
+    func calendarDayShift() throws {
+        var (p, _, _) = fixture()
+        let february = cal.date(from: DateComponents(year: 2026, month: 2, day: 23))!
+        let offset = cal.dateComponents([.day], from: now, to: february).day!
+        p.startDate = february
+        p.targetEndDate = cal.date(byAdding: .day, value: offset, to: p.targetEndDate!)
+        for w in p.blocks[0].weeks.indices { for i in p.blocks[0].weeks[w].sessions.indices {
+            p.blocks[0].weeks[w].sessions[i].scheduledDate = cal.date(byAdding: .day, value: offset, to: p.blocks[0].weeks[w].sessions[i].scheduledDate!)
+        } }
+        let moved = try PlanEditingService.applying(.init(operation: .shiftSchedule, newDate: february, days: 56), to: p, settings: settings, now: february)
+        for source in PlanEditingService.sessions(p) {
+            let target = try #require(PlanEditingService.sessions(moved).first { $0.id == source.id })
+            #expect(target.scheduledDate == cal.date(byAdding: .day, value: 56, to: source.scheduledDate!))
+            #expect(cal.component(.hour, from: target.scheduledDate!) == cal.component(.hour, from: source.scheduledDate!))
+            #expect(target.dayOfWeek == source.dayOfWeek)
+        }
+    }
+
+    @Test("A single explicit removal never broadens to the surrounding week")
+    func exactRemoval() throws {
+        let (p, _, _) = fixture(); let source = week(p, 5)[0]
+        let changed = try apply(.init(operation: .removeSessions, sessionID: source.id), p)
+        #expect(week(changed, 5).count == 4)
+        #expect(!week(changed, 5).contains { $0.id == source.id })
+    }
+}
