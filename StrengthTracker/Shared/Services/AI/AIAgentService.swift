@@ -39,7 +39,7 @@ public final class AIAgentService: AIAgentRunning {
     public init(
         client: any AIChatClient,
         registry: AIToolRegistry,
-        model: String = "grok-4.6",
+        model: String = "grok-4.7",
         instructionsProvider: @escaping @MainActor () -> String
     ) {
         self.client = client

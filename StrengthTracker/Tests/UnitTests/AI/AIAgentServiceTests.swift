@@ -71,6 +71,7 @@ struct AIAgentServiceTests {
         #expect(text == "Hello there")
         #expect(activities.isEmpty)
         #expect(client.requests.count == 1)
+        #expect(client.requests[0].model == "grok-4.7")
         #expect(client.requests[0].instructions == "test instructions")
         #expect(client.requests[0].previousResponseID == nil)
     }
@@ -115,12 +116,15 @@ struct AIAgentServiceTests {
             tools: [tool]
         )
 
+        let conversationID = UUID()
         let events = await collect(service.run(
-            userText: "How much volume?", contextNotes: [], previousResponseID: "resp_0", conversationID: UUID()
+            userText: "How much volume?", contextNotes: [], previousResponseID: "resp_0", conversationID: conversationID
         ))
 
         #expect(tool.receivedArguments == ["{\"n\":5}"])
         #expect(client.requests.count == 2)
+        #expect(client.requests.allSatisfy { $0.model == "grok-4.7" && $0.conversationID == conversationID && $0.store })
+        #expect(client.requests[0].previousResponseID == "resp_0")
         // Second request continues from the first response with the tool output.
         #expect(client.requests[1].previousResponseID == "resp_1")
         #expect(client.requests[1].input == [
@@ -302,6 +306,7 @@ struct AIAgentServiceTests {
 
         #expect(client.requests.count == 3)
         // Failed follow-up used the previous id…
+        #expect(client.requests.allSatisfy { $0.model == "grok-4.7" && $0.conversationID == client.requests[0].conversationID && $0.store })
         #expect(client.requests[1].previousResponseID == "resp_1")
         // …the retry replays the whole turn statelessly with paired call/output items.
         #expect(client.requests[2].previousResponseID == nil)
