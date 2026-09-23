@@ -126,8 +126,6 @@ public final class XAIClient: AIChatClient, @unchecked Sendable {
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        // Stable conversation id improves xAI's prompt-cache hit rate.
-        urlRequest.setValue(request.conversationID.uuidString, forHTTPHeaderField: "x-grok-conv-id")
         urlRequest.httpBody = try JSONEncoder().encode(Self.body(for: request, stream: stream))
         return urlRequest
     }
@@ -135,6 +133,8 @@ public final class XAIClient: AIChatClient, @unchecked Sendable {
     static func body(for request: AIRequest, stream: Bool) -> JSONValue {
         var body: [String: JSONValue] = [
             "model": .string(request.model),
+            // Responses API cache routing: reuse the same key for every turn and tool round.
+            "prompt_cache_key": .string(request.conversationID.uuidString),
             "input": .array(request.input.map(inputItem)),
             "store": .bool(request.store),
             "stream": .bool(stream)

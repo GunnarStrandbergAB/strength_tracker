@@ -116,10 +116,31 @@ struct ResponsesStreamDecoderTests {
         #expect(decode("42") == nil)
     }
 
-    @Test("Non-streamed response object parses text and function calls together")
+    @Test("Grok 4.7 encrypted reasoning does not disrupt streamed text or tool calls")
+    func encryptedReasoningStream() {
+        let reasoning = #"{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque-encrypted-reasoning"}"#
+        let message = #"{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Checking your plan."}]}"#
+        let function = #"{"type":"function_call","call_id":"call_plan","name":"get_active_plan","arguments":"{}"}"#
+        let payloads = [
+            #"{"type":"response.output_item.added","item":\#(reasoning)}"#,
+            #"{"type":"response.output_item.done","item":\#(reasoning)}"#,
+            #"{"type":"response.output_text.delta","delta":"Checking your plan."}"#,
+            #"{"type":"response.output_item.done","item":\#(function)}"#,
+            #"{"type":"response.completed","response":{"id":"resp_47","model":"grok-4.7","output":[\#(reasoning),\#(message),\#(function)],"usage":{"input_tokens":100,"output_tokens":30,"input_tokens_details":{"cached_tokens":80},"output_tokens_details":{"reasoning_tokens":20}}}}"#
+        ]
+        let events = payloads.compactMap { decode($0) }
+        #expect(events == [
+            .textDelta("Checking your plan."),
+            .functionCall(.init(callID: "call_plan", name: "get_active_plan", argumentsJSON: "{}")),
+            .completed(responseID: "resp_47", fullText: "Checking your plan.", usage: .init(inputTokens: 100, outputTokens: 30, cachedTokens: 80))
+        ])
+    }
+
+    @Test("Non-streamed response parses text and function calls alongside encrypted reasoning")
     func fullResponseParsing() throws {
         let json = """
         {"id":"resp_2","output":[\
+        {"type":"reasoning","id":"rs_2","summary":[],"encrypted_content":"opaque-encrypted-reasoning"},\
         {"type":"message","content":[{"type":"output_text","text":"Let me check."}]},\
         {"type":"function_call","call_id":"c1","name":"get_training_history","arguments":"{}"},\
         {"type":"function_call","call_id":"c2","name":"get_personal_records","arguments":"{}"}]}

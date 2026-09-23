@@ -21,18 +21,22 @@ struct XAIClientEncodingTests {
     @Test("Minimal request carries model, input, store, and stream flags")
     func minimalRequest() throws {
         let request = AIRequest(
-            model: "grok-4.6",
+            model: "grok-4.7",
             input: [.user("Hello")],
             conversationID: UUID()
         )
         let object = try encodeBody(request, stream: true)
 
-        #expect(object["model"] == .string("grok-4.6"))
+        #expect(object["model"] == .string("grok-4.7"))
+        #expect(object["prompt_cache_key"] == .string(request.conversationID.uuidString))
         #expect(object["stream"] == .bool(true))
         #expect(object["store"] == .bool(true))
         #expect(object["instructions"] == nil)
         #expect(object["previous_response_id"] == nil)
         #expect(object["tools"] == nil)
+        // Keep the provider's existing high reasoning default and stored continuation.
+        #expect(object["reasoning"] == nil)
+        #expect(object["include"] == nil)
         #expect(object["input"] == .array([
             .object(["role": .string("user"), "content": .string("Hello")])
         ]))
@@ -45,7 +49,7 @@ struct XAIClientEncodingTests {
             "properties": .object(["query": .object(["type": .string("string")])])
         ])
         let request = AIRequest(
-            model: "grok-4.6",
+            model: "grok-4.7",
             instructions: "You are a coach.",
             input: [.user("Hi")],
             previousResponseID: "resp_abc",
@@ -71,7 +75,7 @@ struct XAIClientEncodingTests {
     @Test("Instructions are kept on fresh requests; empty previous ids are dropped")
     func instructionsWithoutPreviousID() throws {
         let fresh = AIRequest(
-            model: "grok-4.6",
+            model: "grok-4.7",
             instructions: "You are a coach.",
             input: [.user("Hi")],
             conversationID: UUID()
@@ -81,7 +85,7 @@ struct XAIClientEncodingTests {
         #expect(freshObject["previous_response_id"] == nil)
 
         let emptyID = AIRequest(
-            model: "grok-4.6",
+            model: "grok-4.7",
             instructions: "You are a coach.",
             input: [.user("Hi")],
             previousResponseID: "",
@@ -95,7 +99,7 @@ struct XAIClientEncodingTests {
     @Test("Echoed function_call input items encode for stateless replay")
     func functionCallInputItem() throws {
         let request = AIRequest(
-            model: "grok-4.6",
+            model: "grok-4.7",
             input: [
                 .user("What's my volume?"),
                 .functionCall(callID: "call_1", name: "get_training_history", argumentsJSON: "{\"last_n\":5}"),
@@ -124,7 +128,7 @@ struct XAIClientEncodingTests {
     @Test("Function call outputs encode as function_call_output items")
     func functionCallOutput() throws {
         let request = AIRequest(
-            model: "grok-4.6",
+            model: "grok-4.7",
             input: [.functionCallOutput(callID: "call_1", output: "{\"ok\":true}")],
             conversationID: UUID()
         )
@@ -137,6 +141,29 @@ struct XAIClientEncodingTests {
                 "output": .string("{\"ok\":true}")
             ])
         ]))
+    }
+
+    @Test("Cache routing stays stable across turns, tool outputs and expired-state replay", arguments: [true, false])
+    func conversationCacheKey(stream: Bool) throws {
+        let conversationID = UUID()
+        var request = AIRequest(model: "grok-4.7", input: [.user("Review my plan")], conversationID: conversationID)
+        let expectedKey = JSONValue.string(conversationID.uuidString)
+        #expect(try encodeBody(request, stream: stream)["prompt_cache_key"] == expectedKey)
+
+        request.previousResponseID = "resp_previous"
+        request.input = [.functionCallOutput(callID: "call_plan", output: "{\"sessions\":3}")]
+        let continued = try encodeBody(request, stream: stream)
+        #expect(continued["prompt_cache_key"] == expectedKey)
+        #expect(continued["previous_response_id"] == .string("resp_previous"))
+
+        request.previousResponseID = nil
+        request.input = [.user("Review my plan"), .functionCall(callID: "call_plan", name: "get_active_plan", argumentsJSON: "{}")] + request.input
+        #expect(try encodeBody(request, stream: stream)["prompt_cache_key"] == expectedKey)
+
+        request.conversationID = UUID()
+        let newConversationKey = try encodeBody(request, stream: stream)["prompt_cache_key"]
+        #expect(newConversationKey == .string(request.conversationID.uuidString))
+        #expect(newConversationKey != expectedKey)
     }
 
     @Test("HTTP status codes map to typed errors")
