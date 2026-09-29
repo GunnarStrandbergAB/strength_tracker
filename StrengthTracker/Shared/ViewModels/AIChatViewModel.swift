@@ -35,33 +35,51 @@ public final class AIChatViewModel {
     private var pendingContextNotes: [String] = []
     private var currentTask: Task<Void, Never>?
     private var lastUserText: String?
+    @ObservationIgnored private var conversationRevision = UUID()
+    @ObservationIgnored private var didLoadConversation = false
+    @ObservationIgnored private var isLoadingConversation = false
+    @ObservationIgnored private var currentTurnID: UUID?
+    @ObservationIgnored private var pendingStreamingMessage: ChatMessage?
+    @ObservationIgnored private var streamingUpdateTask: Task<Void, Never>?
+    private let streamingUpdateInterval: Duration
 
     public init(
         agent: any AIAgentRunning,
         chatRepository: any ChatRepository,
-        userPreferencesService: UserPreferencesService
+        userPreferencesService: UserPreferencesService,
+        streamingUpdateInterval: Duration = .milliseconds(50)
     ) {
         self.agent = agent
         self.chatRepository = chatRepository
         self.userPreferencesService = userPreferencesService
+        self.streamingUpdateInterval = streamingUpdateInterval
     }
 
     // MARK: - Conversation lifecycle
 
     public func loadLatestConversation() async {
-        guard conversation == nil else { return }
+        guard conversation == nil, !didLoadConversation, !isLoadingConversation else { return }
+        isLoadingConversation = true
+        let revision = conversationRevision
+        defer { isLoadingConversation = false }
         do {
             if let latest = try await chatRepository.fetchConversations().first {
+                let loaded = try await chatRepository.fetchMessages(conversationID: latest.id)
+                guard !Task.isCancelled, revision == conversationRevision else { return }
                 conversation = latest
-                messages = try await chatRepository.fetchMessages(conversationID: latest.id)
+                messages = loaded
             }
+            guard !Task.isCancelled, revision == conversationRevision else { return }
+            didLoadConversation = true
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled, revision == conversationRevision { errorMessage = error.localizedDescription }
         }
     }
 
     public func startNewConversation() {
         stop()
+        conversationRevision = UUID()
+        didLoadConversation = true
         conversation = nil
         messages = []
         pendingContextNotes = []
@@ -77,9 +95,13 @@ public final class AIChatViewModel {
         lastUserText = trimmed
         errorMessage = nil
         isStreaming = true
+        conversationRevision = UUID()
+        didLoadConversation = true
+        let turnID = UUID()
+        currentTurnID = turnID
 
         currentTask = Task { [weak self] in
-            await self?.runTurn(userText: trimmed)
+            await self?.runTurn(userText: trimmed, turnID: turnID)
         }
     }
 
@@ -91,6 +113,8 @@ public final class AIChatViewModel {
     }
 
     public func stop() {
+        flushStreamingMessage()
+        currentTurnID = nil
         currentTask?.cancel()
         currentTask = nil
         if isStreaming {
@@ -114,6 +138,7 @@ public final class AIChatViewModel {
               message.draftStatus == .pending,
               let draft = decodeDraft(message) else { return }
         savingDraftID = messageID
+        let savedConversationID = conversation?.id
         defer { savingDraftID = nil }
         do {
             try await onSaveDraft?(draft)
@@ -127,9 +152,9 @@ public final class AIChatViewModel {
             if let index = messages.firstIndex(where: { $0.id == messageID }) {
                 messages[index].draftStatus = .accepted
             }
-            pendingContextNotes.append(acceptanceNote(for: draft, accepted: true))
+            if savedConversationID == conversation?.id { pendingContextNotes.append(acceptanceNote(for: draft, accepted: true)) }
         } catch {
-            errorMessage = error.localizedDescription
+            if savedConversationID == conversation?.id { errorMessage = error.localizedDescription }
         }
     }
 
@@ -172,8 +197,10 @@ public final class AIChatViewModel {
 
     // MARK: - Turn execution
 
-    private func runTurn(userText: String) async {
+    private func runTurn(userText: String, turnID: UUID) async {
+        guard !Task.isCancelled, currentTurnID == turnID else { return }
         let conversation = await ensureConversation(firstMessage: userText)
+        guard !Task.isCancelled, currentTurnID == turnID else { return }
 
         let userMessage = ChatMessage(role: .user, text: userText)
         messages.append(userMessage)
@@ -198,13 +225,14 @@ public final class AIChatViewModel {
         )
 
         for await event in events {
-            if Task.isCancelled { break }
+            guard !Task.isCancelled, currentTurnID == turnID else { return }
+            if case .assistantDelta = event {} else { flushStreamingMessage() }
             switch event {
             case .assistantDelta(let delta):
                 if var message = assistantMessage {
                     message.text += delta
                     assistantMessage = message
-                    replaceMessage(message)
+                    queueStreamingMessage(message)
                 } else {
                     let message = ChatMessage(role: .assistant, text: delta)
                     assistantMessage = message
@@ -306,6 +334,7 @@ public final class AIChatViewModel {
                 persistConversation(updated)
 
             case .failed(let message, let conversationExpired):
+                if let partial = assistantMessage { persistMessage(partial, update: true) }
                 if conversationExpired {
                     // Server-side state is gone (30-day TTL). Clear the pointer so
                     // the next send starts a fresh server conversation.
@@ -327,6 +356,10 @@ public final class AIChatViewModel {
             }
         }
 
+        guard !Task.isCancelled, currentTurnID == turnID else { return }
+        flushStreamingMessage()
+        currentTurnID = nil
+        currentTask = nil
         activeToolName = nil
         isStreaming = false
     }
@@ -339,7 +372,7 @@ public final class AIChatViewModel {
         do {
             try await chatRepository.createConversation(new)
         } catch {
-            errorMessage = error.localizedDescription
+            if self.conversation?.id == new.id, !Task.isCancelled { errorMessage = error.localizedDescription }
         }
         return new
     }
@@ -349,6 +382,28 @@ public final class AIChatViewModel {
     private func replaceMessage(_ message: ChatMessage) {
         guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
         messages[index] = message
+    }
+
+    /// Publish at most twenty text updates per second, rather than relaying
+    /// every token into SwiftUI layout and Markdown parsing. Boundaries flush
+    /// synchronously so Stop, cards, errors and completion never lose text.
+    private func queueStreamingMessage(_ message: ChatMessage) {
+        pendingStreamingMessage = message
+        guard streamingUpdateTask == nil else { return }
+        let interval = streamingUpdateInterval
+        streamingUpdateTask = Task { [weak self] in
+            do { try await Task.sleep(for: interval) } catch { return }
+            guard !Task.isCancelled else { return }
+            self?.flushStreamingMessage()
+        }
+    }
+
+    private func flushStreamingMessage() {
+        streamingUpdateTask?.cancel()
+        streamingUpdateTask = nil
+        guard let message = pendingStreamingMessage else { return }
+        pendingStreamingMessage = nil
+        replaceMessage(message)
     }
 
     // MARK: - Persistence (fire-and-forget; chat must never block on disk)

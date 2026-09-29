@@ -6,6 +6,7 @@ import StrengthTrackerShared
 struct InsightsCardView: View {
     let viewModel: WorkoutAnalyticsViewModel
     var storeService: StoreService? = nil
+    var onOpenAnalytics: () -> Void
     @State private var showUpgradeSheet = false
 
     var body: some View {
@@ -19,9 +20,7 @@ struct InsightsCardView: View {
                 Spacer()
 
                 if viewModel.hasProAccess {
-                    NavigationLink {
-                        AnalyticsDashboardView(viewModel: viewModel)
-                    } label: {
+                    Button(action: onOpenAnalytics) {
                         Text("View All")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(STColors.primary)

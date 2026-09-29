@@ -24,6 +24,7 @@ struct ActiveWorkoutView: View {
     @State private var showingRestTimer = false
     @State private var notesText = ""
     @State private var seededNotesText = ""
+    @State private var notesWorkoutID: UUID?
 
     // Drag-to-reorder state, isolated so per-frame updates only invalidate the
     // ExerciseDragEffect modifiers — never this whole view's body.
@@ -35,7 +36,8 @@ struct ActiveWorkoutView: View {
         exerciseListViewModel: ExerciseListViewModel,
         restTimerService: RestTimerService,
         analyticsViewModel: WorkoutAnalyticsViewModel? = nil,
-        aiChat: AIChatEntry? = nil
+        aiChat: AIChatEntry? = nil,
+        dragState: ExerciseDragState = ExerciseDragState()
     ) {
         self._viewModel = State(initialValue: viewModel)
         self._exerciseListViewModel = State(initialValue: exerciseListViewModel)
@@ -43,6 +45,7 @@ struct ActiveWorkoutView: View {
         self.restTimerService = restTimerService
         self.aiChat = aiChat
         self.analyticsViewModel = analyticsViewModel
+        self._dragState = State(initialValue: dragState)
     }
 
     var body: some View {
@@ -57,6 +60,18 @@ struct ActiveWorkoutView: View {
                 }
             }
             .navigationTitle(viewModel.currentWorkout?.name ?? "Workout")
+            .onChange(of: viewModel.currentWorkout?.id, initial: true) { _, workoutID in
+                dragState.reset()
+                guard notesWorkoutID != workoutID else { return }
+                notesWorkoutID = workoutID
+                // The tab survives between workouts. Seed even empty notes when
+                // identity changes, but never replace an in-progress draft on a
+                // set edit, timer tick or return from another screen.
+                let notes = viewModel.currentWorkout?.notes ?? ""
+                seededNotesText = notes
+                notesText = notes
+                showingNotes = !notes.isEmpty
+            }
             .navigationBarTitleDisplayMode(.inline)
             .stNavigationBarStyle()
             .toolbar {
@@ -214,16 +229,9 @@ struct ActiveWorkoutView: View {
         ScrollViewReader { proxy in
             workoutScrollView(workout: workout, proxy: proxy).allowsHitTesting(!isFinishing)
         }
-        .task {
+        .task(id: workout.id) {
             await viewModel.loadPreviousData()
             await viewModel.loadCoachingData()
-        }
-        .onAppear {
-            if let notes = workout.notes, !notes.isEmpty {
-                notesText = notes
-                seededNotesText = notes
-                showingNotes = true
-            }
         }
         .safeAreaInset(edge: .bottom) {
             if restTimerService.isRunning || (restTimerService.remainingSeconds > 0 && !restTimerService.isCompleted) {
@@ -242,6 +250,9 @@ struct ActiveWorkoutView: View {
             if newPhase == .active {
                 restTimerService.handleForegroundReturn()
             } else {
+                // A system interruption cancels the gesture without necessarily
+                // delivering onEnded. Always release its scrolling lock.
+                dragState.reset()
                 STNumericTextField.commitActiveInput()
             }
         }
@@ -284,10 +295,11 @@ struct ActiveWorkoutView: View {
             .padding(.top, 16)
         }
         .scrollDisabled(dragState.isDragging)
-        .onChange(of: workout.exercises.count) { oldCount, newCount in
-            // Add/remove/watch-sync mid-drag would leave stale offsets — reset first
+        .onChange(of: workout.exercises.map(\.id)) { oldIDs, newIDs in
+            // Add/remove/reorder/watch-sync mid-drag invalidates the source index,
+            // even when the exercise count stays the same.
             dragState.reset()
-            guard newCount > oldCount else { return }  // Only scroll on addition
+            guard newIDs.count > oldIDs.count else { return }  // Only scroll on addition
             if let lastExercise = workout.exercises.last {
                 withAnimation(.easeInOut(duration: 0.3)) {
                     proxy.scrollTo(lastExercise.id, anchor: .top)
@@ -297,7 +309,10 @@ struct ActiveWorkoutView: View {
         .background(STColors.background)
         .scrollDismissesKeyboard(.interactively)
         .preferredColorScheme(.dark)
-        .onDisappear { STNumericTextField.commitActiveInput() }
+        .onDisappear {
+            dragState.reset()
+            STNumericTextField.commitActiveInput()
+        }
     }
 
     private func exerciseCard(for workoutExercise: WorkoutExercise, reorderable: Bool) -> some View {

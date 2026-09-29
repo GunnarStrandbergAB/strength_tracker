@@ -3,8 +3,8 @@ import SwiftUI
 import StrengthTrackerShared
 
 struct DashboardView: View {
-    @State private var showLinkedAnalytics = false
-    @State private var analyticsTopic: String?
+    @State private var analyticsNavigation = DashboardAnalyticsNavigation()
+    @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel: DashboardViewModel
     let analyticsViewModel: WorkoutAnalyticsViewModel
     let historyViewModel: HistoryViewModel
@@ -155,7 +155,8 @@ struct DashboardView: View {
 
                     // Analytics Insights Card (hidden until close to first unlock)
                     if analyticsViewModel.insights.workoutCount >= 3 || !analyticsViewModel.hasProAccess {
-                        InsightsCardView(viewModel: analyticsViewModel, storeService: storeService)
+                        InsightsCardView(viewModel: analyticsViewModel, storeService: storeService,
+                            onOpenAnalytics: { analyticsNavigation.openOverview() })
                             .padding(.horizontal, 20)
                     }
 
@@ -177,13 +178,17 @@ struct DashboardView: View {
             }
             .background(STColors.background)
             .scrollIndicators(.hidden)
-            .navigationDestination(isPresented: $showLinkedAnalytics) {
-                AnalyticsDashboardView(viewModel: analyticsViewModel, initialTopic: analyticsTopic)
+            .navigationDestination(isPresented: $analyticsNavigation.isPresented) {
+                AnalyticsDashboardView(viewModel: analyticsViewModel, initialTopic: analyticsNavigation.topic)
             }
             .onOpenURL { url in
-                guard url.host == "analytics", analyticsViewModel.hasProAccess else { return }
-                analyticsTopic = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "topic" })?.value
-                showLinkedAnalytics = true
+                analyticsNavigation.open(url, hasProAccess: analyticsViewModel.hasProAccess)
+            }
+            .onChange(of: scenePhase) { _, phase in
+                // Clear this drill-down after leaving the app, not on transient
+                // inactivity (Control Center, permissions, etc.). A new widget
+                // URL can still explicitly open Analytics on the next activation.
+                analyticsNavigation.scenePhaseChanged(phase)
             }
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.inline)
@@ -254,6 +259,34 @@ struct DashboardView: View {
         ]
         let dayOfYear = Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0
         return phrases[dayOfYear % phrases.count]
+    }
+}
+
+/// Keeps manual navigation and widget navigation on the same presentation path.
+struct DashboardAnalyticsNavigation: Equatable {
+    var isPresented = false
+    var topic: String?
+
+    mutating func openOverview() {
+        topic = nil
+        isPresented = true
+    }
+
+    mutating func open(_ url: URL, hasProAccess: Bool) {
+        guard url.scheme == "strengthtracker" else { return }
+        if url.host == "dashboard" { returnToDashboard(); return }
+        guard url.host == "analytics", hasProAccess else { return }
+        topic = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "topic" }?.value
+        isPresented = true
+    }
+
+    mutating func returnToDashboard() {
+        isPresented = false
+        topic = nil
+    }
+
+    mutating func scenePhaseChanged(_ phase: ScenePhase) {
+        if phase == .background { returnToDashboard() }
     }
 }
 
