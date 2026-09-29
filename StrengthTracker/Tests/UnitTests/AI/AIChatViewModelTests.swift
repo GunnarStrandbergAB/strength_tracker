@@ -365,6 +365,154 @@ struct AIChatViewModelTests {
         #expect(agent.runs[0].previousResponseID == "resp_9")
     }
 
+    @Test("Streaming batches text and Stop flushes every received token")
+    func streamingStopFlushesPendingText() async throws {
+        let agent = ControlledChatAgent()
+        let repository = InMemoryChatRepository()
+        let model = AIChatViewModel(agent: agent, chatRepository: repository,
+            userPreferencesService: UserPreferencesService(), streamingUpdateInterval: .seconds(60))
+        model.send("Hello")
+        try await waitUntil { agent.streams.count == 1 }
+        agent.streams[0].yield(.assistantDelta("First"))
+        try await waitUntil { model.messages.last?.text == "First" }
+        for _ in 0..<100 { agent.streams[0].yield(.assistantDelta(" token")) }
+        // Give the consumer time to drain the burst, without waiting for its publication timer.
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(model.messages.last?.text == "First", "A burst must not cause a layout update for every token")
+        model.stop()
+        let expected = "First" + String(repeating: " token", count: 100) + "\n\n*(stopped)*"
+        #expect(model.messages.last?.text == expected)
+        #expect(!model.isStreaming)
+        await waitForTurnEnd(model)
+        let conversationID = try #require(repository.conversations.keys.first)
+        #expect(try await repository.fetchMessages(conversationID: conversationID).last?.text == expected)
+    }
+
+    @Test("Batch boundaries preserve complete text before cards, errors and completion")
+    func streamingBoundariesFlush() async throws {
+        let agent = MockAIAgent(script: [[
+            .assistantDelta("Before"), .assistantDelta(" card"), .draftProduced(makeDraft()),
+            .assistantDelta("Before"), .assistantDelta(" failure"),
+            .failed(message: "Disconnected", conversationExpired: false),
+            .assistantDelta("After"), .assistantDelta(" recovery"),
+            .turnCompleted(responseID: "complete", text: "After recovery", activities: [])
+        ]])
+        let repository = InMemoryChatRepository()
+        let model = AIChatViewModel(agent: agent, chatRepository: repository,
+            userPreferencesService: UserPreferencesService(), streamingUpdateInterval: .seconds(60))
+        model.send("Go")
+        await waitForTurnEnd(model)
+        let text = model.messages.filter { $0.role == .assistant && $0.kind == .text }.map(\.text)
+        #expect(text == ["Before card", "Before failure", "After recovery"])
+        let conversationID = try #require(repository.conversations.keys.first)
+        let stored = try await repository.fetchMessages(conversationID: conversationID)
+        #expect(stored.filter { $0.role == .assistant && $0.kind == .text }.map(\.text) == text)
+    }
+
+    @Test("Streaming text publishes while the turn remains open")
+    func streamingTimerPublishesWithoutCompletion() async throws {
+        let agent = ControlledChatAgent()
+        let model = AIChatViewModel(agent: agent, chatRepository: InMemoryChatRepository(),
+            userPreferencesService: UserPreferencesService(), streamingUpdateInterval: .milliseconds(10))
+        defer { model.stop() }
+        model.send("Go")
+        try await waitUntil { agent.streams.count == 1 }
+        agent.streams[0].yield(.assistantDelta("Hello"))
+        agent.streams[0].yield(.assistantDelta(" there"))
+        try await waitUntil { model.messages.last?.text == "Hello there" }
+        #expect(model.isStreaming)
+    }
+
+    @Test("Cancelling an old turn cannot end or overwrite a new turn")
+    func cancelledTurnCannotChangeNewTurn() async throws {
+        let agent = ControlledChatAgent()
+        let model = AIChatViewModel(agent: agent, chatRepository: InMemoryChatRepository(),
+            userPreferencesService: UserPreferencesService())
+        defer { model.stop() }
+        model.send("Old")
+        try await waitUntil { agent.streams.count == 1 }
+        agent.streams[0].yield(.assistantDelta("Old response"))
+        try await waitUntil { model.messages.last?.text == "Old response" }
+        model.startNewConversation()
+        model.send("New")
+        agent.streams[0].yield(.assistantDelta(" must not leak"))
+        agent.streams[0].finish()
+        try await waitUntil { agent.streams.count == 2 }
+        agent.streams[1].yield(.assistantDelta("New response"))
+        try await waitUntil { model.messages.last?.text == "New response" }
+        #expect(model.isStreaming)
+        #expect(model.messages.map(\.text) == ["New", "New response"])
+        #expect(agent.runs[0].conversationID != agent.runs[1].conversationID)
+    }
+
+    @Test("An immediately cancelled send cannot create a stale conversation")
+    func cancelBeforeTurnStarts() async throws {
+        let agent = ControlledChatAgent()
+        let repository = InMemoryChatRepository()
+        let model = AIChatViewModel(agent: agent, chatRepository: repository,
+            userPreferencesService: UserPreferencesService())
+        defer { model.stop() }
+        model.send("Cancelled before starting")
+        model.startNewConversation()
+        model.send("Keep this")
+        try await waitUntil { agent.streams.count == 1 }
+        #expect(agent.runs.map(\.userText) == ["Keep this"])
+        #expect(repository.conversations.values.map(\.title) == ["Keep this"])
+        #expect(model.isStreaming)
+    }
+
+    @Test("A slow history load cannot replace a new or newly started conversation", arguments: [false, true])
+    func staleHistoryLoad(sendNewMessage: Bool) async throws {
+        let repository = DelayedChatRepository()
+        let old = ChatConversation(title: "Old")
+        try await repository.storage.createConversation(old)
+        try await repository.storage.appendMessage(ChatMessage(role: .user, text: "Old history"), to: old.id)
+        let agent = MockAIAgent(script: [[.assistantDelta("New response")]])
+        let model = AIChatViewModel(agent: agent, chatRepository: repository,
+            userPreferencesService: UserPreferencesService())
+        let loading = Task { await model.loadLatestConversation() }
+        try await waitUntil { repository.pendingRead != nil }
+        model.startNewConversation()
+        if sendNewMessage {
+            model.send("New question")
+            await waitForTurnEnd(model)
+        }
+        repository.finishRead()
+        await loading.value
+        await model.loadLatestConversation() // Reopening an empty new chat must not revive the old one.
+        #expect(model.messages.map(\.text) == (sendNewMessage ? ["New question", "New response"] : []))
+        #expect(model.errorMessage == nil)
+    }
+
+    @Test("A late draft save cannot leak acceptance notes or errors into a new chat", arguments: [false, true])
+    func draftSaveIsolation(fails: Bool) async throws {
+        let (model, agent, _) = makeViewModel(script: [
+            [.draftProduced(makeDraft())], [.assistantDelta("New response")]
+        ])
+        struct SaveError: Error {}
+        model.onSaveDraft = { _ in
+            model.startNewConversation()
+            if fails { throw SaveError() }
+        }
+        model.send("Propose")
+        await waitForTurnEnd(model)
+        let draftID = try #require(model.messages.first { $0.kind == .draft }?.id)
+        await model.saveDraft(messageID: draftID)
+        #expect(model.errorMessage == nil)
+        model.send("A separate conversation")
+        await waitForTurnEnd(model)
+        #expect(agent.runs[1].contextNotes.isEmpty)
+    }
+
+    private func waitUntil(_ condition: () -> Bool) async throws {
+        for _ in 0..<200 {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(condition(), "Timed out waiting for asynchronous chat state")
+        throw ChatTestTimeout()
+    }
+
     // MARK: - Receipts, context notes, action drafts
 
     private func makeReceipt(workoutID: UUID, title: String) -> AIReceipt {
@@ -471,4 +619,36 @@ struct AIChatViewModelTests {
         #expect(agent.runs[1].contextNotes.contains("[User confirmed and the app executed the action 'Cancel 'Legs'?'.]"))
         #expect(agent.runs[2].contextNotes.contains("[User declined the action 'Cancel 'Legs'?'. Nothing was changed.]"))
     }
+}
+
+private struct ChatTestTimeout: Error {}
+
+@MainActor
+private final class ControlledChatAgent: AIAgentRunning {
+    var streams: [AsyncStream<AgentEvent>.Continuation] = []
+    var runs: [MockAIAgent.RunInput] = []
+
+    func run(userText: String, contextNotes: [String], previousResponseID: String?, conversationID: UUID) -> AsyncStream<AgentEvent> {
+        runs.append(.init(userText: userText, contextNotes: contextNotes,
+            previousResponseID: previousResponseID, conversationID: conversationID))
+        return AsyncStream { streams.append($0) }
+    }
+}
+
+@MainActor
+private final class DelayedChatRepository: ChatRepository {
+    let storage = InMemoryChatRepository()
+    var pendingRead: CheckedContinuation<Void, Never>?
+    func finishRead() { pendingRead?.resume(); pendingRead = nil }
+    func fetchConversations() async throws -> [ChatConversation] { try await storage.fetchConversations() }
+    func fetchMessages(conversationID: UUID) async throws -> [ChatMessage] {
+        let snapshot = try await storage.fetchMessages(conversationID: conversationID)
+        await withCheckedContinuation { pendingRead = $0 }
+        return snapshot
+    }
+    func createConversation(_ conversation: ChatConversation) async throws { try await storage.createConversation(conversation) }
+    func updateConversation(_ conversation: ChatConversation) async throws { try await storage.updateConversation(conversation) }
+    func appendMessage(_ message: ChatMessage, to conversationID: UUID) async throws { try await storage.appendMessage(message, to: conversationID) }
+    func updateMessage(_ message: ChatMessage) async throws { try await storage.updateMessage(message) }
+    func deleteConversation(id: UUID) async throws { try await storage.deleteConversation(id: id) }
 }

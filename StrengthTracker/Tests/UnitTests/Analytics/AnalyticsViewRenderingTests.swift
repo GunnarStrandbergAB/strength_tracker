@@ -813,3 +813,310 @@ final class PlanEditingRenderingTests: XCTestCase {
         }
     }
 }
+
+/// Exercise the persistent Workout tab across session and scene transitions.
+@MainActor
+final class ActiveWorkoutLifecycleTests: XCTestCase {
+    private func makeModel() -> WorkoutViewModel {
+        WorkoutViewModel(workoutRepository: InMemoryWorkoutRepository(),
+            templateRepository: InMemoryTemplateRepository(), healthKitService: NoOpHealthKitService())
+    }
+
+    private func makeView(_ model: WorkoutViewModel, drag: ExerciseDragState = ExerciseDragState()) -> ActiveWorkoutView {
+        let timer = RestTimerService()
+        let coordinator = WorkoutSessionCoordinator(workoutViewModel: model, restTimer: timer,
+            preferences: UserPreferencesService())
+        return ActiveWorkoutView(viewModel: model, coordinator: coordinator,
+            exerciseListViewModel: ExerciseListViewModel(exerciseRepository: MockExerciseRepository()),
+            restTimerService: timer, dragState: drag)
+    }
+
+    private func makeWindow<V: View>(_ view: V) throws -> (UIWindow, UIHostingController<V>) {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let host = UIHostingController(rootView: view)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        return (window, host)
+    }
+
+    private func inputs(in view: UIView) -> [UIView] {
+        if view is UITextField || (view as? UITextView)?.isEditable == true { return [view] }
+        return view.subviews.flatMap { inputs(in: $0) }
+    }
+
+    private func text(in view: UIView) -> String? {
+        (view as? UITextField)?.text ?? (view as? UITextView)?.text
+    }
+
+    private func scrollView(in view: UIView) -> UIScrollView? {
+        if let scroll = view as? UIScrollView, !(view is UITextView) { return scroll }
+        return view.subviews.compactMap { scrollView(in: $0) }.first
+    }
+
+    private func settle() async throws { try await Task.sleep(for: .milliseconds(250)) }
+
+    func testWorkoutNotesResetWhenNextWorkoutHasNoNotes() async throws {
+        let model = makeModel()
+        var first = AnalyticsTestHelpers.makeWorkout(name: "First", completedAt: nil)
+        first.notes = "First workout's notes"
+        model.currentWorkout = first; model.isActive = true
+        let (window, host) = try makeWindow(makeView(model))
+        defer { window.isHidden = true }
+        try await settle()
+        XCTAssertTrue(inputs(in: host.view).contains { text(in: $0) == first.notes })
+
+        // No intermediate tab teardown: this is the same persistent screen.
+        model.currentWorkout = AnalyticsTestHelpers.makeWorkout(name: "Empty notes", completedAt: nil)
+        try await settle()
+        XCTAssertTrue(inputs(in: host.view).isEmpty, "The new workout should start with its notes editor collapsed")
+        XCTAssertNil(model.currentWorkout?.notes)
+
+        var third = AnalyticsTestHelpers.makeWorkout(name: "Third", completedAt: nil)
+        third.notes = "Third workout's own notes"
+        model.currentWorkout = third
+        try await settle()
+        XCTAssertTrue(inputs(in: host.view).contains { text(in: $0) == third.notes })
+        XCTAssertFalse(inputs(in: host.view).contains { text(in: $0) == first.notes })
+    }
+
+    func testWorkoutUpdatesKeepTheNotesInputFocusedAndItsDraft() async throws {
+        let model = makeModel()
+        var workout = AnalyticsTestHelpers.makeWorkout(completedAt: nil)
+        workout.notes = "Existing notes"
+        model.currentWorkout = workout; model.isActive = true
+        let (window, host) = try makeWindow(makeView(model))
+        defer { window.isHidden = true }
+        try await settle()
+        let input = try XCTUnwrap(inputs(in: host.view).first)
+        XCTAssertTrue(input.becomeFirstResponder())
+        if let field = input as? UITextField { field.insertText(" and more") }
+        else if let field = input as? UITextView { field.insertText(" and more") }
+        try await settle()
+        let draft = try XCTUnwrap(text(in: input))
+        XCTAssertTrue(draft.contains("and more"))
+        model.currentWorkout?.name = "Updated workout name"
+        try await settle()
+        XCTAssertTrue(input.isFirstResponder)
+        XCTAssertEqual(text(in: input), draft)
+        await model.inputEdits.drain()
+        XCTAssertEqual(model.currentWorkout?.notes, draft)
+    }
+
+    func testInterruptedDragReleasesScrollingAndDoesNotReorder() async throws {
+        let model = makeModel()
+        let exercises = (1...2).map { index in
+            AnalyticsTestHelpers.makeWorkoutExercise(exercise: AnalyticsTestHelpers.makeExercise(name: "Exercise \(index)"), order: index)
+        }
+        model.currentWorkout = AnalyticsTestHelpers.makeWorkout(exercises: exercises, completedAt: nil)
+        model.isActive = true
+        let drag = ExerciseDragState()
+        let view = makeView(model, drag: drag)
+        let (window, host) = try makeWindow(view.environment(\.scenePhase, .active))
+        defer { window.isHidden = true }
+        try await settle()
+        let scroll = try XCTUnwrap(scrollView(in: host.view))
+        let originalIDs = exercises.map(\.id)
+        drag.dragChanged(id: originalIDs[0], translation: 100, orderedIds: originalIDs)
+        try await settle()
+        XCTAssertTrue(drag.isDragging)
+        XCTAssertFalse(scroll.isScrollEnabled)
+
+        host.rootView = view.environment(\.scenePhase, .inactive)
+        try await settle()
+        XCTAssertFalse(drag.isDragging)
+        XCTAssertTrue(scroll.isScrollEnabled)
+        XCTAssertEqual(model.currentWorkout?.exercises.map(\.id), originalIDs)
+
+        host.rootView = view.environment(\.scenePhase, .active)
+        try await settle()
+        drag.dragChanged(id: originalIDs[0], translation: 100, orderedIds: originalIDs)
+        try await settle()
+        // A same-count external reorder must release the stale source index too.
+        model.currentWorkout?.exercises.reverse()
+        try await settle()
+        XCTAssertFalse(drag.isDragging)
+        XCTAssertTrue(scroll.isScrollEnabled)
+
+        let reordered = Array(originalIDs.reversed())
+        drag.dragChanged(id: reordered[0], translation: 100, orderedIds: reordered)
+        try await settle()
+        model.isActive = false
+        try await settle()
+        XCTAssertFalse(drag.isDragging, "Leaving the workout must cancel its drag even without onEnded")
+        XCTAssertEqual(model.currentWorkout?.exercises.map(\.id), reordered)
+    }
+}
+
+@MainActor
+final class ChatScrollFollowTests: XCTestCase {
+    func testGrowingReplyContinuesFollowingUntilTheReaderScrolls() {
+        var state = ChatScrollFollowState()
+        XCTAssertTrue(state.contentChanged())
+        // A long new reply can grow beyond the viewport between layout passes.
+        // That geometry change alone is not a request to stop following it.
+        state.updateDistance(600)
+        XCTAssertTrue(state.shouldFollow)
+        XCTAssertTrue(state.contentChanged())
+        XCTAssertFalse(state.hasUnreadMessages)
+
+        state.beginInteraction()
+        state.updateDistance(300)
+        state.endInteraction()
+        XCTAssertFalse(state.contentChanged())
+        XCTAssertTrue(state.hasUnreadMessages)
+        XCTAssertFalse(state.shouldFollow)
+    }
+
+    func testTrackingDraggingAndDecelerationDoNotForceScrolling() {
+        var state = ChatScrollFollowState()
+        // The native scroll callback maps tracking, interacting and decelerating
+        // to beginInteraction; none may pull against the user's gesture.
+        for distance in [CGFloat(0), 250, 75] {
+            state.beginInteraction()
+            state.updateDistance(distance)
+            XCTAssertFalse(state.contentChanged())
+            XCTAssertFalse(state.shouldFollow)
+            XCTAssertTrue(state.hasUnreadMessages)
+        }
+        // Only idle at the bottom enables following again.
+        state.endInteraction()
+        XCTAssertTrue(state.shouldFollow)
+        XCTAssertFalse(state.hasUnreadMessages)
+    }
+
+    func testReadingOlderMessagesRetainsUnreadUntilLatestIsRequested() {
+        var state = ChatScrollFollowState()
+        state.beginInteraction()
+        state.updateDistance(400)
+        state.endInteraction()
+        for _ in 0..<10 { XCTAssertFalse(state.contentChanged()) }
+        XCTAssertTrue(state.hasUnreadMessages)
+        state.updateDistance(81)
+        XCTAssertFalse(state.shouldFollow)
+        XCTAssertTrue(state.hasUnreadMessages)
+
+        state.requestLatest()
+        XCTAssertTrue(state.shouldFollow)
+        XCTAssertFalse(state.hasUnreadMessages)
+        XCTAssertTrue(state.contentChanged())
+    }
+
+    func testReturningToBottomManuallyResumesFollowing() {
+        var state = ChatScrollFollowState()
+        state.beginInteraction()
+        state.updateDistance(500)
+        state.endInteraction()
+        XCTAssertFalse(state.contentChanged())
+
+        state.beginInteraction()
+        state.updateDistance(80)
+        XCTAssertFalse(state.shouldFollow, "Even at the bottom, wait for the user's scrolling to stop")
+        state.endInteraction()
+        XCTAssertTrue(state.shouldFollow)
+        XCTAssertFalse(state.hasUnreadMessages)
+        XCTAssertTrue(state.contentChanged())
+    }
+
+    func testViewportResizeCannotResumeFollowingWhileReadingOlderMessages() {
+        var state = ChatScrollFollowState()
+        state.beginInteraction()
+        state.updateDistance(300)
+        state.endInteraction()
+        // Dismissing the keyboard can expose the bottom without a scroll gesture.
+        state.updateDistance(0)
+        XCTAssertFalse(state.shouldFollow)
+        XCTAssertFalse(state.contentChanged())
+        XCTAssertTrue(state.hasUnreadMessages)
+        state.requestLatest()
+        XCTAssertTrue(state.shouldFollow)
+    }
+
+    func testLatestRequestedDuringDecelerationWaitsForIdleThenSurvivesFarFromBottom() {
+        var state = ChatScrollFollowState()
+        state.beginInteraction()
+        state.updateDistance(600)
+        XCTAssertFalse(state.contentChanged())
+        state.requestLatest()
+        XCTAssertFalse(state.shouldFollow, "An explicit request must not fight an ongoing gesture")
+        XCTAssertFalse(state.hasUnreadMessages)
+
+        // The native callback may deliver another deceleration phase after the
+        // request; that must not erase the deferred Latest action.
+        state.beginInteraction()
+        state.updateDistance(400)
+        XCTAssertFalse(state.contentChanged())
+        state.endInteraction()
+        XCTAssertTrue(state.shouldFollow)
+        XCTAssertFalse(state.hasUnreadMessages)
+        XCTAssertTrue(state.contentChanged())
+
+        // The request is consumed once. A later intentional scroll still wins.
+        state.beginInteraction()
+        state.updateDistance(300)
+        state.endInteraction()
+        XCTAssertFalse(state.shouldFollow)
+    }
+}
+
+@MainActor
+final class DashboardAnalyticsNavigationTests: XCTestCase {
+    func testNormalBackgroundReturnStartsAtDashboardButTransientInactivityDoesNotPop() {
+        var navigation = DashboardAnalyticsNavigation()
+        XCTAssertFalse(navigation.isPresented)
+        navigation.openOverview()
+        navigation.scenePhaseChanged(.inactive)
+        XCTAssertTrue(navigation.isPresented)
+        navigation.scenePhaseChanged(.active)
+        XCTAssertTrue(navigation.isPresented)
+
+        navigation.scenePhaseChanged(.background)
+        XCTAssertFalse(navigation.isPresented)
+        XCTAssertNil(navigation.topic)
+        navigation.scenePhaseChanged(.active)
+        XCTAssertFalse(navigation.isPresented)
+    }
+
+    func testExplicitAnalyticsWidgetLinkKeepsItsTopicAndManualOverviewClearsIt() throws {
+        var navigation = DashboardAnalyticsNavigation()
+        navigation.openOverview()
+        navigation.scenePhaseChanged(.background)
+        let link = try XCTUnwrap(URL(string: "strengthtracker://analytics?topic=progress-test-exercise"))
+        navigation.open(link, hasProAccess: true)
+        navigation.scenePhaseChanged(.active)
+        XCTAssertTrue(navigation.isPresented)
+        XCTAssertEqual(navigation.topic, "progress-test-exercise")
+
+        navigation.openOverview()
+        XCTAssertTrue(navigation.isPresented)
+        XCTAssertNil(navigation.topic)
+    }
+
+    func testAnalyticsRequiresProAndUnrelatedURLsLeaveCurrentRouteUntouched() throws {
+        var navigation = DashboardAnalyticsNavigation()
+        let link = try XCTUnwrap(URL(string: "strengthtracker://analytics?topic=quality"))
+        navigation.open(link, hasProAccess: false)
+        XCTAssertFalse(navigation.isPresented)
+        XCTAssertNil(navigation.topic)
+
+        navigation.open(link, hasProAccess: true)
+        let expected = navigation
+        for value in ["https://analytics?topic=load", "https://dashboard", "other://analytics", "strengthtracker://workout", "strengthtracker://history"] {
+            navigation.open(try XCTUnwrap(URL(string: value)), hasProAccess: true)
+            XCTAssertEqual(navigation, expected, value)
+        }
+        navigation.open(try XCTUnwrap(URL(string: "strengthtracker://analytics?topic=load")), hasProAccess: false)
+        XCTAssertEqual(navigation, expected)
+    }
+
+    func testDashboardWidgetExplicitlyReturnsToRootAndClearsTopic() throws {
+        var navigation = DashboardAnalyticsNavigation()
+        navigation.open(try XCTUnwrap(URL(string: "strengthtracker://analytics?topic=recovery")), hasProAccess: true)
+        navigation.open(try XCTUnwrap(URL(string: "strengthtracker://dashboard")), hasProAccess: false)
+        XCTAssertFalse(navigation.isPresented)
+        XCTAssertNil(navigation.topic)
+    }
+}
