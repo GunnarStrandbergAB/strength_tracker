@@ -141,6 +141,7 @@ struct ContentViewWrapper: View {
     let container: AppContainer
     @Environment(\.scenePhase) private var scenePhase
     @State private var didRestore: Bool
+    @State private var navigation = AppNavigationState()
 
     init(container: AppContainer) {
         self.container = container
@@ -154,6 +155,7 @@ struct ContentViewWrapper: View {
     private var content: some View {
         if didRestore {
             ContentView(
+                navigation: navigation,
                 dashboardViewModel: container.makeDashboardViewModel(),
                 exerciseListViewModel: container.makeExerciseListViewModel(),
                 progressViewModel: container.makeProgressViewModel(),
@@ -181,18 +183,32 @@ struct ContentViewWrapper: View {
 
     var body: some View {
         content
+        .modifier(AppNavigationLifecycle(navigation: navigation,
+            hasActiveWorkout: container.workoutViewModel.isActive,
+            hasProAccess: container.workoutAnalyticsViewModel.hasProAccess))
         .onOpenURL { url in
-            // Handle deep links from widgets
-            handleDeepLink(url)
+            guard let link = AppLink(url) else { return }
+            navigation.receive(link, hasProAccess: container.workoutAnalyticsViewModel.hasProAccess)
+            if link == .restTimer {
+                container.restTimerService.handleForegroundReturn()
+                container.restTimerService.endAllStaleActivities()
+            }
         }
         .task {
             await container.workoutViewModel.restoreActiveWorkout()
+            navigation.restorationFinished(hasActiveWorkout: container.workoutViewModel.isActive,
+                workoutID: container.workoutViewModel.currentWorkout?.id,
+                hasProAccess: container.workoutAnalyticsViewModel.hasProAccess)
             didRestore = true
         }
         .task {
             // Failsafe: never trap the user on a blank splash if restore hangs.
-            try? await Task.sleep(for: .seconds(3))
-            if !didRestore { didRestore = true }
+            do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            if !didRestore {
+                // Show usable content, but keep links queued until the restore
+                // result is known. Do not let the fallback consume a launch URL.
+                didRestore = true
+            }
         }
         .onChange(of: scenePhase, initial: true) { _, newPhase in
             if newPhase == .active {
@@ -230,17 +246,6 @@ struct ContentViewWrapper: View {
                     ])
                 }
             }
-        }
-    }
-
-    private func handleDeepLink(_ url: URL) {
-        guard let host = url.host else { return }
-        switch host {
-        case "rest-timer":
-            container.restTimerService.handleForegroundReturn()
-            container.restTimerService.endAllStaleActivities()
-        default:
-            break
         }
     }
 

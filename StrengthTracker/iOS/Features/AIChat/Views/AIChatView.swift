@@ -6,6 +6,8 @@ struct AIChatView: View {
     let viewModel: AIChatViewModel
     let userPreferencesService: UserPreferencesService
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var isClosing = false
     @State private var inputText = ""
     @State private var messageViewport = CGSize.zero
     @State private var scrollState = ChatScrollFollowState()
@@ -39,14 +41,15 @@ struct AIChatView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        isInputFocused = false
-                        dismiss()
+                        isClosing = true
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(STColors.textSecondary)
                     }
                     .accessibilityLabel("Close AI assistant")
+                    .accessibilityIdentifier("chat-close")
+                    .disabled(isClosing)
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if isInputFocused {
@@ -76,6 +79,15 @@ struct AIChatView: View {
         }
         .preferredColorScheme(.dark)
         .onDisappear { isInputFocused = false }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { isInputFocused = false }
+        }
+        .task(id: isClosing) {
+            guard isClosing else { return }
+            if await AppKeyboardDismissal.commitAndDismiss(clearFocus: { isInputFocused = false }) {
+                dismiss()
+            } else { isClosing = false }
+        }
         .task {
             await viewModel.loadLatestConversation()
         }

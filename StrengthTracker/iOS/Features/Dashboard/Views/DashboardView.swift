@@ -3,8 +3,7 @@ import SwiftUI
 import StrengthTrackerShared
 
 struct DashboardView: View {
-    @State private var analyticsNavigation = DashboardAnalyticsNavigation()
-    @Environment(\.scenePhase) private var scenePhase
+    let navigation: AppNavigationState
     @State private var viewModel: DashboardViewModel
     let analyticsViewModel: WorkoutAnalyticsViewModel
     let historyViewModel: HistoryViewModel
@@ -19,13 +18,14 @@ struct DashboardView: View {
     var aiChatClient: (any AIChatClient)? = nil
     var aiChatViewModel: AIChatViewModel? = nil
     var aiMemoryService: AIMemoryService? = nil
-    @State private var showAIChat = false
+    let onOpenAIChat: () -> Void
     @Environment(DataRevision.self) private var dataRevision: DataRevision?
     let onStartWorkout: () -> Void
     let onStartSession: (WorkoutTemplate, UUID, UUID, Bool) async -> Void
     let onHistoryTapped: () -> Void
 
     init(
+        navigation: AppNavigationState,
         viewModel: DashboardViewModel,
         analyticsViewModel: WorkoutAnalyticsViewModel,
         historyViewModel: HistoryViewModel,
@@ -40,10 +40,13 @@ struct DashboardView: View {
         aiChatClient: (any AIChatClient)? = nil,
         aiChatViewModel: AIChatViewModel? = nil,
         aiMemoryService: AIMemoryService? = nil,
+        onOpenAIChat: @escaping () -> Void,
         onStartWorkout: @escaping () -> Void,
         onStartSession: @escaping (WorkoutTemplate, UUID, UUID, Bool) async -> Void,
         onHistoryTapped: @escaping () -> Void
     ) {
+        self.navigation = navigation
+        self.onOpenAIChat = onOpenAIChat
         self._viewModel = State(initialValue: viewModel)
         self.analyticsViewModel = analyticsViewModel
         self.historyViewModel = historyViewModel
@@ -77,7 +80,9 @@ struct DashboardView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        DashboardNavigationStack(navigation: navigation, analytics: { topic in
+            AnalyticsDashboardView(viewModel: analyticsViewModel, initialTopic: topic)
+        }) {
             ScrollView {
                 VStack(spacing: 16) {
                     // Greeting
@@ -156,7 +161,7 @@ struct DashboardView: View {
                     // Analytics Insights Card (hidden until close to first unlock)
                     if analyticsViewModel.insights.workoutCount >= 3 || !analyticsViewModel.hasProAccess {
                         InsightsCardView(viewModel: analyticsViewModel, storeService: storeService,
-                            onOpenAnalytics: { analyticsNavigation.openOverview() })
+                            onOpenAnalytics: { navigation.openAnalytics() })
                             .padding(.horizontal, 20)
                     }
 
@@ -178,25 +183,13 @@ struct DashboardView: View {
             }
             .background(STColors.background)
             .scrollIndicators(.hidden)
-            .navigationDestination(isPresented: $analyticsNavigation.isPresented) {
-                AnalyticsDashboardView(viewModel: analyticsViewModel, initialTopic: analyticsNavigation.topic)
-            }
-            .onOpenURL { url in
-                analyticsNavigation.open(url, hasProAccess: analyticsViewModel.hasProAccess)
-            }
-            .onChange(of: scenePhase) { _, phase in
-                // Clear this drill-down after leaving the app, not on transient
-                // inactivity (Control Center, permissions, etc.). A new widget
-                // URL can still explicitly open Analytics on the next activation.
-                analyticsNavigation.scenePhaseChanged(phase)
-            }
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.inline)
             .stNavigationBarStyle()
             .toolbar {
                 if showAIChatButton {
                     ToolbarItem(placement: .topBarTrailing) {
-                        AIChatToolbarButton(isPresented: $showAIChat)
+                        AIChatToolbarButton(action: onOpenAIChat)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -213,7 +206,6 @@ struct DashboardView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .aiChatCover(aiChatEntry, isPresented: $showAIChat)
             .task(id: dataRevision?.value ?? 0) {
                 async let d: () = viewModel.loadDashboard()
                 async let a: () = analyticsViewModel.loadDashboardInsights()
@@ -262,31 +254,20 @@ struct DashboardView: View {
     }
 }
 
-/// Keeps manual navigation and widget navigation on the same presentation path.
-struct DashboardAnalyticsNavigation: Equatable {
-    var isPresented = false
-    var topic: String?
+/// The path belongs to the scene, not to a potentially offscreen Dashboard.
+struct DashboardNavigationStack<Root: View, Analytics: View>: View {
+    @Bindable var navigation: AppNavigationState
+    let analytics: (String?) -> Analytics
+    @ViewBuilder let root: Root
 
-    mutating func openOverview() {
-        topic = nil
-        isPresented = true
-    }
-
-    mutating func open(_ url: URL, hasProAccess: Bool) {
-        guard url.scheme == "strengthtracker" else { return }
-        if url.host == "dashboard" { returnToDashboard(); return }
-        guard url.host == "analytics", hasProAccess else { return }
-        topic = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "topic" }?.value
-        isPresented = true
-    }
-
-    mutating func returnToDashboard() {
-        isPresented = false
-        topic = nil
-    }
-
-    mutating func scenePhaseChanged(_ phase: ScenePhase) {
-        if phase == .background { returnToDashboard() }
+    var body: some View {
+        NavigationStack(path: $navigation.dashboardPath) {
+            root.navigationDestination(for: DashboardDestination.self) { destination in
+                switch destination {
+                case .analytics(let topic): analytics(topic)
+                }
+            }
+        }
     }
 }
 

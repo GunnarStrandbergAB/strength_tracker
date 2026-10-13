@@ -1063,60 +1063,323 @@ final class ChatScrollFollowTests: XCTestCase {
 }
 
 @MainActor
-final class DashboardAnalyticsNavigationTests: XCTestCase {
-    func testNormalBackgroundReturnStartsAtDashboardButTransientInactivityDoesNotPop() {
-        var navigation = DashboardAnalyticsNavigation()
-        XCTAssertFalse(navigation.isPresented)
-        navigation.openOverview()
-        navigation.scenePhaseChanged(.inactive)
-        XCTAssertTrue(navigation.isPresented)
-        navigation.scenePhaseChanged(.active)
-        XCTAssertTrue(navigation.isPresented)
-
-        navigation.scenePhaseChanged(.background)
-        XCTAssertFalse(navigation.isPresented)
-        XCTAssertNil(navigation.topic)
-        navigation.scenePhaseChanged(.active)
-        XCTAssertFalse(navigation.isPresented)
+final class AppNavigationTests: XCTestCase {
+    private func ready(activeWorkout: Bool = false, id: UUID? = nil) -> AppNavigationState {
+        let navigation = AppNavigationState()
+        navigation.scenePhaseChanged(.active, hasActiveWorkout: activeWorkout, hasProAccess: true)
+        navigation.restorationFinished(hasActiveWorkout: activeWorkout, workoutID: id, hasProAccess: true)
+        return navigation
     }
 
-    func testExplicitAnalyticsWidgetLinkKeepsItsTopicAndManualOverviewClearsIt() throws {
-        var navigation = DashboardAnalyticsNavigation()
-        navigation.openOverview()
-        navigation.scenePhaseChanged(.background)
-        let link = try XCTUnwrap(URL(string: "strengthtracker://analytics?topic=progress-test-exercise"))
-        navigation.open(link, hasProAccess: true)
-        navigation.scenePhaseChanged(.active)
-        XCTAssertTrue(navigation.isPresented)
-        XCTAssertEqual(navigation.topic, "progress-test-exercise")
-
-        navigation.openOverview()
-        XCTAssertTrue(navigation.isPresented)
-        XCTAssertNil(navigation.topic)
-    }
-
-    func testAnalyticsRequiresProAndUnrelatedURLsLeaveCurrentRouteUntouched() throws {
-        var navigation = DashboardAnalyticsNavigation()
-        let link = try XCTUnwrap(URL(string: "strengthtracker://analytics?topic=quality"))
-        navigation.open(link, hasProAccess: false)
-        XCTAssertFalse(navigation.isPresented)
-        XCTAssertNil(navigation.topic)
-
-        navigation.open(link, hasProAccess: true)
-        let expected = navigation
-        for value in ["https://analytics?topic=load", "https://dashboard", "other://analytics", "strengthtracker://workout", "strengthtracker://history"] {
-            navigation.open(try XCTUnwrap(URL(string: value)), hasProAccess: true)
-            XCTAssertEqual(navigation, expected, value)
+    func testIconLaunchAndResumeChooseHomeOrActiveWorkout() {
+        for active in [false, true] {
+            let navigation = ready(activeWorkout: active)
+            XCTAssertEqual(navigation.selectedTab, active ? 1 : 0)
+            XCTAssertTrue(navigation.dashboardPath.isEmpty)
+            navigation.openAnalytics(topic: "quality")
+            navigation.dashboardPath.append("nested exercise")
+            navigation.scenePhaseChanged(.background, hasActiveWorkout: active, hasProAccess: true)
+            XCTAssertTrue(navigation.dashboardPath.isEmpty, "Clear the old screen before returning to the app")
+            navigation.scenePhaseChanged(.active, hasActiveWorkout: active, hasProAccess: true)
+            XCTAssertEqual(navigation.selectedTab, active ? 1 : 0)
+            XCTAssertTrue(navigation.dashboardPath.isEmpty)
         }
-        navigation.open(try XCTUnwrap(URL(string: "strengthtracker://analytics?topic=load")), hasProAccess: false)
-        XCTAssertEqual(navigation, expected)
     }
 
-    func testDashboardWidgetExplicitlyReturnsToRootAndClearsTopic() throws {
-        var navigation = DashboardAnalyticsNavigation()
-        navigation.open(try XCTUnwrap(URL(string: "strengthtracker://analytics?topic=recovery")), hasProAccess: true)
-        navigation.open(try XCTUnwrap(URL(string: "strengthtracker://dashboard")), hasProAccess: false)
-        XCTAssertFalse(navigation.isPresented)
-        XCTAssertNil(navigation.topic)
+    func testTransientInactivityDoesNotResetNavigation() {
+        let navigation = ready()
+        navigation.openAnalytics(topic: "load")
+        let path = navigation.dashboardPath
+        navigation.scenePhaseChanged(.inactive, hasActiveWorkout: false, hasProAccess: true)
+        navigation.scenePhaseChanged(.active, hasActiveWorkout: false, hasProAccess: true)
+        XCTAssertEqual(navigation.dashboardPath, path)
+    }
+
+    func testWidgetLinkWinsBeforeOrAfterRestorationAndActivation() {
+        for order in [["link", "restore", "active"], ["restore", "link", "active"],
+                      ["active", "link", "restore"], ["active", "restore", "link"],
+                      ["link", "background", "active", "restore"]] {
+            let navigation = AppNavigationState()
+            let id = UUID()
+            for step in order {
+                switch step {
+                case "link": navigation.receive(.analytics(topic: "recovery"), hasProAccess: true)
+                case "restore": navigation.restorationFinished(hasActiveWorkout: true, workoutID: id, hasProAccess: true)
+                case "background": navigation.scenePhaseChanged(.background, hasActiveWorkout: true, hasProAccess: true)
+                default: navigation.scenePhaseChanged(.active, hasActiveWorkout: true, hasProAccess: true)
+                }
+            }
+            XCTAssertEqual(navigation.selectedTab, 0, "\(order)")
+            XCTAssertEqual(navigation.dashboardPath, NavigationPath([DashboardDestination.analytics(topic: "recovery")]))
+            XCTAssertNil(navigation.pendingLink)
+            // The observation callback for restoration can arrive after URL routing.
+            navigation.workoutChanged(.init(isActive: true, id: id))
+            XCTAssertEqual(navigation.selectedTab, 0)
+            navigation.scenePhaseChanged(.background, hasActiveWorkout: true, hasProAccess: true)
+            navigation.scenePhaseChanged(.active, hasActiveWorkout: true, hasProAccess: true)
+            XCTAssertTrue(navigation.dashboardPath.isEmpty, "A consumed widget link must not replay")
+            XCTAssertEqual(navigation.selectedTab, 1)
+        }
+    }
+
+    func testWarmWidgetLinkWinsOverForegroundDefaultAndLatestLinkWins() {
+        let navigation = ready()
+        navigation.openAnalytics(topic: "old")
+        navigation.scenePhaseChanged(.background, hasActiveWorkout: false, hasProAccess: true)
+        navigation.receive(.analytics(topic: "quality"), hasProAccess: true)
+        navigation.receive(.analytics(topic: "progress-test"), hasProAccess: true)
+        navigation.scenePhaseChanged(.active, hasActiveWorkout: false, hasProAccess: true)
+        XCTAssertEqual(navigation.dashboardPath, NavigationPath([DashboardDestination.analytics(topic: "progress-test")]))
+        navigation.openAnalytics()
+        XCTAssertEqual(navigation.dashboardPath, NavigationPath([DashboardDestination.analytics(topic: nil)]))
+        navigation.receive(.dashboard, hasProAccess: false)
+        XCTAssertTrue(navigation.dashboardPath.isEmpty)
+    }
+
+    func testLinksValidateSchemeAndPreserveAccessGate() throws {
+        let navigation = ready()
+        for value in ["https://analytics", "other://dashboard", "strengthtracker://unknown"] {
+            XCTAssertNil(AppLink(try XCTUnwrap(URL(string: value))))
+        }
+        let link = try XCTUnwrap(AppLink(try XCTUnwrap(URL(string: "strengthtracker://analytics?topic=quality"))))
+        XCTAssertEqual(link, .analytics(topic: "quality"))
+        navigation.receive(link, hasProAccess: false)
+        XCTAssertEqual(navigation.selectedTab, 0)
+        XCTAssertTrue(navigation.dashboardPath.isEmpty)
+        XCTAssertNil(navigation.pendingLink)
+        for (value, tab) in [("workout", 1), ("rest-timer", 1), ("history", 4), ("exercises", 3)] {
+            navigation.receive(try XCTUnwrap(AppLink(URL(string: "strengthtracker://\(value)")!)), hasProAccess: true)
+            XCTAssertEqual(navigation.selectedTab, tab)
+        }
+    }
+
+    func testNewWorkoutAndCompletionStillSelectTheirTabs() {
+        let navigation = ready()
+        navigation.openAnalytics()
+        let id = UUID()
+        navigation.workoutChanged(.init(isActive: true, id: id))
+        XCTAssertEqual(navigation.selectedTab, 1)
+        navigation.workoutChanged(.init(isActive: false, id: id))
+        XCTAssertEqual(navigation.selectedTab, 0)
+        XCTAssertTrue(navigation.dashboardPath.isEmpty)
+    }
+}
+
+/// The production navigation container and root modifiers hosted in a real
+/// window. This exercises SwiftUI callbacks while the Dashboard is offscreen.
+@MainActor
+final class AppRootTransitionTests: XCTestCase {
+    private struct RootFixture: View {
+        @Bindable var navigation: AppNavigationState
+        let presentations: AppPresentationState
+        @State private var weight: Double? = 40
+        var body: some View {
+            TabView(selection: $navigation.selectedTab) {
+                DashboardNavigationStack(navigation: navigation, analytics: { topic in
+                    Text("Analytics content").navigationTitle("Analytics \(topic ?? "")")
+                        .navigationDestination(for: String.self) { Text($0).navigationTitle("Exercise detail") }
+                }) {
+                    Text("Home").navigationTitle("Dashboard")
+                }.tabItem { Label("Dashboard", systemImage: "square.grid.2x2") }.tag(0)
+                NavigationStack {
+                    ScrollView {
+                        STSetValuesEditor(weight: weight, reps: 8, intensity: 7, showIntensity: true,
+                            intensityMetric: .rpe, weightUnit: .kg, context: "Set 1",
+                            onWeightChange: { weight = $0 }, onRepsChange: { _ in }, onIntensityChange: { _ in })
+                            .padding()
+                        }.background(STColors.background).navigationTitle("Workout")
+                    }.tabItem { Label("Workout", systemImage: "dumbbell") }.tag(1)
+            }
+            .modifier(AppNavigationLifecycle(navigation: navigation, hasActiveWorkout: false, hasProAccess: true))
+            .modifier(AppPresentations(state: presentations))
+            .preferredColorScheme(.dark)
+        }
+    }
+
+    private func host<V: View>(_ root: V) throws -> (UIWindow, UIHostingController<V>) {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: root)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        return (window, host)
+    }
+    private func settle() async throws { try await Task.sleep(for: .milliseconds(350)) }
+    private func waitUntil(_ message: String, file: StaticString = #filePath, line: UInt = #line,
+                           _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(4))
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(condition(), message, file: file, line: line)
+    }
+    private func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
+    private func controllers(_ controller: UIViewController) -> [UIViewController] {
+        [controller] + controller.children.flatMap(controllers)
+    }
+    private func entry() -> AIChatEntry {
+        let preferences = UserPreferencesService()
+        let credentials = AICredentialsService(store: InMemorySecureStore())
+        credentials.xaiAPIKey = "test-only"
+        return AIChatEntry(viewModel: AIChatViewModel(agent: MockAIAgent(), chatRepository: InMemoryChatRepository(),
+            userPreferencesService: preferences), userPreferencesService: preferences, credentials: credentials)
+    }
+    private func debrief(_ name: String = "Legs") -> PostWorkoutDebrief {
+        .init(workoutName: name, duration: 600, totalVolume: 100, totalSets: 3, exerciseCount: 1,
+            qualityScore: nil, prsHit: 0, bullets: [], similarSession: nil)
+    }
+
+    func testBackgroundReturnPopsActualAnalyticsStackIncludingNestedScreen() async throws {
+        let navigation = AppNavigationState()
+        navigation.restorationFinished(hasActiveWorkout: false, hasProAccess: true)
+        let fixture = RootFixture(navigation: navigation, presentations: AppPresentationState())
+        let (window, host) = try host(fixture.environment(\.scenePhase, .active))
+        defer { window.isHidden = true }
+        try await settle()
+        navigation.openAnalytics(topic: "load")
+        try await settle()
+        navigation.dashboardPath.append("nested")
+        try await settle()
+        let stack = try XCTUnwrap(controllers(host).compactMap { $0 as? UINavigationController }.first)
+        XCTAssertEqual(stack.topViewController?.navigationItem.title, "Exercise detail")
+        host.rootView = fixture.environment(\.scenePhase, .background)
+        try await settle()
+        host.rootView = fixture.environment(\.scenePhase, .active)
+        try await settle()
+        XCTAssertEqual(stack.viewControllers.count, 1)
+        XCTAssertEqual(stack.topViewController?.navigationItem.title, "Dashboard")
+        XCTAssertTrue(navigation.dashboardPath.isEmpty)
+    }
+
+    func testChatSurvivesTabChangesAndSummaryWaitsForDismissal() async throws {
+        let entry = entry()
+        let previousEnabled = entry.userPreferencesService.aiChatEnabled
+        entry.userPreferencesService.aiChatEnabled = true
+        defer { entry.userPreferencesService.aiChatEnabled = previousEnabled }
+        let navigation = AppNavigationState()
+        navigation.restorationFinished(hasActiveWorkout: false, hasProAccess: true)
+        let presentations = AppPresentationState()
+        let fixture = RootFixture(navigation: navigation, presentations: presentations)
+        let (window, host) = try host(fixture.environment(\.scenePhase, .active))
+        defer { window.endEditing(true); window.isHidden = true }
+        try await settle()
+        await presentations.openChat(entry)
+        try await waitUntil("Chat finishes presenting") {
+            host.presentedViewController != nil && host.presentedViewController?.transitionCoordinator == nil
+        }
+        let chatController = try XCTUnwrap(host.presentedViewController)
+        let chatID = try XCTUnwrap(presentations.chat?.id)
+        let id = UUID()
+        navigation.workoutChanged(.init(isActive: true, id: id))
+        try await settle()
+        navigation.workoutChanged(.init(isActive: false, id: id))
+        presentations.enqueueSummary(debrief(), weightUnit: .kg)
+        try await settle()
+        XCTAssertEqual(presentations.chat?.id, chatID)
+        XCTAssertTrue(host.presentedViewController === chatController)
+        XCTAssertNil(presentations.summary)
+        XCTAssertNil(chatController.presentedViewController)
+
+        // Run the same keyboard handoff as Close, then dismiss the real cover.
+        let field = try XCTUnwrap(descendants(chatController.view).first { ($0 as? UITextView)?.isEditable == true || $0 is UITextField })
+        XCTAssertTrue(field.becomeFirstResponder())
+        (field as? UIKeyInput)?.insertText("Please review my workout")
+        try await settle()
+        let dismissedKeyboard = await AppKeyboardDismissal.commitAndDismiss(in: window)
+        XCTAssertTrue(dismissedKeyboard)
+        presentations.chat = nil
+        XCTAssertTrue(presentations.chatIsOccupied, "Closing animations still own the presenter")
+        XCTAssertNil(presentations.summary)
+        try await waitUntil("Summary presents after chat has dismissed") {
+            !presentations.chatIsOccupied && presentations.summary != nil
+                && host.presentedViewController != nil && host.presentedViewController !== chatController
+                && host.presentedViewController?.transitionCoordinator == nil
+        }
+        XCTAssertFalse(presentations.chatIsOccupied)
+        XCTAssertEqual(presentations.summary?.debrief.workoutName, "Legs")
+        XCTAssertNotNil(host.presentedViewController)
+        presentations.summary = nil
+        try await waitUntil("Summary finishes dismissing") {
+            host.presentedViewController == nil && !presentations.summaryIsOccupied
+        }
+        XCTAssertNil(host.presentedViewController)
+        XCTAssertFalse(presentations.summaryIsOccupied)
+        XCTAssertNil(AppKeyboardDismissal.firstResponder(in: window))
+        XCTAssertFalse(AppKeyboardDismissal.keyboardIsVisible(in: window))
+        XCTAssertEqual(host.view.frame.height, window.bounds.height, accuracy: 1)
+        // onDismiss precedes the next composited frame. Check the restored
+        // content too, and capture it after UIKit finishes redrawing the tab.
+        try await settle()
+        let dashboard = try XCTUnwrap(controllers(host).compactMap { $0 as? UINavigationController }
+            .first { $0.topViewController?.navigationItem.title == "Dashboard" })
+        XCTAssertTrue(dashboard.view.window === window)
+        XCTAssertFalse(dashboard.view.isHidden)
+        XCTAssertEqual(dashboard.view.alpha, 1)
+        let hierarchy = descendants(window).map {
+            "\(type(of: $0)) frame=\($0.frame) hidden=\($0.isHidden) alpha=\($0.alpha) key=\($0.window?.isKeyWindow ?? false)"
+        }.joined(separator: "\n")
+        let tree = XCTAttachment(string: hierarchy); tree.name = "root-view-hierarchy"; tree.lifetime = .keepAlways; add(tree)
+        let layerImage = UIGraphicsImageRenderer(bounds: window.bounds).image { context in window.layer.render(in: context.cgContext) }
+        let layerAttachment = XCTAttachment(image: layerImage); layerAttachment.name = "root-layer-render"; layerAttachment.lifetime = .keepAlways; add(layerAttachment)
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+        let attachment = XCTAttachment(image: image); attachment.name = "root-after-chat-and-summary"; attachment.lifetime = .keepAlways; add(attachment)
+    }
+
+    func testOpeningChatCommitsNumericInputAndInvalidInputBlocksPresentation() async throws {
+        let entry = entry()
+        let previousEnabled = entry.userPreferencesService.aiChatEnabled
+        entry.userPreferencesService.aiChatEnabled = true
+        defer { entry.userPreferencesService.aiChatEnabled = previousEnabled }
+        let navigation = AppNavigationState()
+        navigation.restorationFinished(hasActiveWorkout: false, hasProAccess: true)
+        let presentations = AppPresentationState()
+        let (window, host) = try host(RootFixture(navigation: navigation, presentations: presentations).environment(\.scenePhase, .active))
+        defer { window.endEditing(true); window.isHidden = true }
+        try await settle()
+        navigation.selectedTab = 1
+        try await settle()
+        let fields = descendants(host.view).compactMap { $0 as? STNumericTextField }
+        let weight = try XCTUnwrap(fields.first { $0.accessibilityLabel?.contains("Kg") == true })
+        XCTAssertTrue(weight.becomeFirstResponder())
+        try await settle()
+        weight.selectAll(nil); weight.insertText("42.5")
+        await presentations.openChat(entry)
+        try await settle()
+        XCTAssertEqual(weight.text, STNumericKind.formatted(42.5))
+        XCTAssertFalse(weight.isFirstResponder)
+        XCTAssertNotNil(host.presentedViewController)
+        presentations.chat = nil
+        try await Task.sleep(for: .milliseconds(700))
+        let rpe = try XCTUnwrap(descendants(host.view).compactMap { $0 as? STNumericTextField }.first { $0.accessibilityLabel?.contains("RPE") == true })
+        XCTAssertTrue(rpe.becomeFirstResponder())
+        try await settle()
+        rpe.selectAll(nil); rpe.insertText("0")
+        await presentations.openChat(entry)
+        XCTAssertTrue(rpe.isFirstResponder)
+        XCTAssertEqual(rpe.text, "0")
+        XCTAssertNil(presentations.chat)
+        XCTAssertNil(host.presentedViewController)
+        rpe.selectAll(nil); rpe.insertText("8")
+        XCTAssertTrue(rpe.resignFirstResponder())
+    }
+
+    func testSummaryQueueKeepsPayloadUntilEachDismissalCompletes() async throws {
+        let state = AppPresentationState()
+        state.enqueueSummary(debrief("First"), weightUnit: .kg)
+        let first = try XCTUnwrap(state.summary)
+        state.enqueueSummary(debrief("Second"), weightUnit: .lbs)
+        XCTAssertEqual(state.summary?.id, first.id)
+        state.summary = nil
+        XCTAssertTrue(state.summaryIsOccupied)
+        XCTAssertEqual(first.debrief.workoutName, "First")
+        state.summaryDidDismiss()
+        XCTAssertEqual(state.summary?.debrief.workoutName, "Second")
+        XCTAssertEqual(state.summary?.weightUnit, .lbs)
+        state.summary = nil
+        state.summaryDidDismiss()
+        XCTAssertFalse(state.summaryIsOccupied)
+        XCTAssertNil(state.summary)
     }
 }
