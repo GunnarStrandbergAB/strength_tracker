@@ -75,7 +75,7 @@ struct AnalyticsSmallView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .widgetURL(URL(string: currentHighlight?.destination ?? "strengthtracker://analytics"))
+        .widgetURL(WidgetNavigation.dashboardURL)
     }
 
     private var currentHighlight: WidgetHighlight? {
@@ -118,7 +118,7 @@ struct AnalyticsMediumView: View {
             // Right: Highlights
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(entry.visibleHighlights.prefix(2))) { highlight in
-                    Link(destination: URL(string: highlight.destination ?? "strengthtracker://analytics")!) { highlightRow(highlight) }
+                    Link(destination: WidgetNavigation.insightURL(destination: highlight.destination)) { highlightRow(highlight) }
                 }
 
                 if entry.visibleHighlights.count < 2 {
@@ -154,7 +154,7 @@ struct AnalyticsMediumView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .widgetURL(URL(string: entry.visibleHighlights.first?.destination ?? "strengthtracker://analytics"))
+        .widgetURL(WidgetNavigation.dashboardURL)
     }
 
     private var calendarStrip: some View {
@@ -246,7 +246,7 @@ struct AnalyticsLargeView: View {
             // Middle: Highlights
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(entry.visibleHighlights.prefix(3))) { highlight in
-                    Link(destination: URL(string: highlight.destination ?? "strengthtracker://analytics")!) { highlightRow(highlight) }
+                    Link(destination: WidgetNavigation.insightURL(destination: highlight.destination)) { highlightRow(highlight) }
                 }
                 if entry.visibleHighlights.isEmpty {
                     emptyHighlightsView
@@ -284,6 +284,7 @@ struct AnalyticsLargeView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .widgetURL(WidgetNavigation.dashboardURL)
     }
 
     private var calendarStrip: some View {
@@ -473,7 +474,7 @@ struct ActiveWorkoutSmallView: View {
                     .foregroundStyle(WidgetColors.textSecondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .widgetURL(URL(string: "strengthtracker://workout"))
+            .widgetURL(WidgetNavigation.workoutURL)
         )
     }
 }
@@ -599,7 +600,7 @@ struct ActiveWorkoutMediumView: View {
                 .frame(maxWidth: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .widgetURL(URL(string: "strengthtracker://workout"))
+            .widgetURL(WidgetNavigation.workoutURL)
         )
     }
 }
@@ -760,7 +761,7 @@ struct ActiveWorkoutLargeView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .widgetURL(URL(string: "strengthtracker://workout"))
+            .widgetURL(WidgetNavigation.workoutURL)
         )
     }
 }

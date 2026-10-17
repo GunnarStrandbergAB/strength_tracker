@@ -1,5 +1,47 @@
 import Foundation
 
+/// General widget taps and explicit insight links have distinct destinations.
+/// Old widget-wide URLs did not carry intent, so only a named Link may upgrade them.
+public enum WidgetNavigation {
+    public static let dashboardURL = URL(string: "strengthtracker://dashboard")!
+    public static let workoutURL = URL(string: "strengthtracker://workout")!
+    public static let insightSource = "widget-highlight"
+    public static let analyticsTopics: Set<String> = ["verdict", "load", "progress", "time", "quality", "coverage", "recovery", "patterns"]
+
+    public static func analyticsURL(topic: String? = nil) -> URL {
+        var components = URLComponents()
+        components.scheme = "strengthtracker"
+        components.host = "analytics"
+        components.queryItems = [URLQueryItem(name: "source", value: insightSource)]
+        if let topic, analyticsTopics.contains(topic) {
+            components.queryItems?.append(URLQueryItem(name: "topic", value: topic))
+        }
+        return components.url!
+    }
+
+    public static func exerciseHistoryURL(_ id: UUID) -> URL {
+        URL(string: "strengthtracker://exercise-history/\(id.uuidString)")!
+    }
+
+    public static func highlightURL(topic: String?) -> URL {
+        if let topic, topic.hasPrefix("progress-"), let id = UUID(uuidString: String(topic.dropFirst(9))) {
+            return exerciseHistoryURL(id)
+        }
+        return analyticsURL(topic: topic)
+    }
+
+    /// Called only by explicit highlight Links, including when reading an older cache.
+    public static func insightURL(destination: String?) -> URL {
+        guard let destination, let components = URLComponents(string: destination),
+              components.scheme == "strengthtracker" else { return analyticsURL() }
+        if components.host == "exercise-history", let id = UUID(uuidString: String(components.path.dropFirst())) {
+            return exerciseHistoryURL(id)
+        }
+        guard components.host == "analytics" else { return analyticsURL() }
+        return highlightURL(topic: components.queryItems?.first { $0.name == "topic" }?.value)
+    }
+}
+
 // MARK: - Widget Support Types
 
 public struct WidgetHighlight: Codable, Sendable, Identifiable {

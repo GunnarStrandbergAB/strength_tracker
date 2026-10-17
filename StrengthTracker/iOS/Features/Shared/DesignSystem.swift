@@ -195,6 +195,71 @@ final class STNumericTextField: UITextField {
     }
 }
 
+/// Finish validation/commits before changing presentation. Waiting for the real
+/// keyboard dismissal prevents two presentation animations from sharing its
+/// reserved area. Hardware keyboards and already-dismissed inputs do not wait.
+@MainActor
+enum AppKeyboardDismissal {
+    static func commitAndDismiss(in suppliedWindow: UIWindow? = nil, clearFocus: () -> Void = {}) async -> Bool {
+        guard !Task.isCancelled else { return false }
+        let window = suppliedWindow ?? STNumericTextField.active?.window
+            ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                .filter { $0.activationState == .foregroundActive }
+                .flatMap(\.windows).first { $0.isKeyWindow }
+        let observer = KeyboardDismissalObserver(window: window)
+        let wasVisible = window.map(keyboardIsVisible) ?? false
+        clearFocus()
+        guard STNumericTextField.commitActiveInput() else { return false }
+        if let window, firstResponder(in: window) != nil, !window.endEditing(false) { return false }
+        await Task.yield()
+        if wasVisible {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+            while !observer.didHide, ContinuousClock.now < deadline {
+                do { try await Task.sleep(for: .milliseconds(16)) } catch { return false }
+            }
+        }
+        guard !Task.isCancelled else { return false }
+        if let window {
+            window.layoutIfNeeded()
+            return firstResponder(in: window) == nil && (!wasVisible || observer.didHide || !keyboardIsVisible(in: window))
+        }
+        return true
+    }
+
+    static func firstResponder(in view: UIView) -> UIView? {
+        if view.isFirstResponder { return view }
+        for child in view.subviews {
+            if let responder = firstResponder(in: child) { return responder }
+        }
+        return nil
+    }
+
+    static func keyboardIsVisible(in window: UIWindow) -> Bool {
+        // Access installs the guide lazily. Lay it out afterwards so a newly
+        // created guide's zero frame is not mistaken for a full-height keyboard.
+        let guide = window.keyboardLayoutGuide
+        window.layoutIfNeeded()
+        let frame = guide.layoutFrame
+        return !frame.isEmpty && frame.minY < window.bounds.maxY - window.safeAreaInsets.bottom - 1
+    }
+
+    @MainActor private final class KeyboardDismissalObserver: NSObject {
+        private(set) var didHide = false
+        private weak var window: UIWindow?
+        init(window: UIWindow?) {
+            self.window = window
+            super.init()
+            NotificationCenter.default.addObserver(self, selector: #selector(didHideKeyboard(_:)),
+                name: UIResponder.keyboardDidHideNotification, object: nil)
+        }
+        deinit { NotificationCenter.default.removeObserver(self) }
+        @objc private func didHideKeyboard(_ notification: Notification) {
+            if let screen = notification.object as? UIScreen, let window, screen !== window.screen { return }
+            didHide = true
+        }
+    }
+}
+
 struct STNumberField: UIViewRepresentable {
     let value: Double?
     let kind: STNumericKind

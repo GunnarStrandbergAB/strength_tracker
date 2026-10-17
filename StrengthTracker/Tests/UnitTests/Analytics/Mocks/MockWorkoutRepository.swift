@@ -27,6 +27,7 @@ final class MockWorkoutRepository: WorkoutRepository {
     var shouldThrowOnFetchAll = false
     var shouldThrowOnSave = false
     var beforeSave: (@MainActor () async -> Void)?
+    var beforeFetchAll: (@MainActor () async -> Void)?
     var customError: Error?
 
     private var errorToThrow: Error {
@@ -37,6 +38,7 @@ final class MockWorkoutRepository: WorkoutRepository {
 
     func fetchAll() async throws -> [Workout] {
         fetchAllCallCount += 1
+        await beforeFetchAll?()
         if shouldThrowOnFetchAll { throw errorToThrow }
         return Array(workouts.values).sorted { $0.startedAt > $1.startedAt }
     }
@@ -104,6 +106,7 @@ final class MockWorkoutRepository: WorkoutRepository {
         completeArguments.removeAll()
         shouldThrowOnFetchAll = false
         shouldThrowOnSave = false
+        beforeFetchAll = nil
         customError = nil
     }
 }

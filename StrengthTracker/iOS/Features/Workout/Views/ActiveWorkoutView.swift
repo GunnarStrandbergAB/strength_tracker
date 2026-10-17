@@ -13,7 +13,7 @@ struct ActiveWorkoutView: View {
     var analyticsViewModel: WorkoutAnalyticsViewModel?
     /// Assistant entry point; nil when the AI feature is not configured.
     var aiChat: AIChatEntry? = nil
-    @State private var showAIChat = false
+    var onOpenAIChat: () -> Void = {}
     @Environment(DataRevision.self) private var dataRevision: DataRevision?
     @State private var showingExercisePicker = false
     @State private var showingCancelConfirmation = false
@@ -37,6 +37,7 @@ struct ActiveWorkoutView: View {
         restTimerService: RestTimerService,
         analyticsViewModel: WorkoutAnalyticsViewModel? = nil,
         aiChat: AIChatEntry? = nil,
+        onOpenAIChat: @escaping () -> Void = {},
         dragState: ExerciseDragState = ExerciseDragState()
     ) {
         self._viewModel = State(initialValue: viewModel)
@@ -44,6 +45,7 @@ struct ActiveWorkoutView: View {
         self.coordinator = coordinator
         self.restTimerService = restTimerService
         self.aiChat = aiChat
+        self.onOpenAIChat = onOpenAIChat
         self.analyticsViewModel = analyticsViewModel
         self._dragState = State(initialValue: dragState)
     }
@@ -77,11 +79,10 @@ struct ActiveWorkoutView: View {
             .toolbar {
                 if let aiChat, aiChat.isAvailable {
                     ToolbarItem(placement: .topBarTrailing) {
-                        AIChatToolbarButton(isPresented: $showAIChat)
+                        AIChatToolbarButton(action: onOpenAIChat)
                     }
                 }
             }
-            .aiChatCover(aiChat, isPresented: $showAIChat)
             .sheet(isPresented: $showingExercisePicker) {
                 ExercisePickerView(viewModel: exerciseListViewModel) { exercise in
                     viewModel.addExercise(exercise)

@@ -2,6 +2,38 @@ import Testing
 import Foundation
 @testable import StrengthTrackerShared
 
+@Suite("Widget navigation intent")
+struct WidgetNavigationTests {
+    @Test("An exercise highlight has a direct history URL")
+    func exerciseHighlight() {
+        let id = UUID()
+        let highlight = AnalyticsHighlight(type: .improvement, title: "Chin-Up Progressing", detail: "Progress", topic: "progress-\(id)")
+        #expect(highlight.destination == WidgetNavigation.exerciseHistoryURL(id).absoluteString)
+        #expect(WidgetNavigation.dashboardURL.absoluteString == "strengthtracker://dashboard")
+    }
+
+    @Test("Named links upgrade cached highlight URLs without changing the general destination")
+    func cachedHighlight() {
+        let id = UUID()
+        let cached = "strengthtracker://analytics?topic=progress-\(id)"
+        #expect(WidgetNavigation.insightURL(destination: cached) == WidgetNavigation.exerciseHistoryURL(id))
+        #expect(WidgetNavigation.insightURL(destination: "strengthtracker://analytics?topic=quality") == WidgetNavigation.analyticsURL(topic: "quality"))
+        #expect(WidgetNavigation.insightURL(destination: WidgetNavigation.exerciseHistoryURL(id).absoluteString) == WidgetNavigation.exerciseHistoryURL(id))
+    }
+
+    @Test("Analytics links explicitly identify highlight intent", arguments: ["load", "quality", "recovery", "verdict", "progress", "patterns"])
+    func explicitAnalytics(topic: String) throws {
+        let components = try #require(URLComponents(url: WidgetNavigation.analyticsURL(topic: topic), resolvingAgainstBaseURL: false))
+        #expect(components.queryItems?.first { $0.name == "source" }?.value == WidgetNavigation.insightSource)
+        #expect(components.queryItems?.first { $0.name == "topic" }?.value == topic)
+    }
+
+    @Test("Malformed cached destinations fall back to the analytics overview", arguments: ["https://example.com", "strengthtracker://unknown", "strengthtracker://exercise-history/bad", "strengthtracker://analytics?topic=progress-bad"])
+    func invalidDestination(_ value: String) {
+        #expect(WidgetNavigation.insightURL(destination: value) == WidgetNavigation.analyticsURL())
+    }
+}
+
 @Suite("WidgetDataService Active Workout State")
 struct WidgetDataServiceTests {
 

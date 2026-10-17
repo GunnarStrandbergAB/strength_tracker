@@ -10,7 +10,7 @@ public struct AnalyticsHighlight: Identifiable, Hashable, Sendable, Codable {
     public let computedAt: Date?
     public let validUntil: Date?
     public let isAction: Bool?
-    public var destination: String { "strengthtracker://analytics?topic=\(topic ?? "overview")" }
+    public var destination: String { WidgetNavigation.highlightURL(topic: topic).absoluteString }
     public var identity: String { topic ?? title }
 
     public init(

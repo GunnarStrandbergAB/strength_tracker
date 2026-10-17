@@ -140,20 +140,14 @@ struct StrengthTrackeriOSApp: App {
 struct ContentViewWrapper: View {
     let container: AppContainer
     @Environment(\.scenePhase) private var scenePhase
-    @State private var didRestore: Bool
-
-    init(container: AppContainer) {
-        self.container = container
-        // Skip the gate when no active workout is pending — normal launches stay instant.
-        // When a workout is pending (cold relaunch during a rest timer), gate the first
-        // frame on `restoreActiveWorkout()` so we never momentarily show Dashboard.
-        _didRestore = State(initialValue: !WorkoutViewModel.hasPendingActiveWorkout)
-    }
+    @State private var restoreTimedOut = false
+    @State private var navigation = AppNavigationState()
 
     @ViewBuilder
     private var content: some View {
-        if didRestore {
+        AppLaunchGate(navigation: navigation, allowFallback: restoreTimedOut) {
             ContentView(
+                navigation: navigation,
                 dashboardViewModel: container.makeDashboardViewModel(),
                 exerciseListViewModel: container.makeExerciseListViewModel(),
                 progressViewModel: container.makeProgressViewModel(),
@@ -174,25 +168,36 @@ struct ContentViewWrapper: View {
                 aiChatViewModel: container.makeAIChatViewModel(),
                 aiMemoryService: container.aiMemoryService
             )
-        } else {
-            STColors.background.ignoresSafeArea()
         }
     }
 
     var body: some View {
         content
+        .modifier(AppNavigationLifecycle(navigation: navigation,
+            hasActiveWorkout: container.workoutViewModel.isActive,
+            hasProAccess: container.workoutAnalyticsViewModel.hasProAccess))
         .onOpenURL { url in
-            // Handle deep links from widgets
-            handleDeepLink(url)
+            guard let link = AppLink(url) else { return }
+            navigation.receive(link, hasProAccess: container.workoutAnalyticsViewModel.hasProAccess)
+            if link == .restTimer {
+                container.restTimerService.handleForegroundReturn()
+                container.restTimerService.endAllStaleActivities()
+            }
         }
         .task {
             await container.workoutViewModel.restoreActiveWorkout()
-            didRestore = true
+            navigation.restorationFinished(hasActiveWorkout: container.workoutViewModel.isActive,
+                workoutID: container.workoutViewModel.currentWorkout?.id,
+                hasProAccess: container.workoutAnalyticsViewModel.hasProAccess)
         }
         .task {
             // Failsafe: never trap the user on a blank splash if restore hangs.
-            try? await Task.sleep(for: .seconds(3))
-            if !didRestore { didRestore = true }
+            do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            if !navigation.hasInitialRoute {
+                // Show usable content, but keep links queued until the restore
+                // result is known. Do not let the fallback consume a launch URL.
+                restoreTimedOut = true
+            }
         }
         .onChange(of: scenePhase, initial: true) { _, newPhase in
             if newPhase == .active {
@@ -230,17 +235,6 @@ struct ContentViewWrapper: View {
                     ])
                 }
             }
-        }
-    }
-
-    private func handleDeepLink(_ url: URL) {
-        guard let host = url.host else { return }
-        switch host {
-        case "rest-timer":
-            container.restTimerService.handleForegroundReturn()
-            container.restTimerService.endAllStaleActivities()
-        default:
-            break
         }
     }
 
