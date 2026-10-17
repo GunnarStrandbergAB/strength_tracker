@@ -196,6 +196,7 @@ struct ContentView: View {
 
 enum DashboardDestination: Hashable {
     case analytics(topic: String?)
+    case exerciseHistory(UUID)
 }
 
 struct WorkoutNavigationSnapshot: Equatable {
@@ -206,6 +207,7 @@ struct WorkoutNavigationSnapshot: Equatable {
 enum AppLink: Equatable {
     case dashboard, workout, restTimer, history, exercises
     case analytics(topic: String?)
+    case exerciseHistory(UUID)
 
     init?(_ url: URL) {
         guard url.scheme == "strengthtracker" else { return nil }
@@ -216,8 +218,21 @@ enum AppLink: Equatable {
         case "history": self = .history
         case "exercises": self = .exercises
         case "analytics":
-            self = .analytics(topic: URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?.first { $0.name == "topic" }?.value)
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            // Legacy widget backgrounds used the same URL as the first highlight.
+            // Never infer an exercise or analytics intent from those cached URLs.
+            guard items.first(where: { $0.name == "source" })?.value == WidgetNavigation.insightSource else {
+                self = .dashboard
+                return
+            }
+            let topic = items.first { $0.name == "topic" }?.value
+            self = .analytics(topic: topic.flatMap { WidgetNavigation.analyticsTopics.contains($0) ? $0 : nil })
+        case "exercise-history":
+            guard let id = UUID(uuidString: String(url.path.dropFirst())) else {
+                self = .dashboard
+                return
+            }
+            self = .exerciseHistory(id)
         default: return nil
         }
     }
@@ -230,6 +245,7 @@ final class AppNavigationState {
     var selectedTab = 0
     var dashboardPath = NavigationPath()
     private(set) var isRestored = false
+    private(set) var hasInitialRoute = false
     private(set) var pendingLink: AppLink?
     private var phase: ScenePhase = .inactive
     private var needsHome = true
@@ -278,11 +294,13 @@ final class AppNavigationState {
 
     private func activateIfReady(hasActiveWorkout: Bool, hasProAccess: Bool) {
         guard isRestored, phase == .active else { return }
-        if needsHome {
+        if pendingLink != nil {
+            applyPendingLink(hasProAccess: hasProAccess)
+        } else if needsHome {
             resetToHome(hasActiveWorkout: hasActiveWorkout)
-            needsHome = false
         }
-        applyPendingLink(hasProAccess: hasProAccess)
+        needsHome = false
+        hasInitialRoute = true
     }
 
     private func resetToHome(hasActiveWorkout: Bool) {
@@ -297,16 +315,38 @@ final class AppNavigationState {
     private func applyPendingLink(hasProAccess: Bool) {
         guard let link = pendingLink else { return }
         pendingLink = nil
-        switch link {
-        case .dashboard:
-            dashboardPath = NavigationPath(); selectedTab = 0
-        case .analytics(let topic):
-            dashboardPath = NavigationPath(); selectedTab = 0
-            if hasProAccess { openAnalytics(topic: topic) }
-        case .workout, .restTimer: selectedTab = 1
-        case .history: selectedTab = 4
-        case .exercises: selectedTab = 3
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            var destination: DashboardDestination?
+            switch link {
+            case .dashboard: selectedTab = 0
+            case .analytics(let topic):
+                selectedTab = 0
+                if hasProAccess { destination = .analytics(topic: topic) }
+            case .exerciseHistory(let id):
+                selectedTab = 0
+                if hasProAccess { destination = .exerciseHistory(id) }
+            case .workout, .restTimer: selectedTab = 1
+            case .history: selectedTab = 4
+            case .exercises: selectedTab = 3
+            }
+            // Assign the final path once. Data loading never adds another route.
+            dashboardPath = NavigationPath(destination.map { [$0] } ?? [])
         }
+    }
+}
+
+/// Keep initial content out of the first frame until the scene has selected its
+/// initial route. Remains mounted across later foreground/background transitions.
+struct AppLaunchGate<Content: View>: View {
+    let navigation: AppNavigationState
+    var allowFallback = false
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        if navigation.hasInitialRoute || allowFallback { content }
+        else { STColors.background.ignoresSafeArea() }
     }
 }
 

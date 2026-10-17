@@ -91,6 +91,16 @@ public final class WorkoutAnalyticsViewModel {
 
     // MARK: - Dashboard (loads WorkoutInsights aggregate)
 
+    /// Exercise deep links need source history, not the aggregate's trend gates.
+    /// The destination owns this result; a late response cannot navigate the app.
+    public func fetchCompletedHistory() async throws -> [Workout] {
+        let workouts: [Workout]
+        if let workoutRepository { workouts = try await workoutRepository.fetchAll() }
+        else { workouts = completedHistory }
+        try Task.checkCancellation()
+        return workouts.filter { $0.completedAt != nil }.sorted { $0.startedAt > $1.startedAt }
+    }
+
     /// Load all analytics for dashboard as a consistent snapshot
     public func loadDashboardInsights(force: Bool = false) async {
         let targetRevision = dataRevision?.value

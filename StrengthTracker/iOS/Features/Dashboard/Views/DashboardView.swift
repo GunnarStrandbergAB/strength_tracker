@@ -80,8 +80,8 @@ struct DashboardView: View {
     }
 
     var body: some View {
-        DashboardNavigationStack(navigation: navigation, analytics: { topic in
-            AnalyticsDashboardView(viewModel: analyticsViewModel, initialTopic: topic)
+        DashboardNavigationStack(navigation: navigation, destination: { destination in
+            DashboardLinkedDestination(destination: destination, viewModel: analyticsViewModel)
         }) {
             ScrollView {
                 VStack(spacing: 16) {
@@ -255,18 +255,26 @@ struct DashboardView: View {
 }
 
 /// The path belongs to the scene, not to a potentially offscreen Dashboard.
-struct DashboardNavigationStack<Root: View, Analytics: View>: View {
+struct DashboardNavigationStack<Root: View, Destination: View>: View {
     @Bindable var navigation: AppNavigationState
-    let analytics: (String?) -> Analytics
+    @ViewBuilder let destination: (DashboardDestination) -> Destination
     @ViewBuilder let root: Root
 
     var body: some View {
         NavigationStack(path: $navigation.dashboardPath) {
-            root.navigationDestination(for: DashboardDestination.self) { destination in
-                switch destination {
-                case .analytics(let topic): analytics(topic)
-                }
-            }
+            root.navigationDestination(for: DashboardDestination.self, destination: destination)
+        }
+    }
+}
+
+struct DashboardLinkedDestination: View {
+    let destination: DashboardDestination
+    let viewModel: WorkoutAnalyticsViewModel
+
+    var body: some View {
+        switch destination {
+        case .analytics(let topic): AnalyticsDashboardView(viewModel: viewModel, initialTopic: topic)
+        case .exerciseHistory(let id): LinkedExerciseHistoryView(exerciseID: id, viewModel: viewModel).id(id)
         }
     }
 }

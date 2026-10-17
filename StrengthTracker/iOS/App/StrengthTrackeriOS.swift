@@ -140,20 +140,12 @@ struct StrengthTrackeriOSApp: App {
 struct ContentViewWrapper: View {
     let container: AppContainer
     @Environment(\.scenePhase) private var scenePhase
-    @State private var didRestore: Bool
+    @State private var restoreTimedOut = false
     @State private var navigation = AppNavigationState()
-
-    init(container: AppContainer) {
-        self.container = container
-        // Skip the gate when no active workout is pending — normal launches stay instant.
-        // When a workout is pending (cold relaunch during a rest timer), gate the first
-        // frame on `restoreActiveWorkout()` so we never momentarily show Dashboard.
-        _didRestore = State(initialValue: !WorkoutViewModel.hasPendingActiveWorkout)
-    }
 
     @ViewBuilder
     private var content: some View {
-        if didRestore {
+        AppLaunchGate(navigation: navigation, allowFallback: restoreTimedOut) {
             ContentView(
                 navigation: navigation,
                 dashboardViewModel: container.makeDashboardViewModel(),
@@ -176,8 +168,6 @@ struct ContentViewWrapper: View {
                 aiChatViewModel: container.makeAIChatViewModel(),
                 aiMemoryService: container.aiMemoryService
             )
-        } else {
-            STColors.background.ignoresSafeArea()
         }
     }
 
@@ -199,15 +189,14 @@ struct ContentViewWrapper: View {
             navigation.restorationFinished(hasActiveWorkout: container.workoutViewModel.isActive,
                 workoutID: container.workoutViewModel.currentWorkout?.id,
                 hasProAccess: container.workoutAnalyticsViewModel.hasProAccess)
-            didRestore = true
         }
         .task {
             // Failsafe: never trap the user on a blank splash if restore hangs.
             do { try await Task.sleep(for: .seconds(3)) } catch { return }
-            if !didRestore {
+            if !navigation.hasInitialRoute {
                 // Show usable content, but keep links queued until the restore
                 // result is known. Do not let the fallback consume a launch URL.
-                didRestore = true
+                restoreTimedOut = true
             }
         }
         .onChange(of: scenePhase, initial: true) { _, newPhase in

@@ -19,7 +19,6 @@ struct AnalyticsPanel<Content: View>: View {
 struct AnalyticsDashboardView: View {
     let viewModel: WorkoutAnalyticsViewModel
     var initialTopic: String? = nil
-    @State private var linkedTrend: OverloadTrend?
     @State private var didRouteTopic = false
     @Environment(DataRevision.self) private var revision: DataRevision?
     @Environment(\.scenePhase) private var scenePhase
@@ -80,7 +79,6 @@ struct AnalyticsDashboardView: View {
         }
         .background(STColors.background).foregroundStyle(STColors.textPrimary)
         .safeAreaPadding(.bottom, 24)
-        .navigationDestination(item: $linkedTrend) { AnalyticsExerciseTrendView(trend: $0, viewModel: viewModel) }
         .navigationTitle("Analytics").navigationBarTitleDisplayMode(.inline).stNavigationBarStyle()
         .toolbar { ToolbarItem(placement: .topBarTrailing) { NavigationLink("Patterns") { AdvancedInsightsView(viewModel: viewModel) } } }
         .task(id: revision?.value ?? 0) { await viewModel.loadDashboardInsights() }
@@ -96,17 +94,60 @@ struct AnalyticsDashboardView: View {
     }
     private func routeTopic(using proxy: ScrollViewProxy) {
         guard !didRouteTopic, let initialTopic else { return }
-        if initialTopic.hasPrefix("progress-"), let id = UUID(uuidString: String(initialTopic.dropFirst(9))) {
-            if let trend = viewModel.insights.overloadTrends.first(where: { $0.exerciseId == id }) {
-                linkedTrend = trend
-                didRouteTopic = true
-            } else if viewModel.insights.workoutCount > 0 && !viewModel.isInsightsLoading {
-                didRouteTopic = true
+        // Topics only scroll within Analytics. Exercise links are root-owned routes.
+        guard WidgetNavigation.analyticsTopics.contains(initialTopic) else { return }
+        proxy.scrollTo(initialTopic, anchor: .top)
+        didRouteTopic = true
+    }
+}
+
+/// A deep link loads its own history, without waiting for analytics to produce a
+/// trend or pushing another screen when that calculation finishes.
+struct LinkedExerciseHistoryView: View {
+    let exerciseID: UUID
+    let viewModel: WorkoutAnalyticsViewModel
+    @State private var history: [Workout]?
+    @State private var loadError: String?
+    @State private var retryCount = 0
+
+    var body: some View {
+        Group {
+            if let loadError {
+                ContentUnavailableView {
+                    Label("Unable to load history", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(loadError)
+                } actions: {
+                    Button("Retry") { retryCount += 1 }
+                }.accessibilityIdentifier("linked-history.error")
+            } else if let history {
+                if let exercise = history.lazy.flatMap(\.exercises).first(where: { $0.exercise.id == exerciseID })?.exercise {
+                    ExerciseHistoryDetailView(exercise: exercise, workouts: history,
+                        bodyWeightKg: viewModel.resolvedBodyWeightKg, weightUnit: viewModel.weightUnit)
+                        .accessibilityIdentifier("linked-history.loaded")
+                } else {
+                    ContentUnavailableView("History unavailable", systemImage: "chart.xyaxis.line",
+                        description: Text("This exercise has no completed sessions in your current history."))
+                        .accessibilityIdentifier("linked-history.missing")
+                }
+            } else {
+                ProgressView("Loading exercise history…").accessibilityIdentifier("linked-history.loading")
             }
-            proxy.scrollTo("progress", anchor: .top)
-        } else {
-            proxy.scrollTo(initialTopic, anchor: .top)
-            didRouteTopic = true
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(STColors.background.ignoresSafeArea()).foregroundStyle(STColors.textPrimary)
+        .preferredColorScheme(.dark)
+        .navigationTitle("Exercise history").navigationBarTitleDisplayMode(.inline).stNavigationBarStyle()
+        .task(id: [viewModel.currentRevision, retryCount]) {
+            loadError = nil
+            do {
+                let loaded = try await viewModel.fetchCompletedHistory()
+                try Task.checkCancellation()
+                history = loaded
+            } catch {
+                guard !Task.isCancelled else { return }
+                loadError = "Your workout history could not be loaded. Please try again."
+            }
         }
     }
 }

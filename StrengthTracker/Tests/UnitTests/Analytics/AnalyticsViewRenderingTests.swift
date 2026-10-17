@@ -3,6 +3,176 @@ import SwiftUI
 @testable import StrengthTracker
 @testable import StrengthTrackerShared
 
+/// Exercise the actual linked screens, launch gate, and navigation container.
+@MainActor
+final class WidgetNavigationRenderingTests: XCTestCase {
+    private final class LoadGate {
+        private var continuation: CheckedContinuation<Void, Never>?
+        var released = false
+        func wait() async {
+            if !released { await withCheckedContinuation { continuation = $0 } }
+        }
+        func release() { released = true; continuation?.resume(); continuation = nil }
+    }
+
+    private func model(_ repo: MockWorkoutRepository) -> WorkoutAnalyticsViewModel {
+        let quality = WorkoutQualityScoreService(workoutRepository: repo, muscleBalanceService: MuscleBalanceService(), healthKitService: MockHealthKitService(), userPreferencesService: UserPreferencesService())
+        let service = WorkoutAnalyticsService(analyticsRepository: MockAnalyticsRepository(), workoutRepository: repo, exerciseRepository: MockExerciseRepository(), vectorizer: WorkoutVectorizer(), searchService: VectorSearchService(), plateauService: PlateauDetectionService(), muscleBalanceService: MuscleBalanceService(), recommendationService: ExerciseRecommendationService())
+        return WorkoutAnalyticsViewModel(analyticsService: service, qualityScoreService: quality, featureGate: AnalyticsFeatureGate(workoutRepository: repo), workoutRepository: repo)
+    }
+
+    private func host(_ navigation: AppNavigationState, _ model: WorkoutAnalyticsViewModel) throws -> (UIWindow, UIViewController) {
+        let root = AppLaunchGate(navigation: navigation) {
+            DashboardNavigationStack(navigation: navigation, destination: {
+                DashboardLinkedDestination(destination: $0, viewModel: model)
+            }) { Text("Home").navigationTitle("Dashboard") }
+        }
+        .modifier(AppNavigationLifecycle(navigation: navigation, hasActiveWorkout: false, hasProAccess: true))
+        .environment(\.scenePhase, .active)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let controller = UIHostingController(rootView: root)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        controller.view.frame = window.bounds
+        controller.view.layoutIfNeeded()
+        return (window, controller)
+    }
+
+    private func controllers(_ controller: UIViewController) -> [UIViewController] {
+        [controller] + controller.children.flatMap(controllers)
+    }
+    private func stack(_ host: UIViewController) -> UINavigationController? {
+        controllers(host).compactMap { $0 as? UINavigationController }.first
+    }
+    private func waitUntil(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(4))
+        while !condition(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertTrue(condition(), file: file, line: line)
+    }
+    private func snapshot(_ trends: [OverloadTrend] = []) -> WorkoutInsights {
+        .init(generatedAt: Date(), workoutCount: 115, plateaus: [], muscleBalance: nil, recommendations: [], recoveryPatterns: [], optimalVolumes: [], overloadTrends: trends)
+    }
+    private func capture(_ window: UIWindow, name: String) {
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+    }
+
+    func testColdExerciseLinkMountsFinalScreenBeforeHistoryArrives() async throws {
+        let exercise = AnalyticsTestHelpers.makeExercise(name: "Chin-Up")
+        let repo = MockWorkoutRepository()
+        repo.seed([AnalyticsTestHelpers.makeWorkout(exercises: [AnalyticsTestHelpers.makeWorkoutExercise(exercise: exercise)])])
+        let gate = LoadGate()
+        repo.beforeFetchAll = { await gate.wait() }
+        let vm = model(repo)
+        let navigation = AppNavigationState()
+        navigation.receive(try XCTUnwrap(AppLink(WidgetNavigation.exerciseHistoryURL(exercise.id))), hasProAccess: true)
+        let (window, host) = try host(navigation, vm)
+        defer { gate.release(); window.isHidden = true }
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertNil(stack(host), "No Dashboard is mounted before restoration resolves the launch")
+        navigation.restorationFinished(hasActiveWorkout: false, hasProAccess: true)
+        try await waitUntil { self.stack(host)?.topViewController?.navigationItem.title == "Exercise history" && repo.fetchAllCallCount == 1 }
+        let stack = try XCTUnwrap(stack(host))
+        XCTAssertEqual(stack.viewControllers.count, 2)
+        XCTAssertFalse(stack.viewControllers.contains { $0.navigationItem.title == "Analytics" })
+        let destination = try XCTUnwrap(stack.topViewController)
+        gate.release()
+        try await Task.sleep(for: .milliseconds(450))
+        XCTAssertTrue(stack.topViewController === destination, "Loading updates the destination; it does not push")
+        XCTAssertEqual(vm.insights.workoutCount, 0, "History must not depend on calculating analytics")
+        capture(window, name: "widget-direct-exercise-history")
+    }
+
+    func testBackWhileHistoryIsLoadingCannotReopenExercise() async throws {
+        let repo = MockWorkoutRepository()
+        let gate = LoadGate()
+        repo.beforeFetchAll = { await gate.wait() }
+        let vm = model(repo)
+        let navigation = AppNavigationState()
+        navigation.restorationFinished(hasActiveWorkout: false, hasProAccess: true)
+        let (window, host) = try host(navigation, vm)
+        defer { gate.release(); window.isHidden = true }
+        try await waitUntil { self.stack(host)?.topViewController?.navigationItem.title == "Dashboard" }
+        navigation.receive(.exerciseHistory(UUID()), hasProAccess: true)
+        try await waitUntil { self.stack(host)?.topViewController?.navigationItem.title == "Exercise history" && repo.fetchAllCallCount == 1 }
+        navigation.dashboardPath.removeLast()
+        try await waitUntil { self.stack(host)?.topViewController?.navigationItem.title == "Dashboard" }
+        gate.release()
+        vm.insights = snapshot()
+        vm.isInsightsLoading = false
+        try await Task.sleep(for: .milliseconds(450))
+        XCTAssertTrue(navigation.dashboardPath.isEmpty)
+        XCTAssertEqual(stack(host)?.viewControllers.count, 1)
+        XCTAssertEqual(stack(host)?.topViewController?.navigationItem.title, "Dashboard")
+    }
+
+    func testAnalyticsCannotPushExerciseWhenDelayedTrendArrives() async throws {
+        let repo = MockWorkoutRepository()
+        let vm = model(repo)
+        await vm.loadDashboardInsights()
+        vm.insights = snapshot()
+        vm.isInsightsLoading = true
+        let exerciseID = UUID()
+        let navigation = AppNavigationState()
+        navigation.restorationFinished(hasActiveWorkout: false, hasProAccess: true)
+        let (window, host) = try host(navigation, vm)
+        defer { window.isHidden = true }
+        try await waitUntil { self.stack(host)?.topViewController?.navigationItem.title == "Dashboard" }
+        // Directly inject the old topic to verify the real view cannot auto-push,
+        // even if a future caller bypasses URL normalization.
+        navigation.openAnalytics(topic: "progress-\(exerciseID)")
+        try await waitUntil { self.stack(host)?.topViewController?.navigationItem.title == "Analytics" }
+        vm.insights = snapshot([OverloadTrend(exerciseId: exerciseID, exerciseName: "Chin-Up", weeklyE1RMs: [], slopePerWeek: 0.3, trendStatus: .progressing, overloadIndex: 1)])
+        vm.isInsightsLoading = false
+        try await Task.sleep(for: .milliseconds(600))
+        XCTAssertEqual(stack(host)?.topViewController?.navigationItem.title, "Analytics")
+        XCTAssertEqual(stack(host)?.viewControllers.count, 2)
+        navigation.receive(try XCTUnwrap(AppLink(URL(string: "strengthtracker://analytics?topic=progress-\(exerciseID)")!)), hasProAccess: true)
+        try await waitUntil { self.stack(host)?.topViewController?.navigationItem.title == "Dashboard" }
+        vm.isInsightsLoading = true
+        try await Task.sleep(for: .milliseconds(50))
+        vm.isInsightsLoading = false
+        try await Task.sleep(for: .milliseconds(450))
+        XCTAssertEqual(stack(host)?.viewControllers.count, 1)
+    }
+
+    func testMissingAndFailedHistoryStayOnTheirDestination() async throws {
+        for fails in [false, true] {
+            let repo = MockWorkoutRepository()
+            repo.shouldThrowOnFetchAll = fails
+            let vm = model(repo)
+            let navigation = AppNavigationState()
+            navigation.receive(.exerciseHistory(UUID()), hasProAccess: true)
+            navigation.restorationFinished(hasActiveWorkout: false, hasProAccess: true)
+            let (window, host) = try host(navigation, vm)
+            defer { window.isHidden = true }
+            try await waitUntil { self.stack(host)?.topViewController?.navigationItem.title == "Exercise history" && repo.fetchAllCallCount == 1 }
+            try await Task.sleep(for: .milliseconds(400))
+            XCTAssertEqual(stack(host)?.viewControllers.count, 2)
+            XCTAssertFalse(stack(host)!.viewControllers.contains { $0.navigationItem.title == "Analytics" })
+            capture(window, name: fails ? "widget-history-load-error" : "widget-history-missing")
+        }
+    }
+
+    func testHistoryFetchUsesCompletedSourceSessionsWithoutAnalyticsAndPropagatesErrors() async throws {
+        let repo = MockWorkoutRepository()
+        let old = AnalyticsTestHelpers.makeWorkout(startedAt: Date().addingTimeInterval(-86400))
+        let recent = AnalyticsTestHelpers.makeWorkout()
+        let active = AnalyticsTestHelpers.makeWorkout(completedAt: nil)
+        repo.seed([old, active, recent])
+        let vm = model(repo)
+        let history = try await vm.fetchCompletedHistory()
+        XCTAssertEqual(history.map(\.id), [recent.id, old.id])
+        XCTAssertEqual(vm.insights.workoutCount, 0)
+        XCTAssertTrue(vm.completedHistory.isEmpty, "A destination fetch does not mutate another screen's snapshot")
+        repo.shouldThrowOnFetchAll = true
+        do { _ = try await vm.fetchCompletedHistory(); XCTFail("Repository errors must be surfaced") }
+        catch { XCTAssertTrue(error is MockWorkoutRepositoryError) }
+    }
+}
+
 /// Production cards rendered at compact and accessibility sizes for visual review.
 @MainActor
 final class AnalyticsViewRenderingTests: XCTestCase {
@@ -1064,6 +1234,57 @@ final class ChatScrollFollowTests: XCTestCase {
 
 @MainActor
 final class AppNavigationTests: XCTestCase {
+    func testLegacyWidgetURLsCannotOpenAnalyticsOrAnExercise() throws {
+        let id = UUID()
+        for suffix in ["", "?topic=load", "?topic=progress-\(id)", "?topic=overview"] {
+            let link = try XCTUnwrap(AppLink(URL(string: "strengthtracker://analytics\(suffix)")!))
+            XCTAssertEqual(link, .dashboard)
+            let navigation = ready()
+            navigation.openAnalytics()
+            navigation.receive(link, hasProAccess: true)
+            XCTAssertTrue(navigation.dashboardPath.isEmpty)
+        }
+        XCTAssertEqual(AppLink(URL(string: "strengthtracker://exercise-history/invalid")!), .dashboard)
+        XCTAssertEqual(AppLink(WidgetNavigation.exerciseHistoryURL(id)), .exerciseHistory(id))
+    }
+
+    func testExplicitExerciseLinkIsOneDestinationInEveryLaunchOrder() throws {
+        let id = UUID()
+        let link = try XCTUnwrap(AppLink(WidgetNavigation.exerciseHistoryURL(id)))
+        for order in [["link", "restore", "active"], ["link", "active", "restore"],
+                      ["restore", "link", "active"], ["restore", "active", "link"],
+                      ["active", "link", "restore"], ["active", "restore", "link"]] {
+            let navigation = AppNavigationState()
+            for step in order {
+                switch step {
+                case "link": navigation.receive(link, hasProAccess: true)
+                case "restore": navigation.restorationFinished(hasActiveWorkout: true, hasProAccess: true)
+                default: navigation.scenePhaseChanged(.active, hasActiveWorkout: true, hasProAccess: true)
+                }
+            }
+            XCTAssertTrue(navigation.hasInitialRoute)
+            XCTAssertEqual(navigation.selectedTab, 0)
+            XCTAssertEqual(navigation.dashboardPath, NavigationPath([DashboardDestination.exerciseHistory(id)]), "\(order)")
+            navigation.receive(link, hasProAccess: true)
+            XCTAssertEqual(navigation.dashboardPath.count, 1, "Repeated delivery must not stack screens")
+            navigation.scenePhaseChanged(.background, hasActiveWorkout: false, hasProAccess: true)
+            navigation.scenePhaseChanged(.active, hasActiveWorkout: false, hasProAccess: true)
+            XCTAssertTrue(navigation.dashboardPath.isEmpty, "The link must not replay on ordinary resume")
+        }
+    }
+
+    func testInitialContentWaitsForRestorationAndActivationAndExerciseLinksRespectAccess() {
+        let navigation = AppNavigationState()
+        XCTAssertFalse(navigation.hasInitialRoute)
+        navigation.restorationFinished(hasActiveWorkout: false, hasProAccess: false)
+        XCTAssertFalse(navigation.hasInitialRoute)
+        navigation.receive(.exerciseHistory(UUID()), hasProAccess: false)
+        navigation.scenePhaseChanged(.active, hasActiveWorkout: false, hasProAccess: false)
+        XCTAssertTrue(navigation.hasInitialRoute)
+        XCTAssertTrue(navigation.dashboardPath.isEmpty)
+        XCTAssertNil(navigation.pendingLink)
+    }
+
     private func ready(activeWorkout: Bool = false, id: UUID? = nil) -> AppNavigationState {
         let navigation = AppNavigationState()
         navigation.scenePhaseChanged(.active, hasActiveWorkout: activeWorkout, hasProAccess: true)
@@ -1127,9 +1348,10 @@ final class AppNavigationTests: XCTestCase {
         navigation.openAnalytics(topic: "old")
         navigation.scenePhaseChanged(.background, hasActiveWorkout: false, hasProAccess: true)
         navigation.receive(.analytics(topic: "quality"), hasProAccess: true)
-        navigation.receive(.analytics(topic: "progress-test"), hasProAccess: true)
+        let exerciseID = UUID()
+        navigation.receive(.exerciseHistory(exerciseID), hasProAccess: true)
         navigation.scenePhaseChanged(.active, hasActiveWorkout: false, hasProAccess: true)
-        XCTAssertEqual(navigation.dashboardPath, NavigationPath([DashboardDestination.analytics(topic: "progress-test")]))
+        XCTAssertEqual(navigation.dashboardPath, NavigationPath([DashboardDestination.exerciseHistory(exerciseID)]))
         navigation.openAnalytics()
         XCTAssertEqual(navigation.dashboardPath, NavigationPath([DashboardDestination.analytics(topic: nil)]))
         navigation.receive(.dashboard, hasProAccess: false)
@@ -1141,7 +1363,7 @@ final class AppNavigationTests: XCTestCase {
         for value in ["https://analytics", "other://dashboard", "strengthtracker://unknown"] {
             XCTAssertNil(AppLink(try XCTUnwrap(URL(string: value))))
         }
-        let link = try XCTUnwrap(AppLink(try XCTUnwrap(URL(string: "strengthtracker://analytics?topic=quality"))))
+        let link = try XCTUnwrap(AppLink(WidgetNavigation.analyticsURL(topic: "quality")))
         XCTAssertEqual(link, .analytics(topic: "quality"))
         navigation.receive(link, hasProAccess: false)
         XCTAssertEqual(navigation.selectedTab, 0)
@@ -1175,9 +1397,14 @@ final class AppRootTransitionTests: XCTestCase {
         @State private var weight: Double? = 40
         var body: some View {
             TabView(selection: $navigation.selectedTab) {
-                DashboardNavigationStack(navigation: navigation, analytics: { topic in
-                    Text("Analytics content").navigationTitle("Analytics \(topic ?? "")")
-                        .navigationDestination(for: String.self) { Text($0).navigationTitle("Exercise detail") }
+                DashboardNavigationStack(navigation: navigation, destination: { destination in
+                    switch destination {
+                    case .analytics(let topic):
+                        Text("Analytics content").navigationTitle("Analytics \(topic ?? "")")
+                            .navigationDestination(for: String.self) { Text($0).navigationTitle("Exercise detail") }
+                    case .exerciseHistory:
+                        Text("Exercise content").navigationTitle("Exercise history")
+                    }
                 }) {
                     Text("Home").navigationTitle("Dashboard")
                 }.tabItem { Label("Dashboard", systemImage: "square.grid.2x2") }.tag(0)
