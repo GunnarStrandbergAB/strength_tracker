@@ -43,7 +43,8 @@ public final class WorkoutQualityScoreService: Sendable {
     /// Compute quality score for a completed workout (fetches history internally)
     public func computeScore(for workout: Workout) async throws -> WorkoutQualityScore {
         let recentWorkouts = try await workoutRepository.fetchAll()
-        return computeScore(for: workout, history: recentWorkouts)
+        let saved = recentWorkouts.first { $0.id == workout.id } ?? workout
+        return computeScore(for: saved, history: recentWorkouts)
     }
 
     /// Compute quality score with pre-fetched history (avoids N+1 fetchAll calls)

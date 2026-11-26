@@ -430,6 +430,7 @@ public final class WorkoutViewModel {
         }
 
         workout.completedAt = Date()
+        finalizer?.willChangeWorkout(workout.id)
         let saved = try await workoutRepository.save(workout)
         currentWorkout = saved
         isActive = false

@@ -19,13 +19,13 @@ struct WorkoutHistoryView: View {
 
     @State private var workoutToDelete: Workout? = nil
     @State private var showLogPastWorkout = false
-    @State private var navigationPath: [Workout] = []
+    @State private var navigationPath: [UUID] = []
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
             List {
                 ForEach(viewModel.workouts) { workout in
-                    NavigationLink(value: workout) {
+                    NavigationLink(value: workout.id) {
                         WorkoutHistoryRow(
                             workout: workout,
                             weightUnit: viewModel.userPreferencesService?.weightUnit ?? .kg,
@@ -53,12 +53,12 @@ struct WorkoutHistoryView: View {
             }
             .sheet(isPresented: $showLogPastWorkout) {
                 LogPastWorkoutSheet(viewModel: viewModel) { workout in
-                    navigationPath.append(workout)
+                    navigationPath.append(workout.id)
                 }
             }
-            .navigationDestination(for: Workout.self) { workout in
-                WorkoutDetailView(
-                    workout: workout,
+            .navigationDestination(for: UUID.self) { workoutId in
+                HistoryWorkoutDestination(
+                    workoutId: workoutId,
                     historyViewModel: viewModel,
                     analyticsViewModel: analyticsViewModel,
                     exerciseListViewModel: exerciseListViewModel

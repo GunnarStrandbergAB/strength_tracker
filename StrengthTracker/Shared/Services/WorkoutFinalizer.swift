@@ -8,15 +8,8 @@ public protocol WidgetRefreshing: AnyObject {
 
 extension WidgetRefreshService: WidgetRefreshing {}
 
-/// The ONE post-mutation pipeline for completed workouts. Every path that
-/// changes a completed workout — finish on the phone, history edit (UI or AI),
-/// Watch receive, delete, retro creation, full rebuilds — ends here, so derived
-/// data can never drift: vector → personal records (+ per-set flags) → cache
-/// invalidation → plan hooks → HealthKit → webhook → revision bump → widgets.
-///
-/// Pipelines are serialized so a finish, an AI edit and a body-weight rebuild
-/// never interleave. The revision is bumped exactly once per pipeline, after
-/// derived data is consistent and before widgets republish.
+/// Serializes completed-workout mutations. Local derivation runs in dependency
+/// order (PR election, vectors, cache invalidation) before publishing a revision.
 @MainActor
 public final class WorkoutFinalizer {
 
@@ -55,6 +48,16 @@ public final class WorkoutFinalizer {
     public var onSessionEdited: (@MainActor (_ sessionId: UUID, _ planId: UUID, _ workoutId: UUID) async -> Void)?
     public var onWorkoutUnlinked: (@MainActor (_ workoutId: UUID) async -> Void)?
 
+    private static let repairKey = "workout_analytics_pending_repairs"
+    private static let vectorRepairVersion = 1
+    private let repairDefaults: UserDefaults?
+    // Tokens distinguish two saves of the same workout across suspension points.
+    private var pending: [String: String] {
+        didSet { repairDefaults?.set(pending, forKey: Self.repairKey) }
+    }
+    private var interrupted: [String: String]
+    public private(set) var localRepairError: String?
+
     private var chain: Task<Void, Never> = Task {}
 
     public init(
@@ -68,8 +71,13 @@ public final class WorkoutFinalizer {
         webhookService: WebhookService?,
         widgetRefresh: (any WidgetRefreshing)?,
         bodyWeightProvider: BodyWeightProvider?,
-        dataRevision: DataRevision
+        dataRevision: DataRevision,
+        repairDefaults: UserDefaults? = nil
     ) {
+        self.repairDefaults = repairDefaults
+        let interrupted = repairDefaults?.dictionary(forKey: Self.repairKey) as? [String: String] ?? [:]
+        self.interrupted = interrupted
+        self.pending = interrupted
         self.workoutRepository = workoutRepository
         self.analyticsRepository = analyticsRepository
         self.analyticsService = analyticsService
@@ -89,23 +97,29 @@ public final class WorkoutFinalizer {
 
     // MARK: - Pipelines
 
+    /// Write ahead of the source save. If the app exits before Done, startup
+    /// rebuilds local analytics from whatever was actually persisted.
+    public func willChangeWorkout(_ id: UUID) {
+        pending[id.uuidString] = UUID().uuidString
+    }
+
     /// A workout was just completed. Returns it with PR flags (and HealthKit id) applied.
     @discardableResult
-    public func workoutCompleted(_ workout: Workout, source: Source) async -> Workout {
-        await enqueue { [self] in
+    public func workoutCompleted(_ workout: Workout, source: Source, replacing previous: Workout? = nil) async -> Workout {
+        let token = repairToken(for: workout.id)
+        return await enqueue { [self] in
             var current = workout
             if let sessionId = current.plannedSessionId, let planId = current.plannedPlanId {
                 await onSessionCompleted?(sessionId, planId, current.id)
             }
-            try? await analyticsService?.vectorizeWorkout(current)
-            current = await rebuildRecords(for: current, exerciseIds: current.exerciseIds)
-            invalidateCaches()
+            let exercises = current.exerciseIds.union(previous?.exerciseIds ?? [])
+            let repair = await derive(current, previous: previous, exercises: exercises, checkLiveRecords: source == .phone)
+            current = repair.workout ?? current
             if source == .phone {
                 current = await saveToHealthKit(current)
             }
+            if repair.success { await publishRepair(for: workout.id, token: token) }
             await webhookService?.send(current)
-            dataRevision.bump()
-            await widgetRefresh?.refresh()
             return current
         }
     }
@@ -113,11 +127,10 @@ public final class WorkoutFinalizer {
     /// A completed workout was edited (History UI, AI editor, retro creation).
     @discardableResult
     public func workoutEdited(_ workout: Workout, touchedExerciseIds: Set<UUID>, retro: RetroOptions?) async -> Workout {
-        await enqueue { [self] in
-            var current = workout
-            try? await analyticsService?.vectorizeWorkout(current)
-            current = await rebuildRecords(for: current, exerciseIds: touchedExerciseIds.union(current.exerciseIds))
-            invalidateCaches()
+        let token = repairToken(for: workout.id)
+        return await enqueue { [self] in
+            let repair = await derive(workout, exercises: touchedExerciseIds.union(workout.exerciseIds))
+            var current = repair.workout ?? workout
             if let sessionId = current.plannedSessionId, let planId = current.plannedPlanId {
                 await onSessionEdited?(sessionId, planId, current.id)
             }
@@ -132,23 +145,20 @@ public final class WorkoutFinalizer {
                     current = await saveToHealthKit(current)
                 }
             }
+            if repair.success { await publishRepair(for: workout.id, token: token) }
             await webhookService?.send(current)
-            dataRevision.bump()
-            await widgetRefresh?.refresh()
             return current
         }
     }
 
     /// A completed workout was deleted (the repository row is already gone).
-    public func workoutDeleted(_ workout: Workout) async {
+    public func workoutDeleted(_ workout: Workout, touchedExerciseIds: Set<UUID> = []) async {
+        let token = repairToken(for: workout.id)
         await enqueue { [self] in
-            try? await analyticsRepository.deleteVector(for: workout.id)
-            _ = try? await personalRecordService?.recalculatePRs(for: workout.exerciseIds)
-            invalidateCaches()
+            let repair = await derive(workout, exercises: touchedExerciseIds.union(workout.exerciseIds), deleted: true)
             await onWorkoutUnlinked?(workout.id)
+            if repair.success { await publishRepair(for: workout.id, token: token) }
             try? await healthKitService.deleteWorkout(appWorkoutId: workout.id)
-            dataRevision.bump()
-            await widgetRefresh?.refresh()
         }
     }
 
@@ -156,11 +166,12 @@ public final class WorkoutFinalizer {
     /// incomplete copy overwrite a completed one) and runs the completion pipeline.
     public func workoutReceivedFromWatch(_ workout: Workout, metadata: [String: String]?) async {
         var incoming = workout
-        if let existing = try? await workoutRepository.fetchAll().first(where: { $0.id == incoming.id }),
+        let previous = try? await workoutRepository.fetchAll().first { $0.id == incoming.id }
+        if let existing = previous,
            existing.completedAt != nil, incoming.completedAt == nil {
             return
         }
-        if let existing = try? await workoutRepository.fetchAll().first(where: { $0.id == incoming.id }) {
+        if let existing = previous {
             for i in incoming.exercises.indices where incoming.exercises[i].exercise.weightRecording == nil {
                 if let prior = existing.exercises.first(where: { $0.id == incoming.exercises[i].id }) {
                     incoming.exercises[i].exercise.weightRecording = prior.exercise.weightRecording
@@ -175,71 +186,131 @@ public final class WorkoutFinalizer {
             incoming.plannedSessionId = sessionId
             incoming.plannedPlanId = planId
         }
+        if incoming.completedAt != nil { willChangeWorkout(incoming.id) }
         guard let saved = try? await workoutRepository.save(incoming) else { return }
         guard saved.completedAt != nil else {
             dataRevision.bump()
             return
         }
-        await workoutCompleted(saved, source: .watch)
+        await workoutCompleted(saved, source: .watch, replacing: previous)
     }
 
-    /// Everything derived is rebuilt from scratch (body-weight change, migrations).
+    /// Metadata changes may affect every workout, including old record holders.
     public func rebuildAll(reason: RebuildReason) async {
-        await enqueue { [self] in
-            try? await analyticsRepository.deleteAllVectors()
-            try? await analyticsService?.vectorizeAllWorkouts()
-            try? await analyticsService?.sweepOrphanVectors()
-            try? await personalRecordService?.recalculateAllPRs()
-            invalidateCaches()
-            dataRevision.bump()
-            await widgetRefresh?.refresh()
-        }
+        try? await rebuildWeightRecordingData()
     }
 
-    /// Metadata corrections stay local: no plan replay, HealthKit writes or webhook delivery.
-    /// Unlike best-effort rebuildAll, errors propagate so the durable journal can retry.
     public func rebuildWeightRecordingData() async throws {
         let result: Result<Void, Error> = await enqueue { [self] in
+            pending["full"] = UUID().uuidString
             do {
-                try await analyticsRepository.deleteAllVectors()
-                try await analyticsService?.vectorizeAllWorkouts()
-                try await personalRecordService?.recalculateAllPRs()
-                invalidateCaches()
-                dataRevision.bump()
-                await widgetRefresh?.refresh()
+                try await rebuildLocalHistory()
+                pending.removeValue(forKey: "full")
+                await publish()
                 return .success(())
-            } catch { return .failure(error) }
+            } catch {
+                localRepairError = error.localizedDescription
+                return .failure(error)
+            }
         }
         try result.get()
     }
 
-    /// Re-elect automatic records after the shared e1RM formula changes. Manual records are preserved.
-    /// Mark success only after the rebuild completes, so interrupted migrations retry next launch.
+    /// The vector repair version is independent of the scoring formula version.
+    /// Only a successful local rebuild advances either migration marker.
     @discardableResult
     public func migrateAnalyticsModelIfNeeded(defaults: UserDefaults = .standard) async -> Bool {
         await enqueue { [self] in
-            let key = "analytics_derived_model_version"
-            guard defaults.integer(forKey: key) < WorkoutQualityScore.modelVersion else { return false }
-            guard let personalRecordService else { return false }
+            let modelKey = "analytics_derived_model_version"
+            let vectorKey = "analytics_vector_repair_version"
+            let outstanding = interrupted.filter { pending[$0.key] == $0.value }
+            guard defaults.integer(forKey: modelKey) < WorkoutQualityScore.modelVersion ||
+                    defaults.integer(forKey: vectorKey) < Self.vectorRepairVersion ||
+                    !interrupted.isEmpty || pending["full"] != nil else { return false }
+            guard personalRecordService != nil else { return false }
             do {
-                try await personalRecordService.recalculateAllPRs()
-                invalidateCaches()
-                dataRevision.bump()
-                defaults.set(WorkoutQualityScore.modelVersion, forKey: key)
-                await widgetRefresh?.refresh()
+                try await rebuildLocalHistory()
+                // Replay only local plan changes for interrupted edits. An edited
+                // session replay derives future targets from the saved history.
+                if !outstanding.isEmpty {
+                    let rows = try await workoutRepository.fetchAll()
+                    for key in outstanding.keys {
+                        guard let id = UUID(uuidString: key) else { continue }
+                        if let workout = rows.first(where: { $0.id == id }) {
+                            if let session = workout.plannedSessionId, let plan = workout.plannedPlanId {
+                                await onSessionEdited?(session, plan, id)
+                            }
+                        } else {
+                            await onWorkoutUnlinked?(id)
+                        }
+                    }
+                }
+                for (key, token) in outstanding where pending[key] == token {
+                    pending.removeValue(forKey: key)
+                }
+                interrupted.removeAll()
+                pending.removeValue(forKey: "full")
+                defaults.set(WorkoutQualityScore.modelVersion, forKey: modelKey)
+                defaults.set(Self.vectorRepairVersion, forKey: vectorKey)
+                await publish()
                 return true
             } catch {
+                localRepairError = error.localizedDescription
                 return false
             }
         }
     }
 
-    // MARK: - Steps
+    private func repairToken(for id: UUID) -> String {
+        if let token = pending[id.uuidString] { return token }
+        let token = UUID().uuidString
+        pending[id.uuidString] = token
+        return token
+    }
 
-    private func rebuildRecords(for workout: Workout, exerciseIds: Set<UUID>) async -> Workout {
-        guard let personalRecordService,
-              let changed = try? await personalRecordService.recalculatePRs(for: exerciseIds) else { return workout }
-        return changed[workout.id] ?? workout
+    private func rebuildLocalHistory() async throws {
+        try await personalRecordService?.recalculateAllPRs()
+        try await analyticsService?.vectorizeAllWorkouts(replacingExisting: true)
+    }
+
+    private func derive(_ mutation: Workout, previous: Workout? = nil, exercises: Set<UUID>,
+                        deleted: Bool = false, checkLiveRecords: Bool = false) async -> (workout: Workout?, success: Bool) {
+        do {
+            let updated: Workout?
+            if pending["full"] != nil {
+                // A partial election may have already moved flags. Its original
+                // set of changed IDs cannot be reconstructed by repeating it.
+                try await rebuildLocalHistory()
+                updated = try await workoutRepository.fetchAll().first { $0.id == mutation.id }
+                pending.removeValue(forKey: "full")
+            } else {
+                let changed = try await personalRecordService?.recalculatePRs(for: exercises) ?? [:]
+                if let analyticsService {
+                    updated = try await analyticsService.rebuildVectors(after: mutation, previous: previous,
+                        changedRecordIds: Set(changed.keys), checkLiveRecords: checkLiveRecords)
+                } else {
+                    if deleted { try await analyticsRepository.deleteVector(for: mutation.id) }
+                    updated = changed[mutation.id]
+                }
+            }
+            return (updated, true)
+        } catch {
+            pending["full"] = UUID().uuidString
+            localRepairError = error.localizedDescription
+            return (nil, false)
+        }
+    }
+
+    private func publishRepair(for id: UUID, token: String) async {
+        if pending[id.uuidString] == token { pending.removeValue(forKey: id.uuidString) }
+        await publish()
+    }
+
+    private func publish() async {
+        localRepairError = nil
+        invalidateCaches()
+        dataRevision.bump()
+        await widgetRefresh?.refresh()
     }
 
     private func invalidateCaches() {
@@ -252,7 +323,8 @@ public final class WorkoutFinalizer {
         let calories = calorieEstimationService.estimateCalories(workout: workout, bodyWeightKg: bw).totalCalories
         guard let uuid = try? await healthKitService.saveWorkout(workout, calories: calories, bodyWeightKg: bw),
               uuid != workout.healthKitWorkoutId else { return workout }
-        var updated = workout
+        // HealthKit can suspend while History saves another edit or deletes the row.
+        guard var updated = try? await workoutRepository.fetchAll().first(where: { $0.id == workout.id }) else { return workout }
         updated.healthKitWorkoutId = uuid
         return (try? await workoutRepository.save(updated)) ?? updated
     }

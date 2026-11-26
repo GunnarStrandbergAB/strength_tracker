@@ -1,5 +1,7 @@
 import Testing
 import Foundation
+import SwiftUI
+@testable import StrengthTracker
 @testable import StrengthTrackerShared
 
 @MainActor
@@ -21,17 +23,18 @@ struct WorkoutFinalizerTests {
     private struct Stack {
         let finalizer: WorkoutFinalizer
         let workoutRepo: InMemoryWorkoutRepository
-        let analyticsRepo: InMemoryAnalyticsRepository
+        let analyticsService: WorkoutAnalyticsService
+        let analyticsRepo: MockAnalyticsRepository
         let prRepo: InMemoryPersonalRecordRepository
         let healthKit: MockHealthKitService
         let revision: DataRevision
         let widget: SpyWidgetRefresh
     }
 
-    private func makeStack() -> Stack {
-        let workoutRepo = InMemoryWorkoutRepository()
-        let analyticsRepo = InMemoryAnalyticsRepository()
-        let prRepo = InMemoryPersonalRecordRepository()
+    private func makeStack(reopening previous: Stack? = nil, defaults: UserDefaults? = nil) -> Stack {
+        let workoutRepo = previous?.workoutRepo ?? InMemoryWorkoutRepository()
+        let analyticsRepo = previous?.analyticsRepo ?? MockAnalyticsRepository()
+        let prRepo = previous?.prRepo ?? InMemoryPersonalRecordRepository()
         let healthKit = MockHealthKitService()
         let revision = DataRevision()
         let widget = SpyWidgetRefresh(revision: revision)
@@ -57,9 +60,10 @@ struct WorkoutFinalizerTests {
             webhookService: nil,
             widgetRefresh: widget,
             bodyWeightProvider: nil,
-            dataRevision: revision
+            dataRevision: revision,
+            repairDefaults: defaults
         )
-        return Stack(finalizer: finalizer, workoutRepo: workoutRepo, analyticsRepo: analyticsRepo, prRepo: prRepo, healthKit: healthKit, revision: revision, widget: widget)
+        return Stack(finalizer: finalizer, workoutRepo: workoutRepo, analyticsService: analyticsService, analyticsRepo: analyticsRepo, prRepo: prRepo, healthKit: healthKit, revision: revision, widget: widget)
     }
 
     private func completedWorkout(_ exercise: Exercise, weight: Double, daysAgo: Int) -> Workout {
@@ -198,5 +202,182 @@ extension WorkoutFinalizerTests {
         #expect(!(await stack.finalizer.migrateAnalyticsModelIfNeeded(defaults: defaults)))
         #expect(stack.revision.value == 1)
         #expect(stack.healthKit.savedWorkoutIds.isEmpty)
+    }
+}
+
+extension WorkoutFinalizerTests {
+    private func checkStoredVectors(_ s: Stack) async throws {
+        let history = try await s.workoutRepo.fetchAll()
+        let vectors = try await s.analyticsRepo.fetchAllVectors()
+        #expect(Set(vectors.map(\.workoutId)) == Set(history.filter { $0.completedAt != nil }.map(\.id)))
+        for workout in history where workout.completedAt != nil {
+            let stored = try #require(vectors.first { $0.workoutId == workout.id })
+            let expected = WorkoutVectorizer().vectorize(workout, historicalWorkouts: history)
+            #expect(zip(stored.dimensions, expected.dimensions).allSatisfy { abs($0 - $1) < 1e-10 })
+            #expect(abs((stored.magnitude ?? 0) - (expected.magnitude ?? 0)) < 1e-10)
+        }
+    }
+
+    @Test("An edit transfers an old record and replaces dependent vectors after backdating and deletion")
+    func dependentVectors() async throws {
+        let s = makeStack()
+        let bench = AnalyticsTestHelpers.makeExercise()
+        // The original record holder is outside both volume windows.
+        var sessions: [Workout] = []
+        for (day, weight) in [(90, 100.0), (29, 80), (10, 60), (2, 75)] {
+            let saved = try await s.workoutRepo.save(completedWorkout(bench, weight: weight, daysAgo: day))
+            sessions.append(await s.finalizer.workoutCompleted(saved, source: .watch))
+        }
+        let editor = HistoryViewModel(workoutRepository: s.workoutRepo)
+        editor.finalizer = s.finalizer
+        await editor.loadHistory()
+        let target = try #require(editor.workout(for: sessions[1].id))
+        editor.selectWorkout(target)
+        editor.isEditing = true
+        await editor.updateSetWeight(exerciseId: target.exercises[0].id, setId: target.exercises[0].sets[0].id, weight: 120)
+        await editor.endEditing()
+        try await checkStoredVectors(s)
+        let holder = try #require(try await s.prRepo.fetchForExercise(bench.id).first { $0.recordType == .maxWeight })
+        #expect(holder.setId == target.exercises[0].sets[0].id)
+        let retro = try await s.workoutRepo.save(completedWorkout(bench, weight: 93, daysAgo: 5))
+        _ = await s.finalizer.workoutEdited(retro, touchedExerciseIds: [bench.id], retro: .init(saveToHealthKit: false))
+        try await checkStoredVectors(s)
+        // Deleting from an open editor must also release the draft and re-elect
+        // the exercise that was swapped out before Done.
+        editor.isEditing = true
+        await editor.replaceExercise(exerciseId: target.exercises[0].id, with: AnalyticsTestHelpers.makeExercise(name: "Press"))
+        let draft = try #require(editor.selectedWorkout)
+        await editor.deleteWorkout(draft)
+        #expect(!editor.isEditing && editor.selectedWorkout == nil)
+        let remainingRecord = try #require(try await s.prRepo.fetchForExercise(bench.id).first { $0.recordType == .maxWeight })
+        #expect(remainingRecord.value == 100)
+        try await checkStoredVectors(s)
+    }
+
+    @Test("Restart repairs autosaved edits and failed vector writes without repeating exports")
+    func interruptedRepair() async throws {
+        let suite = "HistoryEditRepair.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let first = makeStack(defaults: defaults)
+        let exercise = AnalyticsTestHelpers.makeExercise()
+        let workout = try await first.workoutRepo.save(completedWorkout(exercise, weight: 80, daysAgo: 3))
+        let complete = await first.finalizer.workoutCompleted(workout, source: .phone)
+        // Simulate an already migrated installation, then quit between field save and Done.
+        #expect(await first.finalizer.migrateAnalyticsModelIfNeeded(defaults: defaults))
+        let editor = HistoryViewModel(workoutRepository: first.workoutRepo)
+        editor.finalizer = first.finalizer
+        editor.selectWorkout(complete)
+        editor.isEditing = true
+        await editor.updateSetWeight(exerciseId: complete.exercises[0].id, setId: complete.exercises[0].sets[0].id, weight: 100)
+        let reopened = makeStack(reopening: first, defaults: defaults)
+        reopened.analyticsRepo.shouldThrowOnStore = true
+        #expect(!(await reopened.finalizer.migrateAnalyticsModelIfNeeded(defaults: defaults)))
+        #expect(reopened.revision.value == 0)
+        reopened.analyticsRepo.shouldThrowOnStore = false
+        #expect(await reopened.finalizer.migrateAnalyticsModelIfNeeded(defaults: defaults))
+        try await checkStoredVectors(reopened)
+        #expect(!(await reopened.finalizer.migrateAnalyticsModelIfNeeded(defaults: defaults)))
+        #expect(reopened.healthKit.savedWorkoutIds.isEmpty && reopened.healthKit.deletedWorkoutIds.isEmpty)
+
+        let edited = try #require(try await reopened.workoutRepo.fetchAll().first)
+        reopened.analyticsRepo.shouldThrowOnStore = true
+        _ = await reopened.finalizer.workoutEdited(edited, touchedExerciseIds: [exercise.id], retro: nil)
+        #expect(reopened.revision.value == 1)
+        #expect(reopened.finalizer.localRepairError != nil)
+        reopened.analyticsRepo.shouldThrowOnStore = false
+        let retry = makeStack(reopening: reopened, defaults: defaults)
+        #expect(await retry.finalizer.migrateAnalyticsModelIfNeeded(defaults: defaults))
+        #expect(retry.healthKit.savedWorkoutIds.isEmpty && retry.healthKit.deletedWorkoutIds.isEmpty)
+        try await checkStoredVectors(retry)
+    }
+
+    @Test("Mounted Dashboard and History resolve a correction by ID, including the same-day mean")
+    func dashboardEditPropagation() async throws {
+        let s = makeStack()
+        let bench = AnalyticsTestHelpers.makeExercise()
+        let today = Calendar.current.startOfDay(for: Date())
+        let elapsed = Date().timeIntervalSince(today)
+        var sameDay: [Workout] = []
+        for (day, weight) in [(9, 80.0), (7, 80), (5, 80), (3, 80), (0, 40), (0, 70)] {
+            var workout = completedWorkout(bench, weight: weight, daysAgo: day)
+            if day == 0 {
+                workout.startedAt = today.addingTimeInterval(elapsed * (sameDay.isEmpty ? 0.2 : 0.6))
+                workout.completedAt = workout.startedAt.addingTimeInterval(elapsed * 0.1)
+                workout.exercises[0].sets[0].completedAt = workout.completedAt
+                workout.name = sameDay.isEmpty ? "Corrected morning workout" : "Later workout"
+                sameDay.append(workout)
+            }
+            let saved = try await s.workoutRepo.save(workout)
+            _ = await s.finalizer.workoutCompleted(saved, source: .watch)
+        }
+        let prefs = UserPreferencesService()
+        let quality = WorkoutQualityScoreService(workoutRepository: s.workoutRepo, muscleBalanceService: MuscleBalanceService(),
+                                                healthKitService: s.healthKit, userPreferencesService: prefs)
+        let analytics = WorkoutAnalyticsViewModel(analyticsService: s.analyticsService, qualityScoreService: quality,
+            featureGate: AnalyticsFeatureGate(workoutRepository: s.workoutRepo), workoutRepository: s.workoutRepo, dataRevision: s.revision)
+        let dashboard = DashboardViewModel(workoutRepository: s.workoutRepo, personalRecordRepository: s.prRepo,
+            qualityScoreService: quality, healthKitService: s.healthKit, userPreferencesService: prefs)
+        let history = HistoryViewModel(workoutRepository: s.workoutRepo)
+        history.finalizer = s.finalizer
+        let exercises = InMemoryExerciseRepository()
+        let templates = InMemoryTemplateRepository()
+        let plan = ProgressionPlanViewModel(progressionPlanRepository: InMemoryProgressionPlanRepository(),
+            trainingStatusDetector: TrainingStatusDetector(workoutRepository: s.workoutRepo), programDesignService: ProgramDesignService(),
+            planAnalyticsService: PlanAnalyticsService(workoutRepository: s.workoutRepo), exerciseRepository: exercises, templateRepository: templates)
+        let navigation = AppNavigationState()
+        let start = DashboardView(navigation: navigation, viewModel: dashboard, analyticsViewModel: analytics, historyViewModel: history,
+            progressionPlanViewModel: plan, exerciseListViewModel: ExerciseListViewModel(exerciseRepository: exercises),
+            templateViewModel: TemplateViewModel(templateRepository: templates, exerciseRepository: exercises), userPreferencesService: prefs,
+            onOpenAIChat: {}, onStartWorkout: {}, onStartSession: { _, _, _, _ in }, onHistoryTapped: {})
+        let target = sameDay[0]
+        let tabs = TabView(selection: Bindable(navigation).selectedTab) {
+            start.tabItem { Text("Start") }.tag(0)
+            NavigationStack {
+                HistoryWorkoutDestination(workoutId: target.id, historyViewModel: history, analyticsViewModel: analytics)
+            }.tabItem { Text("History") }.tag(1)
+        }.environment(s.revision)
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        defer { window.isHidden = true }
+        window.rootViewController = UIHostingController(rootView: tabs)
+        window.makeKeyAndVisible()
+        func waitFor(_ predicate: () -> Bool) async throws {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(6))
+            while !predicate(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+            try #require(predicate())
+        }
+        try await waitFor { dashboard.recentWorkoutScores[target.id] != nil }
+        let before = try #require(dashboard.recentWorkoutScores[target.id])
+        navigation.selectedTab = 1
+        try await waitFor { history.workout(for: target.id) != nil }
+        history.selectWorkout(try #require(history.workout(for: target.id)))
+        history.isEditing = true
+        await history.updateSetWeight(exerciseId: target.exercises[0].id, setId: target.exercises[0].sets[0].id, weight: 100)
+        await history.endEditing()
+        navigation.selectedTab = 0
+        try await waitFor { (dashboard.recentWorkoutScores[target.id]?.overallScore ?? 0) > before.overallScore }
+        let rows = try await s.workoutRepo.fetchAll()
+        let saved = try #require(rows.first { $0.id == target.id })
+        let expected = quality.computeScore(for: saved, history: rows)
+        let later = quality.computeScore(for: sameDay[1], history: rows)
+        let dayIndex = (Calendar.current.component(.weekday, from: today) + 5) % 7
+        #expect(dashboard.weeklyQualityScores[dayIndex] == (expected.overallScore + later.overallScore) / 2)
+        #expect(dashboard.recentWorkoutScores[target.id]?.overallScore == expected.overallScore)
+        navigation.dashboardPath.append(target.id)
+        func showingDetail(_ controller: UIViewController?) -> Bool {
+            guard let controller else { return false }
+            if let stack = controller as? UINavigationController, stack.view.window != nil {
+                return stack.topViewController?.navigationItem.title == target.name
+            }
+            return controller.children.contains { showingDetail($0) }
+        }
+        try await waitFor { showingDetail(window.rootViewController) }
+        try await waitFor { analytics.latestSessionScore?.overallScore == later.overallScore }
+        #expect(try await analytics.score(for: target).volumeScore == expected.volumeScore)
+        #expect(analytics.latestSessionScore?.workoutId == sameDay[1].id)
+        #expect(analytics.aggregateQuality?.ewmaOverall == quality.computeAggregateScore(workouts: rows).ewmaOverall)
+        #expect(history.workout(for: target.id)?.exercises[0].sets[0].weight == 100)
+        try await checkStoredVectors(s)
     }
 }

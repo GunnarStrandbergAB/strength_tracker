@@ -45,7 +45,7 @@ struct RecentWorkoutsWidget: View {
             } else {
                 VStack(spacing: 12) {
                     ForEach(workouts) { workout in
-                        NavigationLink(value: workout) {
+                        NavigationLink(value: workout.id) {
                             RecentWorkoutCard(
                                 workout: workout,
                                 viewModel: viewModel,

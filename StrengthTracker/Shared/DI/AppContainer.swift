@@ -351,7 +351,8 @@ public final class AppContainer: Sendable {
             webhookService: webhookService,
             widgetRefresh: widgetRefreshService,
             bodyWeightProvider: bodyWeightProvider,
-            dataRevision: dataRevision
+            dataRevision: dataRevision,
+            repairDefaults: .standard
         )
         workoutViewModel.finalizer = workoutFinalizer
         historyViewModel.finalizer = workoutFinalizer

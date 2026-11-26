@@ -27,6 +27,7 @@ public final class HistoryViewModel {
     private var pendingRetroFinalization: [UUID: Bool] = [:]
     /// Set whenever an edit persists; lets endEditing() skip finalization for no-op sessions.
     private var hasUnsavedFinalization = false
+    private var failedDraft: Workout?
     /// Catalog exercise ids touched during the edit session (union of before/after),
     /// so a swapped-out exercise's records are re-elected too.
     private var touchedExerciseIds: Set<UUID> = []
@@ -68,6 +69,7 @@ public final class HistoryViewModel {
         errorMessage = nil
         do {
             let all = try await workoutRepository.fetchAll()
+            guard !Task.isCancelled, !isEditing else { isLoading = false; return }
             workouts = all.filter { $0.completedAt != nil }
         } catch {
             errorMessage = error.localizedDescription
@@ -78,6 +80,13 @@ public final class HistoryViewModel {
 
     public func selectWorkout(_ workout: Workout) {
         selectedWorkout = workout
+    }
+
+    /// Only the active editor reads a draft. Navigation and read-only detail
+    /// resolve identity against the current history list.
+    public func workout(for id: UUID) -> Workout? {
+        if isEditing, selectedWorkout?.id == id { return selectedWorkout }
+        return workouts.first { $0.id == id }
     }
 
     public func exerciseProgression(for exerciseId: UUID) -> [(date: Date, weight: Double, reps: Int)] {
@@ -208,6 +217,7 @@ public final class HistoryViewModel {
             exercises: template?.instantiateExercises() ?? []
         )
         do {
+            finalizer?.willChangeWorkout(workout.id)
             let saved = try await workoutRepository.save(workout)
             // saveAndSync only replaces existing rows — insert the new one at its
             // sorted (startedAt-descending) position.
@@ -447,6 +457,10 @@ public final class HistoryViewModel {
     /// and, when opted in, a HealthKit save with the workout's past dates.
     /// Never: debrief/summary, rest timer, Live Activity, watch sync.
     public func endEditing() async {
+        if let draft = failedDraft, selectedWorkout?.id == draft.id {
+            await saveAndSync(draft)
+            guard failedDraft == nil else { return }
+        }
         isEditing = false
         guard hasUnsavedFinalization,
               let workout = selectedWorkout,
@@ -459,14 +473,18 @@ public final class HistoryViewModel {
             let retro = pendingRetroFinalization.removeValue(forKey: workout.id)
                 .map(WorkoutFinalizer.RetroOptions.init(saveToHealthKit:))
             let finalized = await finalizer.workoutEdited(workout, touchedExerciseIds: touched, retro: retro)
-            if selectedWorkout?.id == finalized.id { selectedWorkout = finalized }
-            if let index = workouts.firstIndex(where: { $0.id == finalized.id }) { workouts[index] = finalized }
+            if let error = finalizer.localRepairError {
+                errorMessage = "Workout saved. Analytics will retry after reopening the app. " + error
+            }
+            // Another editor can persist a newer version while exports are in flight.
+            if selectedWorkout == workout { selectedWorkout = finalized }
+            if let index = workouts.firstIndex(where: { $0 == workout }) { workouts[index] = finalized }
             return
         }
 
         let bodyWeightKg = displayBodyWeightKg
-        try? await analyticsService?.vectorizeWorkout(workout)
-        try? await personalRecordService?.recalculateAllPRs()
+        let changed = try? await personalRecordService?.recalculatePRs(for: touched.union(workout.exerciseIds))
+        _ = try? await analyticsService?.rebuildVectors(after: workout, changedRecordIds: Set((changed ?? [:]).keys))
 
         if let healthKitOptIn = pendingRetroFinalization.removeValue(forKey: workout.id) {
             if healthKitOptIn, let healthKitService {
@@ -493,13 +511,21 @@ public final class HistoryViewModel {
 
     public func deleteWorkout(_ workout: Workout) async {
         do {
+            finalizer?.willChangeWorkout(workout.id)
             try await workoutRepository.delete(workout)
             workouts.removeAll { $0.id == workout.id }
+            pendingRetroFinalization.removeValue(forKey: workout.id)
+            var touched: Set<UUID> = []
             if selectedWorkout?.id == workout.id {
+                touched = touchedExerciseIds
+                touchedExerciseIds.removeAll()
+                hasUnsavedFinalization = false
+                failedDraft = nil
                 selectedWorkout = nil
+                isEditing = false
             }
             if let finalizer {
-                await finalizer.workoutDeleted(workout)
+                await finalizer.workoutDeleted(workout, touchedExerciseIds: touched)
                 return
             }
             // A deleted workout changes every history-relative metric.
@@ -604,14 +630,17 @@ public final class HistoryViewModel {
         touchedExerciseIds.formUnion(selectedWorkout?.exerciseIds ?? [])
         touchedExerciseIds.formUnion(workout.exerciseIds)
         do {
+            finalizer?.willChangeWorkout(workout.id)
             let saved = try await workoutRepository.save(workout)
             selectedWorkout = saved
+            failedDraft = nil
             hasUnsavedFinalization = true
             // Update the workouts array so the list reflects changes
             if let index = workouts.firstIndex(where: { $0.id == saved.id }) {
                 workouts[index] = saved
             }
         } catch {
+            failedDraft = workout
             // Keep the optimistic copy; surface why the persist failed.
             selectedWorkout = workout
             errorMessage = error.localizedDescription

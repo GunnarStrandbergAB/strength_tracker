@@ -30,8 +30,7 @@ final class WorkoutAnalyticsViewModelTests: XCTestCase {
     @MainActor
     func test_initialState_hasNilQualityScore() async {
         let (vm, _, _, _) = Self.makeViewModel()
-        XCTAssertNil(vm.qualityScore)
-        XCTAssertFalse(vm.isQualityScoreLoading)
+        XCTAssertNil(vm.latestSessionScore)
     }
 
     // MARK: - loadDashboardInsights
@@ -148,39 +147,23 @@ final class WorkoutAnalyticsViewModelTests: XCTestCase {
         let workout = AnalyticsTestHelpers.makePushDayWorkout()
         workoutRepo.seed([workout])
 
-        await vm.loadQualityScore(for: workout)
-
-        XCTAssertNotNil(vm.qualityScore)
-        if let score = vm.qualityScore {
-            XCTAssertEqual(score.workoutId, workout.id)
-            XCTAssertGreaterThan(score.overallScore, 0)
-            XCTAssertLessThanOrEqual(score.overallScore, 100)
-        }
-        XCTAssertFalse(vm.isQualityScoreLoading)
-        XCTAssertNil(vm.errorMessage)
+        let score = try? await vm.score(for: workout)
+        XCTAssertEqual(score?.workoutId, workout.id)
+        XCTAssertGreaterThan(score?.overallScore ?? 0, 0)
+        XCTAssertLessThanOrEqual(score?.overallScore ?? 101, 100)
+        XCTAssertNil(vm.latestSessionScore)
     }
 
     @MainActor
-    func test_loadQualityScore_completesLoadingCycle() async {
+    func test_detailScorePropagatesReadFailure() async {
         let (vm, _, workoutRepo, _) = Self.makeViewModel()
-        let workout = AnalyticsTestHelpers.makePushDayWorkout()
-        workoutRepo.seed([workout])
-
-        await vm.loadQualityScore(for: workout)
-
-        XCTAssertFalse(vm.isQualityScoreLoading)
-    }
-
-    @MainActor
-    func test_loadQualityScore_error_setsErrorAndNilsScore() async {
-        let (vm, _, workoutRepo, _) = Self.makeViewModel()
-        let workout = AnalyticsTestHelpers.makePushDayWorkout()
         workoutRepo.shouldThrowOnFetchAll = true
-
-        await vm.loadQualityScore(for: workout)
-
-        XCTAssertNotNil(vm.errorMessage)
-        XCTAssertNil(vm.qualityScore)
+        do {
+            _ = try await vm.score(for: AnalyticsTestHelpers.makePushDayWorkout())
+            XCTFail("Expected the history fetch to fail")
+        } catch {
+            XCTAssertNil(vm.latestSessionScore)
+        }
     }
 
     // MARK: - Formatting Helpers
@@ -295,4 +278,26 @@ final class WorkoutAnalyticsViewModelTests: XCTestCase {
         await vm.loadDashboardInsights(force: true)
         XCTAssertEqual(vm.insights.workoutCount, 2)
     }
+
+    @MainActor
+    func test_editDuringInsightsLoadDiscardsTheSupersededSnapshot() async {
+        let (vm, vectors, workouts, _, revision) = Self.makeViewModel(withRevision: true)
+        workouts.seed((1...6).map { day in
+            AnalyticsTestHelpers.makePushDayWorkout(startedAt: Date().addingTimeInterval(-Double(day) * 86400))
+        })
+        await vm.loadDashboardInsights()
+        revision?.bump()
+        // The insight service has already fetched its six-workout snapshot when
+        // it gets to vector metrics. Commit another session at that boundary.
+        vectors.beforeFetchAllVectors = {
+            vectors.beforeFetchAllVectors = nil
+            workouts.seed([AnalyticsTestHelpers.makePullDayWorkout(startedAt: Date().addingTimeInterval(-8 * 86400))])
+            revision?.bump()
+        }
+        await vm.loadDashboardInsights()
+        XCTAssertEqual(vm.insights.workoutCount, 7)
+        XCTAssertEqual(vm.completedHistory.count, 7)
+        XCTAssertNil(vm.errorMessage)
+    }
+
 }

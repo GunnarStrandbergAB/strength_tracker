@@ -73,7 +73,7 @@ struct AdvancedInsightsView: View {
         }.background(STColors.background).foregroundStyle(STColors.textPrimary)
         .preferredColorScheme(.dark)
         .safeAreaPadding(.bottom, 24).navigationTitle("Training patterns").navigationBarTitleDisplayMode(.inline).stNavigationBarStyle()
-        .task { await viewModel.loadDashboardInsights() }
+        .task(id: viewModel.currentRevision) { await viewModel.loadDashboardInsights() }
         .refreshable { await viewModel.loadDashboardInsights(force: true) }
     }
     private func workoutTypeRow(_ type: WorkoutArchetype) -> some View {

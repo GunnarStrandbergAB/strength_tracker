@@ -18,6 +18,7 @@ final class MockAnalyticsRepository: AnalyticsRepository {
     var fetchVectorArguments: [UUID] = []
 
     var fetchAllVectorsCallCount = 0
+    var beforeFetchAllVectors: (@MainActor () -> Void)?
 
     var fetchVectorsByDateRangeCallCount = 0
     var fetchVectorsByDateRangeArguments: [(start: Date, end: Date)] = []
@@ -54,6 +55,7 @@ final class MockAnalyticsRepository: AnalyticsRepository {
 
     func fetchAllVectors() async throws -> [WorkoutVector] {
         fetchAllVectorsCallCount += 1
+        beforeFetchAllVectors?()
         if shouldThrowOnFetch { throw errorToThrow }
         return Array(storedVectors.values).sorted { $0.createdAt > $1.createdAt }
     }

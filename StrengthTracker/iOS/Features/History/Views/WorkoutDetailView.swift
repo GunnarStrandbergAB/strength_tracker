@@ -1,6 +1,36 @@
 import SwiftUI
 import StrengthTrackerShared
 
+/// Both tabs push the workout identity. A retained navigation path can outlive
+/// the workout value it was originally built from.
+struct HistoryWorkoutDestination: View {
+    let workoutId: UUID
+    let historyViewModel: HistoryViewModel
+    let analyticsViewModel: WorkoutAnalyticsViewModel?
+    var exerciseListViewModel: ExerciseListViewModel?
+    @Environment(DataRevision.self) private var revision: DataRevision?
+    @State private var loaded = false
+
+    var body: some View {
+        Group {
+            if let workout = historyViewModel.workout(for: workoutId) {
+                WorkoutDetailView(workout: workout, historyViewModel: historyViewModel,
+                                  analyticsViewModel: analyticsViewModel, exerciseListViewModel: exerciseListViewModel)
+            } else if loaded {
+                ContentUnavailableView("Workout unavailable", systemImage: "clock")
+            } else {
+                SwiftUI.ProgressView()
+            }
+        }
+        .task(id: revision?.value) {
+            async let insights: Void? = analyticsViewModel?.loadDashboardInsights()
+            await historyViewModel.loadHistory()
+            if !Task.isCancelled { loaded = true }
+            await insights
+        }
+    }
+}
+
 struct WorkoutDetailView: View {
     let workout: Workout
     var historyViewModel: HistoryViewModel? = nil
@@ -17,9 +47,16 @@ struct WorkoutDetailView: View {
     /// Absent = derive from setting/data; present = explicit user choice.
     @State private var intensityOverrides: [UUID: Bool] = [:]
 
-    /// The displayed workout: use historyViewModel's selectedWorkout (live edits) if available.
+    /// During composition, the editor owns the latest draft for this ID.
     private var displayedWorkout: Workout {
-        historyViewModel?.selectedWorkout ?? workout
+        historyViewModel?.workout(for: workout.id) ?? workout
+    }
+
+    private func finishEditing(_ history: HistoryViewModel) {
+        Task {
+            await inputEdits.drain()
+            if history.selectedWorkout?.id == workout.id { await history.endEditing() }
+        }
     }
 
     private var weightUnit: WeightUnit {
@@ -189,7 +226,7 @@ struct WorkoutDetailView: View {
     }
 
     var body: some View {
-        let isEditing = historyViewModel?.isEditing ?? false
+        let isEditing = historyViewModel?.isEditing == true && historyViewModel?.selectedWorkout?.id == workout.id
 
         List {
             Section("Summary") {
@@ -266,7 +303,8 @@ struct WorkoutDetailView: View {
 
                     if hasIncompleteSets {
                         Button {
-                            Task { await hvm.markAllSetsComplete() }
+                            guard STNumericTextField.commitActiveInput() else { return }
+                            inputEdits.enqueue { await hvm.markAllSetsComplete() }
                         } label: {
                             Label("Mark All Sets Complete", systemImage: "checkmark.circle")
                         }
@@ -301,23 +339,16 @@ struct WorkoutDetailView: View {
             if let hvm = historyViewModel {
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 12) {
-                        Button(hvm.isEditing ? "Done" : "Edit") {
-                            if hvm.isEditing {
+                        Button(isEditing ? "Done" : "Edit") {
+                            if isEditing {
                                 guard STNumericTextField.commitActiveInput() else { return }
-                                Task {
-                                    await inputEdits.drain()
-                                    await hvm.endEditing()
-                                    // The finalizer bumped the data revision, which
-                                    // reloads every analytics view; refresh this
-                                    // workout's score for the section below.
-                                    if let workout = hvm.selectedWorkout {
-                                        await analyticsViewModel?.loadQualityScore(for: workout)
-                                    }
-                                }
+                                finishEditing(hvm)
                             } else {
+                                hvm.selectWorkout(displayedWorkout)
                                 hvm.isEditing = true
                             }
                         }
+                        .disabled(hvm.isEditing && !isEditing)
                         Button {
                             showingDeleteConfirmation = true
                         } label: {
@@ -338,7 +369,7 @@ struct WorkoutDetailView: View {
                     Task {
                         STNumericTextField.commitActiveInput()
                         await inputEdits.drain()
-                        await hvm.deleteWorkout(workout)
+                        await hvm.deleteWorkout(displayedWorkout)
                         dismiss()
                     }
                 }
@@ -379,16 +410,10 @@ struct WorkoutDetailView: View {
         } message: {
             Text("This removes the exercise and all its sets from this workout.")
         }
-        .onAppear {
-            historyViewModel?.selectWorkout(workout)
-        }
         .onDisappear {
-            if let hvm = historyViewModel, hvm.isEditing {
+            if let hvm = historyViewModel, hvm.isEditing, hvm.selectedWorkout?.id == workout.id {
                 STNumericTextField.commitActiveInput()
-                Task {
-                    await inputEdits.drain()
-                    await hvm.endEditing()
-                }
+                finishEditing(hvm)
             }
         }
     }

@@ -114,8 +114,7 @@ public final class WorkoutVectorizer: Sendable {
         features[15] = vol30d
 
         // 16: PR count (normalized)
-        let prCount = allSets.filter(\.isPersonalRecord).count
-        features[16] = min(Double(prCount) / Double(maxPRs), 1.0)
+        features[16] = recordFeature(for: workout)
 
         // 17: Time of day (linear mapping — monotonic, no midnight/noon collision)
         let hour = Calendar.current.component(.hour, from: workout.startedAt)
@@ -171,32 +170,41 @@ public final class WorkoutVectorizer: Sendable {
         historicalWorkouts: [Workout],
         bodyWeightKg: Double
     ) -> (vol7d: Double, vol30d: Double) {
-        let calendar = Calendar.current
-        let workoutDate = workout.startedAt
         let currentVol = calculateTotalVolume(workout, bodyWeightKg: bodyWeightKg)
-
-        // 7-day moving average (excluding current workout)
-        let last7Days = historicalWorkouts.filter {
-            guard let completedAt = $0.completedAt else { return false }
-            let daysDiff = calendar.dateComponents([.day], from: completedAt, to: workoutDate).day ?? 0
-            return daysDiff >= 0 && daysDiff <= 7 && $0.id != workout.id
+        let prior = historicalWorkouts.filter { $0.id != workout.id && Self.usesVolume(completedAt: $0.completedAt, in: workout) }
+        func change(relativeTo baseline: [Workout]) -> Double {
+            guard !baseline.isEmpty else { return 0 }
+            let average = baseline.reduce(0) { $0 + calculateTotalVolume($1, bodyWeightKg: bodyWeightKg) } / Double(baseline.count)
+            return average > 0 ? (currentVol - average) / average : 0
         }
-        let avg7d = last7Days.isEmpty ? 0.0 : last7Days.map { calculateTotalVolume($0, bodyWeightKg: bodyWeightKg) }.reduce(0, +) / Double(last7Days.count)
-        let change7d = avg7d > 0 ? (currentVol - avg7d) / avg7d : 0.0
-
-        // 30-day moving average
-        let last30Days = historicalWorkouts.filter {
-            guard let completedAt = $0.completedAt else { return false }
-            let daysDiff = calendar.dateComponents([.day], from: completedAt, to: workoutDate).day ?? 0
-            return daysDiff >= 0 && daysDiff <= 30 && $0.id != workout.id
-        }
-        let avg30d = last30Days.isEmpty ? 0.0 : last30Days.map { calculateTotalVolume($0, bodyWeightKg: bodyWeightKg) }.reduce(0, +) / Double(last30Days.count)
-        let change30d = avg30d > 0 ? (currentVol - avg30d) / avg30d : 0.0
+        let change7d = change(relativeTo: prior.filter { Self.usesVolume(completedAt: $0.completedAt, in: workout, days: 7) })
+        let change30d = change(relativeTo: prior)
 
         return (
             vol7d: max(-1.0, min(1.0, change7d)),
             vol30d: max(-1.0, min(1.0, change30d))
         )
+    }
+
+    private func recordFeature(for workout: Workout) -> Double {
+        let count = workout.exercises.reduce(0) { sum, exercise in
+            sum + exercise.sets.filter { $0.isCompleted && $0.isPersonalRecord }.count
+        }
+        return min(Double(count) / Double(maxPRs), 1)
+    }
+
+    func matchesRecordCount(_ vector: WorkoutVector?, workout: Workout) -> Bool {
+        guard let vector, let magnitude = vector.magnitude else { return false }
+        // SwiftData stores normalized dimensions as Float32.
+        return abs(vector.dimensions[16] * magnitude - recordFeature(for: workout)) < 1e-5
+    }
+
+    /// Shared by vector construction and dependency invalidation. An overlapping
+    /// or later session cannot contribute to a workout's prior volume.
+    static func usesVolume(completedAt end: Date?, in workout: Workout, days: Int = 30) -> Bool {
+        guard let end, end <= workout.startedAt else { return false }
+        let age = Calendar.current.dateComponents([.day], from: end, to: workout.startedAt).day
+        return age.map { $0 <= days } ?? false
     }
 
     func l2Normalize(_ vector: [Double]) -> [Double] {

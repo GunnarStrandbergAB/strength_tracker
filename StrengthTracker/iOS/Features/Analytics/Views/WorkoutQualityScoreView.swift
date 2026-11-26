@@ -8,9 +8,18 @@ struct WorkoutQualityScoreView: View {
     let viewModel: WorkoutAnalyticsViewModel
     let workout: Workout
 
+    @State private var score: WorkoutQualityScore?
+    @State private var isLoading = false
+    @State private var loadError: String?
+
+    private struct Request: Hashable {
+        let workout: Workout
+        let revision: Int
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if viewModel.isQualityScoreLoading {
+            if isLoading {
                 HStack(spacing: 8) {
                     ProgressView()
                         .tint(STColors.primary)
@@ -18,7 +27,9 @@ struct WorkoutQualityScoreView: View {
                         .font(.system(size: 12))
                         .foregroundStyle(STColors.textSecondary)
                 }
-            } else if let score = viewModel.qualityScore, score.workoutId == workout.id {
+            } else if let loadError {
+                Text(loadError).font(.caption)
+            } else if let score, score.workoutId == workout.id {
                 HStack(spacing: 16) {
                     // Score circle
                     ZStack {
@@ -57,14 +68,18 @@ struct WorkoutQualityScoreView: View {
                 }
             }
         }
-        // Keyed on the workout VALUE so edits to its sets re-trigger the load
-        // (the service cache keeps unchanged reloads cheap).
-        .task(id: workout) {
-            await viewModel.loadQualityScore(for: workout)
-        }
-        // Baselines are history-relative: any completed mutation rescored it.
-        .task(id: dataRevision?.value ?? 0) {
-            await viewModel.loadQualityScore(for: workout)
+        .task(id: Request(workout: workout, revision: dataRevision?.value ?? 0)) {
+            isLoading = true
+            loadError = nil
+            do {
+                let result = try await viewModel.score(for: workout)
+                guard !Task.isCancelled else { return }
+                score = result
+            } catch {
+                guard !Task.isCancelled else { return }
+                loadError = error.localizedDescription
+            }
+            isLoading = false
         }
     }
 

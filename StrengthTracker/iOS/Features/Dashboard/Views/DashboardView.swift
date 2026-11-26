@@ -218,9 +218,9 @@ struct DashboardView: View {
                 async let p: () = progressionPlanViewModel.loadActivePlan()
                 _ = await (d, a, p)
             }
-            .navigationDestination(for: Workout.self) { workout in
-                WorkoutDetailView(
-                    workout: workout,
+            .navigationDestination(for: UUID.self) { workoutId in
+                HistoryWorkoutDestination(
+                    workoutId: workoutId,
                     historyViewModel: historyViewModel,
                     analyticsViewModel: analyticsViewModel
                 )
