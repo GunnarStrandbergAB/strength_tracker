@@ -15,11 +15,10 @@ public final class WorkoutAnalyticsViewModel {
     public var similarWorkouts: [SimilarWorkout] = []
     public var isSimilarWorkoutsLoading = false
 
-    public var qualityScore: WorkoutQualityScore?
+    public private(set) var latestSessionScore: WorkoutQualityScore?
     public var aggregateQuality: AggregateQualityScore?
     public var trainingState: TrainingStateSummary?
     public var completedHistory: [Workout] = []
-    public var isQualityScoreLoading = false
 
     /// Feature gating
     public var unlockedFeatures: Set<AnalyticsFeatureGate.Feature> = []
@@ -56,7 +55,7 @@ public final class WorkoutAnalyticsViewModel {
     private var lastInsightsLoadTime: Date?
     private let dataRevision: DataRevision?
     private var lastLoadedRevision: Int?
-    private var inflightLoad: Task<Void, Never>?
+    private var inflightLoad: Task<Int?, Never>?
 
     /// Views key their `.task(id:)` on this so any completed mutation reloads them.
     public var currentRevision: Int { dataRevision?.value ?? 0 }
@@ -103,25 +102,24 @@ public final class WorkoutAnalyticsViewModel {
 
     /// Load all analytics for dashboard as a consistent snapshot
     public func loadDashboardInsights(force: Bool = false) async {
-        let targetRevision = dataRevision?.value
-        if !force, insights.workoutCount > 0 {
-            if let targetRevision {
-                // Revision-gated: reload only when a completed mutation bumped it.
-                if lastLoadedRevision == targetRevision, let last = lastInsightsLoadTime, Date().timeIntervalSince(last) < 60 { return }
-            } else if let lastLoad = lastInsightsLoadTime, Date().timeIntervalSince(lastLoad) < 60 {
-                // No revision source injected (tests): keep the time-based gate.
-                return
+        repeat {
+            let revision = dataRevision?.value
+            let attempted: Int?
+            if let inflightLoad {
+                attempted = await inflightLoad.value
+            } else {
+                if !force, lastLoadedRevision == revision, insights.workoutCount > 0,
+                   let last = lastInsightsLoadTime, Date().timeIntervalSince(last) < 60 { return }
+                let task = Task {
+                    await performInsightsLoad(revision: revision)
+                    inflightLoad = nil
+                    return revision
+                }
+                inflightLoad = task
+                attempted = await task.value
             }
-        }
-        // Coalesce concurrent callers (several views mount on the same bump).
-        if let inflightLoad {
-            await inflightLoad.value
-            if !force, let targetRevision, lastLoadedRevision == targetRevision { return }
-        }
-        let task = Task { await performInsightsLoad(revision: targetRevision) }
-        inflightLoad = task
-        await task.value
-        inflightLoad = nil
+            if attempted == dataRevision?.value { return }
+        } while !Task.isCancelled
     }
 
     private func performInsightsLoad(revision: Int?) async {
@@ -137,68 +135,36 @@ public final class WorkoutAnalyticsViewModel {
                 isMigrating = false
             }
 
-            // Load feature gate state
-            unlockedFeatures = try await featureGate.unlockedFeatures()
-            nextFeatureUnlock = try? await featureGate.nextUnlock()
+            let features = try await featureGate.unlockedFeatures()
+            let next = try? await featureGate.nextUnlock()
+            let raw = try await analyticsService.generateInsights()
+            let history = try await workoutRepository?.fetchAll() ?? []
+            let completed = history.filter { $0.completedAt != nil }
+            let scoreEnabled = features.contains(.qualityScore) && workoutRepository != nil
+            let response = scoreEnabled ? try await analyticsService.volumeResponse() : []
+            guard revision == dataRevision?.value else { return }
 
-            // Always generate insights (workoutCount is always useful)
-            let rawInsights = applyFeatureGates(try await analyticsService.generateInsights())
-
-            insights = rawInsights
-            errorMessage = nil
-            lastInsightsLoadTime = Date()
+            // Publish only after the final await, so a previous revision cannot
+            // replace any part of the current dashboard or its historical charts.
+            unlockedFeatures = features
+            nextFeatureUnlock = next
+            insights = applyFeatureGates(raw)
+            completedHistory = completed
+            trainingState = workoutRepository == nil ? nil : TrainingStateService.summarize(workouts: completed)
+            let latest = completed.max { $0.trainingDate < $1.trainingDate }
+            latestSessionScore = scoreEnabled ? latest.map { qualityScoreService.computeScore(for: $0, history: completed) } : nil
+            aggregateQuality = scoreEnabled ? qualityScoreService.computeAggregateScore(workouts: completed) : nil
+            volumeResponseAnalyses = response
+            adherenceAnalysis = adherenceService?.analyze(workouts: history)
+            weeklyDigest = features.contains(.weeklyDigest) && adherenceService != nil
+                ? coachingInsightService?.generateWeeklyDigest(workouts: history, overloadTrends: insights.overloadTrends,
+                                                              bodyWeightKg: resolvedBodyWeightKg, verdict: insights.verdict)
+                : nil
             lastLoadedRevision = revision
-
-            // Auto-load quality score and aggregate using the same workouts
-            if let repo = workoutRepository {
-                let allCompleted = try await repo.fetchAll()
-                let completedWorkouts = allCompleted.filter { $0.completedAt != nil }
-                completedHistory = completedWorkouts
-                trainingState = TrainingStateService.summarize(workouts: completedWorkouts)
-
-                if unlockedFeatures.contains(.qualityScore) {
-                    // Per-workout score for the latest workout (used in detail views);
-                    // always rescored — baselines are history-relative.
-                    if let latest = completedWorkouts
-                        .sorted(by: { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) })
-                        .first {
-                        qualityScore = qualityScoreService.computeScore(for: latest, history: allCompleted)
-                    }
-
-                    // Aggregate EWMA quality across all workouts
-                    aggregateQuality = qualityScoreService.computeAggregateScore(workouts: allCompleted)
-
-                    // Per-muscle volume-response analyses (data-shape gated per muscle).
-                    volumeResponseAnalyses = try await analyticsService.volumeResponse()
-                } else {
-                    qualityScore = nil
-                    aggregateQuality = nil
-                    volumeResponseAnalyses = []
-                }
-            } else {
-                volumeResponseAnalyses = []
-            }
-
-            // Adherence analysis (M3)
-            if let adherenceSvc = adherenceService, let repo = workoutRepository {
-                let allWorkouts = try await repo.fetchAll()
-                adherenceAnalysis = adherenceSvc.analyze(workouts: allWorkouts)
-
-                // Weekly digest (M5)
-                if unlockedFeatures.contains(.weeklyDigest),
-                   let coaching = coachingInsightService {
-                    let bw = bodyWeightProvider?.current
-                        ?? userPreferencesService?.bodyWeightKg
-                        ?? UserPreferencesService.defaultBodyWeightKg
-                    weeklyDigest = coaching.generateWeeklyDigest(
-                        workouts: allWorkouts,
-                        overloadTrends: rawInsights.overloadTrends,
-                        bodyWeightKg: bw,
-                        verdict: rawInsights.verdict
-                    )
-                }
-            }
+            lastInsightsLoadTime = Date()
+            errorMessage = nil
         } catch {
+            guard revision == dataRevision?.value else { return }
             isMigrating = false
             errorMessage = "Failed to load insights: \(error.localizedDescription)"
             insights = .empty
@@ -253,11 +219,14 @@ public final class WorkoutAnalyticsViewModel {
         defer { isSimilarWorkoutsLoading = false }
 
         do {
-            similarWorkouts = try await analyticsService.findSimilarWorkouts(
+            let results = try await analyticsService.findSimilarWorkouts(
                 to: workout, limit: limit, minSimilarity: 0.7
             )
+            guard !Task.isCancelled else { return }
+            similarWorkouts = results
             errorMessage = nil
         } catch {
+            guard !Task.isCancelled else { return }
             errorMessage = "Failed to load similar workouts: \(error.localizedDescription)"
             similarWorkouts = []
         }
@@ -283,17 +252,9 @@ public final class WorkoutAnalyticsViewModel {
             .filter { seen.insert($0.id).inserted }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
-    public func loadQualityScore(for workout: Workout) async {
-        isQualityScoreLoading = true
-        defer { isQualityScoreLoading = false }
-
-        do {
-            qualityScore = try await qualityScoreService.computeScore(for: workout)
-            errorMessage = nil
-        } catch {
-            errorMessage = "Failed to compute quality score: \(error.localizedDescription)"
-            qualityScore = nil
-        }
+    /// The requesting detail view owns this result and its loading state.
+    public func score(for workout: Workout) async throws -> WorkoutQualityScore {
+        try await qualityScoreService.computeScore(for: workout)
     }
 
     // MARK: - Advanced Insights Accessors

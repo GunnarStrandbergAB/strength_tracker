@@ -58,6 +58,7 @@ public final class DashboardViewModel {
 
         do {
             let allWorkouts = try await workoutRepository.fetchAll()
+            guard !Task.isCancelled else { return }
             let completed = allWorkouts.filter { $0.completedAt != nil }
 
             let bw = resolvedBodyWeightKg
@@ -123,6 +124,7 @@ public final class DashboardViewModel {
                 }
             }
         } catch {
+            guard !Task.isCancelled else { return }
             // Reset state on error
             weeklyWorkoutCounts = Array(repeating: 0, count: 7)
             weeklyQualityScores = Array(repeating: nil, count: 7)

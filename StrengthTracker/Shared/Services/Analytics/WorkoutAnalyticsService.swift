@@ -47,11 +47,6 @@ public final class WorkoutAnalyticsService: Sendable {
     // Caches, all keyed on the data revision so any completed mutation drops them.
     private let dataRevision: DataRevision?
     private var cachedInsights: (revision: Int, window: TimeInterval, insights: WorkoutInsights)?
-    // Stable routine membership; included in the time-limited analytics snapshot.
-    private var cachedArchetypes: [WorkoutArchetype] = []
-    private var archetypeCacheRevision: Int = -1
-    // Quality scores memoized per workout (completed workouts are immutable).
-
     public init(
         analyticsRepository: any AnalyticsRepository,
         workoutRepository: any WorkoutRepository,
@@ -169,26 +164,23 @@ public final class WorkoutAnalyticsService: Sendable {
            cached.revision == dataRevision.value, cached.window == timeWindow, now >= cached.insights.generatedAt, now.timeIntervalSince(cached.insights.generatedAt) < 60 {
             return cached.insights
         }
-        let insights = try await computeInsights(timeWindow: timeWindow, now: now)
-        if let dataRevision {
-            cachedInsights = (dataRevision.value, timeWindow, insights)
+        let revision = dataRevision?.value
+        let insights = try await computeInsights(timeWindow: timeWindow, now: now, revision: revision)
+        guard revision == dataRevision?.value else { throw CancellationError() }
+        if let revision {
+            cachedInsights = (revision, timeWindow, insights)
         }
         return insights
     }
 
-    /// Drops every derived in-memory cache. Called by the finalizer after any
-    /// completed mutation (the revision bump alone already misses `cachedArchetypes`
-    /// only when the value wraps, but be explicit).
     public func invalidateDerivedCaches() {
         cachedInsights = nil
-        cachedArchetypes = []
-        archetypeCacheRevision = -1
     }
 
-    private func computeInsights(timeWindow: TimeInterval, now: Date) async throws -> WorkoutInsights {
+    private func computeInsights(timeWindow: TimeInterval, now: Date, revision: Int?) async throws -> WorkoutInsights {
         // Migrate vectors if normalization constants changed
         let bodyWeightKg = resolvedBodyWeightKg
-        try await migrateVectorsIfNeeded(bodyWeightKg: bodyWeightKg)
+        try await migrateVectorsIfNeeded()
 
         let workouts = try await workoutRepository.fetchAll()
         let completedWorkouts = workouts.filter { $0.completedAt != nil && $0.trainingDate <= now }
@@ -236,7 +228,8 @@ public final class WorkoutAnalyticsService: Sendable {
                 bestE1RM: bestE1RM, now: now
             )
 
-            // The one deload / hold / progress call every surface consults.
+            // The advisor persists its verdict. Discard superseded input before writing it.
+            guard revision == dataRevision?.value else { throw CancellationError() }
             verdict = (trainingLoad != nil || overloadTrends.contains { $0.trendStatus != .inactive && $0.trendStatus != .uncertain }) ? trainingAdvisor?.evaluate(TrainingAdvisor.Input(
                 workouts: completedWorkouts,
                 trainingLoad: trainingLoad,
@@ -259,14 +252,9 @@ public final class WorkoutAnalyticsService: Sendable {
             // Workout archetypes + training fingerprint.
             // Frequencies and comparison windows advance without requiring a workout edit.
             if let archetypeService {
-                let revision = dataRevision?.value ?? nonDeloadVectors.count
-                do { // Refresh time-dependent frequencies even when history is unchanged.
-                    cachedArchetypes = archetypeService.cluster(
-                        vectors: nonDeloadVectors, workouts: nonDeloadWorkouts, bodyWeightKg: bodyWeightKg
-                    )
-                    archetypeCacheRevision = revision
-                }
-                archetypes = cachedArchetypes
+                archetypes = archetypeService.cluster(
+                    vectors: nonDeloadVectors, workouts: nonDeloadWorkouts, bodyWeightKg: bodyWeightKg
+                )
                 trainingFingerprint = archetypeService.fingerprint(
                     archetypes: archetypes, vectors: nonDeloadVectors
                 )
@@ -345,75 +333,104 @@ public final class WorkoutAnalyticsService: Sendable {
 
     /// Ensure a workout has been vectorized
     public func ensureVectorized(_ workout: Workout) async throws {
-        let existing = try await analyticsRepository.fetchVector(for: workout.id)
-        if existing == nil {
+        if try await analyticsRepository.fetchVector(for: workout.id) == nil {
             try await vectorizeWorkout(workout)
         }
     }
 
-    /// Vectorize a single workout and store
-    public func vectorizeWorkout(_ workout: Workout) async throws {
-        let bodyWeightKg = resolvedBodyWeightKg
-        let allWorkouts = try await workoutRepository.fetchAll()
-        let vector = vectorizer.vectorize(workout, historicalWorkouts: allWorkouts, bodyWeightKg: bodyWeightKg)
-
-        // Compute denormalized metadata for the entity
-        let totalVolume = vectorizer.calculateTotalVolume(workout, bodyWeightKg: bodyWeightKg)
-        let primaryMuscleGroups = computePrimaryMuscleGroups(workout, bodyWeightKg: bodyWeightKg)
-
-        try await analyticsRepository.storeVector(
-            vector,
-            totalVolume: totalVolume,
-            workoutDate: workout.startedAt,
-            primaryMuscleGroups: primaryMuscleGroups
-        )
-        // Re-vectorization implies the workout changed — memoized quality scores are
-        // history-relative, so drop them all (cheap; recomputed lazily).
-        qualityScoreService?.invalidateAll()
-        invalidateDerivedCaches()
+    // A lazy backfill and a History edit can run concurrently. Acquire the
+    // writer before fetching source history so an older batch cannot write last.
+    private var vectorWriter: Task<Void, Never>?
+    private func updateVectors<T: Sendable>(_ operation: @escaping @MainActor () async throws -> T) async throws -> T {
+        let previous = vectorWriter
+        let task = Task {
+            await previous?.value
+            return try await operation()
+        }
+        vectorWriter = Task { _ = await task.result }
+        return try await task.value
     }
 
-    /// Deletes vectors whose workout no longer exists or is not completed.
+    public func vectorizeWorkout(_ workout: Workout) async throws {
+        try await updateVectors { [self] in
+            let history = try await workoutRepository.fetchAll()
+            guard let saved = history.first(where: { $0.id == workout.id && $0.completedAt != nil }) else { return }
+            try await storeVector(for: saved, history: history, bodyWeightKg: resolvedBodyWeightKg)
+            qualityScoreService?.invalidateAll()
+            invalidateDerivedCaches()
+        }
+    }
+
+    /// Upsert from one post-election history snapshot. For deletes and date
+    /// corrections the old date still identifies sessions that used its volume.
+    @discardableResult
+    func rebuildVectors(after mutation: Workout, previous: Workout? = nil, changedRecordIds: Set<UUID>,
+                        checkLiveRecords: Bool = false) async throws -> Workout? {
+        try await updateVectors { [self] in
+            let history = try await workoutRepository.fetchAll().filter { $0.completedAt != nil }
+            let saved = history.first { $0.id == mutation.id }
+            if saved == nil { try await analyticsRepository.deleteVector(for: mutation.id) }
+
+            // Live PR re-election can change flags on earlier sessions before
+            // Finish. Check their stored count without vectorizing every session.
+            let vectors = checkLiveRecords ? try await analyticsRepository.fetchAllVectors() : []
+            let byId = Dictionary(vectors.map { ($0.workoutId, $0) }, uniquingKeysWith: { first, _ in first })
+            let dates = Set([previous, mutation, saved].compactMap { $0?.completedAt })
+            let bodyWeightKg = resolvedBodyWeightKg
+            for workout in history {
+                let dependent = dates.contains { WorkoutVectorizer.usesVolume(completedAt: $0, in: workout) }
+                let needsRecordUpdate = checkLiveRecords && !workout.exerciseIds.isDisjoint(with: mutation.exerciseIds)
+                    && !vectorizer.matchesRecordCount(byId[workout.id], workout: workout)
+                if workout.id == mutation.id || changedRecordIds.contains(workout.id) || dependent || needsRecordUpdate {
+                    try await storeVector(for: workout, history: history, bodyWeightKg: bodyWeightKg)
+                }
+            }
+            return saved
+        }
+    }
+
+    private func storeVector(for workout: Workout, history: [Workout], bodyWeightKg: Double) async throws {
+        let vector = vectorizer.vectorize(workout, historicalWorkouts: history, bodyWeightKg: bodyWeightKg)
+        try await analyticsRepository.storeVector(vector,
+            totalVolume: vectorizer.calculateTotalVolume(workout, bodyWeightKg: bodyWeightKg),
+            workoutDate: workout.startedAt,
+            primaryMuscleGroups: computePrimaryMuscleGroups(workout, bodyWeightKg: bodyWeightKg))
+    }
+
     public func sweepOrphanVectors() async throws {
-        let completedIds = Set(try await workoutRepository.fetchAll().filter { $0.completedAt != nil }.map(\.id))
-        for vector in try await analyticsRepository.fetchAllVectors() where !completedIds.contains(vector.workoutId) {
+        try await updateVectors { [self] in
+            let completedIds = Set(try await workoutRepository.fetchAll().filter { $0.completedAt != nil }.map(\.id))
+            try await deleteOrphans(in: analyticsRepository.fetchAllVectors(), completedIds: completedIds)
+        }
+    }
+
+    private func deleteOrphans(in vectors: [WorkoutVector], completedIds: Set<UUID>) async throws {
+        for vector in vectors where !completedIds.contains(vector.workoutId) {
             try await analyticsRepository.deleteVector(for: vector.workoutId)
         }
     }
 
-    /// Batch vectorize all workouts missing vectors
-    public func vectorizeAllWorkouts() async throws {
-        let bodyWeightKg = resolvedBodyWeightKg
-        let allWorkouts = try await workoutRepository.fetchAll()
-        let existingVectors = try await analyticsRepository.fetchAllVectors()
-        let vectorizedIds = Set(existingVectors.map(\.workoutId))
-
-        // Only completed workouts get vectors; an active workout that is later
-        // cancelled would otherwise leave an orphan behind.
-        let needsVectorization = allWorkouts.filter { $0.completedAt != nil && !vectorizedIds.contains($0.id) }
-
-        for workout in needsVectorization {
-            let vector = vectorizer.vectorize(workout, historicalWorkouts: allWorkouts, bodyWeightKg: bodyWeightKg)
-            let totalVolume = vectorizer.calculateTotalVolume(workout, bodyWeightKg: bodyWeightKg)
-            let primaryMuscleGroups = computePrimaryMuscleGroups(workout, bodyWeightKg: bodyWeightKg)
-            try await analyticsRepository.storeVector(
-                vector,
-                totalVolume: totalVolume,
-                workoutDate: workout.startedAt,
-                primaryMuscleGroups: primaryMuscleGroups
-            )
+    /// Backfill missing rows. A repair also replaces existing rows and removes orphans.
+    public func vectorizeAllWorkouts(replacingExisting: Bool = false) async throws {
+        try await updateVectors { [self] in
+            let history = try await workoutRepository.fetchAll().filter { $0.completedAt != nil }
+            let vectors = try await analyticsRepository.fetchAllVectors()
+            let existingIds = Set(vectors.map(\.workoutId))
+            let bodyWeightKg = resolvedBodyWeightKg
+            for workout in history where replacingExisting || !existingIds.contains(workout.id) {
+                try await storeVector(for: workout, history: history, bodyWeightKg: bodyWeightKg)
+            }
+            if replacingExisting { try await deleteOrphans(in: vectors, completedIds: Set(history.map(\.id))) }
         }
-
     }
 
     // MARK: - Vector Migration
 
     /// Re-vectorize all workouts if normalization constants have changed.
-    private func migrateVectorsIfNeeded(bodyWeightKg: Double) async throws {
+    private func migrateVectorsIfNeeded() async throws {
         guard let prefs = userPreferencesService,
               prefs.vectorVersion < Self.currentVectorVersion else { return }
-        try await analyticsRepository.deleteAllVectors()
-        try await vectorizeAllWorkouts()
+        try await vectorizeAllWorkouts(replacingExisting: true)
         prefs.vectorVersion = Self.currentVectorVersion
     }
 

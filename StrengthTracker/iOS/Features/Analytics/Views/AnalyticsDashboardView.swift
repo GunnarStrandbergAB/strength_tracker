@@ -273,7 +273,7 @@ struct AnalyticsQualityCard: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Four equal components. Volume meets its benchmark at 80% of comparable historical muscle volume; intensity compares set e1RM with prior exercise bests. Rest Rhythm measures regularity within an exercise, not whether a rest was long enough. Program balance describes the prior 12 weeks including that session.")
                         Text("The aggregate gives each new session 30% weight and the previous aggregate 70%. Provisional sessions are excluded when measured sessions exist. Changes are score points versus four weeks ago. Version \(WorkoutQualityScore.modelVersion); historical scores use information available at the session date.")
-                        if let latest = viewModel.qualityScore {
+                        if let latest = viewModel.latestSessionScore {
                             Text("Latest session: \(Int(latest.overallScore))/100\(latest.isProvisional ? " · provisional" : "")")
                             ForEach(latest.provisionalReasons ?? [], id: \.self) { Text($0) }
                         }
@@ -459,7 +459,9 @@ struct AnalyticsHistoryView: View {
         }.background(STColors.background.ignoresSafeArea()).foregroundStyle(STColors.textPrimary)
             .preferredColorScheme(.dark).tint(STColors.primary).safeAreaPadding(.bottom, 24)
             .navigationTitle(kind.rawValue).navigationBarTitleDisplayMode(.inline).stNavigationBarStyle()
-            .task {
+            .task(id: viewModel.currentRevision) {
+                await viewModel.loadDashboardInsights()
+                guard !Task.isCancelled else { return }
                 if kind == .quality { quality = viewModel.historicalQuality() }
                 if kind == .load { load = viewModel.historicalLoad() }
             }

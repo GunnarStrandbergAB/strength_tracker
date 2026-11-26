@@ -48,7 +48,7 @@ struct SimilarWorkoutsView: View {
         .navigationTitle("Similar Workouts")
         .navigationBarTitleDisplayMode(.inline)
         .stNavigationBarStyle()
-        .task {
+        .task(id: viewModel.currentRevision) {
             await viewModel.loadSimilarWorkouts(to: workout)
         }
     }
