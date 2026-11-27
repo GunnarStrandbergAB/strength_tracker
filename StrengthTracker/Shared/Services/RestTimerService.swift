@@ -277,9 +277,8 @@ public final class RestTimerService {
             isRunning: isRunning
         )
 
-        Task {
-            await activity.update(.init(state: state, staleDate: isRunning ? end : nil))
-        }
+        let content = ActivityContent(state: state, staleDate: isRunning ? end : nil)
+        perform(on: activity) { await $0.update(content) }
         #endif
     }
 
@@ -295,9 +294,8 @@ public final class RestTimerService {
             isRunning: false
         )
 
-        Task {
-            await activity.end(.init(state: finalState, staleDate: nil), dismissalPolicy: .immediate)
-        }
+        let content = ActivityContent(state: finalState, staleDate: nil)
+        perform(on: activity) { await $0.end(content, dismissalPolicy: .immediate) }
         currentActivity = nil
         #endif
     }
@@ -314,12 +312,23 @@ public final class RestTimerService {
                 totalSeconds: 0,
                 isRunning: false
             )
-            Task {
-                await activity.end(.init(state: finalState, staleDate: nil), dismissalPolicy: .immediate)
-            }
+            let content = ActivityContent(state: finalState, staleDate: nil)
+            perform(on: activity) { await $0.end(content, dismissalPolicy: .immediate) }
         }
         #endif
     }
+
+    #if canImport(ActivityKit)
+    /// Hands a Live Activity to one of its async ActivityKit calls. `Activity` is not declared
+    /// Sendable although those calls run off the main actor, so the hand-off is vouched for here.
+    private func perform(
+        on activity: Activity<RestTimerAttributes>,
+        _ call: @escaping @Sendable (Activity<RestTimerAttributes>) async -> Void
+    ) {
+        nonisolated(unsafe) let activity = activity
+        Task { await call(activity) }
+    }
+    #endif
 
     deinit {
         timer?.invalidate()

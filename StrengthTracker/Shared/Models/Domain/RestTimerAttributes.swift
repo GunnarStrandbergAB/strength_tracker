@@ -3,7 +3,7 @@ import ActivityKit
 import Foundation
 
 public struct RestTimerAttributes: ActivityAttributes {
-    public struct ContentState: Codable, Hashable {
+    public struct ContentState: Codable, Hashable, Sendable {
         public var timerRange: ClosedRange<Date>
         public var totalSeconds: Int
         public var isRunning: Bool
