@@ -52,14 +52,12 @@ final class AppPresentationState {
     var summary: WorkoutSummaryPresentation?
     private(set) var chatIsOccupied = false
     private(set) var summaryIsOccupied = false
-    private(set) var isPreparingChat = false
     private var pendingSummaries: [WorkoutSummaryPresentation] = []
 
-    func openChat(_ entry: AIChatEntry) async {
-        guard entry.isAvailable, !chatIsOccupied, !summaryIsOccupied, !isPreparingChat else { return }
-        isPreparingChat = true
-        defer { isPreparingChat = false; presentNextSummary() }
-        guard await AppKeyboardDismissal.commitAndDismiss(), entry.isAvailable else { return }
+    func openChat(_ entry: AIChatEntry) {
+        guard entry.isAvailable, !chatIsOccupied, !summaryIsOccupied else { return }
+        // A numeric field with an invalid draft keeps focus; stay on its screen.
+        guard AppKeyboardDismissal.commitAndDismiss() else { return }
         chatIsOccupied = true
         chat = AIChatPresentation(entry: entry)
     }
@@ -82,7 +80,7 @@ final class AppPresentationState {
     }
 
     private func presentNextSummary() {
-        guard !chatIsOccupied, !summaryIsOccupied, !isPreparingChat, !pendingSummaries.isEmpty else { return }
+        guard !chatIsOccupied, !summaryIsOccupied, !pendingSummaries.isEmpty else { return }
         summaryIsOccupied = true
         summary = pendingSummaries.removeFirst()
     }

@@ -190,7 +190,7 @@ struct ContentView: View {
 
     private func openAIChat() {
         guard let entry = aiChatEntry else { return }
-        Task { await presentations.openChat(entry) }
+        presentations.openChat(entry)
     }
 }
 

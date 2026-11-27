@@ -697,35 +697,53 @@ final class AIChatLayoutTests: XCTestCase {
         return (model, preferences)
     }
 
-    func testComposerStaysInsideKeyboardSafeAreaForEmptyAndLoadedConversations() async throws {
+    /// Posts what UIKit posts for a docked keyboard whose top edge is at `top` in screen coordinates.
+    private func postKeyboard(_ name: Notification.Name, top: CGFloat, on screen: UIScreen) {
+        let frame = CGRect(x: 0, y: top, width: screen.bounds.width, height: screen.bounds.maxY - top)
+        NotificationCenter.default.post(name: name, object: screen, userInfo: [
+            UIResponder.keyboardFrameEndUserInfoKey: frame,
+            UIResponder.keyboardAnimationDurationUserInfoKey: 0.25
+        ])
+    }
+
+    private func lastOffset(of scroll: UIScrollView) -> CGFloat {
+        max(-scroll.adjustedContentInset.top, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+    }
+
+    /// The composer is positioned from keyboard notifications alone, so these need no real keyboard.
+    func testComposerFollowsTheDockedKeyboardForEmptyAndLoadedConversations() async throws {
         for withHistory in [false, true] {
             let (model, preferences) = try await makeModel(withHistory: withHistory)
             let host = UIHostingController(rootView: AIChatView(viewModel: model, userPreferencesService: preferences))
             let window = try makeWindow(host: host, size: CGSize(width: 320, height: 568))
             defer { window.isHidden = true }
-            for keyboardInset in [0.0, 300.0, 240.0, 0.0] {
-                // Model the safe-area changes delivered by docked keyboards, including resizing and dismissal.
-                host.additionalSafeAreaInsets.bottom = keyboardInset
-                host.view.frame = window.bounds
-                host.view.setNeedsLayout()
-                host.view.layoutIfNeeded()
-                try await Task.sleep(for: .milliseconds(150))
+            try await settle()
+            let screen = window.screen
+            let restingField = try XCTUnwrap(inputs(in: host.view).first)
+            let restingBottom = restingField.convert(restingField.bounds, to: host.view).maxY
+            let show = UIResponder.keyboardWillShowNotification, hide = UIResponder.keyboardWillHideNotification
+            // A keyboard that appears, grows, and hides while its end frame still
+            // describes an accessory strip left at the bottom of the screen.
+            for (step, (name, top)) in [(show, 300.0), (show, 240.0), (hide, screen.bounds.maxY - 82), (show, 300.0), (hide, screen.bounds.maxY)].enumerated() {
+                postKeyboard(name, top: top, on: screen)
+                try await Task.sleep(for: .milliseconds(900))
                 let field = try XCTUnwrap(inputs(in: host.view).first)
                 let rect = field.convert(field.bounds, to: host.view)
-                let safeRect = host.view.safeAreaLayoutGuide.layoutFrame
-                XCTAssertGreaterThanOrEqual(rect.minY, safeRect.minY, "History: \(withHistory), keyboard: \(keyboardInset)")
-                XCTAssertLessThanOrEqual(rect.maxY, safeRect.maxY + 1, "Composer must remain above the keyboard; history: \(withHistory), keyboard: \(keyboardInset)")
-                XCTAssertGreaterThan(rect.height, 10)
-                let scroll = messageScrollView(in: host.view)
-                XCTAssertNotNil(scroll, "The welcome screen must scroll too")
-                if let scroll {
-                    let lastOffset = max(-scroll.adjustedContentInset.top,
-                        scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
-                    if withHistory {
-                        XCTAssertEqual(scroll.contentOffset.y, lastOffset, accuracy: 4, "Keep the latest message visible across keyboard changes")
-                    } else if keyboardInset > 0 {
-                        XCTAssertGreaterThan(lastOffset, 0, "Welcome content must be scrollable in the remaining space")
-                    }
+                let context = "history: \(withHistory), step: \(step)"
+                XCTAssertGreaterThanOrEqual(rect.minY, host.view.safeAreaLayoutGuide.layoutFrame.minY, context)
+                XCTAssertGreaterThan(rect.height, 10, context)
+                if name == show {
+                    let keyboardTop = host.view.convert(CGPoint(x: 0, y: top), from: screen.coordinateSpace).y
+                    XCTAssertLessThanOrEqual(rect.maxY, keyboardTop + 1, "Composer must remain above the keyboard; \(context)")
+                    XCTAssertGreaterThan(rect.maxY, keyboardTop - 40, "Composer sits on the keyboard, without a gap; \(context)")
+                } else {
+                    XCTAssertEqual(rect.maxY, restingBottom, accuracy: 1, "A hidden keyboard reserves nothing; \(context)")
+                }
+                let scroll = try XCTUnwrap(messageScrollView(in: host.view), "The welcome screen must scroll too")
+                if withHistory {
+                    XCTAssertEqual(scroll.contentOffset.y, lastOffset(of: scroll), accuracy: 4, "Keep the latest message visible across keyboard changes; \(context)")
+                } else if name == show {
+                    XCTAssertGreaterThan(lastOffset(of: scroll), 0, "Welcome content must be scrollable in the remaining space")
                 }
                 let image = UIGraphicsImageRenderer(bounds: host.view.bounds).image { context in
                     if withHistory {
@@ -735,11 +753,89 @@ final class AIChatLayoutTests: XCTestCase {
                     }
                 }
                 let attachment = XCTAttachment(image: image)
-                attachment.name = "chat-history-\(withHistory)-inset-\(keyboardInset)"
+                attachment.name = "chat-history-\(withHistory)-keyboard-step-\(step)"
                 attachment.lifetime = .keepAlways
                 add(attachment)
             }
         }
+    }
+
+    /// Agent whose reply the test delivers piece by piece.
+    @MainActor private final class ManualAgent: AIAgentRunning {
+        private var continuation: AsyncStream<AgentEvent>.Continuation?
+        func run(userText: String, contextNotes: [String], previousResponseID: String?, conversationID: UUID) -> AsyncStream<AgentEvent> {
+            AsyncStream { continuation = $0 }
+        }
+        func emit(_ event: AgentEvent) { continuation?.yield(event) }
+        func finish() { continuation?.finish() }
+    }
+
+    func testTranscriptOpensAtLatestFollowsAReplyAndLeavesAReaderAlone() async throws {
+        let preferences = UserPreferencesService()
+        let repository = InMemoryChatRepository()
+        let conversation = ChatConversation(title: "Training")
+        try await repository.createConversation(conversation)
+        for index in 0..<24 {
+            try await repository.appendMessage(ChatMessage(role: index.isMultiple(of: 2) ? .user : .assistant,
+                text: "Training message \(index). Let's look at your recent workouts."), to: conversation.id)
+        }
+        let agent = ManualAgent()
+        let model = AIChatViewModel(agent: agent, chatRepository: repository, userPreferencesService: preferences,
+            streamingUpdateInterval: .milliseconds(1))
+        await model.loadLatestConversation()
+        let host = UIHostingController(rootView: AIChatView(viewModel: model, userPreferencesService: preferences))
+        let window = try makeWindow(host: host, size: CGSize(width: 375, height: 667))
+        defer { window.isHidden = true }
+        try await settle()
+        let scroll = try XCTUnwrap(messageScrollView(in: host.view))
+        XCTAssertGreaterThan(lastOffset(of: scroll), 200, "The fixture must overflow the screen")
+        XCTAssertEqual(scroll.contentOffset.y, lastOffset(of: scroll), accuracy: 2, "Opens at the newest message")
+
+        // Reading older messages, then sending: the sent message is brought into view.
+        scroll.setContentOffset(CGPoint(x: 0, y: -scroll.adjustedContentInset.top), animated: false)
+        try await settle()
+        model.send("How was my week?")
+        try await settle()
+        XCTAssertEqual(model.messages.last?.role, .user)
+        XCTAssertEqual(scroll.contentOffset.y, lastOffset(of: scroll), accuracy: 2, "Sending shows the sent message")
+
+        // At the newest message, a growing reply stays in view.
+        let paragraph = String(repeating: "Volume was up and recovery looked fine. ", count: 12)
+        for _ in 0..<4 {
+            agent.emit(.assistantDelta(paragraph + "\n\n"))
+            try await settle()
+            XCTAssertEqual(scroll.contentOffset.y, lastOffset(of: scroll), accuracy: 2, "A reply is followed while the reader is at the end")
+        }
+
+        // Scrolled away, the same growth must not move what the reader is looking at.
+        let reading = lastOffset(of: scroll) - 400
+        scroll.setContentOffset(CGPoint(x: 0, y: reading), animated: false)
+        try await settle()
+        for _ in 0..<4 {
+            agent.emit(.assistantDelta(paragraph + "\n\n"))
+            try await settle()
+            XCTAssertEqual(scroll.contentOffset.y, reading, accuracy: 2, "New text must not pull a reader away from older messages")
+        }
+        XCTAssertGreaterThan(lastOffset(of: scroll) - reading, 600)
+        agent.emit(.turnCompleted(responseID: "response", text: "", activities: []))
+        agent.finish()
+        try await settle()
+        XCTAssertFalse(model.isStreaming)
+        XCTAssertEqual(scroll.contentOffset.y, reading, accuracy: 2)
+    }
+
+    /// Records where the real keyboard is, when the simulator shows one.
+    private final class KeyboardRecorder: NSObject {
+        private(set) var top: CGFloat?
+        override init() {
+            super.init()
+            NotificationCenter.default.addObserver(self, selector: #selector(shown(_:)), name: UIResponder.keyboardWillShowNotification, object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(hidden), name: UIResponder.keyboardWillHideNotification, object: nil)
+        }
+        @objc private func shown(_ notification: Notification) {
+            top = (notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect)?.minY
+        }
+        @objc private func hidden() { top = nil }
     }
 
     func testMultilineTypingAndRefocusingKeepsCaretVisible() async throws {
@@ -747,13 +843,13 @@ final class AIChatLayoutTests: XCTestCase {
         let host = UIHostingController(rootView: AIChatView(viewModel: model, userPreferencesService: preferences))
         let window = try makeWindow(host: host, size: CGSize(width: 375, height: 568))
         defer { window.endEditing(true); window.isHidden = true }
-        let keyboardGuide = host.view.keyboardLayoutGuide
+        let keyboard = KeyboardRecorder()
         try await settle()
         var draft = ""
         for visit in 0..<2 {
             let field = try XCTUnwrap(inputs(in: host.view).first)
             XCTAssertTrue(field.becomeFirstResponder())
-            try await settle()
+            try await Task.sleep(for: .milliseconds(900))
             let input = try XCTUnwrap(field as? UIKeyInput)
             let addition = visit == 0 ? "Can you review my training?\nWeek 1\nWeek 2\nWeek 3\nWeek 4\nWeek 5\nWeek 6\nLast line" : " and recovery?"
             input.insertText(addition)
@@ -761,8 +857,9 @@ final class AIChatLayoutTests: XCTestCase {
             try await settle()
             let rect = field.convert(field.bounds, to: host.view)
             // Supports both hardware and software keyboards. Deterministic docked-keyboard
-            // resizing is covered separately by testComposerStaysInsideKeyboardSafeArea.
-            let visibleBottom = min(host.view.safeAreaLayoutGuide.layoutFrame.maxY, keyboardGuide.layoutFrame.minY)
+            // positions are covered by testComposerFollowsTheDockedKeyboard.
+            let keyboardTop = keyboard.top.map { host.view.convert(CGPoint(x: 0, y: $0), from: window.screen.coordinateSpace).y }
+            let visibleBottom = min(host.view.safeAreaLayoutGuide.layoutFrame.maxY, keyboardTop ?? .greatestFiniteMagnitude)
             XCTAssertLessThanOrEqual(rect.maxY, visibleBottom + 1)
             XCTAssertGreaterThanOrEqual(rect.minY, host.view.safeAreaInsets.top)
             XCTAssertEqual((field as? UITextView)?.text ?? (field as? UITextField)?.text, draft)
@@ -776,7 +873,7 @@ final class AIChatLayoutTests: XCTestCase {
             let attachment = XCTAttachment(image: image)
             attachment.name = "chat-typing-visit-\(visit)"; attachment.lifetime = .keepAlways; add(attachment)
             XCTAssertTrue(field.resignFirstResponder())
-            try await settle()
+            try await Task.sleep(for: .milliseconds(900))
         }
     }
 
@@ -1122,113 +1219,35 @@ final class ActiveWorkoutLifecycleTests: XCTestCase {
 }
 
 @MainActor
-final class ChatScrollFollowTests: XCTestCase {
-    func testGrowingReplyContinuesFollowingUntilTheReaderScrolls() {
-        var state = ChatScrollFollowState()
-        XCTAssertTrue(state.contentChanged())
-        // A long new reply can grow beyond the viewport between layout passes.
-        // That geometry change alone is not a request to stop following it.
-        state.updateDistance(600)
-        XCTAssertTrue(state.shouldFollow)
-        XCTAssertTrue(state.contentChanged())
+final class ChatScrollStateTests: XCTestCase {
+    func testAReplyGrowingAtTheEndIsNeverUnread() {
+        let state = ChatScrollState()
+        XCTAssertTrue(state.isNearBottom)
+        for _ in 0..<5 { state.contentChanged() }
         XCTAssertFalse(state.hasUnreadMessages)
+    }
 
-        state.beginInteraction()
-        state.updateDistance(300)
-        state.endInteraction()
-        XCTAssertFalse(state.contentChanged())
+    func testContentArrivingWhileReadingOlderMessagesIsUnreadUntilTheReaderReturns() {
+        let state = ChatScrollState()
+        state.setNearBottom(false)
+        XCTAssertFalse(state.hasUnreadMessages, "Scrolling away is not new content")
+        state.contentChanged()
         XCTAssertTrue(state.hasUnreadMessages)
-        XCTAssertFalse(state.shouldFollow)
-    }
-
-    func testTrackingDraggingAndDecelerationDoNotForceScrolling() {
-        var state = ChatScrollFollowState()
-        // The native scroll callback maps tracking, interacting and decelerating
-        // to beginInteraction; none may pull against the user's gesture.
-        for distance in [CGFloat(0), 250, 75] {
-            state.beginInteraction()
-            state.updateDistance(distance)
-            XCTAssertFalse(state.contentChanged())
-            XCTAssertFalse(state.shouldFollow)
-            XCTAssertTrue(state.hasUnreadMessages)
-        }
-        // Only idle at the bottom enables following again.
-        state.endInteraction()
-        XCTAssertTrue(state.shouldFollow)
-        XCTAssertFalse(state.hasUnreadMessages)
-    }
-
-    func testReadingOlderMessagesRetainsUnreadUntilLatestIsRequested() {
-        var state = ChatScrollFollowState()
-        state.beginInteraction()
-        state.updateDistance(400)
-        state.endInteraction()
-        for _ in 0..<10 { XCTAssertFalse(state.contentChanged()) }
+        state.setNearBottom(false)
         XCTAssertTrue(state.hasUnreadMessages)
-        state.updateDistance(81)
-        XCTAssertFalse(state.shouldFollow)
-        XCTAssertTrue(state.hasUnreadMessages)
-
-        state.requestLatest()
-        XCTAssertTrue(state.shouldFollow)
+        state.setNearBottom(true)
         XCTAssertFalse(state.hasUnreadMessages)
-        XCTAssertTrue(state.contentChanged())
     }
 
-    func testReturningToBottomManuallyResumesFollowing() {
-        var state = ChatScrollFollowState()
-        state.beginInteraction()
-        state.updateDistance(500)
-        state.endInteraction()
-        XCTAssertFalse(state.contentChanged())
-
-        state.beginInteraction()
-        state.updateDistance(80)
-        XCTAssertFalse(state.shouldFollow, "Even at the bottom, wait for the user's scrolling to stop")
-        state.endInteraction()
-        XCTAssertTrue(state.shouldFollow)
+    func testJumpToLatestIsARequestAndOnlyGeometrySaysWhereTheReaderIs() {
+        let state = ChatScrollState()
+        state.setNearBottom(false)
+        state.contentChanged()
+        let requests = state.jumpRequests
+        state.jumpToLatest()
+        XCTAssertEqual(state.jumpRequests, requests + 1)
         XCTAssertFalse(state.hasUnreadMessages)
-        XCTAssertTrue(state.contentChanged())
-    }
-
-    func testViewportResizeCannotResumeFollowingWhileReadingOlderMessages() {
-        var state = ChatScrollFollowState()
-        state.beginInteraction()
-        state.updateDistance(300)
-        state.endInteraction()
-        // Dismissing the keyboard can expose the bottom without a scroll gesture.
-        state.updateDistance(0)
-        XCTAssertFalse(state.shouldFollow)
-        XCTAssertFalse(state.contentChanged())
-        XCTAssertTrue(state.hasUnreadMessages)
-        state.requestLatest()
-        XCTAssertTrue(state.shouldFollow)
-    }
-
-    func testLatestRequestedDuringDecelerationWaitsForIdleThenSurvivesFarFromBottom() {
-        var state = ChatScrollFollowState()
-        state.beginInteraction()
-        state.updateDistance(600)
-        XCTAssertFalse(state.contentChanged())
-        state.requestLatest()
-        XCTAssertFalse(state.shouldFollow, "An explicit request must not fight an ongoing gesture")
-        XCTAssertFalse(state.hasUnreadMessages)
-
-        // The native callback may deliver another deceleration phase after the
-        // request; that must not erase the deferred Latest action.
-        state.beginInteraction()
-        state.updateDistance(400)
-        XCTAssertFalse(state.contentChanged())
-        state.endInteraction()
-        XCTAssertTrue(state.shouldFollow)
-        XCTAssertFalse(state.hasUnreadMessages)
-        XCTAssertTrue(state.contentChanged())
-
-        // The request is consumed once. A later intentional scroll still wins.
-        state.beginInteraction()
-        state.updateDistance(300)
-        state.endInteraction()
-        XCTAssertFalse(state.shouldFollow)
+        XCTAssertFalse(state.isNearBottom)
     }
 }
 
@@ -1492,7 +1511,7 @@ final class AppRootTransitionTests: XCTestCase {
         let (window, host) = try host(fixture.environment(\.scenePhase, .active))
         defer { window.endEditing(true); window.isHidden = true }
         try await settle()
-        await presentations.openChat(entry)
+        presentations.openChat(entry)
         try await waitUntil("Chat finishes presenting") {
             host.presentedViewController != nil && host.presentedViewController?.transitionCoordinator == nil
         }
@@ -1509,13 +1528,12 @@ final class AppRootTransitionTests: XCTestCase {
         XCTAssertNil(presentations.summary)
         XCTAssertNil(chatController.presentedViewController)
 
-        // Run the same keyboard handoff as Close, then dismiss the real cover.
+        // Close with the composer focused: release focus, then dismiss the real cover.
         let field = try XCTUnwrap(descendants(chatController.view).first { ($0 as? UITextView)?.isEditable == true || $0 is UITextField })
         XCTAssertTrue(field.becomeFirstResponder())
         (field as? UIKeyInput)?.insertText("Please review my workout")
         try await settle()
-        let dismissedKeyboard = await AppKeyboardDismissal.commitAndDismiss(in: window)
-        XCTAssertTrue(dismissedKeyboard)
+        XCTAssertTrue(AppKeyboardDismissal.commitAndDismiss(in: window))
         presentations.chat = nil
         XCTAssertTrue(presentations.chatIsOccupied, "Closing animations still own the presenter")
         XCTAssertNil(presentations.summary)
@@ -1534,7 +1552,6 @@ final class AppRootTransitionTests: XCTestCase {
         XCTAssertNil(host.presentedViewController)
         XCTAssertFalse(presentations.summaryIsOccupied)
         XCTAssertNil(AppKeyboardDismissal.firstResponder(in: window))
-        XCTAssertFalse(AppKeyboardDismissal.keyboardIsVisible(in: window))
         XCTAssertEqual(host.view.frame.height, window.bounds.height, accuracy: 1)
         // onDismiss precedes the next composited frame. Check the restored
         // content too, and capture it after UIKit finishes redrawing the tab.
@@ -1572,7 +1589,7 @@ final class AppRootTransitionTests: XCTestCase {
         XCTAssertTrue(weight.becomeFirstResponder())
         try await settle()
         weight.selectAll(nil); weight.insertText("42.5")
-        await presentations.openChat(entry)
+        presentations.openChat(entry)
         try await settle()
         XCTAssertEqual(weight.text, STNumericKind.formatted(42.5))
         XCTAssertFalse(weight.isFirstResponder)
@@ -1583,7 +1600,7 @@ final class AppRootTransitionTests: XCTestCase {
         XCTAssertTrue(rpe.becomeFirstResponder())
         try await settle()
         rpe.selectAll(nil); rpe.insertText("0")
-        await presentations.openChat(entry)
+        presentations.openChat(entry)
         XCTAssertTrue(rpe.isFirstResponder)
         XCTAssertEqual(rpe.text, "0")
         XCTAssertNil(presentations.chat)

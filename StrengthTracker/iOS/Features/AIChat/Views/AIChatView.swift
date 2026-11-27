@@ -1,39 +1,42 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import Observation
 import StrengthTrackerShared
 
+/// The transcript fills the screen and the composer sits under it. Two rules keep
+/// this screen stable, and both are about never letting layout drive layout:
+///
+/// - Keyboard: `ChatKeyboardAvoidance` lifts the transcript and composer by the frame
+///   UIKit posts with its keyboard notifications. SwiftUI's automatic avoidance is
+///   switched off here because the keyboard position it follows can be stale.
+/// - Scrolling: the transcript is a plain stack in a bottom-anchored scroll view, so
+///   SwiftUI itself keeps the newest message in view. The only programmatic scrolls
+///   are the two explicit ones: the user sends a message, or taps "Latest".
 struct AIChatView: View {
     let viewModel: AIChatViewModel
     let userPreferencesService: UserPreferencesService
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
-    @State private var isClosing = false
     @State private var inputText = ""
-    @State private var messageViewport = CGSize.zero
-    @State private var scrollState = ChatScrollFollowState()
-    @State private var scrollRequest = 0
+    @State private var scroll = ChatScrollState()
     @FocusState private var isInputFocused: Bool
-    private let bottomID = "chat-bottom"
 
     var body: some View {
         NavigationStack {
-            messageList
-            .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                ChatTranscript(viewModel: viewModel, weightUnit: userPreferencesService.weightUnit, scroll: scroll) { prompt in
+                    inputText = prompt
+                    isInputFocused = true
+                }
                 ChatInputBar(
                     text: $inputText,
                     isStreaming: viewModel.isStreaming,
                     isFocused: $isInputFocused,
-                    onSend: {
-                        guard !viewModel.isStreaming,
-                              !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                        viewModel.send(inputText)
-                        inputText = ""
-                        scrollState.requestLatest()
-                        scrollRequest += 1
-                    },
+                    onSend: send,
                     onStop: { viewModel.stop() }
                 )
             }
+            .modifier(ChatKeyboardAvoidance())
             .background(STColors.background)
             .navigationTitle("AI Assistant")
             .navigationBarTitleDisplayMode(.inline)
@@ -41,7 +44,8 @@ struct AIChatView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        isClosing = true
+                        isInputFocused = false
+                        dismiss()
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 14, weight: .semibold))
@@ -49,7 +53,6 @@ struct AIChatView: View {
                     }
                     .accessibilityLabel("Close AI assistant")
                     .accessibilityIdentifier("chat-close")
-                    .disabled(isClosing)
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if isInputFocused {
@@ -64,7 +67,6 @@ struct AIChatView: View {
                     }
                     Button {
                         viewModel.startNewConversation()
-                        scrollState = ChatScrollFollowState()
                         inputText = ""
                         isInputFocused = false
                     } label: {
@@ -78,15 +80,8 @@ struct AIChatView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .onDisappear { isInputFocused = false }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { isInputFocused = false }
-        }
-        .task(id: isClosing) {
-            guard isClosing else { return }
-            if await AppKeyboardDismissal.commitAndDismiss(clearFocus: { isInputFocused = false }) {
-                dismiss()
-            } else { isClosing = false }
         }
         .task {
             await viewModel.loadLatestConversation()
@@ -101,98 +96,159 @@ struct AIChatView: View {
         }
     }
 
-    // MARK: - Messages
+    private func send() {
+        guard !viewModel.isStreaming,
+              !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        viewModel.send(inputText)
+        inputText = ""
+    }
+}
 
-    private var messageList: some View {
-        ScrollViewReader { proxy in
-            // The welcome content must be able to shrink/scroll just like a conversation.
-            // Otherwise its minimum height can push the composer below a docked keyboard.
-            ScrollView {
-                if viewModel.messages.isEmpty {
-                    emptyState
-                } else {
-                    LazyVStack(spacing: 14) {
-                        ForEach(viewModel.messages) { message in
-                            ChatMessageRow(message: message,
-                                weightUnit: userPreferencesService.weightUnit,
-                                isStreaming: viewModel.isStreaming && message.id == viewModel.messages.last?.id && message.role == .assistant && message.kind == .text,
-                                isSaving: viewModel.savingDraftID == message.id,
-                                onSave: { Task { await viewModel.saveDraft(messageID: message.id) } },
-                                onDiscard: { viewModel.discardDraft(messageID: message.id) },
-                                onRetry: { viewModel.retry() })
-                                .equatable()
-                                .id(message.id)
-                        }
+// MARK: - Scroll state
 
-                        if let toolName = viewModel.activeToolName {
-                            HStack {
-                                ToolActivityChip(label: runningToolLabel(for: toolName), isRunning: true)
-                                Spacer()
+/// Whether the reader is at the newest message. Written from scroll geometry and read
+/// only by the "Latest" button, so a change never re-lays-out the transcript.
+@MainActor @Observable
+final class ChatScrollState {
+    /// Closer to the end than this still counts as reading the newest message.
+    nonisolated static let nearBottomDistance: CGFloat = 80
+
+    private(set) var isNearBottom = true
+    private(set) var hasUnreadMessages = false
+    /// Bumped to ask the transcript to show the newest message.
+    private(set) var jumpRequests = 0
+
+    func setNearBottom(_ nearBottom: Bool) {
+        guard nearBottom != isNearBottom else { return }
+        isNearBottom = nearBottom
+        if nearBottom { hasUnreadMessages = false }
+    }
+
+    /// Something arrived or grew at the end of the transcript.
+    func contentChanged() {
+        if !isNearBottom { hasUnreadMessages = true }
+    }
+
+    func jumpToLatest() {
+        hasUnreadMessages = false
+        jumpRequests += 1
+    }
+}
+
+// MARK: - Transcript
+
+private struct ChatTranscript: View {
+    let viewModel: AIChatViewModel
+    let weightUnit: WeightUnit
+    let scroll: ChatScrollState
+    let onExamplePrompt: (String) -> Void
+    private static let bottomID = "chat-bottom"
+
+    var body: some View {
+        Group {
+            if viewModel.messages.isEmpty {
+                // Scrollable so the prompts stay reachable in the space a keyboard leaves.
+                ScrollView { ChatWelcome(onPrompt: onExamplePrompt) }
+                    .accessibilityIdentifier("chat-messages")
+            } else {
+                // A separate scroll view from the welcome screen: a loaded or newly
+                // started conversation always opens at its newest message.
+                messages
+            }
+        }
+        .scrollDismissesKeyboard(.immediately)
+    }
+
+    private var messages: some View {
+        GeometryReader { viewport in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    // Not lazy on purpose. Replies and plan cards differ in height by
+                    // an order of magnitude; a lazy stack has to estimate the rows it
+                    // has not built, and those estimates shifting under a
+                    // bottom-anchored scroll view is what made scrolling jump and hang.
+                    VStack(spacing: 0) {
+                        VStack(spacing: 14) {
+                            ForEach(viewModel.messages) { message in
+                                ChatMessageRow(message: message,
+                                    weightUnit: weightUnit,
+                                    isStreaming: viewModel.isStreaming && message.id == viewModel.messages.last?.id && message.role == .assistant && message.kind == .text,
+                                    isSaving: viewModel.savingDraftID == message.id,
+                                    onSave: { Task { await viewModel.saveDraft(messageID: message.id) } },
+                                    onDiscard: { viewModel.discardDraft(messageID: message.id) },
+                                    onRetry: { viewModel.retry() })
+                                    .equatable()
                             }
-                        }
 
-                        // Include the bottom spacing in the scroll target itself.
-                        Color.clear.frame(height: 1).padding(.bottom, 12).id(bottomID)
-                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("chat-scroll")).maxY } action: { bottom in
-                                if #available(iOS 18.0, *) {} else {
-                                    scrollState.updateDistance(bottom - messageViewport.height)
+                            if let toolName = viewModel.activeToolName {
+                                HStack {
+                                    ToolActivityChip(label: runningToolLabel(for: toolName), isRunning: true)
+                                    Spacer()
                                 }
                             }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+
+                        // The bottom spacing is the scroll target, so "latest" is the very
+                        // end of the content. Stopping short of it would stop the follow.
+                        Color.clear.frame(height: 12).id(Self.bottomID)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
+                    // A short conversation starts under the title, not against the composer.
+                    .frame(minHeight: viewport.size.height, alignment: .top)
+                    .onGeometryChange(for: Bool.self) { content in
+                        guard let visible = content.bounds(of: .scrollView) else { return true }
+                        return content.size.height - visible.maxY <= ChatScrollState.nearBottomDistance
+                    } action: { nearBottom in
+                        scroll.setNearBottom(nearBottom)
+                    }
                 }
-            }
-            .coordinateSpace(name: "chat-scroll")
-            .modifier(ChatScrollTracking(state: $scrollState))
-            .scrollDismissesKeyboard(.interactively)
-            .accessibilityIdentifier("chat-messages")
-            .onGeometryChange(for: CGSize.self) { geometry in
-                CGSize(width: geometry.size.width,
-                       height: max(0, geometry.size.height - geometry.safeAreaInsets.top - geometry.safeAreaInsets.bottom))
-            } action: {
-                messageViewport = $0
-                if scrollState.shouldFollow { scrollRequest += 1 }
-            }
-            .task(id: scrollRequest) {
-                // Let the scroll view apply its new insets before revealing the tail.
-                // This also handles rotation and the composer growing while typing.
-                await Task.yield()
-                guard !Task.isCancelled, scrollState.shouldFollow else { return }
-                proxy.scrollTo(bottomID, anchor: .bottom)
-            }
-            .onChange(of: viewModel.messages.last) { _, _ in
-                if scrollState.contentChanged() { scrollRequest += 1 }
-            }
-            .onChange(of: viewModel.activeToolName) { _, _ in
-                if scrollState.shouldFollow { scrollRequest += 1 }
-            }
-            .onChange(of: scrollState.shouldFollow) { _, follows in
-                if follows { scrollRequest += 1 }
-            }
-            .overlay(alignment: .bottomTrailing) {
-                if !scrollState.followsLatest && !viewModel.messages.isEmpty {
-                    Button {
-                        scrollState.requestLatest()
-                        scrollRequest += 1
-                    } label: {
-                        Label(scrollState.hasUnreadMessages ? "New messages" : "Latest", systemImage: "arrow.down")
-                            .font(.subheadline.bold())
-                            .padding(.horizontal, 14).padding(.vertical, 10)
-                            .foregroundStyle(STColors.background).background(STColors.primary, in: Capsule())
+                .defaultScrollAnchor(.bottom)
+                .accessibilityIdentifier("chat-messages")
+                .onChange(of: viewModel.messages.last) { previous, latest in
+                    if let latest, latest.role == .user, latest.id != previous?.id {
+                        // The user just sent this; show it wherever they were reading.
+                        scroll.jumpToLatest()
+                    } else {
+                        scroll.contentChanged()
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Jump to latest message")
-                    .accessibilityIdentifier("chat-jump-to-latest")
-                    .padding(12)
+                }
+                .onChange(of: scroll.jumpRequests) { _, _ in
+                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    ChatLatestButton(scroll: scroll)
                 }
             }
         }
     }
+}
 
-    // MARK: - Empty state
+private struct ChatLatestButton: View {
+    let scroll: ChatScrollState
 
-    private var emptyState: some View {
+    var body: some View {
+        if !scroll.isNearBottom {
+            Button {
+                scroll.jumpToLatest()
+            } label: {
+                Label(scroll.hasUnreadMessages ? "New messages" : "Latest", systemImage: "arrow.down")
+                    .font(.subheadline.bold())
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .foregroundStyle(STColors.background).background(STColors.primary, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Jump to latest message")
+            .accessibilityIdentifier("chat-jump-to-latest")
+            .padding(12)
+        }
+    }
+}
+
+private struct ChatWelcome: View {
+    let onPrompt: (String) -> Void
+
+    var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "sparkles")
                 .font(.system(size: 40))
@@ -213,8 +269,7 @@ struct AIChatView: View {
 
     private func examplePrompt(_ text: String) -> some View {
         Button {
-            inputText = text
-            isInputFocused = true
+            onPrompt(text)
         } label: {
             Text(text)
                 .font(.subheadline)
@@ -226,77 +281,6 @@ struct AIChatView: View {
                 .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
         }
         .buttonStyle(.plain)
-    }
-}
-
-/// Follow new content only when the reader has not scrolled away. Geometry
-/// changes alone must not mistake a growing reply for an intentional scroll.
-struct ChatScrollFollowState: Equatable {
-    private(set) var followsLatest = true
-    private(set) var isInteracting = false
-    private(set) var isNearBottom = true
-    private(set) var hasUnreadMessages = false
-    private var followWhenIdle = false
-    var shouldFollow: Bool { followsLatest && !isInteracting }
-
-    mutating func updateDistance(_ distance: CGFloat) {
-        isNearBottom = distance <= 80
-    }
-    mutating func beginInteraction() { isInteracting = true; followsLatest = false }
-    mutating func endInteraction() {
-        isInteracting = false
-        followsLatest = followWhenIdle || isNearBottom
-        followWhenIdle = false
-        if followsLatest { hasUnreadMessages = false }
-    }
-    mutating func contentChanged() -> Bool {
-        if !shouldFollow { hasUnreadMessages = true }
-        return shouldFollow
-    }
-    mutating func requestLatest() {
-        followsLatest = true
-        followWhenIdle = isInteracting
-        hasUnreadMessages = false
-    }
-}
-
-private struct ChatScrollTracking: ViewModifier {
-    @Binding var state: ChatScrollFollowState
-    func body(content: Content) -> some View {
-        if #available(iOS 18.0, *) {
-            content
-                .defaultScrollAnchor(.bottom, for: .initialOffset)
-                .defaultScrollAnchor(state.shouldFollow ? .bottom : nil, for: .sizeChanges)
-                .defaultScrollAnchor(.top, for: .alignment)
-                .onScrollGeometryChange(for: Bool.self) { geometry in
-                    geometry.contentSize.height + geometry.contentInsets.bottom - geometry.contentOffset.y - geometry.containerSize.height <= 80
-                } action: { _, nearBottom in
-                    state.updateDistance(nearBottom ? 0 : 81)
-                }
-                .onScrollPhaseChange { _, phase, context in
-                    switch phase {
-                    case .tracking, .interacting, .decelerating: state.beginInteraction()
-                    case .idle where state.isInteracting:
-                        let geometry = context.geometry
-                        state.updateDistance(geometry.contentSize.height + geometry.contentInsets.bottom - geometry.contentOffset.y - geometry.containerSize.height)
-                        state.endInteraction()
-                    default: break
-                    }
-                }
-        } else {
-            content.defaultScrollAnchor(state.shouldFollow ? .bottom : nil)
-                .simultaneousGesture(DragGesture(minimumDistance: 4)
-                .onChanged { _ in state.beginInteraction() }
-                .onEnded { value in
-                    // iOS 17 has no scroll-phase callback. A fling can coast in
-                    // either direction after this gesture ends; keep it detached
-                    // until Latest is tapped or a later drag ends at the bottom.
-                    if abs(value.predictedEndTranslation.height - value.translation.height) > 10 {
-                        state.updateDistance(81)
-                    }
-                    state.endInteraction()
-                })
-        }
     }
 }
 
@@ -334,6 +318,85 @@ private struct ChatMessageRow: View, Equatable {
     private func decoded<T: Decodable>(_ json: String?) -> T? {
         guard let json else { return nil }
         return try? JSONDecoder().decode(T.self, from: Data(json.utf8))
+    }
+}
+
+// MARK: - Keyboard
+
+/// Pads the content above the docked keyboard.
+///
+/// The padding comes from the end frame in UIKit's keyboard notifications, not from
+/// SwiftUI's keyboard safe area. After a field with an accessory bar has been used
+/// (the workout number pad, any "Done" toolbar), the system's own keyboard tracking
+/// can place the next keyboard lower than it really is until the keyboard changes
+/// again, which left the composer hidden behind it. The notification frames stay correct.
+private struct ChatKeyboardAvoidance: ViewModifier {
+    @State private var keyboardOverlap: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.bottom, keyboardOverlap)
+            // Measured on the padded container, whose frame does not depend on the padding.
+            .background {
+                KeyboardOverlapReader { overlap, duration in
+                    guard overlap != keyboardOverlap else { return }
+                    withAnimation(.easeOut(duration: duration)) { keyboardOverlap = overlap }
+                }
+            }
+            .ignoresSafeArea(.keyboard, edges: .bottom)
+    }
+}
+
+private struct KeyboardOverlapReader: UIViewRepresentable {
+    let onChange: (_ overlap: CGFloat, _ duration: TimeInterval) -> Void
+
+    func makeUIView(context: Context) -> KeyboardOverlapView {
+        let view = KeyboardOverlapView()
+        view.onChange = onChange
+        return view
+    }
+
+    func updateUIView(_ view: KeyboardOverlapView, context: Context) {
+        view.onChange = onChange
+    }
+}
+
+/// Reports how far the docked keyboard reaches into this view, measured from its bottom edge.
+private final class KeyboardOverlapView: UIView {
+    var onChange: ((_ overlap: CGFloat, _ duration: TimeInterval) -> Void)?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        // Show and hide describe the docked keyboard only: UIKit posts "show" again
+        // whenever its height changes, and "hide" when it undocks or floats.
+        let center = NotificationCenter.default
+        center.addObserver(self, selector: #selector(keyboardWillShow(_:)),
+            name: UIResponder.keyboardWillShowNotification, object: nil)
+        center.addObserver(self, selector: #selector(keyboardWillHide(_:)),
+            name: UIResponder.keyboardWillHideNotification, object: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    @objc private func keyboardWillShow(_ notification: Notification) {
+        guard let window, let end = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+        let screen = (notification.object as? UIScreen) ?? window.screen
+        let top = convert(end, from: screen.coordinateSpace).minY
+        report(max(0, bounds.maxY - top), notification)
+    }
+
+    /// The end frame of a hiding keyboard is deliberately not read: it can describe an
+    /// accessory bar the keyboard leaves behind. Nothing of a hidden keyboard needs avoiding.
+    @objc private func keyboardWillHide(_ notification: Notification) {
+        report(0, notification)
+    }
+
+    private func report(_ overlap: CGFloat, _ notification: Notification) {
+        // Some systems post a zero duration for a keyboard that still slides away.
+        let posted = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval ?? 0
+        onChange?(overlap, posted > 0 ? posted : 0.25)
     }
 }
 #endif
