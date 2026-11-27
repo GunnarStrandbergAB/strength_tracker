@@ -6,7 +6,7 @@ import SwiftUI
 /// Exercise the actual linked screens, launch gate, and navigation container.
 @MainActor
 final class WidgetNavigationRenderingTests: XCTestCase {
-    private final class LoadGate {
+    @MainActor private final class LoadGate {
         private var continuation: CheckedContinuation<Void, Never>?
         var released = false
         func wait() async {

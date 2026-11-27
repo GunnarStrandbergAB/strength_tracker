@@ -1,5 +1,7 @@
 import Foundation
-#if canImport(FoundationModels)
+// The watchOS SDK has FoundationModels from watchOS 27, but without the on-device
+// session used here, so the Watch keeps the template fallback.
+#if canImport(FoundationModels) && !os(watchOS)
 import FoundationModels
 #endif
 
@@ -43,7 +45,7 @@ public final class AppleIntelligenceInsightGenerator: InsightTextGenerating, @un
 
     @MainActor
     public func generateBlockSummary(dimensionDeltas: [DimensionDrift]) async -> String {
-        #if canImport(FoundationModels)
+        #if canImport(FoundationModels) && !os(watchOS)
         do {
             return try await generateWithModel(
                 prompt: "Compare these two training blocks and summarize the key differences in 1-2 sentences as a strength coach would. Dimension changes: \(formatDeltas(dimensionDeltas))"
@@ -58,7 +60,7 @@ public final class AppleIntelligenceInsightGenerator: InsightTextGenerating, @un
 
     @MainActor
     public func generateDriftExplanation(drift: TrainingDrift) async -> String {
-        #if canImport(FoundationModels)
+        #if canImport(FoundationModels) && !os(watchOS)
         do {
             let driftInfo = drift.driftingDimensions.map { "\($0.featureName): \(String(format: "%+.2f", $0.delta))" }.joined(separator: ", ")
             return try await generateWithModel(
@@ -80,7 +82,7 @@ public final class AppleIntelligenceInsightGenerator: InsightTextGenerating, @un
 
     // MARK: - Private
 
-    #if canImport(FoundationModels)
+    #if canImport(FoundationModels) && !os(watchOS)
     @MainActor
     private func generateWithModel(prompt: String) async throws -> String {
         let session = LanguageModelSession()
