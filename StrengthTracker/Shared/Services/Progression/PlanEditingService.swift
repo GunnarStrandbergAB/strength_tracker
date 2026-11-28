@@ -12,6 +12,10 @@ public struct PlanConfiguration: Codable, Equatable, Sendable {
     public var deloadEveryWeeks: Int?
     /// True while the coach verdict is deload: rule targets repeat instead of rising.
     public var holdIncreases: Bool?
+    /// A deload week with its own days and workouts: one entry per session, on any
+    /// weekday, naming the exercises the plan progresses in it. Nil means a deload week
+    /// repeats the normal week on `deloadDays`.
+    public var deloadSchedule: [DayScheduleEntry]?
     /// The cadence a new plan gets when none is chosen, in the wizard or by the assistant.
     public static let defaultDeloadEveryWeeks = 5
     public init(durationWeeks: Int, deloadWeightPercentage: Int = 50, deloadRestPercentage: Int = 75) {
@@ -1277,12 +1281,16 @@ public extension PlanEditingService {
     /// Gives each session of a new plan its own copy of its day's workout: every exercise
     /// in order, with the plan's targets on the ones it progresses. Nothing in the plan
     /// follows a reusable template afterwards.
-    static func embedWorkouts(_ workouts: [Int: WorkoutTemplate], in plan: inout ProgressionPlan, exercises: [Exercise]) throws {
+    static func embedWorkouts(_ workouts: [Int: WorkoutTemplate], deloadWorkouts: [Int: WorkoutTemplate] = [:],
+        in plan: inout ProgressionPlan, exercises: [Exercise]) throws {
+        let ownDeloadWeek = plan.configuration?.deloadSchedule?.isEmpty == false
         for b in plan.blocks.indices {
             for w in plan.blocks[b].weeks.indices {
                 for i in plan.blocks[b].weeks[w].sessions.indices {
                     var session = plan.blocks[b].weeks[w].sessions[i]
-                    guard session.exerciseSnapshot == nil, let workout = session.dayOfWeek.flatMap({ workouts[$0] }),
+                    // A deload week with its own schedule takes its workouts from there.
+                    let source = session.isDeload && ownDeloadWeek ? deloadWorkouts : workouts
+                    guard session.exerciseSnapshot == nil, let workout = session.dayOfWeek.flatMap({ source[$0] }),
                           !workout.exercises.isEmpty else { continue }
                     let name = workout.name.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !name.isEmpty { try cleanLabel(&session, templates: [], explicit: String(name.prefix(120))) }

@@ -290,8 +290,15 @@ private struct PlanDraftContent: View {
                     .font(.stCaption)
                     .foregroundStyle(STColors.textSecondary)
             }
+            if let deload = parameters.deloadSplits, !deload.isEmpty {
+                Text("Deload week: " + deload.sorted { $0.dayOfWeek < $1.dayOfWeek }.map { split in
+                    "\(weekdayName(split.dayOfWeek)) \(split.templateName ?? split.sameAsDay.map { "as \(weekdayName($0))" } ?? "")"
+                }.joined(separator: ", "))
+                    .font(.stCaption)
+                    .foregroundStyle(STColors.textSecondary)
+            }
             if let every = parameters.deloadEveryWeeks {
-                Text(every == 0 ? "No scheduled deloads" : "Deload every \(every) weeks")
+                Text(every == 0 ? "No scheduled deloads" : "Deload every \(every)th week")
                     .font(.stCaption)
                     .foregroundStyle(STColors.textSecondary)
             }
@@ -338,7 +345,8 @@ private struct PlanDraftContent: View {
 
     @ViewBuilder
     private func splitDescription(_ split: AIPlanParameters.DaySplit) -> some View {
-        let exercises = split.exerciseNames.joined(separator: ", ")
+        // Progressed exercises first, then the ones trained at fixed targets.
+        let exercises = (split.exerciseNames + (split.otherExercises ?? []).map(\.exerciseName)).joined(separator: ", ")
         if let templateName = split.templateName {
             (Text(templateName).foregroundStyle(STColors.primary)
                 + Text(exercises.isEmpty ? "" : " + \(exercises)")

@@ -7,6 +7,26 @@ public enum AIToolData {
         return try JSONDecoder().decode(JSONValue.self, from: encoder.encode(value))
     }
     public static func optional(_ value: Double?) -> JSONValue { value.map(JSONValue.number) ?? .null }
+
+    /// A planned session without its own copy of the workout. That copy repeats every
+    /// exercise in full; plannedExercises already lists each one with its target, and
+    /// the time or distance of the exercises not counted in reps is added here.
+    public static func session(_ session: PlannedSession?) throws -> JSONValue {
+        guard let session else { return .null }
+        var compact = session
+        compact.exerciseSnapshot = nil
+        guard case .object(var fields) = try json(compact) else { return .null }
+        fields["owns_exercises"] = .bool(session.exerciseSnapshot != nil)
+        let timed = (session.exerciseSnapshot?.exercises ?? []).filter { $0.targetDurationSeconds != nil || $0.targetDistanceMeters != nil }
+        if !timed.isEmpty {
+            fields["timed_targets"] = .array(timed.map { row in
+                .object(["occurrence_id": .string(row.id.uuidString), "n": .string(row.exercise.name),
+                    "duration_seconds": row.targetDurationSeconds.map { .number(Double($0)) } ?? .null,
+                    "distance_meters": optional(row.targetDistanceMeters)])
+            })
+        }
+        return .object(fields)
+    }
 }
 
 @MainActor
@@ -14,7 +34,7 @@ public final class ProposePlanEditTool: AITool {
     private let viewModel: ProgressionPlanViewModel
     public init(viewModel: ProgressionPlanViewModel) { self.viewModel = viewModel }
     public let name = "propose_plan_edit"
-    public let description = "Preview one atomic edit to the active plan. Read get_active_plan first and pass plan_id/version. Use setWeekSchedule for an exact replacement schedule (including [] for rest); removeSessions removes planned work, whereas skipSession records missed work. Use batch for related changes in ONE Apply card. Reusable templates and completed/active workouts are protected. setProgression gives one exercise (exercise_id) a complete progression rule and re-lays its remaining sessions; its start fields only matter before the rule has trained sessions. To set the next target instead, change that session's targets: the ladder continues from a manual target. renamePlan sets the plan's name from label. Everything the app's plan screens can change is an operation here."
+    public let description = "Preview one atomic edit to the active plan. Read get_active_plan first and pass plan_id/version. A plan owns its exercises: every session carries its own exercise list, and a template (template_id, changeTemplate) is only copied in, never linked, so the plan never follows later template changes. setSessionExercises edits that list exercise by exercise: with scope session it changes one session; with scope remaining and session_id it also reaches the later sessions of the same workout (those with the same exercises in the same order), which take the added, removed, reordered and swapped exercises and keep their own targets on the exercises that stay. Use setWeekSchedule for an exact replacement schedule (including [] for rest); removeSessions removes planned work, whereas skipSession records missed work. Use batch for related changes in ONE Apply card. Reusable templates and completed/active workouts are protected. setProgression gives one exercise (exercise_id) a complete progression rule and re-lays its remaining sessions; its start fields only matter before the rule has trained sessions. To set the next target instead, change that session's targets: the ladder continues from a manual target. renamePlan sets the plan's name from label. Everything the app's plan screens can change is an operation here."
     private func operationSchema() -> JSONValue {
         let placement = AIToolRegistry.objectSchema(properties: [
             "session_id": AIToolRegistry.stringSchema("Retain this existing session ID from the same week; omit to add a template-based session"),
@@ -40,7 +60,7 @@ public final class ProposePlanEditTool: AITool {
         ], required: ["exercise_id"])
         return AIToolRegistry.objectSchema(properties: [
             "operation": AIToolRegistry.enumSchema(PlanEditRequest.Operation.self),
-            "scope": AIToolRegistry.enumSchema(PlanEditRequest.Scope.self, description: "session, week, or remaining from week"),
+            "scope": AIToolRegistry.enumSchema(PlanEditRequest.Scope.self, description: "session, week, or remaining from week. setSessionExercises with session_id and remaining: this session and the later sessions of the same workout"),
             "week": AIToolRegistry.integerSchema("Displayed calendar week from get_active_plan"),
             "end_week": AIToolRegistry.integerSchema("Inclusive final week for a range or recurring schedule change"),
             "destination_week": AIToolRegistry.integerSchema("Destination for moveDeload"),
@@ -61,7 +81,7 @@ public final class ProposePlanEditTool: AITool {
             "notes": AIToolRegistry.stringSchema("Session notes, or plan notes for renamePlan; empty string clears"),
             "schedule": AIToolRegistry.arraySchema(of: placement, description: "setWeekSchedule: COMPLETE desired upcoming schedule. Unlisted editable sessions are removed. [] is a rest week."),
             "weekly_schedule": AIToolRegistry.arraySchema(of: day, description: "changeSchedule: complete repeated weekly pattern; unlisted days are removed"),
-            "contents": AIToolRegistry.arraySchema(of: contents, description: "setSessionExercises: complete ordered normal workout. Unlisted occurrences are removed. Preserve IDs to retain prescriptions."),
+            "contents": AIToolRegistry.arraySchema(of: contents, description: "setSessionExercises: complete ordered normal workout of session_id. Unlisted occurrences are removed. Preserve IDs to retain prescriptions. An exercise the plan already progresses should be added at its next_target. A band exercise takes weight_kg 0."),
             "is_deload": AIToolRegistry.boolSchema("Optional deload state for replacement schedule/add/duplicate; omit to preserve retained sessions"),
             "deload_weight_percent": AIToolRegistry.integerSchema("Override Settings for this edit only, 10–100% of normal weight"),
             "deload_rest_percent": AIToolRegistry.integerSchema("Override Settings for this edit only, 25–100% of normal rest"),
@@ -108,7 +128,10 @@ public final class ProposePlanEditTool: AITool {
         return AIToolResult(outputForModel: AIJSON.string(.object([
             "status": .string("confirmation_presented"), "preview_id": .string(preview.id.uuidString),
             "summary": .array(preview.summaryLines.map(JSONValue.string)),
-            "session_changes": try AIToolData.json(preview.sessionChanges),
+            "session_changes": .array(try (preview.sessionChanges ?? []).map { change in
+                .object(["id": .string(change.id.uuidString), "kind": .string(change.kind),
+                    "before": try AIToolData.session(change.before), "after": try AIToolData.session(change.after)])
+            }),
             "resulting_schedule": try AIToolData.json(preview.changeRecord.map { record in
                 var result = ProgressionPlan(name: preview.planName, trainingStatus: .intermediate, programType: .linear, primaryGoal: .strength, weeklyFrequency: record.after.weeklyFrequency)
                 record.after.install(on: &result)

@@ -122,7 +122,8 @@ struct PlanSettingsView: View {
             }
             .sheet(item: $editing) { lift in
                 ProgressionRuleEditor(title: lift.name, rule: lift.exercise?.progression, fallback: fallback(for: lift),
-                    unit: viewModel.weightUnit, allowsWave: false) { rule in
+                    unit: viewModel.weightUnit, allowsWave: false,
+                    weightIsOptional: lift.exercise?.category == .resistanceBand) { rule in
                     guard let rule else { return }
                     run(.init(operation: .setProgression, exerciseID: lift.id, progression: rule))
                 }

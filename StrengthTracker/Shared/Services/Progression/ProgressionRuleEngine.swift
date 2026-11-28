@@ -253,6 +253,12 @@ public enum ProgressionRuleEngine {
         let rest = (goal.restSeconds.lowerBound + goal.restSeconds.upperBound) / 2
         let sets = goal == .strength || goal == .powerlifting ? 4 : 3
         let weight = start?.weightKg ?? 0
+        // A band has no weight to add or to estimate: it progresses on reps alone, at every pace.
+        if category == .resistanceBand {
+            return ProgressionRule(kind: .repsThenWeight, sets: sets, minReps: range.lowerBound, maxReps: range.upperBound,
+                incrementKg: 0, sessionsPerStep: pace == .conservative ? 2 : 1, startWeightKg: weight,
+                startReps: start.map { min(max($0.reps, range.lowerBound), range.upperBound) }, restSeconds: rest)
+        }
         switch pace {
         case .aggressive:
             let reps = goal == .strength || goal == .powerlifting ? range.upperBound : (range.lowerBound + range.upperBound) / 2
@@ -268,14 +274,20 @@ public enum ProgressionRuleEngine {
     /// Where to start, from the most recent workout that trained the exercise. Inside the
     /// rep range the last working weight and reps are kept. Outside it, the weight is
     /// converted (Epley) to the bottom of the range with two reps in reserve.
-    public static func suggestedStart(exerciseID: UUID, workouts: [Workout], range: ClosedRange<Int>, incrementKg: Double) -> ProgressionTarget? {
+    /// With `weightIsOptional` (a band), a workout logged without weight gives its reps.
+    public static func suggestedStart(exerciseID: UUID, workouts: [Workout], range: ClosedRange<Int>, incrementKg: Double,
+                                      weightIsOptional: Bool = false) -> ProgressionTarget? {
         let recent = workouts.filter { $0.completedAt != nil && !$0.isDeload }.sorted { $0.trainingDate > $1.trainingDate }
         for workout in recent {
             guard let logged = workout.exercises.first(where: { $0.exercise.id == exerciseID }),
                   logged.exercise.exerciseType == .weightedReps else { continue }
             let reference = PlannedExerciseSet(planExerciseId: exerciseID, exerciseId: exerciseID, exerciseName: logged.exercise.name,
                 sets: 1, targetReps: range.lowerBound, targetWeight: 0, percentageOf1RM: 0)
-            guard let done = outcome(planned: reference, performed: logged.sets), done.weightKg > 0, done.lowestReps > 0 else { continue }
+            guard let done = outcome(planned: reference, performed: logged.sets), done.lowestReps > 0 else { continue }
+            if done.weightKg <= 0 {
+                guard weightIsOptional else { continue }
+                return .init(weightKg: 0, reps: min(max(done.lowestReps, range.lowerBound), range.upperBound))
+            }
             if range.contains(done.lowestReps) { return .init(weightKg: done.weightKg, reps: done.lowestReps) }
             let oneRepMax = done.weightKg * (1 + Double(min(done.lowestReps, AnalyticsCalculations.maxRepsForE1RM)) / 30)
             let converted = oneRepMax / (1 + Double(range.lowerBound + 2) / 30)

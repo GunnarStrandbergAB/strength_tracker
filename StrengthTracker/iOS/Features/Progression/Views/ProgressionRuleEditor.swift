@@ -11,22 +11,38 @@ struct ProgressionRuleEditor: View {
     let unit: WeightUnit
     /// False where the percentage wave is not on offer (a running plan).
     let allowsWave: Bool
+    /// False for an exercise that can only follow the wave (not logged as weight × reps).
+    let allowsRule: Bool
+    /// True for a band: the rule may run on reps alone, without any weight.
+    let weightIsOptional: Bool
     let onSave: (ProgressionRule?) -> Void
+    /// The sets and reps chosen for the percentage wave; nil for both leaves them to the wave.
+    let onSaveWave: ((Int?, Int?) -> Void)?
 
     @State private var mode: Mode
     @State private var rule: ProgressionRule
+    @State private var choosesWaveTargets: Bool
+    @State private var waveSets: Int
+    @State private var waveReps: Int
     @Environment(\.dismiss) private var dismiss
 
     /// `rule` nil means the exercise is on the percentage wave; `fallback` is what the
     /// editor starts from when the user switches it to a rule.
     init(title: String, rule: ProgressionRule?, fallback: ProgressionRule, unit: WeightUnit, allowsWave: Bool,
-         onSave: @escaping (ProgressionRule?) -> Void) {
+         allowsRule: Bool = true, weightIsOptional: Bool = false, waveSets: Int? = nil, waveReps: Int? = nil,
+         onSaveWave: ((Int?, Int?) -> Void)? = nil, onSave: @escaping (ProgressionRule?) -> Void) {
         self.title = title
         self.unit = unit
         self.allowsWave = allowsWave
+        self.allowsRule = allowsRule
+        self.weightIsOptional = weightIsOptional
         self.onSave = onSave
+        self.onSaveWave = onSaveWave
         _rule = State(initialValue: (rule ?? fallback).normalized)
-        _mode = State(initialValue: rule.map { $0.kind == .fixedSteps ? .fixedSteps : .repsThenWeight } ?? .wave)
+        _mode = State(initialValue: allowsRule ? (rule.map { $0.kind == .fixedSteps ? .fixedSteps : .repsThenWeight } ?? .wave) : .wave)
+        _choosesWaveTargets = State(initialValue: waveSets != nil || waveReps != nil)
+        _waveSets = State(initialValue: waveSets ?? fallback.sets)
+        _waveReps = State(initialValue: waveReps ?? (fallback.minReps + fallback.maxReps) / 2)
     }
 
     private var edited: ProgressionRule {
@@ -39,21 +55,23 @@ struct ProgressionRuleEditor: View {
 
     private var problem: String? {
         guard mode != .wave else { return nil }
-        if edited.startWeightKg <= 0 { return "Enter a start weight." }
+        if edited.startWeightKg <= 0, !weightIsOptional { return "Enter a start weight." }
         do { try edited.validate(); return nil } catch { return error.localizedDescription }
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("How it progresses") {
-                    Picker("Rule", selection: $mode) {
-                        Text("Reps, then weight").tag(Mode.repsThenWeight)
-                        Text("Weight steps").tag(Mode.fixedSteps)
-                        if allowsWave { Text("Percentage wave").tag(Mode.wave) }
+                if allowsRule {
+                    Section("How it progresses") {
+                        Picker("Rule", selection: $mode) {
+                            Text("Reps, then weight").tag(Mode.repsThenWeight)
+                            Text("Weight steps").tag(Mode.fixedSteps)
+                            if allowsWave { Text("Percentage wave").tag(Mode.wave) }
+                        }
+                        .pickerStyle(.inline)
+                        .labelsHidden()
                     }
-                    .pickerStyle(.inline)
-                    .labelsHidden()
                 }
 
                 if mode == .wave {
@@ -61,6 +79,19 @@ struct ProgressionRuleEditor: View {
                         Text("Weights follow a percentage of your estimated 1RM, rising and falling with the plan's wave. The estimate moves when you beat it.")
                             .font(.footnote)
                             .foregroundStyle(STColors.textSecondary)
+                    }
+                    Section {
+                        Toggle("Choose sets and reps", isOn: $choosesWaveTargets)
+                        if choosesWaveTargets {
+                            Stepper("\(waveSets) sets", value: $waveSets, in: 1...10)
+                            Stepper("\(waveReps) reps", value: $waveReps, in: 1...30)
+                        }
+                    } header: {
+                        Text("Sets and reps")
+                    } footer: {
+                        Text(choosesWaveTargets
+                            ? "Every session asks for \(waveSets) × \(waveReps). The weight is worked out from your 1RM for that many reps and still follows the wave."
+                            : "The wave decides the sets and reps of each session.")
                     }
                 } else {
                     Section("Sets and reps") {
@@ -72,9 +103,15 @@ struct ProgressionRuleEditor: View {
                             Stepper("To \(max(rule.maxReps, rule.minReps)) reps", value: $rule.maxReps, in: rule.minReps...40)
                         }
                     }
-                    Section("Weight") {
+                    Section {
                         weightField("Start at", value: $rule.startWeightKg)
                         weightField(mode == .fixedSteps ? "Add each step" : "Add at the top of the range", value: $rule.incrementKg)
+                    } header: {
+                        Text("Weight")
+                    } footer: {
+                        if weightIsOptional {
+                            Text("A band has no set weight. Leave both empty and it progresses on reps alone.")
+                        }
                     }
                     Section {
                         Stepper(rule.sessionsPerStep == 1 ? "Move on after every successful session"
@@ -114,6 +151,7 @@ struct ProgressionRuleEditor: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         onSave(mode == .wave ? nil : edited)
+                        if mode == .wave { onSaveWave?(choosesWaveTargets ? waveSets : nil, choosesWaveTargets ? waveReps : nil) }
                         dismiss()
                     }
                     .disabled(problem != nil)
@@ -131,7 +169,7 @@ struct ProgressionRuleEditor: View {
     /// The first eight sessions if every target is hit.
     private var ladder: String {
         ProgressionRuleEngine.projection(from: ProgressionRuleEngine.initialState(edited), rule: edited, count: 8)
-            .map { "\(unit.formatValue($0.weightKg))×\($0.reps)" }.joined(separator: "  ")
+            .map { $0.weightKg > 0 ? "\(unit.formatValue($0.weightKg))×\($0.reps)" : "\($0.reps) reps" }.joined(separator: "  ")
     }
 
     private func weightField(_ label: String, value: Binding<Double>) -> some View {

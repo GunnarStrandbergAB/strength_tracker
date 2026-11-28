@@ -83,7 +83,13 @@ struct PlanPreviewStepView: View {
                 + (deloadWeeks > 0 ? " · \(deloadWeeks) deload week\(deloadWeeks == 1 ? "" : "s")" : " · no scheduled deloads"))
                 .font(.system(size: 13))
                 .foregroundStyle(STColors.textSecondary)
-            if let kept = plan.deloadDays, !kept.isEmpty, kept.count < plan.weeklyFrequency {
+            if let schedule = plan.configuration?.deloadSchedule, !schedule.isEmpty {
+                let days = [2, 3, 4, 5, 6, 7, 1].compactMap { day in schedule.first { $0.dayOfWeek == day } }
+                Text("A deload week: " + days.map { "\(PlanWizard.dayNames[$0.dayOfWeek] ?? "Day")\($0.templateName.map { " (\($0))" } ?? "")" }
+                    .joined(separator: ", ") + ".")
+                    .font(.system(size: 13))
+                    .foregroundStyle(STColors.textSecondary)
+            } else if let kept = plan.deloadDays, !kept.isEmpty, kept.count < plan.weeklyFrequency {
                 Text("A deload week keeps \(kept.compactMap { PlanWizard.dayNames[$0] }.joined(separator: ", ")) only.")
                     .font(.system(size: 13))
                     .foregroundStyle(STColors.textSecondary)

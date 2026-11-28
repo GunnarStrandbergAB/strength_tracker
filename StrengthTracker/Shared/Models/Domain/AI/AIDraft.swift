@@ -36,6 +36,9 @@ public struct AIPlanParameters: Codable, Sendable, Equatable {
         public var oneRMFromPersonalRecord: Bool?
         /// How the exercise progresses; nil follows the percentage wave.
         public var progression: ProgressionRule?
+        /// On the percentage wave: the sets and reps asked for every session; nil leaves that number to the wave.
+        public var waveSets: Int?
+        public var waveReps: Int?
 
         public init(
             exerciseID: UUID,
@@ -64,10 +67,12 @@ public struct AIPlanParameters: Codable, Sendable, Equatable {
         public var exerciseIDs: [UUID]
         /// Kept alongside the ids for card display.
         public var exerciseNames: [String]
-        /// Linked user template: the day's workout starts from this template
-        /// with progression targets overlaid on tracked exercises.
+        /// The user template the day's workout is copied from; the plan's exercises
+        /// in it get progression targets. The plan does not follow the template afterwards.
         public var templateID: UUID?
         public var templateName: String?
+        /// Exercises the day also trains at fixed targets, without progression.
+        public var otherExercises: [FixedExercise]?
 
         public init(
             dayOfWeek: Int,
@@ -81,6 +86,36 @@ public struct AIPlanParameters: Codable, Sendable, Equatable {
             self.exerciseNames = exerciseNames
             self.templateID = templateID
             self.templateName = templateName
+        }
+    }
+
+    /// An exercise a day trains at fixed targets: the plan does not progress it.
+    public struct FixedExercise: Codable, Sendable, Equatable {
+        public var exerciseID: UUID
+        public var exerciseName: String
+        public var sets: Int
+        public var reps: Int?
+        public var weightKg: Double?
+        public var durationSeconds: Int?
+        public var distanceMeters: Double?
+
+        public init(exerciseID: UUID, exerciseName: String, sets: Int, reps: Int? = nil, weightKg: Double? = nil,
+                    durationSeconds: Int? = nil, distanceMeters: Double? = nil) {
+            self.exerciseID = exerciseID; self.exerciseName = exerciseName; self.sets = sets; self.reps = reps
+            self.weightKg = weightKg; self.durationSeconds = durationSeconds; self.distanceMeters = distanceMeters
+        }
+    }
+
+    /// One session of a deload week that has its own schedule: any weekday, training a
+    /// template or the workout of one of the plan's training days.
+    public struct DeloadSplit: Codable, Sendable, Equatable {
+        public var dayOfWeek: Int
+        public var templateID: UUID?
+        public var templateName: String?
+        public var sameAsDay: Int?
+
+        public init(dayOfWeek: Int, templateID: UUID? = nil, templateName: String? = nil, sameAsDay: Int? = nil) {
+            self.dayOfWeek = dayOfWeek; self.templateID = templateID; self.templateName = templateName; self.sameAsDay = sameAsDay
         }
     }
 
@@ -103,6 +138,8 @@ public struct AIPlanParameters: Codable, Sendable, Equatable {
     public var pace: PlanPace?
     /// A deload every Nth week; 0 schedules none; nil keeps the level-based default.
     public var deloadEveryWeeks: Int?
+    /// A deload week's own schedule; nil repeats the normal week on `deloadDays`.
+    public var deloadSplits: [DeloadSplit]?
 
     public init(
         name: String,

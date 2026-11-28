@@ -6,6 +6,7 @@ import StrengthTrackerShared
 /// rule is shown in numbers and can be changed on its own.
 struct PlanProgressionStepView: View {
     @Bindable var viewModel: ProgressionPlanViewModel
+    let templateViewModel: TemplateViewModel
     @State private var editing: DraftPlanExercise?
     @State private var isReadingLog = true
 
@@ -40,8 +41,11 @@ struct PlanProgressionStepView: View {
         }
         .sheet(item: $editing) { draft in
             ProgressionRuleEditor(title: draft.exercise.name, rule: draft.rule, fallback: fallbackRule(for: draft),
-                unit: viewModel.weightUnit, allowsWave: true) { rule in
-                viewModel.setDraftRule(rule, for: draft.id)
+                unit: viewModel.weightUnit, allowsWave: true, allowsRule: draft.supportsRule,
+                weightIsOptional: draft.weightIsOptional, waveSets: draft.waveSets, waveReps: draft.waveReps,
+                onSaveWave: { sets, reps in viewModel.setDraftWave(sets: sets, reps: reps, for: draft.id) }) { rule in
+                // A lift that can only follow the wave has no rule to set or clear.
+                if draft.supportsRule { viewModel.setDraftRule(rule, for: draft.id) }
             }
         }
     }
@@ -153,14 +157,20 @@ struct PlanProgressionStepView: View {
                         .clipShape(Capsule())
                 }
                 Spacer()
-                if draft.supportsRule {
-                    Button("Change") { editing = draft }
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(STColors.primary)
-                        .accessibilityLabel("Change how \(draft.exercise.name) progresses")
-                }
+                Button("Change") { editing = draft }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(STColors.primary)
+                    .accessibilityLabel("Change how \(draft.exercise.name) progresses")
             }
-            if let rule = draft.rule {
+            if let rule = draft.rule, draft.weightIsOptional, rule.startWeightKg == 0 {
+                // A band: nothing to weigh, so nothing to enter.
+                Text("Starts at \(rule.startReps) reps. A band needs no weight.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(STColors.textSecondary)
+                Text(rule.summary(unit: viewModel.weightUnit))
+                    .font(.system(size: 12))
+                    .foregroundStyle(STColors.textSecondary)
+            } else if let rule = draft.rule {
                 HStack(spacing: 6) {
                     Text("Start")
                         .font(.system(size: 13))
@@ -189,7 +199,8 @@ struct PlanProgressionStepView: View {
                         .foregroundStyle(STColors.textSecondary)
                     Spacer()
                 }
-                Text(draft.supportsRule ? "Follows the percentage wave." : "Follows the percentage wave; rules cover weighted lifts.")
+                Text((draft.supportsRule ? "Follows the percentage wave." : "Follows the percentage wave; rules cover weighted lifts.")
+                    + waveTargets(draft))
                     .font(.system(size: 12))
                     .foregroundStyle(STColors.textSecondary)
             }
@@ -197,6 +208,12 @@ struct PlanProgressionStepView: View {
         .padding(14)
         .background(STColors.surface)
         .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
+    }
+
+    /// " 4 × 6 every session." when the lift's sets and reps were chosen by hand.
+    private func waveTargets(_ draft: DraftPlanExercise) -> String {
+        guard draft.waveSets != nil || draft.waveReps != nil else { return " Tap Change to choose sets and reps." }
+        return " \(draft.waveSets.map(String.init) ?? "Wave") × \(draft.waveReps.map(String.init) ?? "wave reps") every session."
     }
 
     private func numberField(label: String, valueKg: Double, onChange: @escaping (Double) -> Void) -> some View {
@@ -246,57 +263,71 @@ struct PlanProgressionStepView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(STColors.textTertiary)
 
-            if viewModel.draftTrainingDays.count > 1 {
-                Toggle("Fewer sessions in a deload week", isOn: Binding(
-                    get: { viewModel.draftUseCustomDeloadDays },
-                    set: { isOn in
-                        viewModel.draftUseCustomDeloadDays = isOn
-                        if isOn, viewModel.draftDeloadDays.isEmpty { viewModel.applyDefaultDeloadDays() }
-                    }))
-                    .font(.system(size: 14))
-                    .foregroundStyle(STColors.textPrimary)
-                    .tint(STColors.primary)
-                    .padding(.top, 4)
-                if viewModel.draftUseCustomDeloadDays {
-                    ForEach(viewModel.orderedDraftDays, id: \.self) { day in deloadDayRow(day) }
-                    Text("\(viewModel.draftDeloadDays.count) of \(viewModel.draftTrainingDays.count) training days in a deload week. "
-                        + "The other days are left out that week.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(STColors.textTertiary)
-                }
+            Toggle("A different schedule in deload weeks", isOn: Binding(
+                get: { viewModel.draftUseCustomDeloadDays },
+                set: { isOn in
+                    viewModel.draftUseCustomDeloadDays = isOn
+                    if isOn, viewModel.draftDeloadDays.isEmpty { viewModel.applyDefaultDeloadDays() }
+                }))
+                .font(.system(size: 14))
+                .foregroundStyle(STColors.textPrimary)
+                .tint(STColors.primary)
+                .padding(.top, 4)
+            if viewModel.draftUseCustomDeloadDays {
+                ForEach([2, 3, 4, 5, 6, 7, 1], id: \.self) { day in deloadDayRow(day) }
+                Text("\(viewModel.draftDeloadDays.count) session\(viewModel.draftDeloadDays.count == 1 ? "" : "s") in a deload week. "
+                    + "Any day can rest, or train one of this plan's workouts or any template, at the deload weight.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(STColors.textTertiary)
             }
         }
         .padding(.horizontal, 20)
     }
 
-    /// One training day, ticked when its session stays in a deload week.
+    /// One weekday of the deload week: rest, a workout of this plan, or a template.
     private func deloadDayRow(_ day: Int) -> some View {
-        let isKept = viewModel.draftDeloadDays.contains(day)
         let dayName = PlanWizard.dayNames[day] ?? "Day"
-        return Button {
-            viewModel.toggleDeloadDay(day)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: isKept ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(isKept ? STColors.primary : STColors.textTertiary)
-                Text(dayName)
-                    .foregroundStyle(STColors.textPrimary)
-                if let workout = viewModel.draftDaySchedule[day]?.templateName {
-                    Text(workout)
-                        .foregroundStyle(STColors.textSecondary)
-                        .lineLimit(1)
+        let workout = viewModel.draftDeloadName(forDay: day)
+        return HStack(spacing: 10) {
+            Text(dayName)
+                .font(.system(size: 14))
+                .foregroundStyle(workout == nil ? STColors.textSecondary : STColors.textPrimary)
+                .frame(width: 92, alignment: .leading)
+            Menu {
+                Button("Rest") { viewModel.setDraftDeload(nil, forDay: day) }
+                    .disabled(workout == nil || viewModel.draftDeloadDays.count <= 1)
+                Section("This plan's workouts") {
+                    ForEach(viewModel.orderedDraftDays.filter { !(viewModel.draftDaySchedule[$0]?.exercises.isEmpty ?? true) }, id: \.self) { source in
+                        Button("\(PlanWizard.dayNames[source] ?? "Day")\(viewModel.draftDaySchedule[source]?.templateName.map { " · \($0)" } ?? "")") {
+                            viewModel.setDraftDeload(.planDay(source), forDay: day)
+                        }
+                    }
                 }
-                Spacer()
+                if !templateViewModel.userTemplates.isEmpty {
+                    Section("Templates") {
+                        ForEach(templateViewModel.userTemplates) { template in
+                            Button(template.name) { viewModel.setDraftDeload(.template(template), forDay: day) }
+                        }
+                    }
+                }
+            } label: {
+                HStack {
+                    Text(workout ?? "Rest")
+                        .font(.system(size: 14))
+                        .foregroundStyle(workout == nil ? STColors.textTertiary : STColors.textPrimary)
+                        .lineLimit(1)
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 12))
+                        .foregroundStyle(STColors.textTertiary)
+                }
+                .padding(.vertical, 10)
+                .padding(.horizontal, 12)
+                .background(STColors.surface)
+                .clipShape(RoundedRectangle(cornerRadius: STRadius.input))
             }
-            .font(.system(size: 14))
-            .padding(.vertical, 10)
-            .padding(.horizontal, 12)
-            .background(STColors.surface)
-            .clipShape(RoundedRectangle(cornerRadius: STRadius.input))
+            .accessibilityLabel("\(dayName) in a deload week: \(workout ?? "rest")")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(dayName) in a deload week")
-        .accessibilityAddTraits(isKept ? .isSelected : [])
     }
 }
 #endif

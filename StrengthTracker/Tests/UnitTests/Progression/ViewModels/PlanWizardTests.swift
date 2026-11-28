@@ -18,6 +18,10 @@ final class PlanWizardTests: XCTestCase {
         let plank: Exercise
         /// In the library, in no template.
         let row: Exercise
+        /// A resistance band exercise: no weight to enter.
+        let pullApart: Exercise
+        /// A second template: row and bench.
+        let light: WorkoutTemplate
         let push: WorkoutTemplate
         let templateRepository: InMemoryTemplateRepository
     }
@@ -44,8 +48,10 @@ final class PlanWizardTests: XCTestCase {
         let squat = exercise("Back Squat", muscle: .quadriceps)
         let plank = exercise("Plank", muscle: .core, type: .duration)
         let row = exercise("Barbell Row", muscle: .back)
+        let pullApart = Exercise(id: UUID(), name: "Band Pull-Apart", primaryMuscleGroup: .shoulders, secondaryMuscleGroups: [],
+            category: .resistanceBand, exerciseType: .weightedReps, instructions: nil, isCustom: false, isArchived: false)
         let exercises = InMemoryExerciseRepository()
-        for item in [bench, squat, plank, row] { _ = try await exercises.save(item) }
+        for item in [bench, squat, plank, row, pullApart] { _ = try await exercises.save(item) }
 
         let push = WorkoutTemplate(id: UUID(), name: "Push", notes: nil, sortOrder: 0, lastUsedAt: nil, timesUsed: 0, exercises: [
             TemplateExercise(id: UUID(), exercise: bench, order: 0, supersetGroup: nil, notes: nil, restTimerSeconds: 120, targetSets: 3,
@@ -53,8 +59,15 @@ final class PlanWizardTests: XCTestCase {
             TemplateExercise(id: UUID(), exercise: plank, order: 1, supersetGroup: nil, notes: nil, restTimerSeconds: 60, targetSets: 3,
                 targetReps: nil, targetWeight: nil, targetDurationSeconds: 60, targetDistanceMeters: nil)
         ])
+        let light = WorkoutTemplate(id: UUID(), name: "Light", notes: nil, sortOrder: 1, lastUsedAt: nil, timesUsed: 0, exercises: [
+            TemplateExercise(id: UUID(), exercise: row, order: 0, supersetGroup: nil, notes: nil, restTimerSeconds: 90, targetSets: 2,
+                targetReps: 12, targetWeight: 40, targetDurationSeconds: nil, targetDistanceMeters: nil),
+            TemplateExercise(id: UUID(), exercise: bench, order: 1, supersetGroup: nil, notes: nil, restTimerSeconds: 120, targetSets: 3,
+                targetReps: 8, targetWeight: 80, targetDurationSeconds: nil, targetDistanceMeters: nil)
+        ])
         let templateRepository = InMemoryTemplateRepository()
         _ = try await templateRepository.save(push)
+        _ = try await templateRepository.save(light)
 
         let workouts = MockWorkoutRepositoryProgression()
         workouts.workouts = (0..<10).map { week in workout(bench, weight: 80 - Double(week) * 0.5, reps: 8, daysAgo: 2 + week * 7) }
@@ -70,7 +83,8 @@ final class PlanWizardTests: XCTestCase {
         // Not loaded here: like in the app, nothing has opened the Templates tab yet.
         let templates = TemplateViewModel(templateRepository: templateRepository, exerciseRepository: exercises)
         return Fixture(viewModel: viewModel, exerciseList: ExerciseListViewModel(exerciseRepository: exercises), templates: templates,
-            plans: plans, bench: bench, squat: squat, plank: plank, row: row, push: push, templateRepository: templateRepository)
+            plans: plans, bench: bench, squat: squat, plank: plank, row: row, pullApart: pullApart, light: light, push: push,
+            templateRepository: templateRepository)
     }
 
     /// Monday "Push" from the template, Thursday squat added by hand.
@@ -291,6 +305,149 @@ final class PlanWizardTests: XCTestCase {
         XCTAssertTrue(sessions.allSatisfy { $0.templateId == nil && names($0) == ["Bench Press", "Plank"] && $0.displayLabel == "Push" })
     }
 
+    func testAProposedPlanCanAddFixedExercisesAndItsOwnDeloadWeek() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        let bench = PlanExercise(exerciseId: fixture.bench.id, exerciseName: fixture.bench.name, primaryMuscleGroup: .chest, category: .barbell,
+            estimated1RM: 100, oneRMSource: .naturalLanguage, current1RM: 100, isCompound: true, order: 0)
+        var request = ProgressionPlanViewModel.PlanCreationRequest(name: "From chat", trainingStatus: .intermediate, programType: .linear,
+            primaryGoal: .hypertrophy, weeklyFrequency: 1, trainingDays: [2], exercises: [bench],
+            daySchedule: [DayScheduleEntry(dayOfWeek: 2, templateId: fixture.push.id, templateName: "Push", exerciseIds: [fixture.bench.id])],
+            creationSource: .naturalLanguage, durationWeeks: 4, deloadEveryWeeks: 4)
+        request.dayExtras = [2: [TemplateExercise(id: UUID(), exercise: fixture.row, order: 0, supersetGroup: nil, notes: nil, restTimerSeconds: nil,
+            targetSets: 3, targetReps: 10, targetWeight: 40, targetDurationSeconds: nil, targetDistanceMeters: nil)]]
+        // The deload week: Tuesday trains Monday's workout, Friday the "Light" template.
+        request.deloadSchedule = [DayScheduleEntry(dayOfWeek: 3, exerciseIds: [fixture.bench.id]), DayScheduleEntry(dayOfWeek: 6, templateId: fixture.light.id)]
+        request.deloadSources = [3: 2]
+        try await viewModel.createPlan(from: request)
+
+        let sessions = ordered(viewModel.activePlan)
+        let normal = sessions.filter { !$0.isDeload }
+        XCTAssertEqual(normal.count, 3)
+        XCTAssertTrue(normal.allSatisfy { names($0) == ["Bench Press", "Plank", "Barbell Row"] && $0.dayOfWeek == 2 })
+        let deload = sessions.filter(\.isDeload).sorted { ($0.dayOfWeek ?? 0) < ($1.dayOfWeek ?? 0) }
+        XCTAssertEqual(deload.compactMap(\.dayOfWeek), [3, 6])
+        XCTAssertEqual(deload.map(names), [["Bench Press", "Plank", "Barbell Row"], ["Barbell Row", "Bench Press"]])
+        XCTAssertEqual(deload.map(\.displayLabel), ["Push", "Light"])
+        // Both deload sessions take the bench from the last normal week, at half the weight.
+        let lastNormal = try XCTUnwrap(normal.last?.plannedExercises.first { $0.exerciseId == fixture.bench.id })
+        for session in deload {
+            let light = try XCTUnwrap(session.plannedExercises.first { $0.exerciseId == fixture.bench.id })
+            XCTAssertEqual(light.targetReps, lastNormal.targetReps)
+            XCTAssertEqual(light.targetWeight, lastNormal.targetWeight / 2, accuracy: 0.01)
+        }
+    }
+
+    // MARK: - Bands, the wave, and deload weeks
+
+    func testABandExerciseProgressesOnRepsWithoutAWeight() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        viewModel.draftTrainingDays = [2]
+        viewModel.draftDurationWeeks = 8
+        viewModel.draftDeloadEveryWeeks = 0
+        viewModel.addDraftExercise(fixture.pullApart, forDay: 2)
+        await viewModel.prepareProgressionDraft()
+        let band = try XCTUnwrap(viewModel.draftSelectedExercises.first)
+        let rule = try XCTUnwrap(band.rule)
+        XCTAssertTrue(band.weightIsOptional)
+        XCTAssertEqual([rule.startWeightKg, rule.incrementKg], [0, 0], "Nothing to weigh, nothing to add")
+        XCTAssertEqual(rule.kind, .repsThenWeight)
+        XCTAssertTrue(viewModel.draftProgressionIsComplete, "No weight has to be entered")
+        // Every pace keeps it on reps: there is no weight to step up.
+        viewModel.applyDraftPace(.aggressive)
+        XCTAssertEqual(viewModel.draftSelectedExercises.first?.rule?.kind, .repsThenWeight)
+        viewModel.applyDraftPace(.standard)
+
+        await viewModel.generateAndSavePlan()
+        XCTAssertNil(viewModel.errorMessage)
+        let targets = ordered(viewModel.activePlan).compactMap { $0.plannedExercises.first }
+        XCTAssertTrue(targets.allSatisfy { $0.targetWeight == 0 })
+        XCTAssertEqual(targets.map(\.targetReps), Array(rule.minReps...rule.maxReps) + Array(repeating: rule.maxReps, count: 8 - (rule.maxReps - rule.minReps + 1)))
+        XCTAssertEqual(PlanWizard.target(0, 12, unit: .kg), "12 reps")
+    }
+
+    func testAWaveLiftCanHaveItsOwnSetsAndReps() async throws {
+        func plan(sets: Int?, reps: Int?) async throws -> [PlannedExerciseSet] {
+            let fixture = try await makeFixture()
+            let viewModel = fixture.viewModel
+            viewModel.draftTrainingDays = [2]
+            viewModel.draftDurationWeeks = 8
+            viewModel.draftDeloadEveryWeeks = 4
+            viewModel.addDraftExercise(fixture.bench, forDay: 2)
+            await viewModel.prepareProgressionDraft()
+            viewModel.setDraftRule(nil, for: fixture.bench.id)
+            viewModel.updateOneRM(for: fixture.bench.id, value: 100)
+            viewModel.setDraftWave(sets: sets, reps: reps, for: fixture.bench.id)
+            await viewModel.generateAndSavePlan()
+            XCTAssertNil(viewModel.errorMessage)
+            return ordered(viewModel.activePlan).compactMap { ($0.deloadPrescription?.normalExercises ?? $0.plannedExercises).first }
+        }
+        let wave = try await plan(sets: nil, reps: nil)
+        let chosen = try await plan(sets: 5, reps: 5)
+        XCTAssertEqual(chosen.count, 8)
+        XCTAssertTrue(chosen.allSatisfy { $0.sets == 5 && $0.targetReps == 5 }, "Every session, deload weeks included")
+        XCTAssertTrue(wave.contains { $0.targetReps != 5 }, "Left alone, the wave picks the reps")
+        // Fewer reps than the wave asked for means more weight: the same effort, by Epley.
+        for (own, planned) in zip(chosen, wave) where planned.targetReps > 5 {
+            let expected = (planned.targetWeight * (1 + Double(planned.targetReps) / 30) / (1 + 5.0 / 30)).rounded(toNearest: 2.5)
+            XCTAssertEqual(own.targetWeight, expected, accuracy: 0.001)
+            XCTAssertGreaterThan(own.targetWeight, planned.targetWeight)
+        }
+    }
+
+    func testADeloadWeekCanTrainAnyDayWithAnyWorkout() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        fillWorkouts(fixture)
+        viewModel.draftDeloadEveryWeeks = 4
+        // Start on a Monday, so that a programme week is a calendar week.
+        let calendar = CalendarWeekBucketer.mondayCalendar
+        viewModel.draftStartDate = try XCTUnwrap(calendar.date(byAdding: .day, value: 7, to: CalendarWeekBucketer.weekStart(of: Date())))
+        await viewModel.prepareProgressionDraft()
+        viewModel.setDraftStart(weightKg: 100, for: fixture.squat.id)
+
+        viewModel.draftUseCustomDeloadDays = true
+        viewModel.applyDefaultDeloadDays()
+        XCTAssertEqual(viewModel.draftDeloadDays, [2, 5], "It starts as the normal week")
+        // Wednesday trains a template, Saturday Thursday's workout; Monday and Thursday rest.
+        viewModel.setDraftDeload(.template(fixture.light), forDay: 4)
+        viewModel.setDraftDeload(.planDay(5), forDay: 7)
+        viewModel.setDraftDeload(nil, forDay: 2)
+        viewModel.setDraftDeload(nil, forDay: 5)
+        XCTAssertEqual(viewModel.draftDeloadDays, [4, 7])
+        XCTAssertEqual([4, 7, 2].map { viewModel.draftDeloadName(forDay: $0) }, ["Light", "Thursday's workout", nil])
+        viewModel.setDraftDeload(nil, forDay: 7)
+        viewModel.setDraftDeload(nil, forDay: 4)
+        XCTAssertEqual(viewModel.draftDeloadDays, [4], "A deload week keeps at least one session")
+        viewModel.setDraftDeload(.planDay(5), forDay: 7)
+
+        await viewModel.generateAndSavePlan()
+        XCTAssertNil(viewModel.errorMessage)
+        let plan = try XCTUnwrap(viewModel.activePlan)
+        XCTAssertEqual(plan.configuration?.deloadSchedule?.map(\.dayOfWeek), [4, 7])
+        let weeks = plan.blocks.flatMap(\.weeks).sorted { $0.absoluteWeekNumber < $1.absoluteWeekNumber }
+        XCTAssertEqual(weeks.filter(\.isDeload).map(\.absoluteWeekNumber), [4, 8])
+        for week in weeks {
+            XCTAssertEqual(week.sessions.compactMap(\.dayOfWeek).sorted(), week.isDeload ? [4, 7] : [2, 5], "Week \(week.absoluteWeekNumber)")
+        }
+        let deload = weeks[3].sessions.sorted { ($0.dayOfWeek ?? 0) < ($1.dayOfWeek ?? 0) }
+        XCTAssertTrue(deload.allSatisfy { $0.isDeload && $0.exerciseSnapshot != nil && $0.templateId == nil })
+        XCTAssertEqual(deload.map(\.displayLabel), ["Light", "Saturday"])
+        XCTAssertEqual(deload.map(names), [["Barbell Row", "Bench Press"], ["Back Squat"]])
+        // The plan's lifts keep their place on the ladder at half the weight; the row is the template's own, halved too.
+        let normalBench = try XCTUnwrap(deload[0].deloadPrescription?.normalExercises.first { $0.exerciseId == fixture.bench.id })
+        let week3Bench = try XCTUnwrap(weeks[2].sessions.flatMap(\.plannedExercises).first { $0.exerciseId == fixture.bench.id })
+        let week5Bench = try XCTUnwrap(weeks[4].sessions.flatMap(\.plannedExercises).first { $0.exerciseId == fixture.bench.id })
+        XCTAssertEqual(normalBench.targetReps, week5Bench.targetReps, "The deload repeats the next target; it is not a step")
+        XCTAssertEqual(normalBench.targetWeight, week5Bench.targetWeight)
+        XCTAssertTrue(ProgressionTarget(weightKg: week5Bench.targetWeight, reps: week5Bench.targetReps)
+            .isAbove(.init(weightKg: week3Bench.targetWeight, reps: week3Bench.targetReps)), "Week 5 is the step after week 3")
+        let started = await viewModel.prepareSessionTemplate(for: deload[0])
+        XCTAssertEqual(started?.exercises.map { "\($0.exercise.name) \($0.targetSets)x\($0.targetReps ?? 0)@\($0.targetWeight ?? 0)" },
+            ["Barbell Row 2x12@20.0", "Bench Press 3x\(normalBench.targetReps)@\(normalBench.targetWeight / 2)"])
+    }
+
     // MARK: - Editing a running plan
 
     /// The wizard's plan, saved and active: Monday "Push" with bench, Thursday squat, eight weeks
@@ -471,7 +628,7 @@ final class PlanWizardTests: XCTestCase {
         XCTAssertTrue(fixture.templates.userTemplates.isEmpty)
         viewModel.draftStep = 2
         try await settle()
-        XCTAssertEqual(fixture.templates.userTemplates.map(\.name), ["Push"], "The step loads the templates its menu offers")
+        XCTAssertEqual(fixture.templates.userTemplates.map(\.name), ["Push", "Light"], "The step loads the templates its menu offers")
         capture(window, name: "plan-wizard-2-workouts")
 
         viewModel.draftStep = 3

@@ -531,7 +531,7 @@ public final class GetActivePlanTool: AITool {
     }
 
     public let name = "get_active_plan"
-    public let description = "Active plan with version, calendar/programming week numbers, session IDs, dates and prescriptions. Schedule pages of 30 sessions; use offset/limit and week filters. Read before proposing edits. Includes calendar summaries and undo history. Use session_id/include_details for full effective workout contents and editable_contents; date/status filters narrow the schedule."
+    public let description = "Active plan with version, calendar/programming week numbers, session IDs, dates and prescriptions. Schedule pages of 30 sessions; use offset/limit and week filters. Read before proposing edits. Includes calendar summaries and undo history. A plan owns its exercises: each session's plannedExercises lists every exercise it trains (owns_exercises true), in order, with its target; timed_targets gives time or distance for exercises not counted in reps. Use session_id/include_details for full effective workout contents and editable_contents; date/status filters narrow the schedule."
 
     public var parametersSchema: JSONValue {
         AIToolRegistry.objectSchema(properties: ["offset": AIToolRegistry.integerSchema("Session offset, default 0"),
@@ -576,7 +576,9 @@ public final class GetActivePlanTool: AITool {
                 "current_1rm": .number(exercise.current1RM),
                 "baseline_bodyweight_percent": exercise.bodyweightFactor.map { .number($0 * 100) } ?? .null,
                 "weight_recording": (try? AIToolData.json(exercise.weightRecording)) ?? .null,
-                "progression": .null
+                "progression": .null,
+                "wave_sets": exercise.waveSets.map { .number(Double($0)) } ?? .null,
+                "wave_reps": exercise.waveReps.map { .number(Double($0)) } ?? .null
             ]
             // A rule-driven exercise: the rule in the propose_plan_edit format, and its next target.
             if let rule = exercise.progression {
@@ -610,7 +612,7 @@ public final class GetActivePlanTool: AITool {
         payload["version"] = .string(PlanEditingService.version(plan))
         payload["end_date"] = try AIToolData.json(plan.targetEndDate)
         payload["configuration"] = try AIToolData.json(plan.configuration)
-        payload["progression_semantics"] = .string("An exercise with progression follows that rule: a completed session sets the next target, and remaining sessions show the targets if every one is hit. progression null means the percentage wave of program_type, anchored to current_1rm. configuration.holdIncreases true means rule targets repeat while the coach verdict is deload.")
+        payload["progression_semantics"] = .string("An exercise with progression follows that rule: a completed session sets the next target, and remaining sessions show the targets if every one is hit. progression null on an exercise with current_1rm above 0 means the percentage wave of program_type, anchored to current_1rm (wave_sets/wave_reps are the sets and reps chosen for it); with current_1rm 0 it is an exercise trained at the fixed targets in its sessions. A rule with increment_kg 0 and weight 0 (a band) progresses on reps alone. configuration.holdIncreases true means rule targets repeat while the coach verdict is deload. configuration.deloadSchedule, when present, is the deload week's own sessions by weekday.")
         payload["week_semantics"] = .string("week is the displayed Monday–Sunday calendar bucket. programmingWeekNumber/ID retain the original programme; insertions never truncate remaining sessions.")
         payload["current_deload_settings"] = .object(["weight_percent": .number(Double(userPreferencesService.deloadWeightPercentage)), "rest_percent": .number(Double(userPreferencesService.deloadRestPercentage))])
         payload["deload_days"] = try AIToolData.json(plan.deloadDays)
@@ -636,7 +638,7 @@ public final class GetActivePlanTool: AITool {
         payload["next_offset"] = offset + limit < filtered.count ? .number(Double(offset + limit)) : .null
         payload["sessions"] = .array(try filtered.dropFirst(offset).prefix(limit).map { row in
             var output: [String: JSONValue] = ["calendar_week": .number(Double(row.week.absoluteWeekNumber)), "block": .string(row.block.name),
-                "session": try AIToolData.json(row.session), "omitted": .bool(row.session.isOmitted),
+                "session": try AIToolData.session(row.session), "omitted": .bool(row.session.isOmitted),
                 "completed": .bool(row.session.isCompleted)]
             let reason = row.session.isCompleted ? "Completed workout" : protected.contains(row.session.id) ? "Workout in progress or already logged" : (row.session.scheduledDate ?? .distantPast) < today ? "Overdue: reschedule/skip, or explicitly correct removal" : nil
             output["editable"] = .bool(reason == nil)

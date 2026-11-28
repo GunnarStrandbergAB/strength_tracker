@@ -13,6 +13,10 @@ public struct DraftPlanExercise: Identifiable, Sendable {
     public var rule: ProgressionRule?
     /// True once the rule was changed by hand, so a new pace or goal leaves it alone.
     public var ruleIsCustom = false
+    /// On the percentage wave: the sets and reps asked for every session. Nil leaves
+    /// that number to the wave.
+    public var waveSets: Int?
+    public var waveReps: Int?
 
     public init(exercise: Exercise, oneRM: Double = 0, oneRMSource: PlanExercise.OneRMSource = .userInput) {
         self.id = exercise.id
@@ -24,8 +28,10 @@ public struct DraftPlanExercise: Identifiable, Sendable {
     /// Progression rules cover exercises logged as weight × reps.
     public var supportsRule: Bool { exercise.exerciseType == .weightedReps }
     public var isCompound: Bool { exercise.category == .barbell || exercise.category == .dumbbell }
-    /// False until there is a weight to start from.
-    public var hasStart: Bool { rule.map { $0.startWeightKg > 0 } ?? (oneRM > 0) }
+    /// A band has no weight to enter: its rule can run on reps alone.
+    public var weightIsOptional: Bool { exercise.category == .resistanceBand }
+    /// False until there is a weight to start from, where one is needed.
+    public var hasStart: Bool { rule.map { $0.startWeightKg > 0 || weightIsOptional } ?? (oneRM > 0) }
 }
 
 // MARK: - ProgressionPlanViewModel
@@ -60,8 +66,27 @@ public final class ProgressionPlanViewModel {
     public var draftStartDate: Date = Date()
     public var draftStartDateManuallySet: Bool = false
     public var draftDaySchedule: [Int: DraftDayEntry] = [:]  // keyed by ISO day
+    /// What one weekday trains in a deload week that has its own schedule.
+    public enum DraftDeloadChoice: Equatable, Sendable {
+        /// The workout of one of the plan's training days, as built in the workouts step.
+        case planDay(Int)
+        /// A copy of a template.
+        case template(WorkoutTemplate)
+    }
+
     public var draftUseCustomDeloadDays: Bool = false
-    public var draftDeloadDays: Set<Int> = []
+    /// The deload week's own schedule: weekday → workout. A weekday without an entry rests.
+    public var draftDeloadSchedule: [Int: DraftDeloadChoice] = [:]
+    /// The weekdays a deload week trains on.
+    public var draftDeloadDays: Set<Int> {
+        get { Set(draftDeloadSchedule.keys) }
+        set {
+            draftDeloadSchedule = draftDeloadSchedule.filter { newValue.contains($0.key) }
+            for day in newValue where draftDeloadSchedule[day] == nil && draftTrainingDays.contains(day) {
+                draftDeloadSchedule[day] = .planDay(day)
+            }
+        }
+    }
     public var draftPace: PlanPace = .standard
     /// The pace the lifter's own log suggests; nil until the log has been read.
     public var draftPaceRecommendation: ProgressionRuleEngine.PaceRecommendation?
@@ -232,8 +257,8 @@ public final class ProgressionPlanViewModel {
         if draftTrainingDays.contains(day) {
             guard draftTrainingDays.count > 1 else { return }
             draftTrainingDays.remove(day)
-            // Remove from deload days if it was selected there
-            draftDeloadDays.remove(day)
+            // A deload day that used this day's workout has nothing left to train.
+            draftDeloadSchedule = draftDeloadSchedule.filter { $0.value != .planDay(day) }
         } else {
             draftTrainingDays.insert(day)
         }
@@ -243,23 +268,43 @@ public final class ProgressionPlanViewModel {
         }
     }
 
+    /// Keeps or drops a training day's own workout in a deload week.
     public func toggleDeloadDay(_ day: Int) {
         guard draftTrainingDays.contains(day) else { return }
-        if draftDeloadDays.contains(day) {
-            guard draftDeloadDays.count > 1 else { return }
-            draftDeloadDays.remove(day)
-        } else {
-            guard draftDeloadDays.count < draftTrainingDays.count else { return }
-            draftDeloadDays.insert(day)
+        setDraftDeload(draftDeloadSchedule[day] == nil ? .planDay(day) : nil, forDay: day)
+    }
+
+    /// Sets what a weekday trains in a deload week; nil makes it a rest day. Any weekday
+    /// can train, with any training day's workout or a template. One session always stays.
+    public func setDraftDeload(_ choice: DraftDeloadChoice?, forDay day: Int) {
+        guard (1...7).contains(day) else { return }
+        guard let choice else {
+            guard draftDeloadSchedule[day] != nil, draftDeloadSchedule.count > 1 else { return }
+            draftDeloadSchedule[day] = nil
+            return
+        }
+        if case .planDay(let source) = choice, !draftTrainingDays.contains(source) { return }
+        draftDeloadSchedule[day] = choice
+    }
+
+    /// The starting point for a deload week's own schedule: the normal week.
+    public func applyDefaultDeloadDays() {
+        draftDeloadSchedule = Dictionary(uniqueKeysWithValues: draftTrainingDays.map { ($0, DraftDeloadChoice.planDay($0)) })
+    }
+
+    /// The name of what a weekday trains in a deload week, or nil for a rest day.
+    public func draftDeloadName(forDay day: Int) -> String? {
+        switch draftDeloadSchedule[day] {
+        case .planDay(let source):
+            let name = draftDaySchedule[source]?.templateName
+            let weekday = Self.dayNames[source] ?? "Day"
+            return source == day ? (name ?? "As normal") : (name.map { "\($0) (\(weekday))" } ?? "\(weekday)'s workout")
+        case .template(let template): return template.name
+        case nil: return nil
         }
     }
 
-    /// Picks a sensible default subset of training days for deload (roughly 60%, min 2).
-    public func applyDefaultDeloadDays() {
-        let sorted = Self.dayDisplayOrder.filter { draftTrainingDays.contains($0) }
-        let count = max(2, sorted.count - 2) // e.g. 5→3, 4→2, 3→2, 2→2
-        draftDeloadDays = Set(sorted.prefix(count))
-    }
+    private static let dayNames: [Int: String] = [1: "Sunday", 2: "Monday", 3: "Tuesday", 4: "Wednesday", 5: "Thursday", 6: "Friday", 7: "Saturday"]
 
     private static let dayDisplayOrder: [Int] = [2, 3, 4, 5, 6, 7, 1]
 
@@ -488,6 +533,17 @@ public final class ProgressionPlanViewModel {
         /// sessions get their own copy. A day without one is copied from the template its
         /// `daySchedule` entry names, if any.
         public var dayWorkouts: [Int: WorkoutTemplate] = [:]
+        /// A deload week with its own days and workouts: one entry per session, on any
+        /// weekday. Empty means a deload week repeats the normal week on `deloadDays`.
+        public var deloadSchedule: [DayScheduleEntry] = []
+        /// The full workout of a deload day in `deloadSchedule`. A day without one is
+        /// copied from the template its entry names, if any.
+        public var deloadWorkouts: [Int: WorkoutTemplate] = [:]
+        /// Exercises a training day also trains at fixed targets, after its template
+        /// and its progressed exercises (weekday number → exercises in order).
+        public var dayExtras: [Int: [TemplateExercise]] = [:]
+        /// A deload day that trains the workout of a training day (deload weekday → training weekday).
+        public var deloadSources: [Int: Int] = [:]
 
         public init(
             name: String,
@@ -557,16 +613,55 @@ public final class ProgressionPlanViewModel {
         // The plan owns its exercises. A day that only names a template gets a copy of
         // it here, and no session keeps a link back to the template.
         var workouts = request.dayWorkouts
-        if request.daySchedule.contains(where: { $0.templateId != nil && workouts[$0.dayOfWeek] == nil }) {
+        var deloadWorkouts = request.deloadWorkouts
+        guard request.deloadSchedule.allSatisfy({ (1...7).contains($0.dayOfWeek) }),
+              Set(request.deloadSchedule.map(\.dayOfWeek)).count == request.deloadSchedule.count else {
+            throw PlanEditError("A deload week can have one session on each weekday.")
+        }
+        if request.daySchedule.contains(where: { $0.templateId != nil && workouts[$0.dayOfWeek] == nil })
+            || request.deloadSchedule.contains(where: { $0.templateId != nil && deloadWorkouts[$0.dayOfWeek] == nil }) {
             let templates = try await templateRepository.fetchAll()
             for entry in request.daySchedule where workouts[entry.dayOfWeek] == nil {
                 workouts[entry.dayOfWeek] = templates.first { $0.id == entry.templateId }
             }
+            for entry in request.deloadSchedule where deloadWorkouts[entry.dayOfWeek] == nil {
+                deloadWorkouts[entry.dayOfWeek] = templates.first { $0.id == entry.templateId }
+            }
+        }
+        // A day with extra exercises is spelled out in full: its template, then the
+        // exercises the plan progresses, then the extras.
+        for entry in request.daySchedule {
+            guard let extras = request.dayExtras[entry.dayOfWeek], !extras.isEmpty else { continue }
+            var rows = (workouts[entry.dayOfWeek]?.exercises ?? []).sorted { $0.order < $1.order }
+            let additions = entry.exerciseIds.compactMap { id in library.first { $0.id == id } }.map { exercise in
+                TemplateExercise(id: UUID(), exercise: exercise, order: 0, supersetGroup: nil, notes: nil, restTimerSeconds: nil,
+                    targetSets: 3, targetReps: nil, targetWeight: nil, targetDurationSeconds: nil, targetDistanceMeters: nil)
+            } + extras
+            for row in additions where !rows.contains(where: { $0.exercise.id == row.exercise.id }) { rows.append(row) }
+            for index in rows.indices { rows[index].order = index }
+            let base = workouts[entry.dayOfWeek]
+            workouts[entry.dayOfWeek] = WorkoutTemplate(id: base?.id ?? UUID(), name: base?.name ?? "", notes: base?.notes, sortOrder: 0,
+                lastUsedAt: nil, timesUsed: 0, exercises: rows)
+        }
+        for entry in request.deloadSchedule where deloadWorkouts[entry.dayOfWeek] == nil {
+            if let source = request.deloadSources[entry.dayOfWeek] { deloadWorkouts[entry.dayOfWeek] = workouts[source] }
         }
         for i in request.daySchedule.indices {
             request.daySchedule[i].templateId = nil
             if let name = workouts[request.daySchedule[i].dayOfWeek]?.name, !name.isEmpty { request.daySchedule[i].templateName = name }
         }
+        for i in request.deloadSchedule.indices {
+            request.deloadSchedule[i].templateId = nil
+            guard let workout = deloadWorkouts[request.deloadSchedule[i].dayOfWeek] else { continue }
+            if !workout.name.isEmpty { request.deloadSchedule[i].templateName = workout.name }
+            // The plan's exercises in the workout are the ones it sets targets for.
+            if request.deloadSchedule[i].exerciseIds.isEmpty {
+                var seen = Set<UUID>()
+                request.deloadSchedule[i].exerciseIds = workout.exercises.sorted { $0.order < $1.order }.map(\.exercise.id)
+                    .filter { id in request.exercises.contains { $0.exerciseId == id } && seen.insert(id).inserted }
+            }
+        }
+        if !request.deloadSchedule.isEmpty { request.deloadDays = request.deloadSchedule.map(\.dayOfWeek).sorted() }
         let startWeekday = Calendar.current.component(.weekday, from: request.startDate)
         let startFirstOrder = (0..<7).map { (startWeekday - 1 + $0) % 7 + 1 }
         let sortedDays = request.trainingDays.isEmpty
@@ -592,6 +687,7 @@ public final class ProgressionPlanViewModel {
         )
         plan.configuration?.pace = request.pace
         plan.configuration?.deloadEveryWeeks = request.deloadEveryWeeks
+        plan.configuration?.deloadSchedule = request.deloadSchedule.isEmpty ? nil : request.deloadSchedule
 
         let deloadIntensity = Double(userPreferencesService?.deloadWeightPercentage ?? 50) / 100.0
         // generateProgram dates all sessions sequentially and re-buckets them into
@@ -599,7 +695,7 @@ public final class ProgressionPlanViewModel {
         plan.blocks = programDesignService.generateProgram(for: plan, deloadIntensity: deloadIntensity)
         // Exercises with a progression rule take their targets from it.
         ProgressionRuleEngine.reproject(&plan)
-        try PlanEditingService.embedWorkouts(workouts, in: &plan, exercises: library)
+        try PlanEditingService.embedWorkouts(workouts, deloadWorkouts: deloadWorkouts, in: &plan, exercises: library)
 
         // Target end date = last scheduled session (fallback: startDate + totalWeeks)
         let lastScheduledDate = plan.blocks.flatMap(\.weeks).flatMap(\.sessions)
@@ -614,7 +710,7 @@ public final class ProgressionPlanViewModel {
         let planExercises = draftSelectedExercises.enumerated().map { index, draft in
             // A rule-driven lift still carries a 1RM estimate for the analytics that read one.
             let oneRM = draft.rule.map { ($0.startWeightKg * (1 + Double($0.startReps) / 30)).rounded(toNearest: 2.5) } ?? draft.oneRM
-            return PlanExercise(
+            var exercise = PlanExercise(
                 exerciseId: draft.exercise.id,
                 exerciseName: draft.exercise.name,
                 primaryMuscleGroup: draft.exercise.primaryMuscleGroup,
@@ -627,6 +723,11 @@ public final class ProgressionPlanViewModel {
                 weightRecording: draft.exercise.weightRecording,
                 progression: draft.rule
             )
+            if draft.rule == nil {
+                exercise.waveSets = draft.waveSets
+                exercise.waveReps = draft.waveReps
+            }
+            return exercise
         }
         var daySchedule: [DayScheduleEntry] = []
         var dayWorkouts: [Int: WorkoutTemplate] = [:]
@@ -638,9 +739,36 @@ public final class ProgressionPlanViewModel {
             dayWorkouts[day] = WorkoutTemplate(id: UUID(), name: entry.templateName ?? "", notes: nil, sortOrder: 0,
                 lastUsedAt: nil, timesUsed: 0, exercises: rows)
         }
-        let sortedDeloadDays: [Int]? = draftUseCustomDeloadDays && !draftDeloadDays.isEmpty
-            ? Self.dayDisplayOrder.filter { draftDeloadDays.contains($0) }
-            : nil
+        // A deload week's own schedule. While every day in it keeps its own workout, it
+        // is the normal week with days left out; otherwise each session names its workout.
+        var sortedDeloadDays: [Int]?
+        var deloadSchedule: [DayScheduleEntry] = []
+        var deloadWorkouts: [Int: WorkoutTemplate] = [:]
+        let deloadChoices = draftUseCustomDeloadDays ? draftDeloadSchedule.filter { day, choice in
+            if case .planDay(let source) = choice { return dayWorkouts[source] != nil }
+            return (1...7).contains(day)
+        } : [:]
+        if !deloadChoices.isEmpty {
+            sortedDeloadDays = Self.dayDisplayOrder.filter { deloadChoices[$0] != nil }
+            if !deloadChoices.allSatisfy({ $0.value == .planDay($0.key) }) {
+                let lifts = Set(planExercises.map(\.exerciseId))
+                for day in sortedDeloadDays ?? [] {
+                    switch deloadChoices[day] {
+                    case .planDay(let source):
+                        guard let workout = dayWorkouts[source], let entry = daySchedule.first(where: { $0.dayOfWeek == source }) else { continue }
+                        deloadSchedule.append(DayScheduleEntry(dayOfWeek: day, templateName: entry.templateName, exerciseIds: entry.exerciseIds))
+                        deloadWorkouts[day] = workout
+                    case .template(let template):
+                        var seen = Set<UUID>()
+                        let ids = template.exercises.sorted { $0.order < $1.order }.map(\.exercise.id)
+                            .filter { lifts.contains($0) && seen.insert($0).inserted }
+                        deloadSchedule.append(DayScheduleEntry(dayOfWeek: day, templateName: template.name, exerciseIds: ids))
+                        deloadWorkouts[day] = template
+                    case nil: continue
+                    }
+                }
+            }
+        }
         var request = PlanCreationRequest(
             name: draftPlanName,
             trainingStatus: draftStatus,
@@ -656,6 +784,8 @@ public final class ProgressionPlanViewModel {
             pace: draftPace, deloadEveryWeeks: draftDeloadEveryWeeks
         )
         request.dayWorkouts = dayWorkouts
+        request.deloadSchedule = deloadSchedule
+        request.deloadWorkouts = deloadWorkouts
         return request
     }
 
@@ -701,7 +831,7 @@ public final class ProgressionPlanViewModel {
                 guard draft.rule == nil, !draft.ruleIsCustom else { continue }
                 var rule = presetRule(for: draft, start: nil)
                 if let start = ProgressionRuleEngine.suggestedStart(exerciseID: draft.id, workouts: workouts,
-                    range: rule.minReps...rule.maxReps, incrementKg: rule.incrementKg) {
+                    range: rule.minReps...rule.maxReps, incrementKg: rule.incrementKg, weightIsOptional: draft.weightIsOptional) {
                     rule = presetRule(for: draft, start: start)
                 }
                 draftSelectedExercises[index].rule = rule
@@ -723,7 +853,7 @@ public final class ProgressionPlanViewModel {
             let draft = draftSelectedExercises[index]
             guard draft.supportsRule, !draft.ruleIsCustom, let current = draft.rule else { continue }
             draftSelectedExercises[index].rule = presetRule(for: draft,
-                start: current.startWeightKg > 0 ? .init(weightKg: current.startWeightKg, reps: current.startReps) : nil)
+                start: current.startWeightKg > 0 || draft.weightIsOptional ? .init(weightKg: current.startWeightKg, reps: current.startReps) : nil)
         }
     }
 
@@ -736,6 +866,14 @@ public final class ProgressionPlanViewModel {
         }
         draftSelectedExercises[index].rule = rule?.normalized
         draftSelectedExercises[index].ruleIsCustom = true
+    }
+
+    /// Chooses the sets and reps of a lift on the percentage wave; nil leaves that
+    /// number to the wave.
+    public func setDraftWave(sets: Int?, reps: Int?, for exerciseId: UUID) {
+        guard let index = draftSelectedExercises.firstIndex(where: { $0.id == exerciseId }) else { return }
+        draftSelectedExercises[index].waveSets = sets.map { min(max($0, 1), 20) }
+        draftSelectedExercises[index].waveReps = reps.map { min(max($0, 1), 100) }
     }
 
     /// Changes where a lift starts without marking its rule as hand-made.
@@ -763,7 +901,7 @@ public final class ProgressionPlanViewModel {
         draftFrequency = 3
         draftTrainingDays = []
         draftUseCustomDeloadDays = false
-        draftDeloadDays = []
+        draftDeloadSchedule = [:]
         draftSelectedExercises = []
         draftDaySchedule = [:]
         draftPlanName = ""

@@ -267,12 +267,18 @@ public final class ProposeTrainingPlanTool: AITool {
     sessions from these parameters. Exercises must be exact catalog names. Every \
     exercise needs a 1RM: provide estimated_1rm where you know it; otherwise the \
     user's PRs fill it in (the tool errors if neither exists — then ask the user). \
-    Use day_splits to assign exercises and/or one of the user's templates to specific \
-    days (see list_templates; a template's exercises are copied into that day's \
-    workout with progression targets on the plan's exercises, and later changes to \
-    the template do not reach the plan). Without day_splits, every \
-    exercise trains on every training day. deload_days picks which weekdays deload \
-    weeks use (subset of training days; advanced lifters get no scheduled deloads). \
+    A PLAN OWNS ITS EXERCISES: each training day is a list of exercises. day_splits \
+    builds a day from any mix of: template_name (one of the user's templates, see \
+    list_templates; its exercises are copied in and later changes to the template do \
+    not reach the plan), exercise_names (exercises from this plan's exercises list, \
+    which the plan progresses) and other_exercises (any catalog exercise at fixed \
+    targets, never progressed: accessories, timed work, cardio). In a session the \
+    template's exercises come first, then the progressed ones, then other_exercises. \
+    Without day_splits, every exercise trains on every training day. \
+    DELOAD WEEKS: deload_days keeps a subset of the training days with their normal \
+    workouts. deload_schedule instead gives the deload week its own sessions on any \
+    weekday, each from a template_name or same_as_day (a training day's workout); use \
+    one or the other. Every deload session is done at the user's deload weight. \
     training_status overrides the app's automatic level detection — set it only when \
     the user states their level. \
     PROGRESSION: set pace to give every weighted exercise its own progression rule \
@@ -282,8 +288,12 @@ public final class ProposeTrainingPlanTool: AITool {
     three misses). A rule starts from start_weight if given, else the user's latest \
     workout, else the 1RM. Give an exercise its own rule to override the preset; call \
     preview_progression first to see what a rule asks for. Without pace or rules the \
-    plan uses the percentage wave of program_type. deload_every_weeks makes every \
-    Nth week a deload week (every 5th when omitted), or 0 for none.
+    plan uses the percentage wave of program_type; wave_sets and wave_reps fix the \
+    sets and reps of a wave exercise (the weight is then worked out from the 1RM for \
+    those reps). A resistance band exercise needs no weight and no 1RM: with pace or a \
+    rule it progresses on reps alone (increment_kg 0, start_weight_kg 0). \
+    deload_every_weeks makes every Nth week a deload week (every 5th when omitted), \
+    or 0 for none.
     """
 
     public var parametersSchema: JSONValue {
@@ -300,9 +310,30 @@ public final class ProposeTrainingPlanTool: AITool {
                 "estimated_1rm": weightSchema,
                 "start_weight": weightSchema,
                 "start_reps": AIToolRegistry.integerSchema("Rep target of the first session when start_weight is given; default the bottom of the rule's range"),
-                "rule": ToolSchemas.progressionRule
+                "rule": ToolSchemas.progressionRule,
+                "wave_sets": AIToolRegistry.integerSchema("Percentage wave only: sets asked for every session, 1–20; omit to let the wave decide"),
+                "wave_reps": AIToolRegistry.integerSchema("Percentage wave only: reps asked for every session, 1–100; omit to let the wave decide")
             ],
             required: ["exercise_name"]
+        )
+        let otherExerciseSchema = AIToolRegistry.objectSchema(
+            properties: [
+                "exercise_name": AIToolRegistry.stringSchema("Exact catalog exercise name"),
+                "sets": AIToolRegistry.integerSchema("1–20"),
+                "reps": AIToolRegistry.integerSchema("1–100, for exercises counted in reps"),
+                "weight": weightSchema,
+                "duration_seconds": AIToolRegistry.integerSchema("Time target for timed and cardio exercises"),
+                "distance_meters": AIToolRegistry.numberSchema("Distance target for distance and cardio exercises")
+            ],
+            required: ["exercise_name", "sets"]
+        )
+        let deloadSessionSchema = AIToolRegistry.objectSchema(
+            properties: [
+                "day": AIToolRegistry.integerSchema("Calendar weekday, Sunday=1 … Saturday=7; need not be a training day"),
+                "template_name": AIToolRegistry.stringSchema("Exact name of one of the user's templates to train that day"),
+                "same_as_day": AIToolRegistry.integerSchema("Train the workout of this training day (its weekday number) instead of a template")
+            ],
+            required: ["day"]
         )
         let daySplitSchema = AIToolRegistry.objectSchema(
             properties: [
@@ -310,7 +341,9 @@ public final class ProposeTrainingPlanTool: AITool {
                 "exercise_names": AIToolRegistry.arraySchema(
                     of: AIToolRegistry.stringSchema("Exercise name from this plan's exercises list (may be empty when template_name is set)")
                 ),
-                "template_name": AIToolRegistry.stringSchema("Exact name of one of the user's templates (see list_templates) to base this day's workout on")
+                "template_name": AIToolRegistry.stringSchema("Exact name of one of the user's templates (see list_templates) whose exercises are copied into this day"),
+                "other_exercises": AIToolRegistry.arraySchema(of: otherExerciseSchema,
+                    description: "Exercises this day also trains at fixed targets, without progression")
             ],
             required: ["training_day"]
         )
@@ -327,7 +360,11 @@ public final class ProposeTrainingPlanTool: AITool {
                 ),
                 "deload_days": AIToolRegistry.arraySchema(
                     of: AIToolRegistry.integerSchema("Calendar weekday, Sunday=1 … Saturday=7"),
-                    description: "Weekdays deload weeks train on — must be a subset of the training days; omit to deload on all training days"
+                    description: "Weekdays deload weeks train on — must be a subset of the training days; omit to deload on all training days. Not with deload_schedule."
+                ),
+                "deload_schedule": AIToolRegistry.arraySchema(
+                    of: deloadSessionSchema,
+                    description: "A deload week's own sessions, on any weekdays and with any workouts. Each needs template_name or same_as_day. Not with deload_days."
                 ),
                 "training_status": AIToolRegistry.enumSchema(
                     TrainingStatus.self,
@@ -339,7 +376,7 @@ public final class ProposeTrainingPlanTool: AITool {
                 "exercises": AIToolRegistry.arraySchema(of: exerciseSchema, description: "Exercises to progress, in priority order"),
                 "day_splits": AIToolRegistry.arraySchema(
                     of: daySplitSchema,
-                    description: "Optional split: which exercises/template each day uses. Days must be training days; unlisted training days become rest/empty sessions."
+                    description: "Optional split: the exercises of each training day. Days must be training days; unlisted training days become rest/empty sessions."
                 )
             ],
             required: ["name", "goal", "weekly_frequency", "exercises"]
@@ -353,12 +390,30 @@ public final class ProposeTrainingPlanTool: AITool {
             var start_weight: WeightArgument?
             var start_reps: Int?
             var rule: ProgressionRuleArgument?
+            var wave_sets: Int?
+            var wave_reps: Int?
+        }
+
+        struct OtherExerciseEntry: Decodable {
+            var exercise_name: String
+            var sets: Int
+            var reps: Int?
+            var weight: WeightArgument?
+            var duration_seconds: Int?
+            var distance_meters: Double?
         }
 
         struct DaySplitEntry: Decodable {
             var training_day: Int
             var exercise_names: [String]?
             var template_name: String?
+            var other_exercises: [OtherExerciseEntry]?
+        }
+
+        struct DeloadSessionEntry: Decodable {
+            var day: Int
+            var template_name: String?
+            var same_as_day: Int?
         }
 
         var name: String
@@ -374,6 +429,7 @@ public final class ProposeTrainingPlanTool: AITool {
         var day_splits: [DaySplitEntry]?
         var pace: String?
         var deload_every_weeks: Int?
+        var deload_schedule: [DeloadSessionEntry]?
     }
 
     /// The exercise's own rule, or the pace preset started from the best weight known:
@@ -400,8 +456,11 @@ public final class ProposeTrainingPlanTool: AITool {
             start = .init(weightKg: weight, reps: entry.start_reps ?? base.startReps)
         } else {
             start = ProgressionRuleEngine.suggestedStart(exerciseID: exercise.id, workouts: history,
-                range: base.minReps...base.maxReps, incrementKg: base.incrementKg)
+                range: base.minReps...base.maxReps, incrementKg: base.incrementKg,
+                weightIsOptional: exercise.category == .resistanceBand)
         }
+        // A band has no weight to estimate: it starts at the bottom of its rep range.
+        if start == nil, exercise.category == .resistanceBand { start = .init(weightKg: 0, reps: base.startReps) }
         if start == nil, let oneRMKg, oneRMKg > 0 {
             // Bottom of the range with two reps in reserve.
             let step = base.incrementKg > 0 ? base.incrementKg : 2.5
@@ -484,7 +543,18 @@ public final class ProposeTrainingPlanTool: AITool {
                 oneRMKg = (rule.startWeightKg * (1 + Double(rule.startReps) / 30)).rounded(toNearest: 2.5)
             }
             guard let oneRMKg else {
+                if exercise.category == .resistanceBand {
+                    throw AIToolError("'\(exercise.name)' is a band exercise with no weight to estimate. Set pace, or give it a rule with increment_kg 0 and start_weight_kg 0: it then progresses on reps alone.")
+                }
                 throw AIToolError("No 1RM known for '\(exercise.name)' (no personal records). Provide estimated_1rm for it — ask the user if needed. Without one, every set would be prescribed at 0 kg.")
+            }
+            if entry.wave_sets != nil || entry.wave_reps != nil {
+                guard rule == nil else {
+                    throw AIToolError("wave_sets and wave_reps only apply to the percentage wave. '\(exercise.name)' has a progression rule: put its sets and reps in the rule.")
+                }
+                guard entry.wave_sets.map((1...20).contains) ?? true, entry.wave_reps.map((1...100).contains) ?? true else {
+                    throw AIToolError("wave_sets must be 1–20 and wave_reps 1–100")
+                }
             }
             var selection = AIPlanParameters.ExerciseSelection(
                 exerciseID: exercise.id,
@@ -496,6 +566,8 @@ public final class ProposeTrainingPlanTool: AITool {
                 weightRecording: exercise.weightRecording
             )
             selection.progression = rule
+            selection.waveSets = entry.wave_sets
+            selection.waveReps = entry.wave_reps
             selections.append(selection)
         }
 
@@ -532,8 +604,35 @@ public final class ProposeTrainingPlanTool: AITool {
                     template = try TemplateNameResolver.resolve(name: templateName, in: userTemplates)
                 }
                 let names = entry.exercise_names ?? []
-                guard template != nil || !names.isEmpty else {
-                    throw AIToolError("Each day_splits entry needs exercise_names, a template_name, or both")
+                let others = try (entry.other_exercises ?? []).map { other -> AIPlanParameters.FixedExercise in
+                    let exercise = try ExerciseNameResolver.resolve(name: other.exercise_name, in: catalog)
+                    guard (1...20).contains(other.sets) else { throw AIToolError("other_exercises sets must be 1–20") }
+                    if let reps = other.reps, !(1...100).contains(reps) { throw AIToolError("other_exercises reps must be 1–100") }
+                    if let seconds = other.duration_seconds, !(1...86400).contains(seconds) { throw AIToolError("duration_seconds must be 1–86,400") }
+                    if let meters = other.distance_meters, !(0.1...1_000_000).contains(meters) { throw AIToolError("distance_meters must be a positive number of metres") }
+                    let weight = try other.weight?.kilograms(for: exercise)
+                    switch exercise.exerciseType {
+                    case .weightedReps, .bodyweightReps:
+                        guard let reps = other.reps, other.duration_seconds == nil, other.distance_meters == nil else {
+                            throw AIToolError("'\(exercise.name)' is counted in reps: give reps (and weight if it has one), not time or distance")
+                        }
+                        return .init(exerciseID: exercise.id, exerciseName: exercise.name, sets: other.sets, reps: reps, weightKg: weight ?? 0)
+                    case .duration:
+                        guard let seconds = other.duration_seconds, other.reps == nil else {
+                            throw AIToolError("'\(exercise.name)' is timed: give duration_seconds, not reps")
+                        }
+                        return .init(exerciseID: exercise.id, exerciseName: exercise.name, sets: other.sets, durationSeconds: seconds)
+                    case .distance, .cardio, .weightedCardio:
+                        guard other.duration_seconds != nil || other.distance_meters != nil, other.reps == nil else {
+                            throw AIToolError("'\(exercise.name)' needs duration_seconds or distance_meters, not reps")
+                        }
+                        return .init(exerciseID: exercise.id, exerciseName: exercise.name, sets: other.sets,
+                            weightKg: exercise.exerciseType == .weightedCardio ? (weight ?? 0) : nil,
+                            durationSeconds: other.duration_seconds, distanceMeters: other.distance_meters)
+                    }
+                }
+                guard template != nil || !names.isEmpty || !others.isEmpty else {
+                    throw AIToolError("Each day_splits entry needs exercise_names, a template_name, other_exercises, or a mix")
                 }
                 let resolved = try names.map { name -> AIPlanParameters.ExerciseSelection in
                     guard let selection = selectionsByName[name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()] else {
@@ -541,13 +640,38 @@ public final class ProposeTrainingPlanTool: AITool {
                     }
                     return selection
                 }
-                return AIPlanParameters.DaySplit(
+                var split = AIPlanParameters.DaySplit(
                     dayOfWeek: entry.training_day,
                     exerciseIDs: resolved.map(\.exerciseID),
                     exerciseNames: resolved.map(\.exerciseName),
                     templateID: template?.id,
                     templateName: template?.name
                 )
+                split.otherExercises = others.isEmpty ? nil : others
+                return split
+            }
+        }
+
+        // A deload week's own schedule: any weekday, a template or a training day's workout.
+        var deloadSplits: [AIPlanParameters.DeloadSplit]?
+        if let entries = args.deload_schedule, !entries.isEmpty {
+            guard args.deload_days?.isEmpty ?? true else { throw AIToolError("Use deload_days or deload_schedule, not both") }
+            guard entries.allSatisfy({ (1...7).contains($0.day) }), Set(entries.map(\.day)).count == entries.count else {
+                throw AIToolError("deload_schedule needs one entry per weekday, 1 (Sunday) to 7 (Saturday)")
+            }
+            let userTemplates = try await templateRepository.fetchAll()
+            deloadSplits = try entries.map { entry in
+                let templateName = entry.template_name.flatMap { $0.isEmpty ? nil : $0 }
+                guard (templateName == nil) != (entry.same_as_day == nil) else {
+                    throw AIToolError("Each deload_schedule entry needs either template_name or same_as_day")
+                }
+                if let source = entry.same_as_day {
+                    let training = trainingDays ?? ProgressionPlanViewModel.defaultDaySpread[args.weekly_frequency] ?? []
+                    guard training.contains(source) else { throw AIToolError("same_as_day \(source) is not a training day of this plan") }
+                    return .init(dayOfWeek: entry.day, sameAsDay: source)
+                }
+                let template = try TemplateNameResolver.resolve(name: templateName ?? "", in: userTemplates)
+                return .init(dayOfWeek: entry.day, templateID: template.id, templateName: template.name)
             }
         }
 
@@ -585,6 +709,7 @@ public final class ProposeTrainingPlanTool: AITool {
         )
         parameters.pace = selections.contains { $0.progression != nil } ? (pace ?? .standard) : nil
         parameters.deloadEveryWeeks = args.deload_every_weeks ?? PlanConfiguration.defaultDeloadEveryWeeks
+        parameters.deloadSplits = deloadSplits
 
         let rules = selections.compactMap { selection in
             selection.progression.map { JSONValue.string("\(selection.exerciseName): start \($0.startWeightKg) kg × \($0.startReps). \($0.summary(unit: .kg))") }

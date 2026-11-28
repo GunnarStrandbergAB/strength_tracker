@@ -23,6 +23,10 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
     public var alternatives: [UUID]                    // Swap candidates (exercise IDs)
     /// Nil follows the plan's percentage wave.
     public var progression: ProgressionRule?
+    /// The sets and reps a percentage-wave exercise asks for in every normal session.
+    /// Nil leaves that number to the wave.
+    public var waveSets: Int?
+    public var waveReps: Int?
 
     public enum OneRMSource: String, Codable, Sendable {
         case tested             // Direct 1RM test

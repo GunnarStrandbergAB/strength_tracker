@@ -242,6 +242,76 @@ struct ProposeTrainingPlanToolTests {
         #expect(parameters.deloadDays == [2, 6])
     }
 
+    @Test("A day can add exercises at fixed targets, and a deload week can have its own days and workouts")
+    func fixedExercisesAndDeloadSchedule() async throws {
+        let bench = makeExercise(name: "Bench Press")
+        let plank = Exercise(id: UUID(), name: "Plank", primaryMuscleGroup: .core, secondaryMuscleGroups: [], category: .bodyweight,
+            exerciseType: .duration, instructions: nil, isCustom: false, isArchived: false)
+        let light = makeTemplate(name: "Light", exercises: [bench])
+        let tool = try await makeTool(exercises: [bench, plank], templates: [light])
+        let base = """
+        "name":"P","goal":"strength","weekly_frequency":2,"training_days":[2,5],
+        "exercises":[{"exercise_name":"Bench Press","estimated_1rm":{"value":100,"unit":"kg"}}]
+        """
+        let split = #""day_splits":[{"training_day":2,"exercise_names":["Bench Press"],"other_exercises":[{"exercise_name":"Plank","sets":3,"duration_seconds":60}]}]"#
+
+        let result = try await tool.call(argumentsJSON: "{\(base),\(split),\"deload_schedule\":[{\"day\":7,\"same_as_day\":2},{\"day\":4,\"template_name\":\"light\"}]}")
+        guard case .plan(let parameters)? = result.draft else {
+            Issue.record("expected plan draft")
+            return
+        }
+        #expect(parameters.daySplits?.first?.otherExercises == [.init(exerciseID: plank.id, exerciseName: "Plank", sets: 3, durationSeconds: 60)])
+        #expect(parameters.deloadSplits == [.init(dayOfWeek: 7, sameAsDay: 2), .init(dayOfWeek: 4, templateID: light.id, templateName: "Light")])
+
+        // A timed exercise takes a time, a deload session exactly one source, and a day one session.
+        for bad in [
+            #""day_splits":[{"training_day":2,"other_exercises":[{"exercise_name":"Plank","sets":3,"reps":10}]}]"#,
+            #""deload_schedule":[{"day":4}]"#,
+            #""deload_schedule":[{"day":4,"template_name":"Light","same_as_day":2}]"#,
+            #""deload_schedule":[{"day":4,"same_as_day":3}]"#,
+            #""deload_schedule":[{"day":4,"template_name":"Light"},{"day":4,"same_as_day":2}]"#,
+            #""deload_schedule":[{"day":4,"template_name":"Light"}],"deload_days":[2]"#
+        ] {
+            await #expect(throws: AIToolError.self) { _ = try await tool.call(argumentsJSON: "{\(base),\(bad)}") }
+        }
+    }
+
+    @Test("A band exercise needs no weight, and a wave exercise can have its own sets and reps")
+    func bandAndWaveTargets() async throws {
+        let bench = makeExercise(name: "Bench Press")
+        let band = Exercise(id: UUID(), name: "Band Pull-Apart", primaryMuscleGroup: .shoulders, secondaryMuscleGroups: [],
+            category: .resistanceBand, exerciseType: .weightedReps, instructions: nil, isCustom: false, isArchived: false)
+        let tool = try await makeTool(exercises: [bench, band])
+        let head = #""name":"P","goal":"hypertrophy","weekly_frequency":3"#
+
+        let ruled = try await tool.call(argumentsJSON: "{\(head),\"pace\":\"aggressive\",\"exercises\":[{\"exercise_name\":\"Band Pull-Apart\"}]}")
+        guard case .plan(let withBand)? = ruled.draft else {
+            Issue.record("expected plan draft")
+            return
+        }
+        let rule = try #require(withBand.exercises.first?.progression)
+        #expect(rule.kind == .repsThenWeight)
+        #expect(rule.startWeightKg == 0)
+        #expect(rule.incrementKg == 0)
+        // On the percentage wave a band would need a 1RM, which nobody can give.
+        await #expect(throws: AIToolError.self) {
+            _ = try await tool.call(argumentsJSON: "{\(head),\"exercises\":[{\"exercise_name\":\"Band Pull-Apart\"}]}")
+        }
+
+        let bench1RM = #""exercise_name":"Bench Press","estimated_1rm":{"value":100,"unit":"kg"}"#
+        let waved = try await tool.call(argumentsJSON: "{\(head),\"exercises\":[{\(bench1RM),\"wave_sets\":5,\"wave_reps\":5}]}")
+        guard case .plan(let onWave)? = waved.draft else {
+            Issue.record("expected plan draft")
+            return
+        }
+        #expect(onWave.exercises.first?.waveSets == 5)
+        #expect(onWave.exercises.first?.waveReps == 5)
+        // With a rule, the sets and reps belong in the rule.
+        await #expect(throws: AIToolError.self) {
+            _ = try await tool.call(argumentsJSON: "{\(head),\"pace\":\"standard\",\"exercises\":[{\(bench1RM),\"wave_sets\":5}]}")
+        }
+    }
+
     @Test("training_status override carries through; bad values throw")
     func trainingStatusOverride() async throws {
         let bench = makeExercise(name: "Bench Press")

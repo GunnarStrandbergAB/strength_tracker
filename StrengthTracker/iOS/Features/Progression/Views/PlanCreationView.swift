@@ -19,7 +19,7 @@ struct PlanCreationView: View {
                     PlanWorkoutsStepView(viewModel: viewModel, exerciseListViewModel: exerciseListViewModel,
                         templateViewModel: templateViewModel)
                 case 3:
-                    PlanProgressionStepView(viewModel: viewModel)
+                    PlanProgressionStepView(viewModel: viewModel, templateViewModel: templateViewModel)
                 default:
                     PlanPreviewStepView(viewModel: viewModel) {
                         viewModel.resetDraft()
@@ -67,9 +67,9 @@ enum PlanWizard {
         }
     }
 
-    /// "80 kg × 8", in the user's unit.
+    /// "80 kg × 8", in the user's unit; "8 reps" for an exercise without a weight.
     static func target(_ weightKg: Double, _ reps: Int, unit: WeightUnit) -> String {
-        "\(unit.format(weightKg)) × \(reps)"
+        weightKg > 0 ? "\(unit.format(weightKg)) × \(reps)" : "\(reps) reps"
     }
 
     /// "60 s" or "400 m" for an exercise that is not counted in reps. The time or
