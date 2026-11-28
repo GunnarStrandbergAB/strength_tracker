@@ -24,6 +24,9 @@ struct PlanWorkoutsStepView: View {
             }
         }
         .background(STColors.background)
+        // The template list is shared with the Templates tab and is empty until someone
+        // loads it; without this the menu below has nothing to show and does not open.
+        .task { await templateViewModel.loadTemplates() }
         .safeAreaInset(edge: .bottom) {
             PlanStepButtons(back: { viewModel.draftStep = 1 }, forwardEnabled: canContinue, hint: hint) {
                 viewModel.draftStep = 3
@@ -59,6 +62,7 @@ struct PlanWorkoutsStepView: View {
             PlanSectionTitle(text: PlanWizard.dayNames[day] ?? "Day")
 
             Menu {
+                if templateViewModel.userTemplates.isEmpty { Text("No templates yet") }
                 ForEach(templateViewModel.userTemplates) { template in
                     Button(template.name) {
                         editingRow = nil

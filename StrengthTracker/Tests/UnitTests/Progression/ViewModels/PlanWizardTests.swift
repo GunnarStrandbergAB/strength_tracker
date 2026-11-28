@@ -67,8 +67,8 @@ final class PlanWizardTests: XCTestCase {
             exerciseRepository: exercises,
             templateRepository: templateRepository,
             workoutRepository: workouts)
+        // Not loaded here: like in the app, nothing has opened the Templates tab yet.
         let templates = TemplateViewModel(templateRepository: templateRepository, exerciseRepository: exercises)
-        await templates.loadTemplates()
         return Fixture(viewModel: viewModel, exerciseList: ExerciseListViewModel(exerciseRepository: exercises), templates: templates,
             plans: plans, bench: bench, squat: squat, plank: plank, row: row, push: push, templateRepository: templateRepository)
     }
@@ -468,8 +468,10 @@ final class PlanWizardTests: XCTestCase {
         capture(window, name: "plan-wizard-1-basics")
 
         fillWorkouts(fixture)
+        XCTAssertTrue(fixture.templates.userTemplates.isEmpty)
         viewModel.draftStep = 2
         try await settle()
+        XCTAssertEqual(fixture.templates.userTemplates.map(\.name), ["Push"], "The step loads the templates its menu offers")
         capture(window, name: "plan-wizard-2-workouts")
 
         viewModel.draftStep = 3
