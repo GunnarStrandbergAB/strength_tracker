@@ -1060,13 +1060,51 @@ private extension PlanEditingService {
             let ids = Set(selected.map { entries[$0].session.id }); entries.removeAll { ids.contains($0.session.id) }
             end = cal.startOfDay(for: finish)
         case .setSessionExercises:
-            try ensure(selected)
             guard let contents = request.contents, !contents.isEmpty, contents.count <= 50 else { throw PlanEditError("Supply 1–50 ordered exercises. Remove the session for a rest day.") }
+            func rows(_ s: PlannedSession) throws -> [TemplateExercise] {
+                let resolved = try materialize(s, in: plan, templates: templates, exercises: exercises, settings: policy)
+                return (resolved.exerciseSnapshot?.exercises ?? []).sorted { $0.order < $1.order }
+            }
+            // "Remaining" from one session means the same workout later in the plan.
+            var sourceRows: [TemplateExercise]?
+            if request.scope == .remaining, request.sessionIDs == nil, let id = request.sessionID {
+                guard let source = entries.firstIndex(where: { $0.session.id == id }) else { throw PlanEditError("No sessions match that scope.") }
+                try ensure([source])
+                sourceRows = try rows(entries[source].session)
+                let later = laterSessionsOfSameWorkout(as: entries[source].session, in: plan, templates: templates,
+                    exercises: exercises, protected: protected, now: now)
+                selected = [source] + entries.indices.filter { later.contains(entries[$0].session.id) }
+            }
+            try ensure(selected)
             for i in selected {
                 var s = try materialize(entries[i].session, in: plan, templates: templates, exercises: exercises, settings: policy)
                 let savedPolicy = s.deloadPrescription
                 s = try normalSession(s, in: plan)
-                try replaceContents(contents, in: &s, plan: plan, exercises: exercises)
+                var wanted = contents
+                var added = Set<UUID>()
+                if let sourceRows, entries[i].session.id != request.sessionID {
+                    // A later session keeps its own targets on the exercises it keeps; it takes
+                    // the new order, the removals and the additions.
+                    let own = (s.exerciseSnapshot?.exercises ?? []).sorted { $0.order < $1.order }
+                    let known = Set(s.plannedExercises.map(\.id))
+                    wanted = contents.map { item in
+                        guard let index = sourceRows.firstIndex(where: { $0.id == item.occurrenceID }), own.indices.contains(index) else { return item }
+                        guard item.exerciseID == sourceRows[index].exercise.id else {
+                            var swapped = item; swapped.occurrenceID = own[index].id; return swapped
+                        }
+                        return PlanExercisePrescription(occurrenceID: own[index].id, exerciseID: item.exerciseID)
+                    }
+                    try replaceContents(wanted, in: &s, plan: plan, exercises: exercises)
+                    added = Set(s.plannedExercises.map(\.id)).subtracting(known)
+                } else {
+                    try replaceContents(wanted, in: &s, plan: plan, exercises: exercises)
+                }
+                // An exercise on a progression rule follows its rule in the later sessions
+                // it was added to; only the edited session pins the target.
+                for e in s.plannedExercises.indices where added.contains(s.plannedExercises[e].id) {
+                    let exerciseID = s.plannedExercises[e].exerciseId
+                    if plan.exercises.contains(where: { $0.exerciseId == exerciseID && $0.progression != nil }) { s.plannedExercises[e].isUserOverride = nil }
+                }
                 if let savedPolicy { PlanDeloadPolicy.apply(to: &s, weightPercentage: savedPolicy.weightPercentage, restPercentage: savedPolicy.restPercentage, omitted: savedPolicy.omitted) }
                 entries[i].session = s
             }
@@ -1147,9 +1185,15 @@ private extension PlanEditingService {
             let keeping = source?.exercise.id == item.exerciseID
             guard let exercise = keeping ? source?.exercise : exercises.first(where: { $0.id == item.exerciseID && !$0.isArchived }) else { throw PlanEditError("Exercise not found in the library.") }
             var p = keeping ? session.plannedExercises.first { $0.id == item.occurrenceID } : nil
-            let sets = item.sets ?? (keeping ? source?.targetSets : nil)
-            let reps = item.reps ?? (keeping ? source?.targetReps : nil)
-            let weight = item.weightKg ?? (keeping ? source?.targetWeight : nil)
+            // The plan's current target is in the planned set; the copy of the workout
+            // only remembers what it was when the copy was made.
+            let loaded = [.weightedReps, .bodyweightReps, .weightedCardio].contains(exercise.exerciseType)
+            let currentSets = keeping ? (p?.sets ?? source?.targetSets) : nil
+            let currentReps = keeping ? (p.flatMap { $0.targetReps > 0 ? $0.targetReps : nil } ?? source?.targetReps) : nil
+            let currentWeight = keeping ? (loaded ? (p?.targetWeight ?? source?.targetWeight) : source?.targetWeight) : nil
+            let sets = item.sets ?? currentSets
+            let reps = item.reps ?? currentReps
+            let weight = item.weightKg ?? currentWeight
             let duration = item.durationSeconds ?? (keeping ? source?.targetDurationSeconds : nil)
             let distance = item.distanceMeters ?? (keeping ? source?.targetDistanceMeters : nil)
             guard let sets, (1...20).contains(sets) else { throw PlanEditError("Each exercise needs 1–20 sets.") }
@@ -1181,7 +1225,7 @@ private extension PlanEditingService {
             if let rest = item.restSeconds { p!.restSeconds = rest }
             if let rpe = item.targetRPE { p!.targetRPE = rpe }
             if let notes = item.notes { p!.notes = notes }
-            let changedTargets = !keeping || sets != source?.targetSets || reps != source?.targetReps || weight != source?.targetWeight || duration != source?.targetDurationSeconds || distance != source?.targetDistanceMeters
+            let changedTargets = !keeping || sets != currentSets || reps != currentReps || weight != currentWeight || duration != source?.targetDurationSeconds || distance != source?.targetDistanceMeters
             if changedTargets { p!.percentageOf1RM = 0; p!.isUserOverride = true }
             targets.append(p!)
             rows.append(TemplateExercise(id: id, exercise: exercise, order: index,
@@ -1200,10 +1244,58 @@ public extension PlanEditingService {
         let resolved = try materialize(session, in: plan, templates: templates, exercises: exercises)
         let normal = try normalSession(resolved, in: plan)
         return (normal.exerciseSnapshot?.exercises ?? []).sorted { $0.order < $1.order }.map { te in
+            // The planned set holds the current target; a rule may have moved it since
+            // the session got its own copy of the workout.
             let p = normal.plannedExercises.first { $0.id == te.id }
-            return .init(occurrenceID: te.id, exerciseID: te.exercise.id, sets: te.targetSets,
-                reps: te.targetReps, weightKg: te.targetWeight, restSeconds: te.restTimerSeconds,
+            let loaded = [.weightedReps, .bodyweightReps, .weightedCardio].contains(te.exercise.exerciseType)
+            return .init(occurrenceID: te.id, exerciseID: te.exercise.id, sets: p?.sets ?? te.targetSets,
+                reps: p.flatMap { $0.targetReps > 0 ? $0.targetReps : nil } ?? te.targetReps,
+                weightKg: loaded ? (p?.targetWeight ?? te.targetWeight) : te.targetWeight,
+                restSeconds: p?.restSeconds ?? te.restTimerSeconds,
                 targetRPE: p?.targetRPE, durationSeconds: te.targetDurationSeconds, distanceMeters: te.targetDistanceMeters, notes: te.notes)
+        }
+    }
+
+    /// The same workout later in the plan: the open sessions on or after `session` that
+    /// ask for the same exercises in the same order. A change to a session's exercises
+    /// that is meant for "all remaining sessions" reaches these.
+    static func laterSessionsOfSameWorkout(as session: PlannedSession, in plan: ProgressionPlan, templates: [WorkoutTemplate],
+        exercises: [Exercise], protected: Set<UUID> = [], now: Date = Date()) -> Set<UUID> {
+        func sequence(_ value: PlannedSession) -> [UUID]? {
+            (try? materialize(value, in: plan, templates: templates, exercises: exercises))?.exerciseSnapshot?
+                .exercises.sorted { $0.order < $1.order }.map(\.exercise.id)
+        }
+        guard let wanted = sequence(session) else { return [] }
+        let today = CalendarWeekBucketer.mondayCalendar.startOfDay(for: now)
+        let from = max(session.scheduledDate ?? .distantFuture, today)
+        return Set(sessions(plan).filter { other in
+            other.id != session.id && !other.isCompleted && !protected.contains(other.id)
+                && (other.scheduledDate ?? .distantPast) >= from && sequence(other) == wanted
+        }.map(\.id))
+    }
+
+    /// Gives each session of a new plan its own copy of its day's workout: every exercise
+    /// in order, with the plan's targets on the ones it progresses. Nothing in the plan
+    /// follows a reusable template afterwards.
+    static func embedWorkouts(_ workouts: [Int: WorkoutTemplate], in plan: inout ProgressionPlan, exercises: [Exercise]) throws {
+        for b in plan.blocks.indices {
+            for w in plan.blocks[b].weeks.indices {
+                for i in plan.blocks[b].weeks[w].sessions.indices {
+                    var session = plan.blocks[b].weeks[w].sessions[i]
+                    guard session.exerciseSnapshot == nil, let workout = session.dayOfWeek.flatMap({ workouts[$0] }),
+                          !workout.exercises.isEmpty else { continue }
+                    let name = workout.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !name.isEmpty { try cleanLabel(&session, templates: [], explicit: String(name.prefix(120))) }
+                    session.templateId = workout.id
+                    session = try materialize(session, in: plan, templates: [workout], exercises: exercises)
+                    session.templateId = nil
+                    let seconds = (session.exerciseSnapshot?.exercises ?? []).reduce(0) { total, row in
+                        total + row.targetSets * ((row.targetDurationSeconds ?? 45) + (row.restTimerSeconds ?? 120))
+                    }
+                    session.estimatedDurationMinutes = max(30, seconds / 60)
+                    plan.blocks[b].weeks[w].sessions[i] = session
+                }
+            }
         }
     }
     static func weekSummaries(_ plan: ProgressionPlan) -> [PlanWeekSummary] {

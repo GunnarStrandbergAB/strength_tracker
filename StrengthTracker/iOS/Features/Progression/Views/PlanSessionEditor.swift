@@ -19,6 +19,7 @@ struct PlanSessionEditor: View {
     @State private var isLoading = true
     @State private var showPicker = false
     @State private var askScope = false
+    @State private var laterCount = 0
     @State private var confirmRemove = false
 
     private var plan: ProgressionPlan? { viewModel.activePlan }
@@ -83,12 +84,12 @@ struct PlanSessionEditor: View {
                 }
             }
             .sheet(isPresented: $showPicker) { picker }
-            .confirmationDialog("Apply the new targets to", isPresented: $askScope, titleVisibility: .visible) {
+            .confirmationDialog("Apply the changes to", isPresented: $askScope, titleVisibility: .visible) {
                 Button("This session only") { apply(remaining: false) }
                 Button("All remaining sessions") { apply(remaining: true) }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text(widened.map { name(of: $0.exerciseID) }.joined(separator: ", "))
+                Text(scopeMessage)
             }
             .confirmationDialog("Remove this session from the plan?", isPresented: $confirmRemove, titleVisibility: .visible) {
                 Button("Remove", role: .destructive) {
@@ -160,10 +161,25 @@ struct PlanSessionEditor: View {
             // One new row per exercise; a second occurrence can be added after saving.
             guard !rows.contains(where: { $0.occurrenceID == nil && $0.exerciseID == exercise.id }) else { return }
             let repBased = exercise.exerciseType == .weightedReps || exercise.exerciseType == .bodyweightReps
-            rows.append(PlanExercisePrescription(exerciseID: exercise.id, sets: 3, reps: repBased ? 10 : nil,
-                weightKg: repBased || exercise.exerciseType == .weightedCardio ? 0 : nil,
+            // An exercise the plan already trains starts from what the plan asks for next,
+            // so adding it here does not pull its progression down to an empty target.
+            let current = repBased ? plannedTarget(of: exercise.id) : nil
+            rows.append(PlanExercisePrescription(exerciseID: exercise.id, sets: current?.sets ?? 3, reps: repBased ? (current?.targetReps ?? 10) : nil,
+                weightKg: repBased || exercise.exerciseType == .weightedCardio ? (current?.targetWeight ?? 0) : nil,
                 durationSeconds: repBased ? nil : 60))
         }
+    }
+
+    /// The normal target of an exercise in the nearest open session from this one on
+    /// (or the last one before it).
+    private func plannedTarget(of exerciseID: UUID) -> PlannedExerciseSet? {
+        let open = (plan.map(PlanEditingService.sessions) ?? []).filter { !$0.isClosed }
+            .sorted { ($0.scheduledDate ?? .distantFuture) < ($1.scheduledDate ?? .distantFuture) }
+        func target(_ value: PlannedSession) -> PlannedExerciseSet? {
+            (value.deloadPrescription?.normalExercises ?? value.plannedExercises).first { $0.exerciseId == exerciseID && $0.targetReps > 0 }
+        }
+        let from = session.scheduledDate ?? .distantPast
+        return open.filter { ($0.scheduledDate ?? .distantFuture) >= from }.compactMap(target).first ?? open.compactMap(target).last
     }
 
     // MARK: - Loading and saving
@@ -177,6 +193,7 @@ struct PlanSessionEditor: View {
             if let plan {
                 rows = try PlanEditingService.editableContents(for: session, plan: plan, templates: templates, exercises: exercises)
                 loaded = rows
+                laterCount = await viewModel.laterSessionCount(sameWorkoutAs: session)
             }
         } catch { self.error = error.localizedDescription }
         isLoading = false
@@ -200,13 +217,33 @@ struct PlanSessionEditor: View {
         }
     }
 
+    /// Exercises were added, removed or reordered: changes the same workout later in
+    /// the plan can take over.
+    private var structureChanged: Bool {
+        rows.contains { $0.occurrenceID == nil } || rows.compactMap(\.occurrenceID) != loaded.compactMap(\.occurrenceID)
+    }
+    private var reachesLaterSessions: Bool { structureChanged && laterCount > 0 }
+
+    private var scopeMessage: String {
+        var parts: [String] = []
+        if reachesLaterSessions {
+            parts.append("All remaining: \(laterCount) later session\(laterCount == 1 ? "" : "s") with the same exercises "
+                + "get\(laterCount == 1 ? "s" : "") the added and removed exercises and the new order.")
+        }
+        if !widened.isEmpty { parts.append("New targets: " + widened.map { name(of: $0.exerciseID) }.joined(separator: ", ") + ".") }
+        return parts.joined(separator: " ")
+    }
+
     private func save() {
-        if widened.isEmpty { apply(remaining: false) } else { askScope = true }
+        if reachesLaterSessions || !widened.isEmpty { askScope = true } else { apply(remaining: false) }
     }
 
     private func apply(remaining: Bool) {
         var operations: [PlanEditRequest] = []
-        if contentsChanged { operations.append(.init(operation: .setSessionExercises, sessionID: session.id, scope: .session, contents: rows)) }
+        if contentsChanged {
+            operations.append(.init(operation: .setSessionExercises, sessionID: session.id,
+                scope: remaining && reachesLaterSessions ? .remaining : .session, contents: rows))
+        }
         if remaining {
             for row in widened {
                 operations.append(.init(operation: .changeTargets, sessionID: session.id, scope: .remaining, exerciseID: row.exerciseID,

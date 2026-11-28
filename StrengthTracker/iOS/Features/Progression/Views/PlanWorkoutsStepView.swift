@@ -2,26 +2,21 @@
 import SwiftUI
 import StrengthTrackerShared
 
-/// Step 2: a workout for each training day, and which of its lifts the plan progresses.
+/// Step 2: the exercises of each training day, and which of them the plan progresses.
+/// A template only fills a day in; the exercises are the plan's own from then on.
 struct PlanWorkoutsStepView: View {
     let viewModel: ProgressionPlanViewModel
     let exerciseListViewModel: ExerciseListViewModel
     let templateViewModel: TemplateViewModel
     @State private var pickerDay: Int?
-    @State private var notice: String?
+    @State private var editingRow: UUID?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 PlanStepHeader(step: 2, title: "Workouts",
-                    subtitle: "Pick a workout for each day. Ticked lifts get targets from the plan; the rest of a template stays as it is.")
-
-                if let notice {
-                    Text(notice)
-                        .font(.system(size: 13))
-                        .foregroundStyle(STColors.danger)
-                        .padding(.horizontal, 20)
-                }
+                    subtitle: "Build each day from exercises. A template fills a day in, and you can then add, remove and reorder. "
+                        + "Ticked exercises get their targets from the plan; the others keep the targets shown.")
 
                 ForEach(viewModel.orderedDraftDays, id: \.self) { day in dayCard(day) }
 
@@ -36,14 +31,7 @@ struct PlanWorkoutsStepView: View {
         }
         .sheet(item: Binding(get: { pickerDay.map(DayID.init) }, set: { pickerDay = $0?.day })) { target in
             ExercisePickerView(viewModel: exerciseListViewModel) { exercise in
-                guard ProgressionPlanViewModel.isTrackable(exercise) else {
-                    notice = "\(exercise.name) is not logged as reps, so the plan cannot set targets for it. Add it to a template instead."
-                    return
-                }
-                notice = nil
-                if viewModel.draftDaySchedule[target.day]?.exerciseIds.contains(exercise.id) != true {
-                    viewModel.toggleDraftLift(exercise, forDay: target.day)
-                }
+                viewModel.addDraftExercise(exercise, forDay: target.day)
             }
         }
     }
@@ -59,40 +47,33 @@ struct PlanWorkoutsStepView: View {
 
     private var hint: String? {
         if let day = viewModel.draftEmptyDays.first {
-            return "\(PlanWizard.dayNames[day] ?? "A day") has no workout or lift yet."
+            return "\(PlanWizard.dayNames[day] ?? "A day") has no exercises yet."
         }
-        return viewModel.draftSelectedExercises.isEmpty ? "Tick at least one lift for the plan to progress." : nil
-    }
-
-    private func template(for day: Int) -> WorkoutTemplate? {
-        guard let id = viewModel.draftDaySchedule[day]?.templateId else { return nil }
-        return templateViewModel.userTemplates.first { $0.id == id }
-    }
-
-    /// The template's lifts in order, then lifts added by hand for this day.
-    private func candidates(for day: Int) -> [Exercise] {
-        let fromTemplate = (template(for: day)?.exercises ?? []).sorted { $0.order < $1.order }
-            .map(\.exercise).filter(ProgressionPlanViewModel.isTrackable)
-        let known = Set(fromTemplate.map(\.id))
-        let selected = viewModel.draftDaySchedule[day]?.exerciseIds ?? []
-        let added = viewModel.draftSelectedExercises.map(\.exercise).filter { selected.contains($0.id) && !known.contains($0.id) }
-        return fromTemplate + added
+        return viewModel.draftSelectedExercises.isEmpty ? "Tick at least one exercise for the plan to progress." : nil
     }
 
     private func dayCard(_ day: Int) -> some View {
         let entry = viewModel.draftDaySchedule[day]
-        let lifts = candidates(for: day)
+        let rows = entry?.exercises ?? []
         return VStack(alignment: .leading, spacing: 10) {
             PlanSectionTitle(text: PlanWizard.dayNames[day] ?? "Day")
 
             Menu {
-                Button("No template") { viewModel.setDraftWorkout(nil, forDay: day) }
                 ForEach(templateViewModel.userTemplates) { template in
-                    Button(template.name) { viewModel.setDraftWorkout(template, forDay: day) }
+                    Button(template.name) {
+                        editingRow = nil
+                        viewModel.setDraftWorkout(template, forDay: day)
+                    }
+                }
+                if !rows.isEmpty {
+                    Button("Clear the day", role: .destructive) {
+                        editingRow = nil
+                        viewModel.setDraftWorkout(nil, forDay: day)
+                    }
                 }
             } label: {
                 HStack {
-                    Text(entry?.templateName ?? "Choose a template")
+                    Text(entry?.templateName ?? "Fill from a template")
                         .font(.system(size: 14))
                         .foregroundStyle(entry?.templateName != nil ? STColors.textPrimary : STColors.textTertiary)
                     Spacer()
@@ -107,31 +88,15 @@ struct PlanWorkoutsStepView: View {
             }
             .accessibilityLabel("Template for \(PlanWizard.dayNames[day] ?? "day")")
 
-            ForEach(lifts) { exercise in
-                let isTicked = entry?.exerciseIds.contains(exercise.id) ?? false
-                Button {
-                    viewModel.toggleDraftLift(exercise, forDay: day)
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: isTicked ? "checkmark.square.fill" : "square")
-                            .font(.system(size: 18))
-                            .foregroundStyle(isTicked ? STColors.primary : STColors.textTertiary)
-                        Text(exercise.name)
-                            .font(.system(size: 14))
-                            .foregroundStyle(STColors.textPrimary)
-                        Spacer()
-                    }
-                    .padding(.vertical, 4)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(isTicked ? .isSelected : [])
+            ForEach(rows) { row in
+                exerciseRow(row, day: day, isFirst: row.id == rows.first?.id, isLast: row.id == rows.last?.id,
+                    isTicked: entry?.exerciseIds.contains(row.exercise.id) ?? false)
             }
 
             Button {
                 pickerDay = day
             } label: {
-                Label("Add a lift", systemImage: "plus")
+                Label("Add exercise", systemImage: "plus")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(STColors.primary)
             }
@@ -142,6 +107,113 @@ struct PlanWorkoutsStepView: View {
         .background(STColors.surface)
         .clipShape(RoundedRectangle(cornerRadius: STRadius.card))
         .padding(.horizontal, 20)
+    }
+
+    private func exerciseRow(_ row: TemplateExercise, day: Int, isFirst: Bool, isLast: Bool, isTicked: Bool) -> some View {
+        let canTick = ProgressionPlanViewModel.isTrackable(row.exercise)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Button {
+                    viewModel.toggleDraftLift(row.exercise, forDay: day)
+                    if editingRow == row.id { editingRow = nil }
+                } label: {
+                    Image(systemName: isTicked ? "checkmark.square.fill" : "square")
+                        .font(.system(size: 18))
+                        .foregroundStyle(isTicked ? STColors.primary : STColors.textTertiary)
+                        .opacity(canTick ? 1 : 0.3)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canTick)
+                .accessibilityLabel(canTick ? "Plan sets the targets for \(row.exercise.name)" : "\(row.exercise.name) keeps its own targets")
+                .accessibilityAddTraits(isTicked ? .isSelected : [])
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.exercise.name)
+                        .font(.system(size: 14))
+                        .foregroundStyle(STColors.textPrimary)
+                    if !isTicked {
+                        Button {
+                            editingRow = editingRow == row.id ? nil : row.id
+                        } label: {
+                            Text(targets(row))
+                                .font(.system(size: 12).monospacedDigit())
+                                .foregroundStyle(STColors.primary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Targets for \(row.exercise.name): \(targets(row))")
+                    }
+                }
+
+                Spacer()
+
+                Menu {
+                    Button("Move up") { viewModel.moveDraftExercise(row.id, by: -1, forDay: day) }.disabled(isFirst)
+                    Button("Move down") { viewModel.moveDraftExercise(row.id, by: 1, forDay: day) }.disabled(isLast)
+                    Button("Remove", role: .destructive) { viewModel.removeDraftExercise(row.id, forDay: day) }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15))
+                        .foregroundStyle(STColors.textSecondary)
+                        .frame(width: 32, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("More for \(row.exercise.name)")
+            }
+
+            if editingRow == row.id, !isTicked { targetFields(row, day: day) }
+        }
+        .padding(.vertical, 3)
+    }
+
+    private var unit: WeightUnit { viewModel.weightUnit }
+
+    /// "3 × 10 · 20 kg" or "3 × 60 s": what an exercise the plan does not progress asks for.
+    private func targets(_ row: TemplateExercise) -> String {
+        var text = "\(row.targetSets) ×"
+        if let reps = row.targetReps { text += " \(reps)" }
+        else if let seconds = row.targetDurationSeconds { text += " \(seconds) s" }
+        else if let meters = row.targetDistanceMeters { text += " \(meters.formatted(.number.precision(.fractionLength(0...1)))) m" }
+        if let weight = row.targetWeight, weight > 0 { text += " · \(unit.format(weight))" }
+        return text
+    }
+
+    private func targetFields(_ row: TemplateExercise, day: Int) -> some View {
+        let type = row.exercise.exerciseType
+        func change(_ edit: @escaping (inout TemplateExercise) -> Void) { viewModel.updateDraftExercise(row.id, forDay: day, edit) }
+        return HStack(spacing: 10) {
+            number("Sets", value: Binding(get: { Double(row.targetSets) }, set: { value in change { $0.targetSets = Int(value ?? 1) } }), label: "sets")
+            if type == .weightedReps || type == .bodyweightReps {
+                number("Reps", value: Binding(get: { row.targetReps.map(Double.init) },
+                    set: { value in change { $0.targetReps = min(max(Int(value ?? 1), 1), 100) } }), label: "reps")
+            }
+            if type == .weightedReps || type == .bodyweightReps || type == .weightedCardio {
+                number("Weight", value: Binding(get: { row.targetWeight.map(unit.fromKg) },
+                    set: { value in change { $0.targetWeight = min(max(unit.toKg(value ?? 0), 0), 999) } }), label: unit.symbol)
+            }
+            if [.duration, .distance, .cardio, .weightedCardio].contains(type) {
+                number("Seconds", value: Binding(get: { row.targetDurationSeconds.map(Double.init) },
+                    // A timed exercise always needs a time; one with a distance may go without.
+                    set: { value in change { $0.targetDurationSeconds = value.map { min(max(Int($0), 1), 86400) } ?? ($0.targetDistanceMeters == nil ? 60 : nil) } }),
+                    label: "s")
+            }
+        }
+        .padding(.leading, 28)
+    }
+
+    private func number(_ title: String, value: Binding<Double?>, label: String) -> some View {
+        HStack(spacing: 4) {
+            TextField("—", value: value, format: .number)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .font(.system(size: 14))
+                .foregroundStyle(STColors.textPrimary)
+                .frame(width: 50)
+                .padding(.vertical, 6).padding(.horizontal, 6)
+                .background(STColors.background)
+                .clipShape(RoundedRectangle(cornerRadius: STRadius.input))
+                .accessibilityLabel(title)
+            Text(label).font(.system(size: 12)).foregroundStyle(STColors.textSecondary)
+        }
     }
 }
 #endif

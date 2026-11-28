@@ -516,7 +516,7 @@ struct ActivePlanDetailView: View {
             }
             // Exercise lines
             ForEach(session.plannedExercises) { exercise in
-                exerciseLine(exercise, muted: isMuted)
+                exerciseLine(exercise, timed: PlanWizard.timedTarget(of: exercise, in: session), muted: isMuted)
             }
 
             // Duration + RPE info
@@ -586,8 +586,12 @@ struct ActivePlanDetailView: View {
                 HStack(spacing: 8) {
                     sessionAction("EDIT", systemImage: "pencil") { editingSession = session }
                         .accessibilityIdentifier("plan-session-edit")
-                    sessionAction(session.templateId != nil ? "TEMPLATE" : "LINK TEMPLATE", systemImage: "link") {
-                        templatePickerSession = session
+                    // A session with its own copy of the workout is edited exercise by
+                    // exercise; only an older, still linked session can swap its template.
+                    if session.exerciseSnapshot == nil {
+                        sessionAction(session.templateId != nil ? "TEMPLATE" : "LINK TEMPLATE", systemImage: "link") {
+                            templatePickerSession = session
+                        }
                     }
                 }
             }
@@ -629,7 +633,7 @@ struct ActivePlanDetailView: View {
 
     // MARK: - Exercise Line
 
-    private func exerciseLine(_ exercise: PlannedExerciseSet, muted: Bool) -> some View {
+    private func exerciseLine(_ exercise: PlannedExerciseSet, timed: String? = nil, muted: Bool) -> some View {
         let recording = exercise.weightRecording ?? viewModel.activePlan?.exercises.first { $0.exerciseId == exercise.exerciseId }?.weightRecording
         return HStack(spacing: 0) {
             Text(exercise.exerciseName)
@@ -640,7 +644,7 @@ struct ActivePlanDetailView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(STColors.textTertiary)
 
-            Text("\(exercise.sets)x\(exercise.targetReps)\(recording?.repetitions == .perSide ? "/side" : "")")
+            Text(timed.map { "\(exercise.sets)x\($0)" } ?? "\(exercise.sets)x\(exercise.targetReps)\(recording?.repetitions == .perSide ? "/side" : "")")
                 .font(.system(size: 12))
                 .foregroundStyle(muted ? STColors.textTertiary : STColors.textSecondary)
 

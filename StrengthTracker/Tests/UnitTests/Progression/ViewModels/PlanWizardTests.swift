@@ -15,7 +15,11 @@ final class PlanWizardTests: XCTestCase {
         let plans: InMemoryProgressionPlanRepository
         let bench: Exercise
         let squat: Exercise
+        let plank: Exercise
+        /// In the library, in no template.
+        let row: Exercise
         let push: WorkoutTemplate
+        let templateRepository: InMemoryTemplateRepository
     }
 
     private func exercise(_ name: String, muscle: MuscleGroup, type: ExerciseType = .weightedReps) -> Exercise {
@@ -39,8 +43,9 @@ final class PlanWizardTests: XCTestCase {
         let bench = exercise("Bench Press", muscle: .chest)
         let squat = exercise("Back Squat", muscle: .quadriceps)
         let plank = exercise("Plank", muscle: .core, type: .duration)
+        let row = exercise("Barbell Row", muscle: .back)
         let exercises = InMemoryExerciseRepository()
-        for item in [bench, squat, plank] { _ = try await exercises.save(item) }
+        for item in [bench, squat, plank, row] { _ = try await exercises.save(item) }
 
         let push = WorkoutTemplate(id: UUID(), name: "Push", notes: nil, sortOrder: 0, lastUsedAt: nil, timesUsed: 0, exercises: [
             TemplateExercise(id: UUID(), exercise: bench, order: 0, supersetGroup: nil, notes: nil, restTimerSeconds: 120, targetSets: 3,
@@ -65,7 +70,7 @@ final class PlanWizardTests: XCTestCase {
         let templates = TemplateViewModel(templateRepository: templateRepository, exerciseRepository: exercises)
         await templates.loadTemplates()
         return Fixture(viewModel: viewModel, exerciseList: ExerciseListViewModel(exerciseRepository: exercises), templates: templates,
-            plans: plans, bench: bench, squat: squat, push: push)
+            plans: plans, bench: bench, squat: squat, plank: plank, row: row, push: push, templateRepository: templateRepository)
     }
 
     /// Monday "Push" from the template, Thursday squat added by hand.
@@ -187,6 +192,105 @@ final class PlanWizardTests: XCTestCase {
         XCTAssertEqual(Array(squats.prefix(6)), [6, 7, 8, 9, 10, 6], "Week 4 asks for 9 reps, week 6 for 10")
     }
 
+    // MARK: - The plan owns its exercises
+
+    private func names(_ session: PlannedSession) -> [String] { session.plannedExercises.map(\.exerciseName) }
+
+    func testADayIsBuiltFromExercisesAndATemplateOnlyFillsItIn() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        viewModel.draftTrainingDays = [2, 5]
+        viewModel.setDraftWorkout(fixture.push, forDay: 2)
+        func monday() -> [TemplateExercise] { viewModel.draftDaySchedule[2]?.exercises ?? [] }
+        XCTAssertEqual(monday().map(\.exercise.name), ["Bench Press", "Plank"], "The whole template, not only its lifts")
+        XCTAssertTrue(Set(monday().map(\.id)).isDisjoint(with: fixture.push.exercises.map(\.id)), "The day holds copies")
+
+        // Any exercise can be added: a lift starts ticked, a timed one keeps its own target.
+        viewModel.addDraftExercise(fixture.row, forDay: 2)
+        viewModel.addDraftExercise(fixture.row, forDay: 2)
+        XCTAssertEqual(monday().map(\.exercise.name), ["Bench Press", "Plank", "Barbell Row"])
+        XCTAssertEqual(viewModel.draftDaySchedule[2]?.exerciseIds, [fixture.bench.id, fixture.row.id])
+        viewModel.addDraftExercise(fixture.plank, forDay: 5)
+        XCTAssertTrue(viewModel.draftEmptyDays.isEmpty)
+        XCTAssertEqual(viewModel.draftSelectedExercises.map(\.exercise.name), ["Bench Press", "Barbell Row"])
+
+        // Reorder, retarget and remove.
+        viewModel.moveDraftExercise(monday()[2].id, by: -2, forDay: 2)
+        XCTAssertEqual(monday().map(\.exercise.name), ["Barbell Row", "Bench Press", "Plank"])
+        XCTAssertEqual(monday().map(\.order), [0, 1, 2])
+        viewModel.updateDraftExercise(monday()[2].id, forDay: 2) { $0.targetSets = 2; $0.targetDurationSeconds = 90 }
+        XCTAssertEqual(monday()[2].targetDurationSeconds, 90)
+        viewModel.removeDraftExercise(monday()[0].id, forDay: 2)
+        XCTAssertEqual(monday().map(\.exercise.name), ["Bench Press", "Plank"])
+        XCTAssertEqual(viewModel.draftSelectedExercises.map(\.exercise.name), ["Bench Press"], "A removed lift leaves the plan")
+
+        // An unticked lift stays in the workout with the template's own target.
+        viewModel.toggleDraftLift(fixture.bench, forDay: 2)
+        XCTAssertEqual(monday().map(\.exercise.name), ["Bench Press", "Plank"])
+        XCTAssertTrue(viewModel.draftSelectedExercises.isEmpty)
+        viewModel.toggleDraftLift(fixture.squat, forDay: 5)
+        await viewModel.prepareProgressionDraft()
+        viewModel.setDraftStart(weightKg: 100, for: fixture.squat.id)
+        await viewModel.generateAndSavePlan()
+        XCTAssertNil(viewModel.errorMessage)
+        let first = try XCTUnwrap(ordered(viewModel.activePlan).first { $0.dayOfWeek == 2 })
+        let started = await viewModel.prepareSessionTemplate(for: first)
+        let workout = try XCTUnwrap(started)
+        XCTAssertEqual(workout.exercises.map { "\($0.exercise.name) \($0.targetSets)x\($0.targetReps ?? 0) \($0.targetWeight ?? 0) \($0.targetDurationSeconds ?? 0)s" },
+            ["Bench Press 3x8 80.0 0s", "Plank 2x0 0.0 90s"])
+    }
+
+    func testAStartedPlanNoLongerFollowsItsTemplate() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        fillWorkouts(fixture)
+        viewModel.draftDeloadEveryWeeks = 4
+        await viewModel.prepareProgressionDraft()
+        viewModel.setDraftStart(weightKg: 100, for: fixture.squat.id)
+        await viewModel.generateAndSavePlan()
+        XCTAssertNil(viewModel.errorMessage)
+        let sessions = ordered(viewModel.activePlan)
+        XCTAssertTrue(sessions.allSatisfy { $0.templateId == nil && $0.exerciseSnapshot != nil }, "Every session has its own copy and no link")
+        XCTAssertEqual(viewModel.activePlan?.daySchedule.compactMap(\.templateId), [])
+        let mondays = sessions.filter { $0.dayOfWeek == 2 }
+        XCTAssertEqual(Set(mondays.map(\.displayLabel)), ["Push"], "The workout keeps the template's name")
+        XCTAssertTrue(mondays.allSatisfy { names($0) == ["Bench Press", "Plank"] })
+        XCTAssertEqual(sessions.first { $0.dayOfWeek == 5 }.map(names), ["Back Squat"])
+
+        // The template changes and is then deleted; the plan's workouts stay as they were.
+        var changed = fixture.push
+        changed.exercises = [TemplateExercise(id: UUID(), exercise: fixture.row, order: 0, supersetGroup: nil, notes: nil, restTimerSeconds: 90,
+            targetSets: 4, targetReps: 10, targetWeight: 50, targetDurationSeconds: nil, targetDistanceMeters: nil)]
+        _ = try await fixture.templateRepository.save(changed)
+        let afterChange = await viewModel.prepareSessionTemplate(for: mondays[0])
+        XCTAssertEqual(afterChange?.exercises.map(\.exercise.name), ["Bench Press", "Plank"])
+        try await fixture.templateRepository.delete(fixture.push)
+        let afterDelete = await viewModel.prepareSessionTemplate(for: mondays[1])
+        XCTAssertEqual(afterDelete?.exercises.map(\.exercise.name), ["Bench Press", "Plank"])
+        XCTAssertEqual(afterDelete?.exercises.last?.targetDurationSeconds, 60)
+
+        // A deload Monday is the same workout at half the weight.
+        let deload = try XCTUnwrap(mondays.first(where: \.isDeload))
+        let normal = try XCTUnwrap(deload.deloadPrescription?.normalExercises.first { $0.exerciseId == fixture.bench.id })
+        let light = await viewModel.prepareSessionTemplate(for: deload)
+        XCTAssertEqual(light?.exercises.map(\.exercise.name), ["Bench Press", "Plank"])
+        XCTAssertEqual(light?.exercises.first?.targetWeight, normal.targetWeight / 2)
+    }
+
+    func testAPlanTheAssistantProposesCopiesTheTemplateItNames() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        let bench = PlanExercise(exerciseId: fixture.bench.id, exerciseName: fixture.bench.name, primaryMuscleGroup: .chest, category: .barbell,
+            estimated1RM: 100, oneRMSource: .naturalLanguage, current1RM: 100, isCompound: true, order: 0)
+        try await viewModel.createPlan(from: .init(name: "From chat", trainingStatus: .intermediate, programType: .linear,
+            primaryGoal: .hypertrophy, weeklyFrequency: 1, trainingDays: [2], exercises: [bench],
+            daySchedule: [DayScheduleEntry(dayOfWeek: 2, templateId: fixture.push.id, templateName: "Push", exerciseIds: [fixture.bench.id])],
+            creationSource: .naturalLanguage, durationWeeks: 4, deloadEveryWeeks: 0))
+        let sessions = ordered(viewModel.activePlan)
+        XCTAssertEqual(sessions.count, 4)
+        XCTAssertTrue(sessions.allSatisfy { $0.templateId == nil && names($0) == ["Bench Press", "Plank"] && $0.displayLabel == "Push" })
+    }
+
     // MARK: - Editing a running plan
 
     /// The wizard's plan, saved and active: Monday "Push" with bench, Thursday squat, eight weeks
@@ -236,6 +340,58 @@ final class PlanWizardTests: XCTestCase {
         let undone = ordered(viewModel.activePlan)
         XCTAssertEqual(bench(undone[0], fixture), "80.0x8")
         XCTAssertEqual(bench(undone[2], fixture), "80.0x9")
+    }
+
+    func testAddingAndRemovingAnExerciseCanReachTheSameWorkoutLater() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        let plan = try await startPlan(fixture)
+        let before = ordered(plan)
+        let sameDay = before.filter { $0.dayOfWeek == 2 }
+        let otherDay = before.filter { $0.dayOfWeek != 2 }
+        let first = sameDay[0]
+        let laterCount = await viewModel.laterSessionCount(sameWorkoutAs: first)
+        XCTAssertEqual(laterCount, sameDay.count - 1, "The Monday workout, later in the plan")
+
+        // Monday is bench and plank. Drop the plank, and add the row and the squat.
+        let catalog = try await viewModel.planEditCatalog()
+        var rows = try PlanEditingService.editableContents(for: first, plan: plan, templates: catalog.templates, exercises: catalog.exercises)
+        XCTAssertEqual(rows.map(\.exerciseID), [fixture.bench.id, fixture.plank.id])
+        let kept = fixture.bench.id
+        let dropped = fixture.plank.id
+        let onARule = fixture.squat
+        rows.removeLast()
+        rows.append(.init(exerciseID: fixture.row.id, sets: 3, reps: 10, weightKg: 40))
+        rows.append(.init(exerciseID: onARule.id, sets: 3, reps: 6, weightKg: 60))
+        try await viewModel.applyPlanEditNow(.init(operation: .setSessionExercises, sessionID: first.id, scope: .remaining, contents: rows))
+
+        let after = ordered(viewModel.activePlan)
+        func session(_ id: UUID) -> PlannedSession? { after.first { $0.id == id } }
+        for old in sameDay {
+            let new = try XCTUnwrap(session(old.id))
+            XCTAssertEqual(new.plannedExercises.map(\.exerciseId), [kept, fixture.row.id, onARule.id])
+            XCTAssertFalse(new.plannedExercises.contains { $0.exerciseId == dropped })
+            // The exercise that stayed keeps each session's own step on its ladder.
+            XCTAssertEqual(new.plannedExercises[0].targetReps, old.plannedExercises[0].targetReps)
+            XCTAssertEqual(new.plannedExercises[0].targetWeight, old.plannedExercises[0].targetWeight)
+            // The new exercise without a rule asks for the same everywhere.
+            XCTAssertEqual("\(new.plannedExercises[1].sets)x\(new.plannedExercises[1].targetReps)@\(new.plannedExercises[1].targetWeight)", "3x10@40.0")
+        }
+        // The one on a rule is pinned in the edited session only; later it follows its rule.
+        let pinned = sameDay.compactMap { session($0.id)?.plannedExercises[2] }
+        XCTAssertEqual(pinned.first?.isUserOverride, true)
+        XCTAssertTrue(pinned.dropFirst().allSatisfy { $0.isUserOverride != true })
+        XCTAssertGreaterThan(Set(pinned.map { "\($0.targetWeight)x\($0.targetReps)" }).count, 1, "It climbs instead of repeating the typed target")
+        // The other day's workout is a different workout and is left alone.
+        for old in otherDay { XCTAssertEqual(session(old.id)?.plannedExercises.map(\.exerciseId), old.plannedExercises.map(\.exerciseId)) }
+
+        // The same edit for this session only touches one session.
+        var again = try PlanEditingService.editableContents(for: try XCTUnwrap(session(sameDay[1].id)), plan: try XCTUnwrap(viewModel.activePlan),
+            templates: catalog.templates, exercises: catalog.exercises)
+        again.removeLast()
+        try await viewModel.applyPlanEditNow(.init(operation: .setSessionExercises, sessionID: sameDay[1].id, scope: .session, contents: again))
+        let single = ordered(viewModel.activePlan).filter { $0.dayOfWeek == 2 }
+        XCTAssertEqual(single.map(\.plannedExercises.count), [3, 2] + Array(repeating: 3, count: sameDay.count - 2))
     }
 
     func testSettingsRenameChangeARuleAndExtendThePlan() async throws {

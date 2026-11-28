@@ -268,8 +268,9 @@ public final class ProposeTrainingPlanTool: AITool {
     exercise needs a 1RM: provide estimated_1rm where you know it; otherwise the \
     user's PRs fill it in (the tool errors if neither exists — then ask the user). \
     Use day_splits to assign exercises and/or one of the user's templates to specific \
-    days (see list_templates; a linked template means that day's workout starts from \
-    the full template with progression targets overlaid). Without day_splits, every \
+    days (see list_templates; a template's exercises are copied into that day's \
+    workout with progression targets on the plan's exercises, and later changes to \
+    the template do not reach the plan). Without day_splits, every \
     exercise trains on every training day. deload_days picks which weekdays deload \
     weeks use (subset of training days; advanced lifters get no scheduled deloads). \
     training_status overrides the app's automatic level detection — set it only when \

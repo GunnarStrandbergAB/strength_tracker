@@ -71,6 +71,15 @@ enum PlanWizard {
     static func target(_ weightKg: Double, _ reps: Int, unit: WeightUnit) -> String {
         "\(unit.format(weightKg)) × \(reps)"
     }
+
+    /// "60 s" or "400 m" for an exercise that is not counted in reps. The time or
+    /// distance is in the session's own copy of the workout.
+    static func timedTarget(of planned: PlannedExerciseSet, in session: PlannedSession) -> String? {
+        guard planned.targetReps == 0, let row = session.exerciseSnapshot?.exercises.first(where: { $0.id == planned.id }) else { return nil }
+        if let seconds = row.targetDurationSeconds { return "\(seconds) s" }
+        if let meters = row.targetDistanceMeters { return "\(meters.formatted(.number.precision(.fractionLength(0...1)))) m" }
+        return nil
+    }
 }
 
 struct PlanStepHeader: View {

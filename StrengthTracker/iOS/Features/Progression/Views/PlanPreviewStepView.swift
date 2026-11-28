@@ -67,11 +67,6 @@ struct PlanPreviewStepView: View {
         date?.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) ?? "—"
     }
 
-    /// The day's template name when it has one; a generated session only knows its weekday.
-    private func workoutName(_ session: PlannedSession) -> String {
-        session.dayOfWeek.flatMap { viewModel.draftDaySchedule[$0]?.templateName } ?? session.displayLabel
-    }
-
     private func sessions(_ plan: ProgressionPlan) -> [PlannedSession] {
         plan.blocks.flatMap(\.weeks).flatMap(\.sessions).sorted { ($0.scheduledDate ?? .distantFuture) < ($1.scheduledDate ?? .distantFuture) }
     }
@@ -148,7 +143,7 @@ struct PlanPreviewStepView: View {
     private func sessionCard(_ session: PlannedSession) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("\(day(session.scheduledDate)) · \(workoutName(session))")
+                Text("\(day(session.scheduledDate)) · \(session.displayLabel)")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(STColors.textPrimary)
                 if session.isDeload {
@@ -156,14 +151,11 @@ struct PlanPreviewStepView: View {
                 }
             }
             ForEach(session.plannedExercises) { exercise in
-                Text("\(exercise.exerciseName)  \(exercise.sets) × \(PlanWizard.target(exercise.targetWeight, exercise.targetReps, unit: viewModel.weightUnit))")
+                let target = PlanWizard.timedTarget(of: exercise, in: session)
+                    ?? PlanWizard.target(exercise.targetWeight, exercise.targetReps, unit: viewModel.weightUnit)
+                Text("\(exercise.exerciseName)  \(exercise.sets) × \(target)")
                     .font(.system(size: 12).monospacedDigit())
                     .foregroundStyle(STColors.textSecondary)
-            }
-            if session.templateId != nil {
-                Text("Plus the rest of the linked template.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(STColors.textTertiary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
