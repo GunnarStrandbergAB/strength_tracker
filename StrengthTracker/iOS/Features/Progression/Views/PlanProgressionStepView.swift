@@ -27,6 +27,8 @@ struct PlanProgressionStepView: View {
         }
         .background(STColors.background)
         .task {
+            // Training days may have changed since the deload days were picked.
+            if viewModel.draftUseCustomDeloadDays, viewModel.draftDeloadDays.isEmpty { viewModel.applyDefaultDeloadDays() }
             await viewModel.prepareProgressionDraft()
             isReadingLog = false
         }
@@ -235,7 +237,7 @@ struct PlanProgressionStepView: View {
             PlanSectionTitle(text: "Deloads")
             Picker("Deloads", selection: $viewModel.draftDeloadEveryWeeks) {
                 ForEach(deloadChoices, id: \.self) { weeks in
-                    Text(weeks == 0 ? "When the coach suggests one" : "Every \(weeks) weeks").tag(weeks)
+                    Text(weeks == 0 ? "When the coach suggests one" : "Every \(weeks)th week").tag(weeks)
                 }
             }
             .pickerStyle(.menu)
@@ -243,8 +245,58 @@ struct PlanProgressionStepView: View {
             Text("A deload week repeats your targets at the lighter weight from Settings, and does not move a lift up its ladder.")
                 .font(.system(size: 12))
                 .foregroundStyle(STColors.textTertiary)
+
+            if viewModel.draftTrainingDays.count > 1 {
+                Toggle("Fewer sessions in a deload week", isOn: Binding(
+                    get: { viewModel.draftUseCustomDeloadDays },
+                    set: { isOn in
+                        viewModel.draftUseCustomDeloadDays = isOn
+                        if isOn, viewModel.draftDeloadDays.isEmpty { viewModel.applyDefaultDeloadDays() }
+                    }))
+                    .font(.system(size: 14))
+                    .foregroundStyle(STColors.textPrimary)
+                    .tint(STColors.primary)
+                    .padding(.top, 4)
+                if viewModel.draftUseCustomDeloadDays {
+                    ForEach(viewModel.orderedDraftDays, id: \.self) { day in deloadDayRow(day) }
+                    Text("\(viewModel.draftDeloadDays.count) of \(viewModel.draftTrainingDays.count) training days in a deload week. "
+                        + "The other days are left out that week.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(STColors.textTertiary)
+                }
+            }
         }
         .padding(.horizontal, 20)
+    }
+
+    /// One training day, ticked when its session stays in a deload week.
+    private func deloadDayRow(_ day: Int) -> some View {
+        let isKept = viewModel.draftDeloadDays.contains(day)
+        let dayName = PlanWizard.dayNames[day] ?? "Day"
+        return Button {
+            viewModel.toggleDeloadDay(day)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: isKept ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(isKept ? STColors.primary : STColors.textTertiary)
+                Text(dayName)
+                    .foregroundStyle(STColors.textPrimary)
+                if let workout = viewModel.draftDaySchedule[day]?.templateName {
+                    Text(workout)
+                        .foregroundStyle(STColors.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+            }
+            .font(.system(size: 14))
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .background(STColors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: STRadius.input))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(dayName) in a deload week")
+        .accessibilityAddTraits(isKept ? .isSelected : [])
     }
 }
 #endif

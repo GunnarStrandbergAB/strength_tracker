@@ -12,6 +12,8 @@ public struct PlanConfiguration: Codable, Equatable, Sendable {
     public var deloadEveryWeeks: Int?
     /// True while the coach verdict is deload: rule targets repeat instead of rising.
     public var holdIncreases: Bool?
+    /// The cadence a new plan gets when none is chosen, in the wizard or by the assistant.
+    public static let defaultDeloadEveryWeeks = 5
     public init(durationWeeks: Int, deloadWeightPercentage: Int = 50, deloadRestPercentage: Int = 75) {
         self.durationWeeks = durationWeeks
         self.deloadWeightPercentage = deloadWeightPercentage

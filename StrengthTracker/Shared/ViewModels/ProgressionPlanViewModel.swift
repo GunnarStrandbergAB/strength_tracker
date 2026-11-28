@@ -66,7 +66,7 @@ public final class ProgressionPlanViewModel {
     /// The pace the lifter's own log suggests; nil until the log has been read.
     public var draftPaceRecommendation: ProgressionRuleEngine.PaceRecommendation?
     /// A deload every Nth week; 0 leaves deloads to the coach's suggestions.
-    public var draftDeloadEveryWeeks: Int = 0
+    public var draftDeloadEveryWeeks: Int = PlanConfiguration.defaultDeloadEveryWeeks
     public var isSavingPlan = false
     public var errorMessage: String?
 
@@ -718,7 +718,7 @@ public final class ProgressionPlanViewModel {
         draftStartDateManuallySet = false
         draftPace = .standard
         draftPaceRecommendation = nil
-        draftDeloadEveryWeeks = 0
+        draftDeloadEveryWeeks = PlanConfiguration.defaultDeloadEveryWeeks
         isSavingPlan = false
         errorMessage = nil
     }

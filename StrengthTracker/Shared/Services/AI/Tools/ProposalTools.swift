@@ -281,8 +281,8 @@ public final class ProposeTrainingPlanTool: AITool {
     three misses). A rule starts from start_weight if given, else the user's latest \
     workout, else the 1RM. Give an exercise its own rule to override the preset; call \
     preview_progression first to see what a rule asks for. Without pace or rules the \
-    plan uses the percentage wave of program_type. deload_every_weeks schedules a \
-    deload week every N weeks, or 0 for none.
+    plan uses the percentage wave of program_type. deload_every_weeks makes every \
+    Nth week a deload week (every 5th when omitted), or 0 for none.
     """
 
     public var parametersSchema: JSONValue {
@@ -334,7 +334,7 @@ public final class ProposeTrainingPlanTool: AITool {
                 ),
                 "start_date": AIToolRegistry.stringSchema("Start date yyyy-MM-dd (today or later; default today)"),
                 "pace": AIToolRegistry.enumSchema(PlanPace.self, description: "Preset for per-exercise progression rules; omit to use the percentage wave"),
-                "deload_every_weeks": AIToolRegistry.integerSchema("A deload week every 2–12 weeks, or 0 for none; omit for the level-based default"),
+                "deload_every_weeks": AIToolRegistry.integerSchema("Every Nth week is a deload week (2–12), or 0 for none; omit for every 5th week"),
                 "exercises": AIToolRegistry.arraySchema(of: exerciseSchema, description: "Exercises to progress, in priority order"),
                 "day_splits": AIToolRegistry.arraySchema(
                     of: daySplitSchema,
@@ -583,7 +583,7 @@ public final class ProposeTrainingPlanTool: AITool {
             trainingStatus: trainingStatus, durationWeeks: args.duration_weeks
         )
         parameters.pace = selections.contains { $0.progression != nil } ? (pace ?? .standard) : nil
-        parameters.deloadEveryWeeks = args.deload_every_weeks
+        parameters.deloadEveryWeeks = args.deload_every_weeks ?? PlanConfiguration.defaultDeloadEveryWeeks
 
         let rules = selections.compactMap { selection in
             selection.progression.map { JSONValue.string("\(selection.exerciseName): start \($0.startWeightKg) kg × \($0.startReps). \($0.summary(unit: .kg))") }

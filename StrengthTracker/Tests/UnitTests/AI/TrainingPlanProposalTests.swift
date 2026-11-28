@@ -645,6 +645,18 @@ struct AssistantPlanParityTests {
             pace: .standard, deloadEveryWeeks: 0))
     }
 
+    @Test("A plan proposed without a deload cadence gets a deload every fifth week")
+    func omittedCadenceUsesTheDefault() async throws {
+        let bench = exercise("Bench Press")
+        let tool = try await proposalTool([bench], workouts: [workout(bench, weight: 80, reps: 8)])
+        let result = try await tool.call(argumentsJSON: """
+        {"name":"Default","goal":"hypertrophy","weekly_frequency":2,"training_days":[2,5],"pace":"standard",
+         "exercises":[{"exercise_name":"Bench Press"}]}
+        """)
+        guard case .plan(let parameters)? = result.draft else { Issue.record("expected a plan draft"); return }
+        #expect(parameters.deloadEveryWeeks == 5)
+    }
+
     @Test("A pace gives every weighted exercise a rule: its own, a given start, or the latest workout")
     func paceBuildsRules() async throws {
         let bench = exercise("Bench Press"), squat = exercise("Back Squat"), curl = exercise("Barbell Curl")

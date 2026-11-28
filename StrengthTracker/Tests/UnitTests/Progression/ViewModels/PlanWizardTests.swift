@@ -156,11 +156,44 @@ final class PlanWizardTests: XCTestCase {
         XCTAssertEqual(saved.blocks.flatMap(\.weeks).flatMap(\.sessions).filter(\.isDeload).count, 4)
     }
 
+    func testDeloadWeeksFollowTheChosenCadenceAndDays() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        fillWorkouts(fixture)
+        viewModel.draftDurationWeeks = 10
+        await viewModel.prepareProgressionDraft()
+        viewModel.setDraftStart(weightKg: 100, for: fixture.squat.id)
+        XCTAssertEqual(viewModel.draftDeloadEveryWeeks, 5, "A new plan starts with a deload every fifth week")
+        viewModel.draftUseCustomDeloadDays = true
+        viewModel.applyDefaultDeloadDays()
+        XCTAssertEqual(viewModel.draftDeloadDays, [2, 5], "Both training days until one is left out")
+        viewModel.toggleDeloadDay(5)
+        viewModel.toggleDeloadDay(2)
+        XCTAssertEqual(viewModel.draftDeloadDays, [2], "A deload week keeps at least one session")
+
+        await viewModel.generateAndSavePlan()
+        XCTAssertNil(viewModel.errorMessage)
+        let plan = try XCTUnwrap(fixture.plans.plans.first)
+        let weeks = plan.blocks.flatMap(\.weeks).sorted { $0.absoluteWeekNumber < $1.absoluteWeekNumber }
+        XCTAssertEqual(weeks.count, 10)
+        XCTAssertEqual(weeks.filter(\.isDeload).map(\.absoluteWeekNumber), [5, 10])
+        for week in weeks {
+            let days = week.sessions.compactMap(\.dayOfWeek).sorted()
+            XCTAssertEqual(days, week.isDeload ? [2] : [2, 5], "Week \(week.absoluteWeekNumber)")
+        }
+        // The Thursday squat has no session in a deload week and carries on from where it was.
+        let squats = ordered(plan).compactMap { $0.plannedExercises.first { $0.exerciseId == fixture.squat.id }?.targetReps }
+        XCTAssertEqual(squats.count, 8)
+        XCTAssertEqual(Array(squats.prefix(6)), [6, 7, 8, 9, 10, 6], "Week 4 asks for 9 reps, week 6 for 10")
+    }
+
     // MARK: - Editing a running plan
 
-    /// The wizard's plan, saved and active: Monday "Push" with bench, Thursday squat, eight weeks.
+    /// The wizard's plan, saved and active: Monday "Push" with bench, Thursday squat, eight weeks
+    /// without deload weeks, so every week is a step on the ladder.
     private func startPlan(_ fixture: Fixture) async throws -> ProgressionPlan {
         fillWorkouts(fixture)
+        fixture.viewModel.draftDeloadEveryWeeks = 0
         await fixture.viewModel.prepareProgressionDraft()
         fixture.viewModel.setDraftStart(weightKg: 100, for: fixture.squat.id)
         await fixture.viewModel.generateAndSavePlan()
@@ -289,6 +322,16 @@ final class PlanWizardTests: XCTestCase {
         viewModel.setDraftStart(weightKg: 100, for: fixture.squat.id)
         try await settle()
         capture(window, name: "plan-wizard-3-progression")
+
+        // The deload settings sit below the fold: a taller window shows the whole step.
+        viewModel.draftDeloadEveryWeeks = 4
+        viewModel.draftUseCustomDeloadDays = true
+        viewModel.applyDefaultDeloadDays()
+        viewModel.toggleDeloadDay(5)
+        window.frame = CGRect(x: 0, y: 0, width: 393, height: 1500)
+        try await settle()
+        capture(window, name: "plan-wizard-3-deloads")
+        window.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
 
         viewModel.draftStep = 4
         try await settle()
