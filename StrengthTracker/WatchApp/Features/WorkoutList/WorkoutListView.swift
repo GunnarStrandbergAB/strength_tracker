@@ -7,7 +7,7 @@ struct WorkoutListView: View {
     @State private var exerciseListViewModel: ExerciseListViewModel
     @State private var showExercisePicker = false
 
-    private let primaryYellow = Color(red: 0.949, green: 0.800, blue: 0.051)
+    private let primaryYellow = Color.appAccent
 
     init(
         workoutViewModel: WatchWorkoutViewModel,

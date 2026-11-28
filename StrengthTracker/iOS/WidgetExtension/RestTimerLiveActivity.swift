@@ -5,7 +5,7 @@ import WidgetKit
 import StrengthTrackerShared
 
 struct RestTimerLiveActivity: Widget {
-    private static let accentColor = Color(red: 0.949, green: 0.800, blue: 0.051)
+    private static let accentColor = Color.appAccent
 
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: RestTimerAttributes.self) { context in
@@ -98,7 +98,7 @@ struct RestTimerLiveActivity: Widget {
 
 private struct RestTimerLockScreenView: View {
     let context: ActivityViewContext<RestTimerAttributes>
-    private static let accentColor = Color(red: 0.949, green: 0.800, blue: 0.051)
+    private static let accentColor = Color.appAccent
 
     var body: some View {
         HStack {

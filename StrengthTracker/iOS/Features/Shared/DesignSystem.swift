@@ -8,7 +8,7 @@ import UIKit
 // MARK: - Colors
 
 enum STColors {
-    static let primary = Color(hex: "F2CC0D")
+    static let primary = Color.appAccent
     static let background = Color(hex: "121212")
     static let surface = Color(hex: "1E1E1A")
     static let border = Color(hex: "333129")

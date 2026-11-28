@@ -13,7 +13,7 @@ struct WatchRestTimerEntry: TimelineEntry {
 // MARK: - Timeline Provider
 
 struct WatchRestTimerProvider: TimelineProvider {
-    private static let appGroupId = "group.se.gunnarstrandberg.hellbent.shared"
+    private static let appGroupId = WidgetData.appGroupId
 
     func placeholder(in context: Context) -> WatchRestTimerEntry {
         WatchRestTimerEntry(
@@ -91,7 +91,7 @@ struct WatchRestTimerProvider: TimelineProvider {
 
 struct WatchRestTimerWidgetView: View {
     let entry: WatchRestTimerEntry
-    private static let accentColor = Color(red: 0.949, green: 0.800, blue: 0.051)
+    private static let accentColor = Color.appAccent
 
     var body: some View {
         if let state = entry.state {

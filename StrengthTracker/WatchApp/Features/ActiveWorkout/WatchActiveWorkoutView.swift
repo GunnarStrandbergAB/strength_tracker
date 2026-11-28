@@ -13,7 +13,7 @@ struct WatchActiveWorkoutView: View {
         self._viewModel = State(initialValue: viewModel)
     }
 
-    private let primaryYellow = Color(red: 0.949, green: 0.800, blue: 0.051)
+    private let primaryYellow = Color.appAccent
     private let secondaryText = Color.white.opacity(0.6)
     // Watch prefs sync from the phone into UserDefaults
     private let weightUnit = UserPreferencesService().weightUnit

@@ -27,7 +27,7 @@ struct WatchSetInputView: View {
         self.weightUnit = prefs.weightUnit
     }
 
-    private let primaryYellow = Color(red: 0.949, green: 0.800, blue: 0.051)
+    private let primaryYellow = Color.appAccent
     private let cardBackground = Color.white.opacity(0.1)
     private let labelColor = Color.white.opacity(0.4)
     private let secondaryText = Color.white.opacity(0.6)

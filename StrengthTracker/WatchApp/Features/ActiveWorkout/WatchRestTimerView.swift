@@ -11,7 +11,7 @@ struct WatchRestTimerView: View {
         self._viewModel = State(initialValue: viewModel)
     }
 
-    private let primaryYellow = Color(red: 0.949, green: 0.800, blue: 0.051)
+    private let primaryYellow = Color.appAccent
 
     var body: some View {
         VStack(spacing: 12) {
