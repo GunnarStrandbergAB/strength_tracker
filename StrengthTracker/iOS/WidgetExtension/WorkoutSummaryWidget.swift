@@ -53,11 +53,11 @@ struct WorkoutSummaryWidgetView: View {
             HStack {
                 Image(systemName: "dumbbell.fill")
                     .font(.system(size: 14))
-                    .foregroundStyle(Color(red: 0.949, green: 0.800, blue: 0.051))
+                    .foregroundStyle(Color.appAccent)
                 Text("STRENGTH")
                     .font(.system(size: 10, weight: .bold))
                     .tracking(1.2)
-                    .foregroundStyle(Color(red: 0.949, green: 0.800, blue: 0.051))
+                    .foregroundStyle(Color.appAccent)
             }
 
             Spacer()
@@ -84,7 +84,7 @@ struct WorkoutSummaryWidgetView: View {
 
                 Text("Start your first!")
                     .font(.system(size: 11))
-                    .foregroundStyle(Color(red: 0.949, green: 0.800, blue: 0.051))
+                    .foregroundStyle(Color.appAccent)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)

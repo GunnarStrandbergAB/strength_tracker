@@ -61,7 +61,7 @@ struct WeeklyProgressWidgetView: View {
                 Circle()
                     .trim(from: 0, to: progress)
                     .stroke(
-                        Color(red: 0.949, green: 0.800, blue: 0.051),
+                        Color.appAccent,
                         style: StrokeStyle(lineWidth: 8, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
@@ -82,7 +82,7 @@ struct WeeklyProgressWidgetView: View {
                 Text("THIS WEEK")
                     .font(.system(size: 10, weight: .bold))
                     .tracking(1.2)
-                    .foregroundStyle(Color(red: 0.949, green: 0.800, blue: 0.051))
+                    .foregroundStyle(Color.appAccent)
 
                 statRow(icon: "flame.fill", label: "Streak", value: "\(entry.data.currentStreak) wk", color: .orange)
                 statRow(icon: "trophy.fill", label: "Total", value: "\(entry.data.totalWorkoutsAllTime)", color: .yellow)

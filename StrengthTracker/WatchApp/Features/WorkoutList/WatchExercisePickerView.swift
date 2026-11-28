@@ -7,7 +7,7 @@ struct WatchExercisePickerView: View {
 
     let onStartWorkout: ([Exercise]) -> Void
 
-    private let primaryYellow = Color(red: 0.949, green: 0.800, blue: 0.051)
+    private let primaryYellow = Color.appAccent
 
     init(exerciseListViewModel: ExerciseListViewModel, onStartWorkout: @escaping ([Exercise]) -> Void) {
         self._exerciseListViewModel = State(initialValue: exerciseListViewModel)
