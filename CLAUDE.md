@@ -40,6 +40,7 @@ cd StrengthTracker && xcodebuild -project StrengthTracker.xcodeproj \
 
 - SPM-based: `Package.swift` defines `StrengthTrackerShared`, `StrengthTrackeriOS`, `StrengthTrackerWatch`.
 - The `.xcodeproj` is generated from `project.yml` by XcodeGen. After adding or removing `.swift` files (including under `Tests/`), run `xcodegen generate` from `StrengthTracker/`.
+- The signing team is kept out of the repo. `project.yml` includes the git-ignored `StrengthTracker/signing.local.yml`, which holds `settings: base: DEVELOPMENT_TEAM: <team id>`; `xcodegen generate` fails until that file exists.
 
 ## Architecture
 
