@@ -123,8 +123,8 @@ public final class ProgramDesignService: Sendable {
         let days = resolveDays(for: plan)
         let deloadDays = resolveDeloadDays(for: plan)
 
-        // Determine if deloads apply (beginner/intermediate get auto-deload every 4th week)
-        let needsScheduledDeload = plan.trainingStatus != .advanced
+        // Each cycle may end in a deload week.
+        let cycle = deloadCycle(for: plan)
 
         var blocks: [TrainingBlock] = []
         var absoluteWeek = 1
@@ -139,7 +139,7 @@ public final class ProgramDesignService: Sendable {
         for weekIndex in 0..<totalWeeks {
             currentWeekInCycle += 1
 
-            let isDeloadWeek = needsScheduledDeload && currentWeekInCycle == 4
+            let isDeloadWeek = cycle.scheduled && currentWeekInCycle == cycle.weeks
             let weekIntensity: Double
 
             if isDeloadWeek {
@@ -197,7 +197,7 @@ public final class ProgramDesignService: Sendable {
             absoluteWeek += 1
 
             // Emit a block every 4 weeks or at the end
-            if currentWeekInCycle == 4 || weekIndex == totalWeeks - 1 {
+            if currentWeekInCycle == cycle.weeks || weekIndex == totalWeeks - 1 {
                 let blockIsDeload = currentBlockWeeks.allSatisfy { $0.isDeload }
                 let block = TrainingBlock(
                     name: "Block \(blockOrder + 1)",
@@ -206,9 +206,9 @@ public final class ProgramDesignService: Sendable {
                     weeks: currentBlockWeeks,
                     isDeload: blockIsDeload,
                     volumeMultiplier: blockIsDeload ? Defaults.deloadVolumeMultiplier : 1.0,
-                    intensityFloor: startIntensity + (Double(blockOrder * 4) * step),
+                    intensityFloor: startIntensity + (Double(blockOrder * cycle.weeks) * step),
                     intensityCeiling: min(
-                        startIntensity + (Double((blockOrder + 1) * 4 - 1) * step),
+                        startIntensity + (Double((blockOrder + 1) * cycle.weeks - 1) * step),
                         maxIntensity
                     )
                 )
@@ -230,7 +230,7 @@ public final class ProgramDesignService: Sendable {
         let days = resolveDays(for: plan)
         let deloadDays = resolveDeloadDays(for: plan)
         let sessionTypes: [DUPSessionType] = [.hypertrophy, .strength, .power]
-        let needsScheduledDeload = plan.trainingStatus != .advanced // M1
+        let cycle = deloadCycle(for: plan)
 
         var blocks: [TrainingBlock] = []
         var absoluteWeek = 1
@@ -240,8 +240,8 @@ public final class ProgramDesignService: Sendable {
         var exerciseRotationCounters: [UUID: Int] = [:] // Per-exercise DUP rotation counters
         var progressionWeekCount = 0 // Continuous overload counter — skips deload weeks
         for weekIndex in 0..<totalWeeks {
-            let weekInBlock = (weekIndex % 4) + 1
-            let isDeloadWeek = needsScheduledDeload && weekInBlock == 4
+            let weekInBlock = (weekIndex % cycle.weeks) + 1
+            let isDeloadWeek = cycle.scheduled && weekInBlock == cycle.weeks
 
             let overloadMultiplier = isDeloadWeek ? 1.0 : 1.0 + (Double(progressionWeekCount) * Defaults.weeklyOverload)
 
@@ -331,7 +331,7 @@ public final class ProgramDesignService: Sendable {
             currentBlockWeeks.append(week)
             absoluteWeek += 1
 
-            if weekInBlock == 4 || weekIndex == totalWeeks - 1 {
+            if weekInBlock == cycle.weeks || weekIndex == totalWeeks - 1 {
                 let block = TrainingBlock(
                     name: "Block \(blockOrder + 1)",
                     order: blockOrder,
@@ -359,7 +359,7 @@ public final class ProgramDesignService: Sendable {
         let days = resolveDays(for: plan)
         let deloadDays = resolveDeloadDays(for: plan)
         let schemeRotation: [DUPSessionType] = [.hypertrophy, .strength, .power]
-        let needsScheduledDeload = plan.trainingStatus != .advanced // M1
+        let cycle = deloadCycle(for: plan)
 
         var blocks: [TrainingBlock] = []
         var absoluteWeek = 1
@@ -368,8 +368,8 @@ public final class ProgramDesignService: Sendable {
 
         var progressionWeekCount = 0 // Continuous overload counter — skips deload weeks
         for weekIndex in 0..<totalWeeks {
-            let weekInBlock = (weekIndex % 4) + 1
-            let isDeloadWeek = needsScheduledDeload && weekInBlock == 4
+            let weekInBlock = (weekIndex % cycle.weeks) + 1
+            let isDeloadWeek = cycle.scheduled && weekInBlock == cycle.weeks
 
             let scheme = schemeRotation[weekIndex % schemeRotation.count]
             let overloadMultiplier = isDeloadWeek ? 1.0 : 1.0 + (Double(progressionWeekCount) * Defaults.weeklyOverload)
@@ -418,7 +418,7 @@ public final class ProgramDesignService: Sendable {
             currentBlockWeeks.append(week)
             absoluteWeek += 1
 
-            if weekInBlock == 4 || weekIndex == totalWeeks - 1 {
+            if weekInBlock == cycle.weeks || weekIndex == totalWeeks - 1 {
                 let block = TrainingBlock(
                     name: "Block \(blockOrder + 1)",
                     order: blockOrder,
@@ -531,6 +531,13 @@ public final class ProgramDesignService: Sendable {
     }
 
     // MARK: - Helpers
+
+    /// Weeks per cycle, and whether each cycle ends in a deload week. Plans without the
+    /// setting keep the level-based default: every fourth week, except for advanced lifters.
+    private func deloadCycle(for plan: ProgressionPlan) -> (weeks: Int, scheduled: Bool) {
+        guard let every = plan.configuration?.deloadEveryWeeks else { return (4, plan.trainingStatus != .advanced) }
+        return every == 0 ? (4, false) : (min(max(every, 2), 12), true)
+    }
 
     private func intensityStep(for status: TrainingStatus) -> Double {
         switch status {

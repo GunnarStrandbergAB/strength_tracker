@@ -468,8 +468,10 @@ public final class AppContainer: Sendable {
             ProposeTrainingPlanTool(
                 exerciseRepository: exerciseRepository,
                 personalRecordRepository: personalRecordRepository,
-                templateRepository: templateRepository
+                templateRepository: templateRepository,
+                workoutRepository: workoutRepository
             ),
+            PreviewProgressionTool(progressionPlanRepository: progressionPlanRepository),
             ListTemplatesTool(templateRepository: templateRepository, exerciseRepository: exerciseRepository),
             SaveMemoryTool(memoryService: aiMemoryService),
             ForgetMemoryTool(memoryService: aiMemoryService),
@@ -600,7 +602,8 @@ public final class AppContainer: Sendable {
                         current1RM: oneRMKg,
                         isCompound: selection.category == .barbell || selection.category == .dumbbell,
                         order: index,
-                        weightRecording: selection.weightRecording
+                        weightRecording: selection.weightRecording,
+                        progression: selection.progression
                     )
                 }
                 let daySchedule = (parameters.daySplits ?? []).map { split in
@@ -622,7 +625,8 @@ public final class AppContainer: Sendable {
                     startDate: parameters.startDate,
                     exercises: exercises,
                     daySchedule: daySchedule,
-                    creationSource: .naturalLanguage, durationWeeks: parameters.durationWeeks
+                    creationSource: .naturalLanguage, durationWeeks: parameters.durationWeeks,
+                    pace: parameters.pace, deloadEveryWeeks: parameters.deloadEveryWeeks
                 ))
             }
         }

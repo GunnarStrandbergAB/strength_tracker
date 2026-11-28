@@ -6,6 +6,12 @@ public struct PlanConfiguration: Codable, Equatable, Sendable {
     public var deloadWeightPercentage: Int
     public var deloadRestPercentage: Int
     public var calendarAnchorDate: Date?
+    /// The pace the plan's progression rules were preset from.
+    public var pace: PlanPace?
+    /// A deload every Nth week; 0 schedules none. Nil keeps the level-based default.
+    public var deloadEveryWeeks: Int?
+    /// True while the coach verdict is deload: rule targets repeat instead of rising.
+    public var holdIncreases: Bool?
     public init(durationWeeks: Int, deloadWeightPercentage: Int = 50, deloadRestPercentage: Int = 75) {
         self.durationWeeks = durationWeeks
         self.deloadWeightPercentage = deloadWeightPercentage
@@ -67,6 +73,7 @@ public struct PlanEditRequest: Codable, Equatable, Sendable {
         case rescheduleSession, skipSession, changeTemplate, changeExercise, changeTargets
         case batch, setWeekSchedule, addSession, duplicateSession, removeSessions, updateSession
         case setSessionExercises, changeSchedule, shiftSchedule, insertRestWeek, shortenPlan, undoEdit, restoreSession
+        case setProgression, renamePlan
         public var displayName: String {
             switch self {
             case .convertDeload: return "Make week a deload"
@@ -93,6 +100,8 @@ public struct PlanEditRequest: Codable, Equatable, Sendable {
             case .shortenPlan: return "Change finish date"
             case .undoEdit: return "Undo plan edit"
             case .restoreSession: return "Restore removed session"
+            case .setProgression: return "Change how an exercise progresses"
+            case .renamePlan: return "Rename plan"
             }
         }
     }
@@ -128,6 +137,8 @@ public struct PlanEditRequest: Codable, Equatable, Sendable {
     public var remainingOnly: Bool?
     public var correctionReason: String?
     public var targetRPE: Double?
+    /// setProgression: the complete rule for `exerciseID`.
+    public var progression: ProgressionRule?
     public init(operation: Operation, week: Int? = nil, destinationWeek: Int? = nil, sessionID: UUID? = nil,
         newDate: Date? = nil, weeks: Int = 1, scope: Scope = .week, templateID: UUID? = nil,
         exerciseID: UUID? = nil, replacementExerciseID: UUID? = nil, sets: Int? = nil, reps: Int? = nil,
@@ -137,7 +148,7 @@ public struct PlanEditRequest: Codable, Equatable, Sendable {
         label: String? = nil, notes: String? = nil, endWeek: Int? = nil, days: Int? = nil,
         editID: UUID? = nil, isDeload: Bool? = nil, deloadWeightPercentage: Int? = nil,
         deloadRestPercentage: Int? = nil, remainingOnly: Bool? = nil, correctionReason: String? = nil,
-        targetRPE: Double? = nil) {
+        targetRPE: Double? = nil, progression: ProgressionRule? = nil) {
         self.operation = operation; self.week = week; self.destinationWeek = destinationWeek
         self.sessionID = sessionID; self.newDate = newDate; self.weeks = weeks; self.scope = scope
         self.templateID = templateID; self.exerciseID = exerciseID; self.replacementExerciseID = replacementExerciseID
@@ -146,7 +157,7 @@ public struct PlanEditRequest: Codable, Equatable, Sendable {
         self.contents = contents; self.label = label; self.notes = notes; self.endWeek = endWeek; self.days = days
         self.editID = editID; self.isDeload = isDeload; self.deloadWeightPercentage = deloadWeightPercentage
         self.deloadRestPercentage = deloadRestPercentage; self.remainingOnly = remainingOnly
-        self.correctionReason = correctionReason; self.targetRPE = targetRPE
+        self.correctionReason = correctionReason; self.targetRPE = targetRPE; self.progression = progression
     }
 }
 
@@ -198,6 +209,13 @@ public enum PlanEditingService {
             return "Deload: \(p.weightPercentage)% of normal weight; \(p.restPercentage)% of normal rest."
         })
         lines.append(contentsOf: policies.sorted())
+        for operation in request.operation == .batch ? (request.operations ?? []) : [request] {
+            if operation.operation == .setProgression, let rule = operation.progression,
+               let name = candidate.exercises.first(where: { $0.exerciseId == operation.exerciseID || $0.id == operation.exerciseID })?.exerciseName {
+                lines.append("\(name): \(rule.summary(unit: .kg))")
+            }
+            if operation.operation == .renamePlan, candidate.name != plan.name { lines.append("Name: \(plan.name) → \(candidate.name).") }
+        }
         let today = CalendarWeekBucketer.mondayCalendar.startOfDay(for: now)
         let endOfToday = CalendarWeekBucketer.mondayCalendar.date(byAdding: .day, value: 1, to: today)!
         let elapsed = { (values: [PlannedSession]) in values.filter { !$0.isOmitted && ($0.isSkipped || ($0.scheduledDate ?? .distantPast) < endOfToday) }.count }
@@ -599,8 +617,11 @@ public extension PlanEditingService {
                 oneRMSource: .estimated, current1RM: 0, isCompound: [.barbell, .dumbbell].contains(exercise.category), order: plan.exercises.count,
                 weightRecording: target.weightRecording, bodyweightFactor: exercise.exerciseType == .bodyweightReps ? exercise.resolvedBodyweightFactor : nil))
         }
+        if request.operation != .undoEdit { ProgressionRuleEngine.reproject(&plan, protected: protectedSessionIDs) }
         try validateResult(plan, original: original, protected: protectedSessionIDs)
-        guard PlanScheduleSnapshot(plan) != PlanScheduleSnapshot(original) else { throw PlanEditError("The requested change makes no difference.") }
+        guard PlanScheduleSnapshot(plan) != PlanScheduleSnapshot(original) || plan.name != original.name || plan.notes != original.notes else {
+            throw PlanEditError("The requested change makes no difference.")
+        }
         plan.adjustments = original.adjustments
         var adjustment = PlanAdjustment(id: operationID, adjustmentType: .reforecast, trigger: .userManual,
             description: request.operation.displayName, previousValues: ["endDate": dateLabel(original.targetEndDate)],
@@ -614,6 +635,13 @@ public extension PlanEditingService {
         return plan
     }
 
+    /// A plan's name and notes are not in the schedule snapshot that an approved preview
+    /// installs, so a rename in the request is applied on top of it.
+    static func applyNaming(from request: PlanEditRequest, to plan: inout ProgressionPlan) throws {
+        for operation in request.operation == .batch ? (request.operations ?? []) : [request] where operation.operation == .renamePlan {
+            plan = try renaming(plan, operation)
+        }
+    }
     static func validateResult(_ plan: ProgressionPlan, original: ProgressionPlan, protected: Set<UUID>) throws {
         let all = sessions(plan)
         guard all.count <= 1000, Set(all.map(\.id)).count == all.count else { throw PlanEditError("A plan must have unique session IDs and at most 1,000 sessions.") }
@@ -683,6 +711,43 @@ public extension PlanEditingService {
 }
 
 private extension PlanEditingService {
+    static func renaming(_ original: ProgressionPlan, _ request: PlanEditRequest) throws -> ProgressionPlan {
+        var plan = original
+        if let label = request.label {
+            let name = label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, name.count <= 80 else { throw PlanEditError("A plan name must be 1–80 characters.") }
+            plan.name = name
+        }
+        if let notes = request.notes { plan.notes = notes.isEmpty ? nil : notes }
+        return plan
+    }
+
+    /// Gives one exercise a progression rule. The remaining sessions are laid out
+    /// from it afterwards; sessions trained before the rule keep their history.
+    static func settingProgression(_ original: ProgressionPlan, _ request: PlanEditRequest, exercises: [Exercise]) throws -> ProgressionPlan {
+        guard let id = request.exerciseID, let rule = request.progression?.normalized else {
+            throw PlanEditError("Supply the exercise and its complete progression rule.")
+        }
+        try rule.validate()
+        var plan = original
+        let catalog = exercises.first { $0.id == id }
+        if let catalog, catalog.exerciseType != .weightedReps {
+            throw PlanEditError("Progression rules apply to weighted rep exercises.")
+        }
+        if let index = plan.exercises.firstIndex(where: { $0.exerciseId == id || $0.id == id }) {
+            plan.exercises[index].progression = rule
+            return plan
+        }
+        guard let catalog, let planned = sessions(plan).filter({ !$0.isClosed }).flatMap(\.plannedExercises).first(where: { $0.exerciseId == id }) else {
+            throw PlanEditError("That exercise is not in the remaining plan.")
+        }
+        plan.exercises.append(PlanExercise(id: planned.planExerciseId, exerciseId: catalog.id, exerciseName: catalog.name,
+            primaryMuscleGroup: catalog.primaryMuscleGroup, category: catalog.category, estimated1RM: 0, oneRMSource: .estimated,
+            current1RM: 0, isCompound: [.barbell, .dumbbell].contains(catalog.category), order: plan.exercises.count,
+            weightRecording: planned.weightRecording, progression: rule))
+        return plan
+    }
+
     static func normalSession(_ value: PlannedSession, in plan: ProgressionPlan) throws -> PlannedSession {
         var s = value
         if s.isDeload {
@@ -775,6 +840,8 @@ private extension PlanEditingService {
 
     static func applyOperation(_ request: PlanEditRequest, to original: ProgressionPlan, settings: PlanConfiguration,
         templates: [WorkoutTemplate], exercises: [Exercise], protected: Set<UUID>, now: Date) throws -> ProgressionPlan {
+        if request.operation == .renamePlan { return try renaming(original, request) }
+        if request.operation == .setProgression { return try settingProgression(original, request, exercises: exercises) }
         let cal = CalendarWeekBucketer.mondayCalendar
         let today = cal.startOfDay(for: now)
         let start = anchor(original)

@@ -570,13 +570,30 @@ public final class GetActivePlanTool: AITool {
         let currentWeekNumber = plan.currentWeek?.absoluteWeekNumber
         // PlanExercise 1RM values follow the app-wide kg convention.
         let exercises = plan.exercises.sorted { $0.order < $1.order }.map { exercise -> JSONValue in
-            .object([
+            var fields: [String: JSONValue] = [
                 "id": .string(exercise.exerciseId.uuidString), "plan_exercise_id": .string(exercise.id.uuidString),
                 "n": .string(exercise.exerciseName),
                 "current_1rm": .number(exercise.current1RM),
                 "baseline_bodyweight_percent": exercise.bodyweightFactor.map { .number($0 * 100) } ?? .null,
-                "weight_recording": (try? AIToolData.json(exercise.weightRecording)) ?? .null
-            ])
+                "weight_recording": (try? AIToolData.json(exercise.weightRecording)) ?? .null,
+                "progression": .null
+            ]
+            // A rule-driven exercise: the rule in the propose_plan_edit format, and its next target.
+            if let rule = exercise.progression {
+                fields["progression"] = .object([
+                    "kind": .string(rule.kind.rawValue), "sets": .number(Double(rule.sets)),
+                    "min_reps": .number(Double(rule.minReps)), "max_reps": .number(Double(rule.maxReps)),
+                    "increment_kg": .number(rule.incrementKg), "sessions_per_step": .number(Double(rule.sessionsPerStep)),
+                    "misses_before_backoff": .number(Double(rule.missesBeforeBackoff)), "backoff_percent": .number(Double(rule.backoffPercent)),
+                    "start_weight_kg": .number(rule.startWeightKg), "start_reps": .number(Double(rule.startReps)),
+                    "rest_seconds": .number(Double(rule.restSeconds))
+                ])
+                fields["progression_summary"] = .string(rule.summary(unit: .kg))
+                if let next = ProgressionRuleEngine.currentState(of: exercise, in: plan)?.state.target {
+                    fields["next_target"] = .object(["weight_kg": .number(next.weightKg), "reps": .number(Double(next.reps))])
+                }
+            }
+            return .object(fields)
         }
 
         var payload: [String: JSONValue] = [
@@ -593,6 +610,7 @@ public final class GetActivePlanTool: AITool {
         payload["version"] = .string(PlanEditingService.version(plan))
         payload["end_date"] = try AIToolData.json(plan.targetEndDate)
         payload["configuration"] = try AIToolData.json(plan.configuration)
+        payload["progression_semantics"] = .string("An exercise with progression follows that rule: a completed session sets the next target, and remaining sessions show the targets if every one is hit. progression null means the percentage wave of program_type, anchored to current_1rm. configuration.holdIncreases true means rule targets repeat while the coach verdict is deload.")
         payload["week_semantics"] = .string("week is the displayed Monday–Sunday calendar bucket. programmingWeekNumber/ID retain the original programme; insertions never truncate remaining sessions.")
         payload["current_deload_settings"] = .object(["weight_percent": .number(Double(userPreferencesService.deloadWeightPercentage)), "rest_percent": .number(Double(userPreferencesService.deloadRestPercentage))])
         payload["deload_days"] = try AIToolData.json(plan.deloadDays)
@@ -633,7 +651,8 @@ public final class GetActivePlanTool: AITool {
         })
         payload["adjustments"] = .array(try plan.adjustments.suffix(20).map { adjustment in
             var output: [String: JSONValue] = ["id": .string(adjustment.id.uuidString), "description": .string(adjustment.description),
-                "applied_at": try AIToolData.json(adjustment.appliedAt), "undo_available": .bool(adjustment.editRecord?.after == PlanScheduleSnapshot(plan))]
+                "applied_at": try AIToolData.json(adjustment.appliedAt), "undo_available": .bool(adjustment.editRecord?.after == PlanScheduleSnapshot(plan)),
+                "pending_suggestion": .bool(adjustment.wasAccepted == nil)]
             if let record = adjustment.editRecord {
                 let currentIDs = Set(PlanEditingService.sessions(plan).map(\.id))
                 output["removed_sessions"] = try AIToolData.json(record.before.sessions.filter { old in !record.after.sessions.contains { $0.id == old.id } && !currentIDs.contains(old.id) }.map {

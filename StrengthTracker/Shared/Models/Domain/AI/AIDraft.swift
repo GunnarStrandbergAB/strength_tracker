@@ -34,6 +34,8 @@ public struct AIPlanParameters: Codable, Sendable, Equatable {
         /// True when the 1RM came from the user's personal records (provenance).
         public var weightRecording: WeightRecording?
         public var oneRMFromPersonalRecord: Bool?
+        /// How the exercise progresses; nil follows the percentage wave.
+        public var progression: ProgressionRule?
 
         public init(
             exerciseID: UUID,
@@ -97,6 +99,10 @@ public struct AIPlanParameters: Codable, Sendable, Equatable {
     /// User-stated training level override; nil = auto-detect at save time.
     public var durationWeeks: Int?
     public var trainingStatus: TrainingStatus?
+    /// The pace the exercises' rules were preset from, when rules are used.
+    public var pace: PlanPace?
+    /// A deload every Nth week; 0 schedules none; nil keeps the level-based default.
+    public var deloadEveryWeeks: Int?
 
     public init(
         name: String,

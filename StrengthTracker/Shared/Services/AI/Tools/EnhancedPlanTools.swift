@@ -14,7 +14,7 @@ public final class ProposePlanEditTool: AITool {
     private let viewModel: ProgressionPlanViewModel
     public init(viewModel: ProgressionPlanViewModel) { self.viewModel = viewModel }
     public let name = "propose_plan_edit"
-    public let description = "Preview one atomic edit to the active plan. Read get_active_plan first and pass plan_id/version. Use setWeekSchedule for an exact replacement schedule (including [] for rest); removeSessions removes planned work, whereas skipSession records missed work. Use batch for related changes in ONE Apply card. Reusable templates and completed/active workouts are protected."
+    public let description = "Preview one atomic edit to the active plan. Read get_active_plan first and pass plan_id/version. Use setWeekSchedule for an exact replacement schedule (including [] for rest); removeSessions removes planned work, whereas skipSession records missed work. Use batch for related changes in ONE Apply card. Reusable templates and completed/active workouts are protected. setProgression gives one exercise (exercise_id) a complete progression rule and re-lays its remaining sessions; its start fields only matter before the rule has trained sessions. To set the next target instead, change that session's targets: the ladder continues from a manual target. renamePlan sets the plan's name from label. Everything the app's plan screens can change is an operation here."
     private func operationSchema() -> JSONValue {
         let placement = AIToolRegistry.objectSchema(properties: [
             "session_id": AIToolRegistry.stringSchema("Retain this existing session ID from the same week; omit to add a template-based session"),
@@ -57,8 +57,8 @@ public final class ProposePlanEditTool: AITool {
             "rest_seconds": AIToolRegistry.integerSchema("15–900 normal seconds"),
             "target_rpe": AIToolRegistry.numberSchema("Target effort 1–10"),
             "skipped": AIToolRegistry.boolSchema("skipSession: false restores a skipped session; do not use to reduce programmed frequency"),
-            "label": AIToolRegistry.stringSchema("New session name for updateSession/addSession/duplicateSession"),
-            "notes": AIToolRegistry.stringSchema("Session notes; empty string clears"),
+            "label": AIToolRegistry.stringSchema("New session name for updateSession/addSession/duplicateSession; the plan's new name for renamePlan"),
+            "notes": AIToolRegistry.stringSchema("Session notes, or plan notes for renamePlan; empty string clears"),
             "schedule": AIToolRegistry.arraySchema(of: placement, description: "setWeekSchedule: COMPLETE desired upcoming schedule. Unlisted editable sessions are removed. [] is a rest week."),
             "weekly_schedule": AIToolRegistry.arraySchema(of: day, description: "changeSchedule: complete repeated weekly pattern; unlisted days are removed"),
             "contents": AIToolRegistry.arraySchema(of: contents, description: "setSessionExercises: complete ordered normal workout. Unlisted occurrences are removed. Preserve IDs to retain prescriptions."),
@@ -67,6 +67,7 @@ public final class ProposePlanEditTool: AITool {
             "deload_rest_percent": AIToolRegistry.integerSchema("Override Settings for this edit only, 25–100% of normal rest"),
             "remaining_only": AIToolRegistry.boolSchema("Preserve past/completed/active sessions in a partially completed week; schedule lists only upcoming sessions"),
             "edit_id": AIToolRegistry.stringSchema("Journal ID for undoEdit or restoreSession; restoring also needs session_id"),
+            "progression": ToolSchemas.progressionRule,
             "correction_reason": AIToolRegistry.stringSchema("Required to explicitly remove an overdue unperformed session; preview shows adherence impact")
         ], required: ["operation"])
     }
@@ -124,13 +125,18 @@ public final class ProposePlanEditTool: AITool {
             "deload_weight_percent": "deloadWeightPercentage", "deload_rest_percent": "deloadRestPercentage", "edit_id": "editID",
             "weekly_schedule": "weeklySchedule", "source_weekday": "sourceWeekday", "occurrence_id": "occurrenceID",
             "duration_seconds": "durationSeconds", "distance_meters": "distanceMeters", "correction_reason": "correctionReason"]
-        let allowed = Set(names.keys).union(["operation", "scope", "week", "weeks", "sets", "reps", "skipped", "operations", "schedule", "contents", "date", "label", "notes", "days", "weekday"])
+        let allowed = Set(names.keys).union(["operation", "scope", "week", "weeks", "sets", "reps", "skipped", "operations", "schedule", "contents", "date", "label", "notes", "days", "weekday", "progression"])
         func transform(_ object: [String: Any]) throws -> [String: Any] {
             var result: [String: Any] = [:]
             for (key, value) in object {
                 guard allowed.contains(key) else { throw AIToolError("Unknown plan edit field: \(key)") }
                 let target = names[key] ?? key
-                if key == "new_date" || key == "date" {
+                if key == "progression" {
+                    // The rule arrives in the tool's snake_case and is validated before it reaches the engine.
+                    guard let fields = value as? [String: Any] else { throw AIToolError("progression must be a rule object.") }
+                    let argument = try JSONDecoder().decode(ProgressionRuleArgument.self, from: JSONSerialization.data(withJSONObject: fields))
+                    result[target] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(argument.rule()))
+                } else if key == "new_date" || key == "date" {
                     guard let text = value as? String, let date = AIJSON.parseDate(text), AIJSON.dateString(date) == text else { throw AIToolError("Dates must be valid yyyy-MM-dd calendar days.") }
                     result[target] = date.timeIntervalSinceReferenceDate
                 } else if let values = value as? [[String: Any]] {
@@ -189,4 +195,61 @@ public struct PlanSessionSummary: Codable, Sendable {
     public var date: Date?
     public var name: String
     public var deload: Bool
+}
+
+// MARK: - preview_progression
+
+/// Lets the assistant see what a progression rule asks for before proposing it.
+@MainActor
+public final class PreviewProgressionTool: AITool {
+    private let progressionPlanRepository: any ProgressionPlanRepository
+
+    public init(progressionPlanRepository: any ProgressionPlanRepository) {
+        self.progressionPlanRepository = progressionPlanRepository
+    }
+
+    public let name = "preview_progression"
+    public let description = "Simulate a progression rule without changing anything: the sentence the user will see, and the targets of the next sessions if every one is hit. With exercise_id of a rule-driven exercise in the active plan, the simulation continues from where that exercise stands now instead of the rule's start. Use it before propose_training_plan or a setProgression edit to check a rule does what the user asked for."
+
+    public var parametersSchema: JSONValue {
+        AIToolRegistry.objectSchema(properties: [
+            "rule": ToolSchemas.progressionRule,
+            "sessions": AIToolRegistry.integerSchema("How many sessions to simulate, 1–60; default 12"),
+            "exercise_id": AIToolRegistry.stringSchema("Optional library exercise ID from get_active_plan: continue from that exercise's current target")
+        ], required: ["rule"])
+    }
+
+    private struct Arguments: Decodable {
+        var rule: ProgressionRuleArgument
+        var sessions: Int?
+        var exercise_id: UUID?
+    }
+
+    public func call(argumentsJSON: String) async throws -> AIToolResult {
+        let args = try decodeArguments(Arguments.self, from: argumentsJSON)
+        let rule = try args.rule.rule()
+        let count = args.sessions ?? 12
+        guard (1...60).contains(count) else { throw AIToolError("sessions must be 1–60") }
+        var state = ProgressionRuleEngine.initialState(rule)
+        var from = "the rule's start"
+        if let id = args.exercise_id {
+            guard let plan = try await progressionPlanRepository.fetchActive(),
+                  let exercise = plan.exercises.first(where: { $0.exerciseId == id }) else {
+                throw AIToolError("That exercise is not in the active plan.")
+            }
+            if let current = ProgressionRuleEngine.currentState(of: exercise, in: plan)?.state.target {
+                state = .init(target: .init(weightKg: current.weightKg, reps: min(max(current.reps, rule.minReps), rule.maxReps)))
+                from = "\(exercise.exerciseName)'s current target"
+            }
+        }
+        let targets = ProgressionRuleEngine.projection(from: state, rule: rule, count: count)
+        return AIToolResult(outputForModel: AIJSON.string(.object([
+            "summary": .string(rule.summary(unit: .kg)),
+            "starts_from": .string(from),
+            "targets_if_every_session_is_hit": .array(targets.enumerated().map { index, target in
+                .object(["session": .number(Double(index + 1)), "weight_kg": .number(target.weightKg), "reps": .number(Double(target.reps)), "sets": .number(Double(rule.sets))])
+            }),
+            "note": .string("A missed session repeats its target, so real progress is at most this fast. Nothing was changed.")
+        ])), activityLabel: "Simulated a progression rule")
+    }
 }

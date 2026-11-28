@@ -16,6 +16,8 @@ public struct PlannedExerciseSet: Identifiable, Codable, Equatable, Sendable {
     public var notes: String?
     public var weightRecording: WeightRecording?
     public var isUserOverride: Bool?
+    /// What was done against this target, recorded when its session is completed.
+    public var outcome: ProgressionOutcome?
 
     public init(
         id: UUID = UUID(),

@@ -174,8 +174,49 @@ enum ToolArguments {
 
 // MARK: - Schema fragments
 
+/// A progression rule as the assistant writes it. Weights are kg in the exercise's logging convention.
+struct ProgressionRuleArgument: Decodable {
+    var kind: String
+    var sets: Int
+    var min_reps: Int?
+    var max_reps: Int
+    var increment_kg: Double
+    var sessions_per_step: Int?
+    var misses_before_backoff: Int?
+    var backoff_percent: Int?
+    var start_weight_kg: Double
+    var start_reps: Int?
+    var rest_seconds: Int?
+
+    func rule() throws -> ProgressionRule {
+        let kind = try parseEnum(ProgressionRule.Kind.self, kind, field: "kind")
+        let rule = ProgressionRule(kind: kind, sets: sets, minReps: min_reps ?? max_reps, maxReps: max_reps, incrementKg: increment_kg,
+            sessionsPerStep: sessions_per_step ?? 1, missesBeforeBackoff: misses_before_backoff ?? 0, backoffPercent: backoff_percent ?? 10,
+            startWeightKg: start_weight_kg, startReps: start_reps, restSeconds: rest_seconds ?? 120).normalized
+        do { try rule.validate() } catch { throw AIToolError(error.localizedDescription) }
+        return rule
+    }
+}
+
 @MainActor
 enum ToolSchemas {
+    /// How one exercise progresses. Mirrors `ProgressionRule` field for field.
+    static var progressionRule: JSONValue {
+        AIToolRegistry.objectSchema(properties: [
+            "kind": AIToolRegistry.enumSchema(ProgressionRule.Kind.self, description: "repsThenWeight: add a rep until every set reaches max_reps, then add increment_kg and restart at min_reps. fixedSteps: keep max_reps and add increment_kg."),
+            "sets": AIToolRegistry.integerSchema("Working sets, 1–20"),
+            "min_reps": AIToolRegistry.integerSchema("Bottom of the rep range; omit for fixedSteps"),
+            "max_reps": AIToolRegistry.integerSchema("Top of the rep range, or the fixed reps for fixedSteps"),
+            "increment_kg": AIToolRegistry.numberSchema("Weight added per step, 0–50 kg; 0 progresses reps only (repsThenWeight)"),
+            "sessions_per_step": AIToolRegistry.integerSchema("Successful sessions needed before the target moves, 1–12; default 1"),
+            "misses_before_backoff": AIToolRegistry.integerSchema("Missed sessions in a row before the weight backs off, 0–10; 0 never backs off (default)"),
+            "backoff_percent": AIToolRegistry.integerSchema("Weight drop at a back-off, 0–50; default 10"),
+            "start_weight_kg": AIToolRegistry.numberSchema("Working weight of the first session"),
+            "start_reps": AIToolRegistry.integerSchema("Rep target of the first session; default min_reps"),
+            "rest_seconds": AIToolRegistry.integerSchema("15–900; default 120")
+        ], required: ["kind", "sets", "max_reps", "increment_kg", "start_weight_kg"])
+    }
+
     static var target: [String: JSONValue] {
         [
             "workout_date": AIToolRegistry.stringSchema(

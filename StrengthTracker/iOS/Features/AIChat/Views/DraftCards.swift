@@ -290,9 +290,29 @@ private struct PlanDraftContent: View {
                     .font(.stCaption)
                     .foregroundStyle(STColors.textSecondary)
             }
+            if let every = parameters.deloadEveryWeeks {
+                Text(every == 0 ? "No scheduled deloads" : "Deload every \(every) weeks")
+                    .font(.stCaption)
+                    .foregroundStyle(STColors.textSecondary)
+            }
+            if let pace = parameters.pace {
+                Text("\(pace.displayName) pace: \(pace.summary)")
+                    .font(.stCaption)
+                    .foregroundStyle(STColors.textSecondary)
+            }
 
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(parameters.exercises, id: \.exerciseID) { selection in
+                    if let rule = selection.progression {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(selection.exerciseName) · start \(weightUnit.format(rule.startWeightKg)) × \(rule.startReps)")
+                                .font(.stBody)
+                                .foregroundStyle(STColors.textPrimary)
+                            Text(rule.summary(unit: weightUnit))
+                                .font(.stCaption)
+                                .foregroundStyle(STColors.textSecondary)
+                        }
+                    } else {
                     HStack {
                         Text(selection.exerciseName)
                             .font(.stBody)
@@ -305,10 +325,12 @@ private struct PlanDraftContent: View {
                                 .foregroundStyle(STColors.textSecondary)
                         }
                     }
+                    }
                 }
             }
 
-            Text("A full periodized program is generated when you save.")
+            Text(parameters.pace == nil ? "A full periodized program is generated when you save."
+                : "The full plan is generated when you save. Every rule can be changed afterwards in Plan settings.")
                 .font(.stCaption)
                 .foregroundStyle(STColors.textTertiary)
         }

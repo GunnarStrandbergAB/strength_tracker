@@ -1,0 +1,299 @@
+#if canImport(UIKit)
+import XCTest
+import SwiftUI
+@testable import StrengthTracker
+@testable import StrengthTrackerShared
+
+/// The plan wizard end to end: the draft it builds from the training log, the plan
+/// that draft creates, and the four screens rendered with that data.
+@MainActor
+final class PlanWizardTests: XCTestCase {
+    private struct Fixture {
+        let viewModel: ProgressionPlanViewModel
+        let exerciseList: ExerciseListViewModel
+        let templates: TemplateViewModel
+        let plans: InMemoryProgressionPlanRepository
+        let bench: Exercise
+        let squat: Exercise
+        let push: WorkoutTemplate
+    }
+
+    private func exercise(_ name: String, muscle: MuscleGroup, type: ExerciseType = .weightedReps) -> Exercise {
+        Exercise(id: UUID(), name: name, primaryMuscleGroup: muscle, secondaryMuscleGroups: [], category: type == .weightedReps ? .barbell : .bodyweight,
+            exerciseType: type, instructions: nil, isCustom: false, isArchived: false)
+    }
+
+    private func workout(_ exercise: Exercise, weight: Double, reps: Int, daysAgo: Int) -> Workout {
+        let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date())!
+        let sets = (0..<3).map { order in
+            ExerciseSet(id: UUID(), order: order, setType: .normal, weight: weight, reps: reps, durationSeconds: nil, distanceMeters: nil,
+                rpe: nil, isCompleted: true, isPersonalRecord: false, completedAt: date)
+        }
+        return Workout(id: UUID(), name: "Push", startedAt: date.addingTimeInterval(-3600), completedAt: date, notes: nil, templateId: nil,
+            exercises: [WorkoutExercise(id: UUID(), exercise: exercise, order: 0, supersetGroup: nil, notes: nil, restTimerSeconds: nil, sets: sets)])
+    }
+
+    /// A log with ten weeks of bench rising half a kilo a week, a "Push" template
+    /// (bench and a timed plank), and a squat that has never been logged.
+    private func makeFixture() async throws -> Fixture {
+        let bench = exercise("Bench Press", muscle: .chest)
+        let squat = exercise("Back Squat", muscle: .quadriceps)
+        let plank = exercise("Plank", muscle: .core, type: .duration)
+        let exercises = InMemoryExerciseRepository()
+        for item in [bench, squat, plank] { _ = try await exercises.save(item) }
+
+        let push = WorkoutTemplate(id: UUID(), name: "Push", notes: nil, sortOrder: 0, lastUsedAt: nil, timesUsed: 0, exercises: [
+            TemplateExercise(id: UUID(), exercise: bench, order: 0, supersetGroup: nil, notes: nil, restTimerSeconds: 120, targetSets: 3,
+                targetReps: 8, targetWeight: 80, targetDurationSeconds: nil, targetDistanceMeters: nil),
+            TemplateExercise(id: UUID(), exercise: plank, order: 1, supersetGroup: nil, notes: nil, restTimerSeconds: 60, targetSets: 3,
+                targetReps: nil, targetWeight: nil, targetDurationSeconds: 60, targetDistanceMeters: nil)
+        ])
+        let templateRepository = InMemoryTemplateRepository()
+        _ = try await templateRepository.save(push)
+
+        let workouts = MockWorkoutRepositoryProgression()
+        workouts.workouts = (0..<10).map { week in workout(bench, weight: 80 - Double(week) * 0.5, reps: 8, daysAgo: 2 + week * 7) }
+        let plans = InMemoryProgressionPlanRepository()
+        let viewModel = ProgressionPlanViewModel(
+            progressionPlanRepository: plans,
+            trainingStatusDetector: TrainingStatusDetector(workoutRepository: workouts),
+            programDesignService: ProgramDesignService(),
+            planAnalyticsService: PlanAnalyticsService(workoutRepository: workouts),
+            exerciseRepository: exercises,
+            templateRepository: templateRepository,
+            workoutRepository: workouts)
+        let templates = TemplateViewModel(templateRepository: templateRepository, exerciseRepository: exercises)
+        await templates.loadTemplates()
+        return Fixture(viewModel: viewModel, exerciseList: ExerciseListViewModel(exerciseRepository: exercises), templates: templates,
+            plans: plans, bench: bench, squat: squat, push: push)
+    }
+
+    /// Monday "Push" from the template, Thursday squat added by hand.
+    private func fillWorkouts(_ fixture: Fixture) {
+        let viewModel = fixture.viewModel
+        viewModel.draftTrainingDays = [2, 5]
+        viewModel.draftDurationWeeks = 8
+        viewModel.setDraftWorkout(fixture.push, forDay: 2)
+        viewModel.toggleDraftLift(fixture.squat, forDay: 5)
+    }
+
+    func testTemplateLiftsAreTickedAndUnusedLiftsLeaveThePlan() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        viewModel.draftTrainingDays = [2, 5]
+        XCTAssertEqual(viewModel.draftEmptyDays, [2, 5])
+        viewModel.setDraftWorkout(fixture.push, forDay: 2)
+        // The timed plank is not a lift the plan can progress.
+        XCTAssertEqual(viewModel.draftSelectedExercises.map(\.exercise.name), ["Bench Press"])
+        XCTAssertEqual(viewModel.draftEmptyDays, [5])
+        viewModel.toggleDraftLift(fixture.squat, forDay: 5)
+        XCTAssertTrue(viewModel.draftEmptyDays.isEmpty)
+        viewModel.toggleDraftLift(fixture.squat, forDay: 5)
+        XCTAssertEqual(viewModel.draftSelectedExercises.map(\.exercise.name), ["Bench Press"])
+        viewModel.setDraftWorkout(nil, forDay: 2)
+        XCTAssertTrue(viewModel.draftSelectedExercises.isEmpty)
+    }
+
+    func testProgressionDraftStartsFromTheLogAndFollowsThePace() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        fillWorkouts(fixture)
+        await viewModel.prepareProgressionDraft()
+
+        // Half a kilo a week on an 80 kg bench is about 0.6% a week: the standard pace.
+        let recommendation = try XCTUnwrap(viewModel.draftPaceRecommendation)
+        XCTAssertEqual(recommendation.pace, .standard)
+        XCTAssertEqual(recommendation.liftCount, 1)
+        XCTAssertEqual(viewModel.draftPace, .standard)
+
+        let bench = try XCTUnwrap(viewModel.draftSelectedExercises.first { $0.id == fixture.bench.id }?.rule)
+        XCTAssertEqual(bench.kind, .repsThenWeight)
+        XCTAssertEqual(bench.startWeightKg, 80)
+        XCTAssertEqual(bench.startReps, 8)
+        // The squat has no history, so the wizard cannot continue until it has a start.
+        XCTAssertFalse(viewModel.draftProgressionIsComplete)
+        viewModel.setDraftStart(weightKg: 100, for: fixture.squat.id)
+        XCTAssertTrue(viewModel.draftProgressionIsComplete)
+
+        // A hand-made rule survives a pace change; the others follow it and keep their start.
+        var custom = bench
+        custom.maxReps = 12
+        viewModel.setDraftRule(custom, for: fixture.bench.id)
+        viewModel.applyDraftPace(.aggressive)
+        XCTAssertEqual(viewModel.draftSelectedExercises.first { $0.id == fixture.bench.id }?.rule?.maxReps, 12)
+        let squat = try XCTUnwrap(viewModel.draftSelectedExercises.first { $0.id == fixture.squat.id }?.rule)
+        XCTAssertEqual(squat.kind, .fixedSteps)
+        XCTAssertEqual(squat.startWeightKg, 100)
+    }
+
+    func testPreviewMatchesTheSavedPlan() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        fillWorkouts(fixture)
+        await viewModel.prepareProgressionDraft()
+        viewModel.setDraftStart(weightKg: 100, for: fixture.squat.id)
+        viewModel.draftDeloadEveryWeeks = 4
+        viewModel.draftPlanName = "Winter"
+
+        let previewed = await viewModel.draftPreviewPlan()
+        let preview = try XCTUnwrap(previewed)
+        XCTAssertTrue(fixture.plans.plans.isEmpty, "A preview saves nothing")
+        await viewModel.generateAndSavePlan()
+        XCTAssertNil(viewModel.errorMessage)
+        let saved = try XCTUnwrap(fixture.plans.plans.first)
+
+        func targets(_ plan: ProgressionPlan) -> [[String]] {
+            plan.blocks.flatMap(\.weeks).flatMap(\.sessions).sorted { ($0.scheduledDate ?? .distantPast) < ($1.scheduledDate ?? .distantPast) }
+                .map { $0.plannedExercises.map { "\($0.exerciseName) \($0.sets)x\($0.targetReps)@\($0.targetWeight)" } }
+        }
+        XCTAssertEqual(targets(preview), targets(saved))
+        XCTAssertEqual(saved.name, "Winter")
+        XCTAssertEqual(saved.configuration?.pace, .standard)
+        XCTAssertEqual(saved.configuration?.deloadEveryWeeks, 4)
+        XCTAssertEqual(targets(saved).count, 16)
+        // Monday is bench from the template, Thursday the squat; each on its own ladder.
+        XCTAssertEqual(targets(saved).prefix(4).map(\.first), ["Bench Press 3x8@80.0", "Back Squat 3x6@100.0", "Bench Press 3x9@80.0", "Back Squat 3x7@100.0"])
+        XCTAssertEqual(saved.blocks.flatMap(\.weeks).flatMap(\.sessions).filter(\.isDeload).count, 4)
+    }
+
+    // MARK: - Editing a running plan
+
+    /// The wizard's plan, saved and active: Monday "Push" with bench, Thursday squat, eight weeks.
+    private func startPlan(_ fixture: Fixture) async throws -> ProgressionPlan {
+        fillWorkouts(fixture)
+        await fixture.viewModel.prepareProgressionDraft()
+        fixture.viewModel.setDraftStart(weightKg: 100, for: fixture.squat.id)
+        await fixture.viewModel.generateAndSavePlan()
+        return try XCTUnwrap(fixture.viewModel.activePlan)
+    }
+
+    private func ordered(_ plan: ProgressionPlan?) -> [PlannedSession] {
+        (plan?.blocks.flatMap(\.weeks).flatMap(\.sessions) ?? []).sorted { ($0.scheduledDate ?? .distantPast) < ($1.scheduledDate ?? .distantPast) }
+    }
+
+    private func bench(_ session: PlannedSession, _ fixture: Fixture) -> String? {
+        session.plannedExercises.first { $0.exerciseId == fixture.bench.id }.map { "\($0.targetWeight)x\($0.targetReps)" }
+    }
+
+    func testSessionEditAppliesInOneStepContinuesTheLadderAndCanBeUndone() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        let plan = try await startPlan(fixture)
+        let first = ordered(plan)[0]
+        let catalog = try await viewModel.planEditCatalog()
+        var rows = try PlanEditingService.editableContents(for: first, plan: plan, templates: catalog.templates, exercises: catalog.exercises)
+        XCTAssertEqual(rows.count, 2, "The template's plank is part of the session")
+        let index = try XCTUnwrap(rows.firstIndex { $0.exerciseID == fixture.bench.id })
+        rows[index].weightKg = 85
+        rows[index].reps = 6
+
+        try await viewModel.applyPlanEditNow(.init(operation: .batch, operations: [
+            .init(operation: .setSessionExercises, sessionID: first.id, scope: .session, contents: rows),
+            .init(operation: .updateSession, sessionID: first.id, scope: .session, label: "Heavy push")
+        ]))
+
+        let edited = ordered(viewModel.activePlan)
+        XCTAssertEqual(edited[0].displayLabel, "Heavy push")
+        XCTAssertEqual(bench(edited[0], fixture), "85.0x6")
+        // The next bench session (Monday of week 2) continues from the manual target.
+        XCTAssertEqual(bench(edited[2], fixture), "85.0x7")
+
+        let last = try XCTUnwrap(viewModel.lastUndoableEdit)
+        try await viewModel.applyPlanEditNow(.init(operation: .undoEdit, editID: last.id))
+        let undone = ordered(viewModel.activePlan)
+        XCTAssertEqual(bench(undone[0], fixture), "80.0x8")
+        XCTAssertEqual(bench(undone[2], fixture), "80.0x9")
+    }
+
+    func testSettingsRenameChangeARuleAndExtendThePlan() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        _ = try await startPlan(fixture)
+
+        try await viewModel.applyPlanEditNow(.init(operation: .renamePlan, label: "Spring"))
+        XCTAssertEqual(fixture.plans.plans.first?.name, "Spring")
+
+        let steps = ProgressionRule(kind: .fixedSteps, sets: 5, minReps: 5, maxReps: 5, incrementKg: 2.5,
+            missesBeforeBackoff: 3, startWeightKg: 90)
+        try await viewModel.applyPlanEditNow(.init(operation: .setProgression, exerciseID: fixture.bench.id, progression: steps))
+        let ruled = ordered(viewModel.activePlan)
+        XCTAssertEqual([ruled[0], ruled[2], ruled[4]].map { bench($0, fixture) }, ["90.0x5", "92.5x5", "95.0x5"])
+        XCTAssertEqual(ruled[0].plannedExercises.first { $0.exerciseId == fixture.bench.id }?.sets, 5)
+
+        try await viewModel.applyPlanEditNow(.init(operation: .extendPlan, weeks: 2, scope: .remaining))
+        let extended = ordered(viewModel.activePlan)
+        XCTAssertEqual(extended.count, 20)
+        // The added weeks carry on up the ladder instead of repeating the last week.
+        XCTAssertEqual(bench(extended[18], fixture), "112.5x5")
+        XCTAssertEqual(viewModel.activePlan?.name, "Spring")
+    }
+
+    func testEditingScreensRender() async throws {
+        let fixture = try await makeFixture()
+        let plan = try await startPlan(fixture)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        func show<V: View>(_ view: V, name: String) async throws {
+            let host = UIHostingController(rootView: view)
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            defer { window.isHidden = true }
+            host.view.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(500))
+            capture(window, name: name)
+        }
+        try await show(PlanSessionEditor(viewModel: fixture.viewModel, session: ordered(plan)[0]), name: "plan-edit-session")
+        try await show(PlanSettingsView(viewModel: fixture.viewModel), name: "plan-settings")
+        XCTAssertNil(fixture.viewModel.errorMessage)
+    }
+
+    // MARK: - Screens
+
+    private func capture(_ window: UIWindow, name: String) {
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testEveryWizardStepRendersTheDraft() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        let host = UIHostingController(rootView: PlanCreationView(viewModel: viewModel, exerciseListViewModel: fixture.exerciseList,
+            templateViewModel: fixture.templates).preferredColorScheme(.dark))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        func settle() async throws {
+            host.view.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(400))
+        }
+
+        try await settle()
+        XCTAssertEqual(viewModel.draftTrainingDays, [2, 4, 6], "The first step starts with three days a week")
+        capture(window, name: "plan-wizard-1-basics")
+
+        fillWorkouts(fixture)
+        viewModel.draftStep = 2
+        try await settle()
+        capture(window, name: "plan-wizard-2-workouts")
+
+        viewModel.draftStep = 3
+        try await settle()
+        XCTAssertNotNil(viewModel.draftPaceRecommendation, "Opening the step reads the log")
+        viewModel.setDraftStart(weightKg: 100, for: fixture.squat.id)
+        try await settle()
+        capture(window, name: "plan-wizard-3-progression")
+
+        viewModel.draftStep = 4
+        try await settle()
+        capture(window, name: "plan-wizard-4-preview")
+        XCTAssertNil(viewModel.errorMessage)
+    }
+}
+#endif
