@@ -56,8 +56,14 @@ public final class ProgramDesignService: Sendable {
     /// Resolve deload days: prefer explicit `deloadDays`, fall back to regular training days.
     /// Custom deload days are constrained to the plan's training days — a deload session
     /// must never land on a day the user doesn't train.
+    ///
+    /// A plan whose deload week has its own schedule trains exactly the days in it,
+    /// whether or not they are normal training days.
     private func resolveDeloadDays(for plan: ProgressionPlan) -> [Int] {
         let days = resolveDays(for: plan)
+        if let schedule = plan.configuration?.deloadSchedule, !schedule.isEmpty {
+            return [2, 3, 4, 5, 6, 7, 1].filter { day in schedule.contains { $0.dayOfWeek == day } }
+        }
         guard let custom = plan.deloadDays else { return days }
         let valid = custom.filter { days.contains($0) }
         return valid.isEmpty ? days : valid
@@ -76,6 +82,32 @@ public final class ProgramDesignService: Sendable {
             blocks = generateBlockProgram(plan, deloadIntensity: deloadIntensity)
         }
 
+        // A wave exercise with its own sets or reps asks for them in every session. With
+        // other reps the weight moves by the same share of the 1RM (Epley), so the effort
+        // the wave planned for that session stays the same.
+        let chosen = plan.exercises.filter { $0.progression == nil && ($0.waveSets != nil || $0.waveReps != nil) }
+        if !chosen.isEmpty {
+            for b in blocks.indices {
+                for w in blocks[b].weeks.indices {
+                    for i in blocks[b].weeks[w].sessions.indices {
+                        for e in blocks[b].weeks[w].sessions[i].plannedExercises.indices {
+                            var set = blocks[b].weeks[w].sessions[i].plannedExercises[e]
+                            guard let exercise = chosen.first(where: { $0.id == set.planExerciseId }) else { continue }
+                            if let sets = exercise.waveSets { set.sets = min(max(sets, 1), 20) }
+                            if let reps = exercise.waveReps.map({ min(max($0, 1), 100) }), reps != set.targetReps, set.targetReps > 0 {
+                                var share = (1 + Double(set.targetReps) / 30) / (1 + Double(reps) / 30)
+                                if set.percentageOf1RM > 0 { share = min(share, 1 / set.percentageOf1RM) }
+                                set.targetWeight = (set.targetWeight * share).rounded(toNearest: 2.5)
+                                set.percentageOf1RM *= share
+                                set.targetReps = reps
+                            }
+                            blocks[b].weeks[w].sessions[i].plannedExercises[e] = set
+                        }
+                    }
+                }
+            }
+        }
+
         // Retain programming identity when calendar buckets split a microcycle.
         for b in blocks.indices {
             for w in blocks[b].weeks.indices {
@@ -92,6 +124,22 @@ public final class ProgramDesignService: Sendable {
                 for w in blocks[b].weeks.indices {
                     for i in blocks[b].weeks[w].sessions.indices where blocks[b].weeks[w].sessions[i].isDeload {
                         var session = blocks[b].weeks[w].sessions[i]
+                        if configuration.deloadSchedule?.isEmpty == false {
+                            // Its own workout, on any weekday: each exercise takes its normal
+                            // target from the last normal session that trained it.
+                            let earlier = ordinary.filter { ($0.programmingWeekNumber ?? 0) < (session.programmingWeekNumber ?? 0) }
+                            session.plannedExercises = session.plannedExercises.compactMap { set in
+                                (earlier.last { $0.plannedExercises.contains { $0.planExerciseId == set.planExerciseId } }
+                                    ?? ordinary.first { $0.plannedExercises.contains { $0.planExerciseId == set.planExerciseId } })?
+                                    .plannedExercises.first { $0.planExerciseId == set.planExerciseId }
+                            }
+                            session.sessionLabel = Self.dayNames[session.dayOfWeek ?? 0] ?? "Deload"
+                            session.isDeload = false
+                            PlanDeloadPolicy.apply(to: &session, weightPercentage: configuration.deloadWeightPercentage,
+                                restPercentage: configuration.deloadRestPercentage)
+                            blocks[b].weeks[w].sessions[i] = session
+                            continue
+                        }
                         let candidates = ordinary.filter { $0.dayOfWeek == session.dayOfWeek }
                         if let normal = candidates.last(where: { ($0.programmingWeekNumber ?? 0) < (session.programmingWeekNumber ?? 0) }) ?? candidates.first {
                             session.plannedExercises = normal.plannedExercises
@@ -123,8 +171,8 @@ public final class ProgramDesignService: Sendable {
         let days = resolveDays(for: plan)
         let deloadDays = resolveDeloadDays(for: plan)
 
-        // Determine if deloads apply (beginner/intermediate get auto-deload every 4th week)
-        let needsScheduledDeload = plan.trainingStatus != .advanced
+        // Each cycle may end in a deload week.
+        let cycle = deloadCycle(for: plan)
 
         var blocks: [TrainingBlock] = []
         var absoluteWeek = 1
@@ -139,7 +187,7 @@ public final class ProgramDesignService: Sendable {
         for weekIndex in 0..<totalWeeks {
             currentWeekInCycle += 1
 
-            let isDeloadWeek = needsScheduledDeload && currentWeekInCycle == 4
+            let isDeloadWeek = cycle.scheduled && currentWeekInCycle == cycle.weeks
             let weekIntensity: Double
 
             if isDeloadWeek {
@@ -197,7 +245,7 @@ public final class ProgramDesignService: Sendable {
             absoluteWeek += 1
 
             // Emit a block every 4 weeks or at the end
-            if currentWeekInCycle == 4 || weekIndex == totalWeeks - 1 {
+            if currentWeekInCycle == cycle.weeks || weekIndex == totalWeeks - 1 {
                 let blockIsDeload = currentBlockWeeks.allSatisfy { $0.isDeload }
                 let block = TrainingBlock(
                     name: "Block \(blockOrder + 1)",
@@ -206,9 +254,9 @@ public final class ProgramDesignService: Sendable {
                     weeks: currentBlockWeeks,
                     isDeload: blockIsDeload,
                     volumeMultiplier: blockIsDeload ? Defaults.deloadVolumeMultiplier : 1.0,
-                    intensityFloor: startIntensity + (Double(blockOrder * 4) * step),
+                    intensityFloor: startIntensity + (Double(blockOrder * cycle.weeks) * step),
                     intensityCeiling: min(
-                        startIntensity + (Double((blockOrder + 1) * 4 - 1) * step),
+                        startIntensity + (Double((blockOrder + 1) * cycle.weeks - 1) * step),
                         maxIntensity
                     )
                 )
@@ -230,7 +278,7 @@ public final class ProgramDesignService: Sendable {
         let days = resolveDays(for: plan)
         let deloadDays = resolveDeloadDays(for: plan)
         let sessionTypes: [DUPSessionType] = [.hypertrophy, .strength, .power]
-        let needsScheduledDeload = plan.trainingStatus != .advanced // M1
+        let cycle = deloadCycle(for: plan)
 
         var blocks: [TrainingBlock] = []
         var absoluteWeek = 1
@@ -240,15 +288,15 @@ public final class ProgramDesignService: Sendable {
         var exerciseRotationCounters: [UUID: Int] = [:] // Per-exercise DUP rotation counters
         var progressionWeekCount = 0 // Continuous overload counter — skips deload weeks
         for weekIndex in 0..<totalWeeks {
-            let weekInBlock = (weekIndex % 4) + 1
-            let isDeloadWeek = needsScheduledDeload && weekInBlock == 4
+            let weekInBlock = (weekIndex % cycle.weeks) + 1
+            let isDeloadWeek = cycle.scheduled && weekInBlock == cycle.weeks
 
             let overloadMultiplier = isDeloadWeek ? 1.0 : 1.0 + (Double(progressionWeekCount) * Defaults.weeklyOverload)
 
             let weekDays = isDeloadWeek ? deloadDays : days
             var sessions: [PlannedSession] = []
             for day in weekDays {
-                let sessionExercises = exercisesForDay(day, in: plan) ?? plan.exercises
+                let sessionExercises = exercisesForDay(day, in: plan, isDeload: isDeloadWeek) ?? plan.exercises
                 let dayName = Self.dayNames[day] ?? "Day"
 
                 if sessionExercises.isEmpty {
@@ -331,7 +379,7 @@ public final class ProgramDesignService: Sendable {
             currentBlockWeeks.append(week)
             absoluteWeek += 1
 
-            if weekInBlock == 4 || weekIndex == totalWeeks - 1 {
+            if weekInBlock == cycle.weeks || weekIndex == totalWeeks - 1 {
                 let block = TrainingBlock(
                     name: "Block \(blockOrder + 1)",
                     order: blockOrder,
@@ -359,7 +407,7 @@ public final class ProgramDesignService: Sendable {
         let days = resolveDays(for: plan)
         let deloadDays = resolveDeloadDays(for: plan)
         let schemeRotation: [DUPSessionType] = [.hypertrophy, .strength, .power]
-        let needsScheduledDeload = plan.trainingStatus != .advanced // M1
+        let cycle = deloadCycle(for: plan)
 
         var blocks: [TrainingBlock] = []
         var absoluteWeek = 1
@@ -368,8 +416,8 @@ public final class ProgramDesignService: Sendable {
 
         var progressionWeekCount = 0 // Continuous overload counter — skips deload weeks
         for weekIndex in 0..<totalWeeks {
-            let weekInBlock = (weekIndex % 4) + 1
-            let isDeloadWeek = needsScheduledDeload && weekInBlock == 4
+            let weekInBlock = (weekIndex % cycle.weeks) + 1
+            let isDeloadWeek = cycle.scheduled && weekInBlock == cycle.weeks
 
             let scheme = schemeRotation[weekIndex % schemeRotation.count]
             let overloadMultiplier = isDeloadWeek ? 1.0 : 1.0 + (Double(progressionWeekCount) * Defaults.weeklyOverload)
@@ -418,7 +466,7 @@ public final class ProgramDesignService: Sendable {
             currentBlockWeeks.append(week)
             absoluteWeek += 1
 
-            if weekInBlock == 4 || weekIndex == totalWeeks - 1 {
+            if weekInBlock == cycle.weeks || weekIndex == totalWeeks - 1 {
                 let block = TrainingBlock(
                     name: "Block \(blockOrder + 1)",
                     order: blockOrder,
@@ -515,7 +563,12 @@ public final class ProgramDesignService: Sendable {
     /// Returns the exercises assigned to a specific day via the plan's daySchedule.
     /// - Returns `nil` when no schedule is configured at all (legacy plans → caller uses all exercises).
     /// - Returns `[]` when a schedule exists but this day has no exercises (intentionally empty day).
-    private func exercisesForDay(_ day: Int, in plan: ProgressionPlan) -> [PlanExercise]? {
+    /// A deload week with its own schedule is read from that schedule instead.
+    private func exercisesForDay(_ day: Int, in plan: ProgressionPlan, isDeload: Bool = false) -> [PlanExercise]? {
+        if isDeload, let schedule = plan.configuration?.deloadSchedule, !schedule.isEmpty {
+            let ids = schedule.first { $0.dayOfWeek == day }?.exerciseIds ?? []
+            return plan.exercises.filter { ids.contains($0.exerciseId) }
+        }
         // No day schedule configured → nil (legacy: caller falls back to all exercises)
         guard !plan.daySchedule.isEmpty else { return nil }
         // Schedule configured but this day has no entry or empty exercises → empty list
@@ -531,6 +584,13 @@ public final class ProgramDesignService: Sendable {
     }
 
     // MARK: - Helpers
+
+    /// Weeks per cycle, and whether each cycle ends in a deload week. Plans without the
+    /// setting keep the level-based default: every fourth week, except for advanced lifters.
+    private func deloadCycle(for plan: ProgressionPlan) -> (weeks: Int, scheduled: Bool) {
+        guard let every = plan.configuration?.deloadEveryWeeks else { return (4, plan.trainingStatus != .advanced) }
+        return every == 0 ? (4, false) : (min(max(every, 2), 12), true)
+    }
 
     private func intensityStep(for status: TrainingStatus) -> Double {
         switch status {
@@ -569,7 +629,7 @@ public final class ProgramDesignService: Sendable {
     ) -> [PlannedSession] {
         days.map { day in
             let dayName = Self.dayNames[day] ?? "Day"
-            let sessionExercises = exercisesForDay(day, in: plan) ?? plan.exercises
+            let sessionExercises = exercisesForDay(day, in: plan, isDeload: isDeload) ?? plan.exercises
 
             // Labels are day-name/scheme based — weeks are calendar buckets, so a
             // microcycle "Week N" prefix would mislead. Empty label = plain day name.

@@ -6,7 +6,8 @@ struct ActivePlanDetailView: View {
     let viewModel: ProgressionPlanViewModel
     let templateViewModel: TemplateViewModel
     let onStartSession: (WorkoutTemplate, UUID, UUID, Bool) async -> Void
-    @State private var showPlanEditor = false
+    @State private var showPlanSettings = false
+    @State private var editingSession: PlannedSession?
     @State private var expandedWeekId: UUID?
     @State private var preparingSessionId: UUID?
     @State private var showPauseConfirmation = false
@@ -24,10 +25,11 @@ struct ActivePlanDetailView: View {
                     // Plan header
                     planHeader(plan)
 
-                    Button { showPlanEditor = true } label: {
-                        Label("Edit remaining plan", systemImage: "calendar.badge.clock")
+                    Button { showPlanSettings = true } label: {
+                        Label("Plan settings", systemImage: "slider.horizontal.3")
                             .frame(maxWidth: .infinity).padding(14)
                     }
+                    .accessibilityIdentifier("plan-settings")
                     .buttonStyle(.plain).foregroundStyle(STColors.primary)
                     .background(STColors.surface, in: RoundedRectangle(cornerRadius: STRadius.card))
                     .padding(.horizontal, 20)
@@ -65,8 +67,11 @@ struct ActivePlanDetailView: View {
         .navigationTitle("Training Plan")
         .navigationBarTitleDisplayMode(.inline)
         .stNavigationBarStyle()
-        .sheet(isPresented: $showPlanEditor) {
-            PlanScheduleEditor(viewModel: viewModel)
+        .sheet(isPresented: $showPlanSettings) {
+            PlanSettingsView(viewModel: viewModel)
+        }
+        .sheet(item: $editingSession) { session in
+            PlanSessionEditor(viewModel: viewModel, session: session)
         }
         .sheet(item: $templatePickerSession) { session in
             TemplateMergePickerView(
@@ -511,7 +516,7 @@ struct ActivePlanDetailView: View {
             }
             // Exercise lines
             ForEach(session.plannedExercises) { exercise in
-                exerciseLine(exercise, muted: isMuted)
+                exerciseLine(exercise, timed: PlanWizard.timedTarget(of: exercise, in: session), muted: isMuted)
             }
 
             // Duration + RPE info
@@ -578,22 +583,17 @@ struct ActivePlanDetailView: View {
                 .disabled(isPreparing)
                 .padding(.top, 2)
 
-                Button {
-                    templatePickerSession = session
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "link")
-                        Text(session.templateId != nil ? "CHANGE TEMPLATE" : "LINK TEMPLATE")
-                            .font(.system(size: 13, weight: .bold))
-                            .tracking(0.5)
+                HStack(spacing: 8) {
+                    sessionAction("EDIT", systemImage: "pencil") { editingSession = session }
+                        .accessibilityIdentifier("plan-session-edit")
+                    // A session with its own copy of the workout is edited exercise by
+                    // exercise; only an older, still linked session can swap its template.
+                    if session.exerciseSnapshot == nil {
+                        sessionAction(session.templateId != nil ? "TEMPLATE" : "LINK TEMPLATE", systemImage: "link") {
+                            templatePickerSession = session
+                        }
                     }
-                    .foregroundStyle(STColors.primary)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 42)
-                    .background(STColors.primary.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(12)
@@ -614,9 +614,26 @@ struct ActivePlanDetailView: View {
         }
     }
 
+    private func sessionAction(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: systemImage)
+                Text(title)
+                    .font(.system(size: 13, weight: .bold))
+                    .tracking(0.5)
+            }
+            .foregroundStyle(STColors.primary)
+            .frame(maxWidth: .infinity)
+            .frame(height: 42)
+            .background(STColors.primary.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Exercise Line
 
-    private func exerciseLine(_ exercise: PlannedExerciseSet, muted: Bool) -> some View {
+    private func exerciseLine(_ exercise: PlannedExerciseSet, timed: String? = nil, muted: Bool) -> some View {
         let recording = exercise.weightRecording ?? viewModel.activePlan?.exercises.first { $0.exerciseId == exercise.exerciseId }?.weightRecording
         return HStack(spacing: 0) {
             Text(exercise.exerciseName)
@@ -627,7 +644,7 @@ struct ActivePlanDetailView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(STColors.textTertiary)
 
-            Text("\(exercise.sets)x\(exercise.targetReps)\(recording?.repetitions == .perSide ? "/side" : "")")
+            Text(timed.map { "\(exercise.sets)x\($0)" } ?? "\(exercise.sets)x\(exercise.targetReps)\(recording?.repetitions == .perSide ? "/side" : "")")
                 .font(.system(size: 12))
                 .foregroundStyle(muted ? STColors.textTertiary : STColors.textSecondary)
 

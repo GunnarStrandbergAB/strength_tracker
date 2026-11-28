@@ -9,6 +9,14 @@ public struct DraftPlanExercise: Identifiable, Sendable {
     public let exercise: Exercise
     public var oneRM: Double
     public var oneRMSource: PlanExercise.OneRMSource
+    /// How the exercise progresses. Nil follows the plan's percentage wave from `oneRM`.
+    public var rule: ProgressionRule?
+    /// True once the rule was changed by hand, so a new pace or goal leaves it alone.
+    public var ruleIsCustom = false
+    /// On the percentage wave: the sets and reps asked for every session. Nil leaves
+    /// that number to the wave.
+    public var waveSets: Int?
+    public var waveReps: Int?
 
     public init(exercise: Exercise, oneRM: Double = 0, oneRMSource: PlanExercise.OneRMSource = .userInput) {
         self.id = exercise.id
@@ -16,6 +24,14 @@ public struct DraftPlanExercise: Identifiable, Sendable {
         self.oneRM = oneRM
         self.oneRMSource = oneRMSource
     }
+
+    /// Progression rules cover exercises logged as weight × reps.
+    public var supportsRule: Bool { exercise.exerciseType == .weightedReps }
+    public var isCompound: Bool { exercise.category == .barbell || exercise.category == .dumbbell }
+    /// A band has no weight to enter: its rule can run on reps alone.
+    public var weightIsOptional: Bool { exercise.category == .resistanceBand }
+    /// False until there is a weight to start from, where one is needed.
+    public var hasStart: Bool { rule.map { $0.startWeightKg > 0 || weightIsOptional } ?? (oneRM > 0) }
 }
 
 // MARK: - ProgressionPlanViewModel
@@ -28,6 +44,8 @@ public final class ProgressionPlanViewModel {
 
     public var activePlan: ProgressionPlan?
     public var planProgress: PlanProgress?
+    /// How the most recently finished session of the active plan went.
+    public var lastSessionReview: PlanSessionReview?
     public var isLoading = false
     public var hasLoadedOnce = false
 
@@ -50,21 +68,49 @@ public final class ProgressionPlanViewModel {
     public var draftStartDate: Date = Date()
     public var draftStartDateManuallySet: Bool = false
     public var draftDaySchedule: [Int: DraftDayEntry] = [:]  // keyed by ISO day
+    /// What one weekday trains in a deload week that has its own schedule.
+    public enum DraftDeloadChoice: Equatable, Sendable {
+        /// The workout of one of the plan's training days, as built in the workouts step.
+        case planDay(Int)
+        /// A copy of a template.
+        case template(WorkoutTemplate)
+    }
+
     public var draftUseCustomDeloadDays: Bool = false
-    public var draftDeloadDays: Set<Int> = []
+    /// The deload week's own schedule: weekday → workout. A weekday without an entry rests.
+    public var draftDeloadSchedule: [Int: DraftDeloadChoice] = [:]
+    /// The weekdays a deload week trains on.
+    public var draftDeloadDays: Set<Int> {
+        get { Set(draftDeloadSchedule.keys) }
+        set {
+            draftDeloadSchedule = draftDeloadSchedule.filter { newValue.contains($0.key) }
+            for day in newValue where draftDeloadSchedule[day] == nil && draftTrainingDays.contains(day) {
+                draftDeloadSchedule[day] = .planDay(day)
+            }
+        }
+    }
+    public var draftPace: PlanPace = .standard
+    /// The pace the lifter's own log suggests; nil until the log has been read.
+    public var draftPaceRecommendation: ProgressionRuleEngine.PaceRecommendation?
+    /// A deload every Nth week; 0 leaves deloads to the coach's suggestions.
+    public var draftDeloadEveryWeeks: Int = PlanConfiguration.defaultDeloadEveryWeeks
     public var isSavingPlan = false
     public var errorMessage: String?
 
     // MARK: - Draft Day Entry
 
     public struct DraftDayEntry {
-        public var templateId: UUID?
+        /// The workout's name: the template the day was filled from, if any.
         public var templateName: String?
-        public var exerciseIds: Set<UUID>   // library exercise IDs
+        /// The day's exercises in order. They are the plan's own copy: changing or
+        /// deleting the template they came from never reaches the plan.
+        public var exercises: [TemplateExercise]
+        /// Library IDs of the exercises the plan sets targets for.
+        public var exerciseIds: Set<UUID>
 
-        public init(templateId: UUID? = nil, templateName: String? = nil, exerciseIds: Set<UUID> = []) {
-            self.templateId = templateId
+        public init(templateName: String? = nil, exercises: [TemplateExercise] = [], exerciseIds: Set<UUID> = []) {
             self.templateName = templateName
+            self.exercises = exercises
             self.exerciseIds = exerciseIds
         }
     }
@@ -137,9 +183,11 @@ public final class ProgressionPlanViewModel {
             if let plan = activePlan {
                 planProgress = try await planAnalyticsService.generateProgress(for: plan)
                 await refreshLinkedTemplateNames(for: plan)
+                lastSessionReview = PlanSessionReview(plan: plan, workouts: (try? await workoutRepository?.fetchAll()) ?? [])
             } else {
                 planProgress = nil
                 linkedTemplateNames = [:]
+                lastSessionReview = nil
             }
             errorMessage = nil
         } catch {
@@ -213,8 +261,8 @@ public final class ProgressionPlanViewModel {
         if draftTrainingDays.contains(day) {
             guard draftTrainingDays.count > 1 else { return }
             draftTrainingDays.remove(day)
-            // Remove from deload days if it was selected there
-            draftDeloadDays.remove(day)
+            // A deload day that used this day's workout has nothing left to train.
+            draftDeloadSchedule = draftDeloadSchedule.filter { $0.value != .planDay(day) }
         } else {
             draftTrainingDays.insert(day)
         }
@@ -224,23 +272,43 @@ public final class ProgressionPlanViewModel {
         }
     }
 
+    /// Keeps or drops a training day's own workout in a deload week.
     public func toggleDeloadDay(_ day: Int) {
         guard draftTrainingDays.contains(day) else { return }
-        if draftDeloadDays.contains(day) {
-            guard draftDeloadDays.count > 1 else { return }
-            draftDeloadDays.remove(day)
-        } else {
-            guard draftDeloadDays.count < draftTrainingDays.count else { return }
-            draftDeloadDays.insert(day)
+        setDraftDeload(draftDeloadSchedule[day] == nil ? .planDay(day) : nil, forDay: day)
+    }
+
+    /// Sets what a weekday trains in a deload week; nil makes it a rest day. Any weekday
+    /// can train, with any training day's workout or a template. One session always stays.
+    public func setDraftDeload(_ choice: DraftDeloadChoice?, forDay day: Int) {
+        guard (1...7).contains(day) else { return }
+        guard let choice else {
+            guard draftDeloadSchedule[day] != nil, draftDeloadSchedule.count > 1 else { return }
+            draftDeloadSchedule[day] = nil
+            return
+        }
+        if case .planDay(let source) = choice, !draftTrainingDays.contains(source) { return }
+        draftDeloadSchedule[day] = choice
+    }
+
+    /// The starting point for a deload week's own schedule: the normal week.
+    public func applyDefaultDeloadDays() {
+        draftDeloadSchedule = Dictionary(uniqueKeysWithValues: draftTrainingDays.map { ($0, DraftDeloadChoice.planDay($0)) })
+    }
+
+    /// The name of what a weekday trains in a deload week, or nil for a rest day.
+    public func draftDeloadName(forDay day: Int) -> String? {
+        switch draftDeloadSchedule[day] {
+        case .planDay(let source):
+            let name = draftDaySchedule[source]?.templateName
+            let weekday = Self.dayNames[source] ?? "Day"
+            return source == day ? (name ?? "As normal") : (name.map { "\($0) (\(weekday))" } ?? "\(weekday)'s workout")
+        case .template(let template): return template.name
+        case nil: return nil
         }
     }
 
-    /// Picks a sensible default subset of training days for deload (roughly 60%, min 2).
-    public func applyDefaultDeloadDays() {
-        let sorted = Self.dayDisplayOrder.filter { draftTrainingDays.contains($0) }
-        let count = max(2, sorted.count - 2) // e.g. 5→3, 4→2, 3→2, 2→2
-        draftDeloadDays = Set(sorted.prefix(count))
-    }
+    private static let dayNames: [Int: String] = [1: "Sunday", 2: "Monday", 3: "Tuesday", 4: "Wednesday", 5: "Thursday", 6: "Friday", 7: "Saturday"]
 
     private static let dayDisplayOrder: [Int] = [2, 3, 4, 5, 6, 7, 1]
 
@@ -304,34 +372,106 @@ public final class ProgressionPlanViewModel {
 
     // MARK: - Day Schedule Management
 
-    public func setDraftTemplate(_ template: WorkoutTemplate?, forDay day: Int) {
-        guard let template else {
-            draftDaySchedule[day] = DraftDayEntry()
-            return
-        }
-        autoSuggestExercises(forDay: day, template: template)
+    /// The draft's training days in Monday-first order.
+    public var orderedDraftDays: [Int] { Self.dayDisplayOrder.filter { draftTrainingDays.contains($0) } }
+
+    /// The plan can set targets for exercises logged as reps, with or without weight.
+    public static func isTrackable(_ exercise: Exercise) -> Bool {
+        [.weightedReps, .bodyweightReps].contains(exercise.exerciseType)
     }
 
-    public func toggleDraftExercise(_ exerciseId: UUID, forDay day: Int) {
+    /// Fills a day from a template: its exercises are copied, and every one the plan
+    /// can progress is ticked. Nil empties the day.
+    public func setDraftWorkout(_ template: WorkoutTemplate?, forDay day: Int) {
+        var entry = DraftDayEntry(templateName: template?.name)
+        for item in (template?.exercises ?? []).sorted(by: { $0.order < $1.order }) {
+            entry.exercises.append(TemplateExercise(id: UUID(), exercise: item.exercise, order: entry.exercises.count,
+                supersetGroup: item.supersetGroup, notes: item.notes, restTimerSeconds: item.restTimerSeconds,
+                targetSets: item.targetSets, targetReps: item.targetReps, targetWeight: item.targetWeight,
+                targetDurationSeconds: item.targetDurationSeconds, targetDistanceMeters: item.targetDistanceMeters,
+                setTargets: item.setTargets, isWarmUp: item.isWarmUp))
+            if Self.isTrackable(item.exercise) {
+                addExercise(item.exercise)
+                entry.exerciseIds.insert(item.exercise.id)
+            }
+        }
+        draftDaySchedule[day] = entry
+        pruneUnusedDraftLifts()
+    }
+
+    /// Adds an exercise to the end of a day. One the plan can progress starts ticked.
+    public func addDraftExercise(_ exercise: Exercise, forDay day: Int) {
         var entry = draftDaySchedule[day] ?? DraftDayEntry()
-        if entry.exerciseIds.contains(exerciseId) {
-            entry.exerciseIds.remove(exerciseId)
-        } else {
-            entry.exerciseIds.insert(exerciseId)
+        guard !entry.exercises.contains(where: { $0.exercise.id == exercise.id }) else { return }
+        let repBased = Self.isTrackable(exercise)
+        entry.exercises.append(TemplateExercise(id: UUID(), exercise: exercise, order: entry.exercises.count,
+            supersetGroup: nil, notes: nil, restTimerSeconds: nil, targetSets: 3, targetReps: repBased ? 10 : nil,
+            targetWeight: repBased || exercise.exerciseType == .weightedCardio ? 0 : nil,
+            targetDurationSeconds: repBased ? nil : 60, targetDistanceMeters: nil))
+        if repBased {
+            addExercise(exercise)
+            entry.exerciseIds.insert(exercise.id)
         }
         draftDaySchedule[day] = entry
     }
 
-    public func autoSuggestExercises(forDay day: Int, template: WorkoutTemplate) {
-        let templateExerciseIds = Set(template.exercises.map(\.exercise.id))
-        let matchingPlanExercises = draftSelectedExercises
-            .filter { templateExerciseIds.contains($0.id) }
-            .map(\.id)
-        draftDaySchedule[day] = DraftDayEntry(
-            templateId: template.id,
-            templateName: template.name,
-            exerciseIds: Set(matchingPlanExercises)
-        )
+    /// Ticks or unticks an exercise on one day, adding it to the day when it is not
+    /// there yet. An unticked exercise stays in the workout with its own targets.
+    public func toggleDraftLift(_ exercise: Exercise, forDay day: Int) {
+        guard Self.isTrackable(exercise) else { return }
+        guard var entry = draftDaySchedule[day], entry.exercises.contains(where: { $0.exercise.id == exercise.id }) else {
+            addDraftExercise(exercise, forDay: day)
+            return
+        }
+        if entry.exerciseIds.contains(exercise.id) {
+            entry.exerciseIds.remove(exercise.id)
+        } else {
+            addExercise(exercise)
+            entry.exerciseIds.insert(exercise.id)
+        }
+        draftDaySchedule[day] = entry
+        pruneUnusedDraftLifts()
+    }
+
+    /// Takes one exercise out of a day.
+    public func removeDraftExercise(_ rowID: UUID, forDay day: Int) {
+        guard var entry = draftDaySchedule[day] else { return }
+        entry.exercises.removeAll { $0.id == rowID }
+        for index in entry.exercises.indices { entry.exercises[index].order = index }
+        entry.exerciseIds.formIntersection(entry.exercises.map(\.exercise.id))
+        draftDaySchedule[day] = entry
+        pruneUnusedDraftLifts()
+    }
+
+    /// Moves one exercise up (negative) or down within its day.
+    public func moveDraftExercise(_ rowID: UUID, by offset: Int, forDay day: Int) {
+        guard var entry = draftDaySchedule[day], let from = entry.exercises.firstIndex(where: { $0.id == rowID }) else { return }
+        let to = min(max(from + offset, 0), entry.exercises.count - 1)
+        guard to != from else { return }
+        entry.exercises.insert(entry.exercises.remove(at: from), at: to)
+        for index in entry.exercises.indices { entry.exercises[index].order = index }
+        draftDaySchedule[day] = entry
+    }
+
+    /// Changes the targets of an exercise the plan does not progress. Per-set targets
+    /// copied from a template give way to the new numbers.
+    public func updateDraftExercise(_ rowID: UUID, forDay day: Int, _ change: (inout TemplateExercise) -> Void) {
+        guard var entry = draftDaySchedule[day], let index = entry.exercises.firstIndex(where: { $0.id == rowID }) else { return }
+        let before = entry.exercises[index]
+        change(&entry.exercises[index])
+        entry.exercises[index].targetSets = min(max(entry.exercises[index].targetSets, 1), 20)
+        if entry.exercises[index] != before { entry.exercises[index].setTargets = [] }
+        draftDaySchedule[day] = entry
+    }
+
+    private func pruneUnusedDraftLifts() {
+        let used = Set(draftTrainingDays.flatMap { draftDaySchedule[$0]?.exerciseIds ?? [] })
+        draftSelectedExercises.removeAll { !used.contains($0.id) }
+    }
+
+    /// Training days that have no exercise yet.
+    public var draftEmptyDays: [Int] {
+        orderedDraftDays.filter { draftDaySchedule[$0]?.exercises.isEmpty ?? true }
     }
 
     // MARK: - Scheduled Dates
@@ -389,6 +529,25 @@ public final class ProgressionPlanViewModel {
         public var exercises: [PlanExercise]
         public var daySchedule: [DayScheduleEntry]
         public var creationSource: ProgressionPlan.PlanCreationSource
+        /// The pace the exercises' progression rules were preset from, when rules are used.
+        public var pace: PlanPace?
+        /// A deload every Nth week; 0 schedules none. Nil keeps the level-based default.
+        public var deloadEveryWeeks: Int?
+        /// The full workout of a training day (weekday number → exercises in order). Its
+        /// sessions get their own copy. A day without one is copied from the template its
+        /// `daySchedule` entry names, if any.
+        public var dayWorkouts: [Int: WorkoutTemplate] = [:]
+        /// A deload week with its own days and workouts: one entry per session, on any
+        /// weekday. Empty means a deload week repeats the normal week on `deloadDays`.
+        public var deloadSchedule: [DayScheduleEntry] = []
+        /// The full workout of a deload day in `deloadSchedule`. A day without one is
+        /// copied from the template its entry names, if any.
+        public var deloadWorkouts: [Int: WorkoutTemplate] = [:]
+        /// Exercises a training day also trains at fixed targets, after its template
+        /// and its progressed exercises (weekday number → exercises in order).
+        public var dayExtras: [Int: [TemplateExercise]] = [:]
+        /// A deload day that trains the workout of a training day (deload weekday → training weekday).
+        public var deloadSources: [Int: Int] = [:]
 
         public init(
             name: String,
@@ -402,9 +561,13 @@ public final class ProgressionPlanViewModel {
             exercises: [PlanExercise],
             daySchedule: [DayScheduleEntry] = [],
             creationSource: ProgressionPlan.PlanCreationSource,
-            durationWeeks: Int? = nil
+            durationWeeks: Int? = nil,
+            pace: PlanPace? = nil,
+            deloadEveryWeeks: Int? = nil
         ) {
             self.durationWeeks = durationWeeks
+            self.pace = pace
+            self.deloadEveryWeeks = deloadEveryWeeks
             self.name = name
             self.trainingStatus = trainingStatus
             self.programType = programType
@@ -423,6 +586,17 @@ public final class ProgressionPlanViewModel {
     /// structured draft flow and AI-proposed plans.
     @discardableResult
     public func createPlan(from request: PlanCreationRequest) async throws -> ProgressionPlan {
+        let plan = try await buildPlan(from: request)
+        try await progressionPlanRepository.save(plan)
+        activePlan = try await progressionPlanRepository.fetchActive()
+        planProgress = try await planAnalyticsService.generateProgress(for: plan)
+        await onPlanChanged?()
+        return plan
+    }
+
+    /// The plan a request generates, without saving it: what the wizard previews and
+    /// what `createPlan` stores.
+    public func buildPlan(from request: PlanCreationRequest) async throws -> ProgressionPlan {
         var request = request
         let library = try await exerciseRepository.fetchAll()
         for i in request.exercises.indices {
@@ -432,6 +606,66 @@ public final class ProgressionPlanViewModel {
         }
         let duration = request.durationWeeks ?? (request.programType == .block ? (request.trainingStatus == .advanced ? 9 : 10) : 12)
         guard (4...52).contains(duration) else { throw PlanEditError("Plan duration must be 4–52 weeks.") }
+        if let every = request.deloadEveryWeeks, every != 0, !(2...12).contains(every) {
+            throw PlanEditError("A deload can be every 2–12 weeks, or off.")
+        }
+        for i in request.exercises.indices {
+            guard let rule = request.exercises[i].progression?.normalized else { continue }
+            try rule.validate()
+            request.exercises[i].progression = rule
+        }
+        // The plan owns its exercises. A day that only names a template gets a copy of
+        // it here, and no session keeps a link back to the template.
+        var workouts = request.dayWorkouts
+        var deloadWorkouts = request.deloadWorkouts
+        guard request.deloadSchedule.allSatisfy({ (1...7).contains($0.dayOfWeek) }),
+              Set(request.deloadSchedule.map(\.dayOfWeek)).count == request.deloadSchedule.count else {
+            throw PlanEditError("A deload week can have one session on each weekday.")
+        }
+        if request.daySchedule.contains(where: { $0.templateId != nil && workouts[$0.dayOfWeek] == nil })
+            || request.deloadSchedule.contains(where: { $0.templateId != nil && deloadWorkouts[$0.dayOfWeek] == nil }) {
+            let templates = try await templateRepository.fetchAll()
+            for entry in request.daySchedule where workouts[entry.dayOfWeek] == nil {
+                workouts[entry.dayOfWeek] = templates.first { $0.id == entry.templateId }
+            }
+            for entry in request.deloadSchedule where deloadWorkouts[entry.dayOfWeek] == nil {
+                deloadWorkouts[entry.dayOfWeek] = templates.first { $0.id == entry.templateId }
+            }
+        }
+        // A day with extra exercises is spelled out in full: its template, then the
+        // exercises the plan progresses, then the extras.
+        for entry in request.daySchedule {
+            guard let extras = request.dayExtras[entry.dayOfWeek], !extras.isEmpty else { continue }
+            var rows = (workouts[entry.dayOfWeek]?.exercises ?? []).sorted { $0.order < $1.order }
+            let additions = entry.exerciseIds.compactMap { id in library.first { $0.id == id } }.map { exercise in
+                TemplateExercise(id: UUID(), exercise: exercise, order: 0, supersetGroup: nil, notes: nil, restTimerSeconds: nil,
+                    targetSets: 3, targetReps: nil, targetWeight: nil, targetDurationSeconds: nil, targetDistanceMeters: nil)
+            } + extras
+            for row in additions where !rows.contains(where: { $0.exercise.id == row.exercise.id }) { rows.append(row) }
+            for index in rows.indices { rows[index].order = index }
+            let base = workouts[entry.dayOfWeek]
+            workouts[entry.dayOfWeek] = WorkoutTemplate(id: base?.id ?? UUID(), name: base?.name ?? "", notes: base?.notes, sortOrder: 0,
+                lastUsedAt: nil, timesUsed: 0, exercises: rows)
+        }
+        for entry in request.deloadSchedule where deloadWorkouts[entry.dayOfWeek] == nil {
+            if let source = request.deloadSources[entry.dayOfWeek] { deloadWorkouts[entry.dayOfWeek] = workouts[source] }
+        }
+        for i in request.daySchedule.indices {
+            request.daySchedule[i].templateId = nil
+            if let name = workouts[request.daySchedule[i].dayOfWeek]?.name, !name.isEmpty { request.daySchedule[i].templateName = name }
+        }
+        for i in request.deloadSchedule.indices {
+            request.deloadSchedule[i].templateId = nil
+            guard let workout = deloadWorkouts[request.deloadSchedule[i].dayOfWeek] else { continue }
+            if !workout.name.isEmpty { request.deloadSchedule[i].templateName = workout.name }
+            // The plan's exercises in the workout are the ones it sets targets for.
+            if request.deloadSchedule[i].exerciseIds.isEmpty {
+                var seen = Set<UUID>()
+                request.deloadSchedule[i].exerciseIds = workout.exercises.sorted { $0.order < $1.order }.map(\.exercise.id)
+                    .filter { id in request.exercises.contains { $0.exerciseId == id } && seen.insert(id).inserted }
+            }
+        }
+        if !request.deloadSchedule.isEmpty { request.deloadDays = request.deloadSchedule.map(\.dayOfWeek).sorted() }
         let startWeekday = Calendar.current.component(.weekday, from: request.startDate)
         let startFirstOrder = (0..<7).map { (startWeekday - 1 + $0) % 7 + 1 }
         let sortedDays = request.trainingDays.isEmpty
@@ -455,76 +689,207 @@ public final class ProgressionPlanViewModel {
                 deloadWeightPercentage: userPreferencesService?.deloadWeightPercentage ?? 50,
                 deloadRestPercentage: userPreferencesService?.deloadRestPercentage ?? 75)
         )
+        plan.configuration?.pace = request.pace
+        plan.configuration?.deloadEveryWeeks = request.deloadEveryWeeks
+        plan.configuration?.deloadSchedule = request.deloadSchedule.isEmpty ? nil : request.deloadSchedule
 
         let deloadIntensity = Double(userPreferencesService?.deloadWeightPercentage ?? 50) / 100.0
         // generateProgram dates all sessions sequentially and re-buckets them into
         // calendar weeks (sessions arrive sorted chronologically within each week).
         plan.blocks = programDesignService.generateProgram(for: plan, deloadIntensity: deloadIntensity)
+        // Exercises with a progression rule take their targets from it.
+        ProgressionRuleEngine.reproject(&plan)
+        try PlanEditingService.embedWorkouts(workouts, deloadWorkouts: deloadWorkouts, in: &plan, exercises: library)
 
         // Target end date = last scheduled session (fallback: startDate + totalWeeks)
         let lastScheduledDate = plan.blocks.flatMap(\.weeks).flatMap(\.sessions)
             .compactMap(\.scheduledDate).max()
         plan.targetEndDate = lastScheduledDate
             ?? Calendar.current.date(byAdding: .weekOfYear, value: plan.totalWeeks, to: plan.startDate)
-
-        try await progressionPlanRepository.save(plan)
-        activePlan = try await progressionPlanRepository.fetchActive()
-        planProgress = try await planAnalyticsService.generateProgress(for: plan)
-        await onPlanChanged?()
         return plan
+    }
+
+    /// The draft as a creation request: what the preview shows and what gets saved.
+    public func draftRequest() -> PlanCreationRequest {
+        let planExercises = draftSelectedExercises.enumerated().map { index, draft in
+            // A rule-driven lift still carries a 1RM estimate for the analytics that read one.
+            let oneRM = draft.rule.map { ($0.startWeightKg * (1 + Double($0.startReps) / 30)).rounded(toNearest: 2.5) } ?? draft.oneRM
+            var exercise = PlanExercise(
+                exerciseId: draft.exercise.id,
+                exerciseName: draft.exercise.name,
+                primaryMuscleGroup: draft.exercise.primaryMuscleGroup,
+                category: draft.exercise.category,
+                estimated1RM: oneRM,
+                oneRMSource: draft.rule == nil ? draft.oneRMSource : .estimated,
+                current1RM: oneRM,
+                isCompound: draft.isCompound,
+                order: index,
+                weightRecording: draft.exercise.weightRecording,
+                progression: draft.rule
+            )
+            if draft.rule == nil {
+                exercise.waveSets = draft.waveSets
+                exercise.waveReps = draft.waveReps
+            }
+            return exercise
+        }
+        var daySchedule: [DayScheduleEntry] = []
+        var dayWorkouts: [Int: WorkoutTemplate] = [:]
+        for day in orderedDraftDays {
+            guard let entry = draftDaySchedule[day], !entry.exercises.isEmpty else { continue }
+            let rows = entry.exercises.enumerated().map { index, row in var row = row; row.order = index; return row }
+            daySchedule.append(DayScheduleEntry(dayOfWeek: day, templateName: entry.templateName,
+                exerciseIds: rows.map(\.exercise.id).filter(entry.exerciseIds.contains)))
+            dayWorkouts[day] = WorkoutTemplate(id: UUID(), name: entry.templateName ?? "", notes: nil, sortOrder: 0,
+                lastUsedAt: nil, timesUsed: 0, exercises: rows)
+        }
+        // A deload week's own schedule. While every day in it keeps its own workout, it
+        // is the normal week with days left out; otherwise each session names its workout.
+        var sortedDeloadDays: [Int]?
+        var deloadSchedule: [DayScheduleEntry] = []
+        var deloadWorkouts: [Int: WorkoutTemplate] = [:]
+        let deloadChoices = draftUseCustomDeloadDays ? draftDeloadSchedule.filter { day, choice in
+            if case .planDay(let source) = choice { return dayWorkouts[source] != nil }
+            return (1...7).contains(day)
+        } : [:]
+        if !deloadChoices.isEmpty {
+            sortedDeloadDays = Self.dayDisplayOrder.filter { deloadChoices[$0] != nil }
+            if !deloadChoices.allSatisfy({ $0.value == .planDay($0.key) }) {
+                let lifts = Set(planExercises.map(\.exerciseId))
+                for day in sortedDeloadDays ?? [] {
+                    switch deloadChoices[day] {
+                    case .planDay(let source):
+                        guard let workout = dayWorkouts[source], let entry = daySchedule.first(where: { $0.dayOfWeek == source }) else { continue }
+                        deloadSchedule.append(DayScheduleEntry(dayOfWeek: day, templateName: entry.templateName, exerciseIds: entry.exerciseIds))
+                        deloadWorkouts[day] = workout
+                    case .template(let template):
+                        var seen = Set<UUID>()
+                        let ids = template.exercises.sorted { $0.order < $1.order }.map(\.exercise.id)
+                            .filter { lifts.contains($0) && seen.insert($0).inserted }
+                        deloadSchedule.append(DayScheduleEntry(dayOfWeek: day, templateName: template.name, exerciseIds: ids))
+                        deloadWorkouts[day] = template
+                    case nil: continue
+                    }
+                }
+            }
+        }
+        var request = PlanCreationRequest(
+            name: draftPlanName,
+            trainingStatus: draftStatus,
+            programType: draftProgramType,
+            primaryGoal: draftGoal,
+            weeklyFrequency: draftTrainingDays.isEmpty ? draftFrequency : draftTrainingDays.count,
+            trainingDays: draftTrainingDays,
+            deloadDays: sortedDeloadDays,
+            startDate: draftStartDate,
+            exercises: planExercises,
+            daySchedule: daySchedule,
+            creationSource: .structuredFlow, durationWeeks: draftDurationWeeks,
+            pace: draftPace, deloadEveryWeeks: draftDeloadEveryWeeks
+        )
+        request.dayWorkouts = dayWorkouts
+        request.deloadSchedule = deloadSchedule
+        request.deloadWorkouts = deloadWorkouts
+        return request
     }
 
     public func generateAndSavePlan() async {
         isSavingPlan = true
         errorMessage = nil
         defer { isSavingPlan = false }
-
         do {
-            let planExercises = draftSelectedExercises.enumerated().map { index, draft in
-                PlanExercise(
-                    exerciseId: draft.exercise.id,
-                    exerciseName: draft.exercise.name,
-                    primaryMuscleGroup: draft.exercise.primaryMuscleGroup,
-                    category: draft.exercise.category,
-                    estimated1RM: draft.oneRM,
-                    oneRMSource: draft.oneRMSource,
-                    current1RM: draft.oneRM,
-                    isCompound: draft.exercise.category == .barbell || draft.exercise.category == .dumbbell,
-                    order: index,
-                    weightRecording: draft.exercise.weightRecording
-                )
-            }
-
-            // Convert draft day schedule to domain model
-            let daySchedule: [DayScheduleEntry] = draftDaySchedule.compactMap { day, entry in
-                guard entry.templateId != nil || !entry.exerciseIds.isEmpty else { return nil }
-                return DayScheduleEntry(
-                    dayOfWeek: day,
-                    templateId: entry.templateId,
-                    templateName: entry.templateName,
-                    exerciseIds: Array(entry.exerciseIds)
-                )
-            }
-
-            let sortedDeloadDays: [Int]? = draftUseCustomDeloadDays && !draftDeloadDays.isEmpty
-                ? Self.dayDisplayOrder.filter { draftDeloadDays.contains($0) }
-                : nil
-
-            try await createPlan(from: PlanCreationRequest(
-                name: draftPlanName,
-                trainingStatus: draftStatus,
-                programType: draftProgramType,
-                primaryGoal: draftGoal,
-                weeklyFrequency: draftFrequency,
-                trainingDays: draftTrainingDays,
-                deloadDays: sortedDeloadDays,
-                startDate: draftStartDate,
-                exercises: planExercises,
-                daySchedule: daySchedule,
-                creationSource: .structuredFlow, durationWeeks: draftDurationWeeks
-            ))
+            try await createPlan(from: draftRequest())
         } catch {
             errorMessage = "Failed to generate plan: \(error.localizedDescription)"
+        }
+    }
+
+    /// The plan the draft would create, for the preview step. Nothing is saved.
+    public func draftPreviewPlan() async -> ProgressionPlan? {
+        do {
+            errorMessage = nil
+            return try await buildPlan(from: draftRequest())
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    // MARK: - Draft Progression
+
+    /// Reads the log once per draft: the pace the lifter's own progress suits, the
+    /// training level (kept for coaching tone, never asked), and a start for each lift.
+    public func prepareProgressionDraft() async {
+        pruneUnusedDraftLifts()
+        let workouts = (try? await workoutRepository?.fetchAll()) ?? []
+        if draftPaceRecommendation == nil {
+            if let detected = try? await trainingStatusDetector.detect() { draftStatus = detected }
+            let trends = OverloadTrackingService.computeOverloadTrends(workouts: workouts, bodyWeightKg: bodyWeightKg)
+            let recommendation = ProgressionRuleEngine.recommendedPace(trends: trends, exerciseIDs: Set(draftSelectedExercises.map(\.id)))
+            draftPaceRecommendation = recommendation
+            draftPace = recommendation.pace
+        }
+        for index in draftSelectedExercises.indices {
+            let draft = draftSelectedExercises[index]
+            if draft.supportsRule {
+                guard draft.rule == nil, !draft.ruleIsCustom else { continue }
+                var rule = presetRule(for: draft, start: nil)
+                if let start = ProgressionRuleEngine.suggestedStart(exerciseID: draft.id, workouts: workouts,
+                    range: rule.minReps...rule.maxReps, incrementKg: rule.incrementKg, weightIsOptional: draft.weightIsOptional) {
+                    rule = presetRule(for: draft, start: start)
+                }
+                draftSelectedExercises[index].rule = rule
+            } else {
+                await loadOneRMEstimate(for: draft)
+            }
+        }
+    }
+
+    private func presetRule(for draft: DraftPlanExercise, start: ProgressionTarget?) -> ProgressionRule {
+        ProgressionRuleEngine.defaultRule(pace: draftPace, goal: draftGoal, category: draft.exercise.category,
+            muscle: draft.exercise.primaryMuscleGroup, isCompound: draft.isCompound, start: start)
+    }
+
+    /// Switches the pace. Rules changed by hand are left alone; the rest keep their start weight.
+    public func applyDraftPace(_ pace: PlanPace) {
+        draftPace = pace
+        for index in draftSelectedExercises.indices {
+            let draft = draftSelectedExercises[index]
+            guard draft.supportsRule, !draft.ruleIsCustom, let current = draft.rule else { continue }
+            draftSelectedExercises[index].rule = presetRule(for: draft,
+                start: current.startWeightKg > 0 || draft.weightIsOptional ? .init(weightKg: current.startWeightKg, reps: current.startReps) : nil)
+        }
+    }
+
+    /// Sets one lift's rule by hand. Nil puts the lift on the percentage wave.
+    public func setDraftRule(_ rule: ProgressionRule?, for exerciseId: UUID) {
+        guard let index = draftSelectedExercises.firstIndex(where: { $0.id == exerciseId }) else { return }
+        if rule == nil, let old = draftSelectedExercises[index].rule, draftSelectedExercises[index].oneRM == 0 {
+            draftSelectedExercises[index].oneRM = (old.startWeightKg * (1 + Double(old.startReps) / 30)).rounded(toNearest: 2.5)
+            draftSelectedExercises[index].oneRMSource = .estimated
+        }
+        draftSelectedExercises[index].rule = rule?.normalized
+        draftSelectedExercises[index].ruleIsCustom = true
+    }
+
+    /// Chooses the sets and reps of a lift on the percentage wave; nil leaves that
+    /// number to the wave.
+    public func setDraftWave(sets: Int?, reps: Int?, for exerciseId: UUID) {
+        guard let index = draftSelectedExercises.firstIndex(where: { $0.id == exerciseId }) else { return }
+        draftSelectedExercises[index].waveSets = sets.map { min(max($0, 1), 20) }
+        draftSelectedExercises[index].waveReps = reps.map { min(max($0, 1), 100) }
+    }
+
+    /// Changes where a lift starts without marking its rule as hand-made.
+    public func setDraftStart(weightKg: Double, for exerciseId: UUID) {
+        guard let index = draftSelectedExercises.firstIndex(where: { $0.id == exerciseId }) else { return }
+        draftSelectedExercises[index].rule?.startWeightKg = max(0, weightKg)
+    }
+
+    /// True when every lift has a weight to start from and a valid rule.
+    public var draftProgressionIsComplete: Bool {
+        !draftSelectedExercises.isEmpty && draftSelectedExercises.allSatisfy { draft in
+            draft.hasStart && (draft.rule.map { (try? $0.validate()) != nil } ?? true)
         }
     }
 
@@ -540,12 +905,15 @@ public final class ProgressionPlanViewModel {
         draftFrequency = 3
         draftTrainingDays = []
         draftUseCustomDeloadDays = false
-        draftDeloadDays = []
+        draftDeloadSchedule = [:]
         draftSelectedExercises = []
         draftDaySchedule = [:]
         draftPlanName = ""
         draftStartDate = Date()
         draftStartDateManuallySet = false
+        draftPace = .standard
+        draftPaceRecommendation = nil
+        draftDeloadEveryWeeks = PlanConfiguration.defaultDeloadEveryWeeks
         isSavingPlan = false
         errorMessage = nil
     }
@@ -903,6 +1271,7 @@ public final class ProgressionPlanViewModel {
 
             // Step 6: propagate updated targets to future sessions.
             applyExerciseUpdatesToFutureSessions(plan: &plan, adjustments: gated.kept)
+            applyProgressionRules(to: &plan, workouts: allWorkouts)
 
             // Step 7: adviser proposals over the last 8 weeks of completed workouts.
             if let adviser = adaptiveAdjustmentService {
@@ -951,6 +1320,7 @@ public final class ProgressionPlanViewModel {
         )
         plan = replay.plan
         applyExerciseUpdatesToFutureSessions(plan: &plan, adjustments: replay.lastSessionAdjustments)
+        applyProgressionRules(to: &plan, workouts: workouts)
         plan.updatedAt = Date()
         do {
             try await progressionPlanRepository.save(plan)
@@ -985,6 +1355,7 @@ public final class ProgressionPlanViewModel {
             )
             plan = replay.plan
             applyExerciseUpdatesToFutureSessions(plan: &plan, adjustments: replay.lastSessionAdjustments)
+            applyProgressionRules(to: &plan, workouts: workouts)
             plan.updatedAt = Date()
             try? await progressionPlanRepository.save(plan)
         }
@@ -1035,6 +1406,17 @@ public final class ProgressionPlanViewModel {
             coachingExplanation: verdict.action
         )
         return (kept, note)
+    }
+
+    /// Rule-driven exercises: records what each completed session did against its target,
+    /// then lays the remaining targets out again. While the coach verdict is deload the
+    /// next target repeats the last one, so the plan never contradicts the verdict.
+    private func applyProgressionRules(to plan: inout ProgressionPlan, workouts: [Workout]) {
+        guard plan.exercises.contains(where: { $0.progression != nil }) else { return }
+        let workoutsById = Dictionary(workouts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        ProgressionRuleEngine.recordOutcomes(in: &plan, workoutsById: workoutsById)
+        plan.configuration?.holdIncreases = trainingAdvisor?.lastVerdict?.kind == .deload
+        ProgressionRuleEngine.reproject(&plan, protected: protectedPlanSessions?() ?? [])
     }
 
     /// Propagates post-session exercise state to future sessions.
@@ -1275,6 +1657,14 @@ public final class ProgressionPlanViewModel {
         (try await templateRepository.fetchAll(), try await exerciseRepository.fetchAll().filter { !$0.isArchived })
     }
 
+    /// How many later sessions are the same workout as `session`: the ones a change to
+    /// its exercises reaches when it is applied to all remaining sessions.
+    public func laterSessionCount(sameWorkoutAs session: PlannedSession) async -> Int {
+        guard let plan = activePlan, let catalog = try? await planEditCatalog() else { return 0 }
+        return PlanEditingService.laterSessionsOfSameWorkout(as: session, in: plan, templates: catalog.templates,
+            exercises: catalog.exercises, protected: await planSessionsInUse()).count
+    }
+
     public var currentPlanEditSettings: PlanConfiguration {
         PlanConfiguration(durationWeeks: activePlan?.configuration?.durationWeeks ?? activePlan?.totalWeeks ?? 12,
             deloadWeightPercentage: userPreferencesService?.deloadWeightPercentage ?? 50,
@@ -1307,6 +1697,19 @@ public final class ProgressionPlanViewModel {
             templates: templates, exercises: exercises, protectedSessionIDs: protected)
     }
 
+    /// Previews and applies an edit in one step, for changes made directly on the plan
+    /// screen. The edit lands in the same undo history as a reviewed one.
+    public func applyPlanEditNow(_ request: PlanEditRequest) async throws {
+        try await applyPlanEdit(try await previewPlanEdit(request))
+    }
+
+    /// The most recent edit that can still be undone.
+    public var lastUndoableEdit: PlanAdjustment? {
+        guard let plan = activePlan, let last = plan.adjustments.last(where: { $0.editRecord != nil }),
+              last.editRecord?.after == PlanScheduleSnapshot(plan) else { return nil }
+        return last
+    }
+
     public func applyPlanEdit(_ preview: PlanEditPreview) async throws {
         guard canEditPlan?() ?? true else { throw PlanEditError("Training plans require Pro access.") }
         guard let plan = try await progressionPlanRepository.fetchActive(), plan.id == preview.planID else { throw PlanEditError("The active plan changed. Request a fresh preview.") }
@@ -1331,6 +1734,7 @@ public final class ProgressionPlanViewModel {
             }
             changed = plan
             record.after.install(on: &changed)
+            try PlanEditingService.applyNaming(from: preview.request, to: &changed)
             try PlanEditingService.validateResult(changed, original: plan, protected: protected)
             var adjustment = PlanAdjustment(id: preview.id, adjustmentType: .reforecast, trigger: .userManual,
                 description: preview.request.operation.displayName, previousValues: ["endDate": PlanEditingService.dateLabel(plan.targetEndDate)],

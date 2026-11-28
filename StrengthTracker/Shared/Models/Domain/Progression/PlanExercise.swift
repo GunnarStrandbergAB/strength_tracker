@@ -21,6 +21,12 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
     /// Nil on older plans whose alternating-rep baseline used total reps.
     public var strengthModelVersion: Int?
     public var alternatives: [UUID]                    // Swap candidates (exercise IDs)
+    /// Nil follows the plan's percentage wave.
+    public var progression: ProgressionRule?
+    /// The sets and reps a percentage-wave exercise asks for in every normal session.
+    /// Nil leaves that number to the wave.
+    public var waveSets: Int?
+    public var waveReps: Int?
 
     public enum OneRMSource: String, Codable, Sendable {
         case tested             // Direct 1RM test
@@ -48,7 +54,8 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
         alternatives: [UUID] = [],
         weightRecording: WeightRecording? = nil,
         bodyweightFactor: Double? = nil,
-        strengthModelVersion: Int? = WorkoutQualityScore.modelVersion
+        strengthModelVersion: Int? = WorkoutQualityScore.modelVersion,
+        progression: ProgressionRule? = nil
     ) {
         self.id = id
         self.exerciseId = exerciseId
@@ -68,6 +75,7 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
         self.weightRecording = weightRecording
         self.bodyweightFactor = bodyweightFactor
         self.strengthModelVersion = strengthModelVersion
+        self.progression = progression
     }
 
     /// Stored plan estimates are only comparable under their original percentage.
@@ -83,6 +91,13 @@ public struct PlanExercise: Identifiable, Codable, Equatable, Sendable {
         let baseline = bodyweightFactor ?? ExerciseSeedData.allExercises.first { $0.id == exerciseId }?.bodyweightFactor
         guard let baseline else { return false }
         return abs(baseline - exercise.resolvedBodyweightFactor) < 0.000001
+    }
+
+    /// False when the exercise is now logged under another weight convention than this
+    /// baseline (each dumbbell or both, per side or together), so loads cannot be compared.
+    public func sharesLoggingConvention(with exercise: Exercise) -> Bool {
+        guard exercise.exerciseType != .bodyweightReps, exercise.isDumbbell || exercise.strengthRecording != nil else { return true }
+        return (weightRecording?.performanceKey ?? (exercise.isDumbbell ? "unconfirmed" : "standard")) == exercise.performanceConvention
     }
 
     public func targetWeight(atPercentage pct: Double) -> Double {

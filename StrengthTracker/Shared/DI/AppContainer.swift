@@ -468,8 +468,10 @@ public final class AppContainer: Sendable {
             ProposeTrainingPlanTool(
                 exerciseRepository: exerciseRepository,
                 personalRecordRepository: personalRecordRepository,
-                templateRepository: templateRepository
+                templateRepository: templateRepository,
+                workoutRepository: workoutRepository
             ),
+            PreviewProgressionTool(progressionPlanRepository: progressionPlanRepository),
             ListTemplatesTool(templateRepository: templateRepository, exerciseRepository: exerciseRepository),
             SaveMemoryTool(memoryService: aiMemoryService),
             ForgetMemoryTool(memoryService: aiMemoryService),
@@ -600,8 +602,16 @@ public final class AppContainer: Sendable {
                         current1RM: oneRMKg,
                         isCompound: selection.category == .barbell || selection.category == .dumbbell,
                         order: index,
-                        weightRecording: selection.weightRecording
+                        weightRecording: selection.weightRecording,
+                        progression: selection.progression
                     )
+                }.enumerated().map { index, exercise -> PlanExercise in
+                    var exercise = exercise
+                    if exercise.progression == nil {
+                        exercise.waveSets = parameters.exercises[index].waveSets
+                        exercise.waveReps = parameters.exercises[index].waveReps
+                    }
+                    return exercise
                 }
                 let daySchedule = (parameters.daySplits ?? []).map { split in
                     DayScheduleEntry(
@@ -611,7 +621,29 @@ public final class AppContainer: Sendable {
                         exerciseIds: split.exerciseIDs
                     )
                 }
-                try await progressionVM.createPlan(from: ProgressionPlanViewModel.PlanCreationRequest(
+                // Exercises a day trains at fixed targets, and a deload week's own schedule.
+                let library = try await exerciseRepo.fetchAll()
+                var dayExtras: [Int: [TemplateExercise]] = [:]
+                for split in parameters.daySplits ?? [] {
+                    dayExtras[split.dayOfWeek] = (split.otherExercises ?? []).compactMap { other in
+                        library.first { $0.id == other.exerciseID }.map { exercise in
+                            TemplateExercise(id: UUID(), exercise: exercise, order: 0, supersetGroup: nil, notes: nil, restTimerSeconds: nil,
+                                targetSets: other.sets, targetReps: other.reps, targetWeight: other.weightKg,
+                                targetDurationSeconds: other.durationSeconds, targetDistanceMeters: other.distanceMeters)
+                        }
+                    }
+                }
+                var deloadSources: [Int: Int] = [:]
+                let deloadSchedule = (parameters.deloadSplits ?? []).map { split -> DayScheduleEntry in
+                    guard let source = split.sameAsDay, let normal = daySchedule.first(where: { $0.dayOfWeek == source }) else {
+                        return DayScheduleEntry(dayOfWeek: split.dayOfWeek, templateId: split.templateID, templateName: split.templateName,
+                            exerciseIds: split.sameAsDay == nil ? [] : exercises.map(\.exerciseId))
+                    }
+                    deloadSources[split.dayOfWeek] = source
+                    return DayScheduleEntry(dayOfWeek: split.dayOfWeek, templateId: normal.templateId, templateName: normal.templateName,
+                        exerciseIds: normal.exerciseIds)
+                }
+                var request = ProgressionPlanViewModel.PlanCreationRequest(
                     name: parameters.name,
                     trainingStatus: trainingStatus,
                     programType: parameters.programType ?? trainingStatus.recommendedProgramType,
@@ -622,8 +654,13 @@ public final class AppContainer: Sendable {
                     startDate: parameters.startDate,
                     exercises: exercises,
                     daySchedule: daySchedule,
-                    creationSource: .naturalLanguage, durationWeeks: parameters.durationWeeks
-                ))
+                    creationSource: .naturalLanguage, durationWeeks: parameters.durationWeeks,
+                    pace: parameters.pace, deloadEveryWeeks: parameters.deloadEveryWeeks
+                )
+                request.dayExtras = dayExtras
+                request.deloadSchedule = deloadSchedule
+                request.deloadSources = deloadSources
+                try await progressionVM.createPlan(from: request)
             }
         }
 

@@ -74,3 +74,6 @@ fastlane/test_output
 
 # Local guides (root-level only — docs/APP_STORE_RELEASE_GUIDE.md is tracked)
 /APP_STORE_RELEASE_GUIDE.md
+
+# Local signing team (Apple team ID), included by StrengthTracker/project.yml
+StrengthTracker/signing.local.yml

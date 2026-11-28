@@ -8,6 +8,8 @@ public final class DashboardViewModel {
 
     public var weeklyWorkoutCounts: [Int] = Array(repeating: 0, count: 7) // Mon-Sun
     public var weeklyQualityScores: [Double?] = Array(repeating: nil, count: 7) // Mon-Sun, nil = no workout
+    /// The workout behind each day's bar (the latest one that day), Mon-Sun.
+    public var weeklyQualityWorkoutIDs: [UUID?] = Array(repeating: nil, count: 7)
     public var allTimeVolume: Double = 0
     public var allTimeHours: Double = 0
     public var avgSessionsPerWeek: Double = 0
@@ -77,6 +79,11 @@ public final class DashboardViewModel {
 
             // Quality scores per day (Mon-Sun) — pass history to avoid N+1 fetches
             weeklyQualityScores = calculateDailyQualityScores(for: currentWeekWorkouts, allWorkouts: allWorkouts)
+            var latest: [UUID?] = Array(repeating: nil, count: 7)
+            for workout in currentWeekWorkouts.sorted(by: { $0.startedAt < $1.startedAt }) {
+                latest[(calendar.component(.weekday, from: workout.startedAt) + 5) % 7] = workout.id
+            }
+            weeklyQualityWorkoutIDs = latest
 
             // All-time volume (bodyweight-aware)
             allTimeVolume = completed.reduce(0) { $0 + $1.totalVolume(bodyWeightKg: bw) }
@@ -128,6 +135,7 @@ public final class DashboardViewModel {
             // Reset state on error
             weeklyWorkoutCounts = Array(repeating: 0, count: 7)
             weeklyQualityScores = Array(repeating: nil, count: 7)
+            weeklyQualityWorkoutIDs = Array(repeating: nil, count: 7)
             allTimeVolume = 0
             allTimeHours = 0
             avgSessionsPerWeek = 0

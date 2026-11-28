@@ -8,6 +8,10 @@ options:
   generateEmptyDirectories: true
   groupSortPosition: top
 
+# The signing team is in signing.local.yml, which git ignores (see CLAUDE.md).
+include:
+  - signing.local.yml
+
 packages:
   StrengthTrackerPackage:
     path: .

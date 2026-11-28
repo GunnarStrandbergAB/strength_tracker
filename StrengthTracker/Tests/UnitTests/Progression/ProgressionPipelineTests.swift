@@ -307,6 +307,55 @@ struct ProgressionPipelineTests {
         #expect(seededMatches.count == 1, "Only the pre-existing record should remain")
         #expect(seededMatches.first?.id == recentRecord.id)
     }
+
+    // MARK: - Progression rules
+
+    /// The two-session plan with bench on a 5–8 rep rule: session A asks 80 × 5, session B 80 × 6.
+    private func makeRulePlan() -> ProgressionPlan {
+        var plan = makePlan()
+        plan.exercises[0].progression = ProgressionRule(kind: .repsThenWeight, sets: 3, minReps: 5, maxReps: 8,
+            incrementKg: 2.5, startWeightKg: 80)
+        plan.blocks[0].weeks[0].sessions[0].scheduledDate = ProgressionTestHelpers.fixedMondayStart
+        plan.blocks[0].weeks[0].sessions[1].scheduledDate = ProgressionTestHelpers.fixedMondayStart.addingTimeInterval(3 * 86_400)
+        ProgressionRuleEngine.reproject(&plan)
+        return plan
+    }
+
+    @Test("A rule-driven exercise takes its next target from the rule, not from APRE")
+    func ruleDrivesNextTarget() async {
+        let plan = makeRulePlan()
+        #expect(session(sessionBId, in: plan)?.plannedExercises[0].targetReps == 6)
+        let workout = makeBenchWorkout(weight: 80.0, reps: 7)
+        let fixture = makeFixture(plan: plan, workouts: [workout])
+
+        await fixture.vm.handleSessionCompleted(sessionId: sessionAId, planId: plan.id, workoutId: workout.id)
+
+        let saved = fixture.planRepo.plans[0]
+        let next = session(sessionBId, in: saved)?.plannedExercises[0]
+        // Every set reached 7, so the next session asks for 8 at the same weight.
+        #expect(next?.targetWeight == 80.0)
+        #expect(next?.targetReps == 8)
+        #expect(session(sessionAId, in: saved)?.plannedExercises[0].outcome
+            == ProgressionOutcome(weightKg: 80.0, lowestReps: 7, completedAllSets: true))
+        #expect(!saved.adjustments.contains { $0.trigger == .apre })
+    }
+
+    @Test("Correcting a completed workout replays the rule instead of stacking a second step")
+    func ruleReplaysAfterEdit() async {
+        let plan = makeRulePlan()
+        let workoutId = UUID()
+        let fixture = makeFixture(plan: plan, workouts: [makeBenchWorkout(id: workoutId, weight: 80.0, reps: 7)])
+        await fixture.vm.handleSessionCompleted(sessionId: sessionAId, planId: plan.id, workoutId: workoutId)
+        #expect(session(sessionBId, in: fixture.planRepo.plans[0])?.plannedExercises[0].targetReps == 8)
+
+        // The log is corrected to four reps: a miss, so session B repeats session A's target.
+        fixture.workoutRepo.workouts = [makeBenchWorkout(id: workoutId, weight: 80.0, reps: 4)]
+        await fixture.vm.handleSessionEdited(sessionId: sessionAId, planId: plan.id, workoutId: workoutId)
+
+        let next = session(sessionBId, in: fixture.planRepo.plans[0])?.plannedExercises[0]
+        #expect(next?.targetWeight == 80.0)
+        #expect(next?.targetReps == 5)
+    }
 }
 
 // MARK: - Stubs

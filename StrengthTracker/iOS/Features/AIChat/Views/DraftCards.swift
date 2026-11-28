@@ -290,9 +290,36 @@ private struct PlanDraftContent: View {
                     .font(.stCaption)
                     .foregroundStyle(STColors.textSecondary)
             }
+            if let deload = parameters.deloadSplits, !deload.isEmpty {
+                Text("Deload week: " + deload.sorted { $0.dayOfWeek < $1.dayOfWeek }.map { split in
+                    "\(weekdayName(split.dayOfWeek)) \(split.templateName ?? split.sameAsDay.map { "as \(weekdayName($0))" } ?? "")"
+                }.joined(separator: ", "))
+                    .font(.stCaption)
+                    .foregroundStyle(STColors.textSecondary)
+            }
+            if let every = parameters.deloadEveryWeeks {
+                Text(every == 0 ? "No scheduled deloads" : "Deload every \(every)th week")
+                    .font(.stCaption)
+                    .foregroundStyle(STColors.textSecondary)
+            }
+            if let pace = parameters.pace {
+                Text("\(pace.displayName) pace: \(pace.summary)")
+                    .font(.stCaption)
+                    .foregroundStyle(STColors.textSecondary)
+            }
 
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(parameters.exercises, id: \.exerciseID) { selection in
+                    if let rule = selection.progression {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(selection.exerciseName) · start \(weightUnit.format(rule.startWeightKg)) × \(rule.startReps)")
+                                .font(.stBody)
+                                .foregroundStyle(STColors.textPrimary)
+                            Text(rule.summary(unit: weightUnit))
+                                .font(.stCaption)
+                                .foregroundStyle(STColors.textSecondary)
+                        }
+                    } else {
                     HStack {
                         Text(selection.exerciseName)
                             .font(.stBody)
@@ -305,10 +332,12 @@ private struct PlanDraftContent: View {
                                 .foregroundStyle(STColors.textSecondary)
                         }
                     }
+                    }
                 }
             }
 
-            Text("A full periodized program is generated when you save.")
+            Text(parameters.pace == nil ? "A full periodized program is generated when you save."
+                : "The full plan is generated when you save. Every rule can be changed afterwards in Plan settings.")
                 .font(.stCaption)
                 .foregroundStyle(STColors.textTertiary)
         }
@@ -316,7 +345,8 @@ private struct PlanDraftContent: View {
 
     @ViewBuilder
     private func splitDescription(_ split: AIPlanParameters.DaySplit) -> some View {
-        let exercises = split.exerciseNames.joined(separator: ", ")
+        // Progressed exercises first, then the ones trained at fixed targets.
+        let exercises = (split.exerciseNames + (split.otherExercises ?? []).map(\.exerciseName)).joined(separator: ", ")
         if let templateName = split.templateName {
             (Text(templateName).foregroundStyle(STColors.primary)
                 + Text(exercises.isEmpty ? "" : " + \(exercises)")

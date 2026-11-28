@@ -62,8 +62,7 @@ public struct SessionExecutionService: Sendable {
             guard let planIndex = planExerciseLookup[exerciseId] else { continue }
             let planExercise = updatedExercises[planIndex]
             guard planExercise.acceptsBodyweightBasis(of: workoutExercise.exercise) else { continue }
-            if workoutExercise.exercise.exerciseType != .bodyweightReps && (workoutExercise.exercise.isDumbbell || workoutExercise.exercise.strengthRecording != nil),
-               (planExercise.weightRecording?.performanceKey ?? (workoutExercise.exercise.isDumbbell ? "unconfirmed" : "standard")) != workoutExercise.exercise.performanceConvention { continue }
+            guard planExercise.sharesLoggingConvention(with: workoutExercise.exercise) else { continue }
 
             // Skip 1RM updates for deload sessions — intentionally lighter weights
             // should not drag down stored estimates
@@ -129,8 +128,9 @@ public struct SessionExecutionService: Sendable {
                 }
             }
 
-            // Generate APRE adjustments for next session weights
-            if let matchingPlanned = session.plannedExercises.first(where: { $0.exerciseId == exerciseId }) {
+            // Generate APRE adjustments for next session weights (a progression rule sets its own)
+            if updatedExercises[planIndex].progression == nil,
+               let matchingPlanned = session.plannedExercises.first(where: { $0.exerciseId == exerciseId }) {
                 let completedSets = workoutExercise.sets.filter { $0.isFullyCompleted && $0.setType != .warmup }
                 if let lastSet = completedSets.last,
                    let part = lastSet.sideSets == nil ? lastSet.reps.map({ (load: lastSet.weight ?? matchingPlanned.targetWeight, reps: $0) }) : lastSet.strengthParts(baseLoadPerRep: nil, recording: workoutExercise.exercise.strengthRecording).first {
