@@ -101,6 +101,7 @@ struct DashboardView: View {
                     // Weekly Frequency Chart
                     WeeklyFrequencyChart(
                         weeklyQualityScores: viewModel.weeklyQualityScores,
+                        workoutIDs: viewModel.weeklyQualityWorkoutIDs,
                         totalWorkouts: viewModel.weeklyWorkoutTotal,
                         trend: viewModel.weeklyTrend,
                         trendIsPositive: viewModel.trendIsPositive(),

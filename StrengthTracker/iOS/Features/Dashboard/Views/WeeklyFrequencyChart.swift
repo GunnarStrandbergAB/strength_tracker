@@ -4,12 +4,15 @@ import StrengthTrackerShared
 
 struct WeeklyFrequencyChart: View {
     let weeklyQualityScores: [Double?]
+    /// The workout a day's bar opens, Mon-Sun; nil where there is none.
+    var workoutIDs: [UUID?] = Array(repeating: nil, count: 7)
     let totalWorkouts: Int
     let trend: Double
     let trendIsPositive: Bool
     let formattedTrend: String
 
     private let dayLabels = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+    private let dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -46,16 +49,22 @@ struct WeeklyFrequencyChart: View {
             // Bar chart
             HStack(alignment: .bottom, spacing: 8) {
                 ForEach(0..<7, id: \.self) { index in
-                    VStack(spacing: 8) {
-                        BarView(qualityScore: weeklyQualityScores[index])
-                            .frame(height: 96)
-
-                        Text(dayLabels[index])
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(STColors.textTertiary)
+                    // A day with a workout opens that workout.
+                    if let workout = workoutIDs.indices.contains(index) ? workoutIDs[index] : nil {
+                        NavigationLink(value: workout) { dayColumn(index) }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Opens the workout")
+                    } else {
+                        dayColumn(index)
                     }
-                    .frame(maxWidth: .infinity)
                 }
+            }
+
+            if workoutIDs.contains(where: { $0 != nil }) {
+                Text("Tap a day to open its workout")
+                    .font(.system(size: 11))
+                    .foregroundStyle(STColors.textTertiary)
+                    .padding(.top, 12)
             }
         }
         .padding(20)
@@ -65,6 +74,29 @@ struct WeeklyFrequencyChart: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color.white.opacity(0.05), lineWidth: 1)
         )
+    }
+}
+
+extension WeeklyFrequencyChart {
+    /// One day: its score, its bar and its name.
+    fileprivate func dayColumn(_ index: Int) -> some View {
+        let score = weeklyQualityScores[index]
+        return VStack(spacing: 6) {
+            Text(score.map { "\(Int($0.rounded()))" } ?? " ")
+                .font(.system(size: 11, weight: .bold).monospacedDigit())
+                .foregroundStyle(STColors.textSecondary)
+
+            BarView(qualityScore: score)
+                .frame(height: 96)
+
+            Text(dayLabels[index])
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(STColors.textTertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(score.map { "\(dayNames[index]): quality \(Int($0.rounded())) of 100" } ?? "\(dayNames[index]): no workout")
     }
 }
 

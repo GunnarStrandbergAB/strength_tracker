@@ -24,6 +24,7 @@ final class PlanWizardTests: XCTestCase {
         let light: WorkoutTemplate
         let push: WorkoutTemplate
         let templateRepository: InMemoryTemplateRepository
+        let workouts: MockWorkoutRepositoryProgression
     }
 
     private func exercise(_ name: String, muscle: MuscleGroup, type: ExerciseType = .weightedReps) -> Exercise {
@@ -84,7 +85,7 @@ final class PlanWizardTests: XCTestCase {
         let templates = TemplateViewModel(templateRepository: templateRepository, exerciseRepository: exercises)
         return Fixture(viewModel: viewModel, exerciseList: ExerciseListViewModel(exerciseRepository: exercises), templates: templates,
             plans: plans, bench: bench, squat: squat, plank: plank, row: row, pullApart: pullApart, light: light, push: push,
-            templateRepository: templateRepository)
+            templateRepository: templateRepository, workouts: workouts)
     }
 
     /// Monday "Push" from the template, Thursday squat added by hand.
@@ -592,6 +593,231 @@ final class PlanWizardTests: XCTestCase {
         try await show(PlanSessionEditor(viewModel: fixture.viewModel, session: ordered(plan)[0]), name: "plan-edit-session")
         try await show(PlanSettingsView(viewModel: fixture.viewModel), name: "plan-settings")
         XCTAssertNil(fixture.viewModel.errorMessage)
+    }
+
+    // MARK: - Dashboard
+
+    /// Marks a session as trained on `date` with every rule target hit.
+    private func complete(_ session: inout PlannedSession, on date: Date, workoutID: UUID = UUID()) {
+        session.completedWorkoutId = workoutID
+        session.completedAt = date
+        for index in session.plannedExercises.indices where session.plannedExercises[index].targetReps > 0 {
+            let planned = session.plannedExercises[index]
+            session.plannedExercises[index].outcome = .init(weightKg: planned.targetWeight, lowestReps: planned.targetReps, completedAllSets: true)
+        }
+    }
+
+    /// The workout a session's targets ask for, with some exercises a few reps short.
+    private func logged(_ session: PlannedSession, on date: Date, fixture: Fixture, repsShort: [UUID: Int] = [:], leavingOut: Set<UUID> = []) -> Workout {
+        let library = [fixture.bench, fixture.squat, fixture.row, fixture.plank, fixture.pullApart]
+        let exercises = session.plannedExercises.enumerated().compactMap { index, planned -> WorkoutExercise? in
+            guard planned.targetReps > 0, !leavingOut.contains(planned.exerciseId),
+                  let exercise = library.first(where: { $0.id == planned.exerciseId }) else { return nil }
+            let sets = (0..<planned.sets).map { order in
+                ExerciseSet(id: UUID(), order: order, setType: .normal, weight: planned.targetWeight,
+                    reps: planned.targetReps - (repsShort[planned.exerciseId] ?? 0), durationSeconds: nil, distanceMeters: nil,
+                    rpe: nil, isCompleted: true, isPersonalRecord: false, completedAt: date)
+            }
+            return WorkoutExercise(id: UUID(), exercise: exercise, order: index, supersetGroup: nil, notes: nil, restTimerSeconds: nil, sets: sets)
+        }
+        return Workout(id: UUID(), name: session.displayLabel, startedAt: date.addingTimeInterval(-3600), completedAt: date, notes: nil,
+            templateId: nil, exercises: exercises)
+    }
+
+    func testTheLastSessionIsReadAgainstItsTargets() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        // Monday: bench, row and a plank. Thursday: squat.
+        viewModel.draftTrainingDays = [2, 5]
+        viewModel.draftDurationWeeks = 8
+        viewModel.draftDeloadEveryWeeks = 0
+        viewModel.setDraftWorkout(fixture.push, forDay: 2)
+        viewModel.addDraftExercise(fixture.row, forDay: 2)
+        viewModel.addDraftExercise(fixture.squat, forDay: 5)
+        await viewModel.prepareProgressionDraft()
+        viewModel.setDraftStart(weightKg: 100, for: fixture.squat.id)
+        viewModel.setDraftStart(weightKg: 60, for: fixture.row.id)
+        await viewModel.generateAndSavePlan()
+        let plan = try XCTUnwrap(viewModel.activePlan)
+        XCTAssertNil(PlanSessionReview(plan: plan, workouts: []), "Nothing is finished yet")
+
+        let monday = try XCTUnwrap(ordered(plan).first { $0.dayOfWeek == 2 })
+        let thursday = try XCTUnwrap(ordered(plan).first { $0.dayOfWeek == 5 })
+        let date = Date()
+        func review(_ session: PlannedSession, _ workout: Workout, at when: Date) -> PlanSessionReview? {
+            PlanSessionReview(plan: updating(plan) { if $0.id == session.id { self.complete(&$0, on: when, workoutID: workout.id) } }, workouts: [workout])
+        }
+
+        // Every target hit. The timed plank has no rep target to judge.
+        let clean = try XCTUnwrap(review(monday, logged(monday, on: date, fixture: fixture), at: date))
+        XCTAssertEqual(clean.lines.map(\.name), ["Bench Press", "Barbell Row"])
+        XCTAssertEqual([clean.hitCount, clean.lines.count], [2, 2])
+        XCTAssertEqual(clean.name, "Push")
+
+        // One rep short on the bench, and the row left out.
+        let rough = try XCTUnwrap(review(monday, logged(monday, on: date, fixture: fixture, repsShort: [fixture.bench.id: 1],
+            leavingOut: [fixture.row.id]), at: date))
+        XCTAssertEqual(rough.lines.map(\.isHit), [false, false])
+        XCTAssertEqual(rough.lines[0].done?.lowestReps, rough.lines[0].target.reps - 1)
+        XCTAssertNil(rough.lines[1].done)
+
+        // The later of two finished sessions is the last one.
+        let first = logged(monday, on: date.addingTimeInterval(-86400), fixture: fixture)
+        let second = logged(thursday, on: date, fixture: fixture)
+        let both = updating(plan) { session in
+            if session.id == monday.id { self.complete(&session, on: date.addingTimeInterval(-86400), workoutID: first.id) }
+            if session.id == thursday.id { self.complete(&session, on: date, workoutID: second.id) }
+        }
+        XCTAssertEqual(PlanSessionReview(plan: both, workouts: [first, second])?.lines.map(\.name), ["Back Squat"])
+    }
+
+    /// Applies `change` to every session of the plan, then lays the rule targets out again.
+    private func updating(_ plan: ProgressionPlan, _ change: (inout PlannedSession) -> Void) -> ProgressionPlan {
+        var plan = plan
+        for b in plan.blocks.indices { for w in plan.blocks[b].weeks.indices { for i in plan.blocks[b].weeks[w].sessions.indices {
+            change(&plan.blocks[b].weeks[w].sessions[i])
+        } } }
+        ProgressionRuleEngine.reproject(&plan)
+        return plan
+    }
+
+    func testTheDashboardSummaryReadsTheWeekTheNextSessionAndTheLifts() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        fillWorkouts(fixture)
+        viewModel.draftDeloadEveryWeeks = 4
+        let calendar = CalendarWeekBucketer.mondayCalendar
+        let monday = try XCTUnwrap(calendar.date(byAdding: .day, value: 7, to: CalendarWeekBucketer.weekStart(of: Date())))
+        viewModel.draftStartDate = monday
+        await viewModel.prepareProgressionDraft()
+        viewModel.setDraftStart(weightKg: 100, for: fixture.squat.id)
+        await viewModel.generateAndSavePlan()
+        func day(_ offset: Int, hour: Int = 12) -> Date { calendar.date(byAdding: .hour, value: offset * 24 + hour, to: monday)! }
+
+        // Week 1 is trained in full. It is now Tuesday of week 2 and Monday's session was not done.
+        let firstWeekEnd = day(7, hour: 0)
+        var plan = updating(try XCTUnwrap(viewModel.activePlan)) { session in
+            if let date = session.scheduledDate, date < firstWeekEnd { self.complete(&session, on: date) }
+        }
+        var summary = PlanDashboardSummary(plan: plan, now: day(8))
+        XCTAssertEqual(summary.days.map(\.status), [.missed, .rest, .rest, .planned, .rest, .rest, .rest])
+        XCTAssertEqual(summary.days.map(\.isToday), [false, true, false, false, false, false, false])
+        XCTAssertEqual([summary.doneThisWeek, summary.plannedThisWeek, summary.overdueCount], [0, 2, 1])
+        XCTAssertEqual(summary.next?.displayLabel, "Push")
+        XCTAssertTrue(summary.nextIsOverdue)
+        XCTAssertEqual([summary.week, summary.totalWeeks, summary.weeksUntilDeload], [2, 8, 2])
+        XCTAssertFalse(summary.isDeloadWeek)
+        XCTAssertEqual([summary.sessionsDone, summary.sessionsTotal], [2, 16])
+        XCTAssertEqual(summary.lifts.map { "\($0.name) \($0.start.weightKg)x\($0.start.reps) \($0.now.weightKg)x\($0.now.reps) \($0.hasMoved)" },
+            ["Bench Press 80.0x8 80.0x9 true", "Back Squat 100.0x6 100.0x7 true"])
+
+        // Monday's session is done a day late: the circle sits on the day it was trained.
+        let workoutID = UUID()
+        let late = try XCTUnwrap(summary.next?.id)
+        plan = updating(plan) { session in if session.id == late { self.complete(&session, on: day(8), workoutID: workoutID) } }
+        summary = PlanDashboardSummary(plan: plan, now: day(8, hour: 20))
+        XCTAssertEqual(summary.days.map(\.status), [.rest, .done, .rest, .planned, .rest, .rest, .rest])
+        XCTAssertEqual(summary.days[1].workoutID, workoutID)
+        XCTAssertEqual([summary.doneThisWeek, summary.overdueCount], [1, 0])
+        XCTAssertFalse(summary.nextIsOverdue)
+
+        // In week 4 every session is a deload and none is left to wait for after week 8.
+        XCTAssertTrue(PlanDashboardSummary(plan: plan, now: day(21)).isDeloadWeek)
+        XCTAssertEqual(PlanDashboardSummary(plan: plan, now: day(22)).weeksUntilDeload, 4)
+        XCTAssertNil(PlanDashboardSummary(plan: plan, now: day(50)).weeksUntilDeload)
+    }
+
+    func testDashboardCardsRender() async throws {
+        let fixture = try await makeFixture()
+        let viewModel = fixture.viewModel
+        // Four days a week, started two weeks ago, everything before today trained.
+        viewModel.draftTrainingDays = [2, 4, 6, 7]
+        viewModel.draftDurationWeeks = 12
+        viewModel.setDraftWorkout(fixture.push, forDay: 2)
+        viewModel.addDraftExercise(fixture.squat, forDay: 4)
+        viewModel.addDraftExercise(fixture.row, forDay: 4)
+        viewModel.setDraftWorkout(fixture.light, forDay: 6)
+        viewModel.addDraftExercise(fixture.squat, forDay: 7)
+        let calendar = CalendarWeekBucketer.mondayCalendar
+        viewModel.draftStartDate = try XCTUnwrap(calendar.date(byAdding: .day, value: -14, to: CalendarWeekBucketer.weekStart(of: Date())))
+        viewModel.draftPlanName = "Winter build"
+        await viewModel.prepareProgressionDraft()
+        viewModel.setDraftStart(weightKg: 100, for: fixture.squat.id)
+        viewModel.setDraftStart(weightKg: 60, for: fixture.row.id)
+        await viewModel.generateAndSavePlan()
+        XCTAssertNil(viewModel.errorMessage)
+
+        let today = calendar.startOfDay(for: Date())
+        let past = ordered(viewModel.activePlan).filter { ($0.scheduledDate ?? .distantFuture) < today }
+        let latest = try XCTUnwrap(past.last)
+        let trained = updating(try XCTUnwrap(viewModel.activePlan)) { session in
+            guard let date = session.scheduledDate, date < today else { return }
+            // The latest session ends one rep short on its last exercise; the others hit everything.
+            let short = session.id == latest.id ? session.plannedExercises.last { $0.targetReps > 0 }?.exerciseId : nil
+            let workout = self.logged(session, on: date.addingTimeInterval(18 * 3600), fixture: fixture, repsShort: short.map { [$0: 1] } ?? [:])
+            fixture.workouts.workouts.append(workout)
+            self.complete(&session, on: date.addingTimeInterval(18 * 3600), workoutID: workout.id)
+        }
+        fixture.plans.plans = [trained]
+        await viewModel.loadActivePlan()
+        XCTAssertEqual(viewModel.activePlan?.id, trained.id)
+        let review = try XCTUnwrap(viewModel.lastSessionReview, "The plan loads with how its last session went")
+        XCTAssertEqual(review.sessionID, latest.id)
+        XCTAssertEqual(review.hitCount, review.lines.count - 1)
+
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        func show<V: View>(_ view: V, height: CGFloat, name: String) async throws {
+            let host = UIHostingController(rootView: NavigationStack {
+                ScrollView { view.padding(.horizontal, 20).padding(.top, 12) }.background(STColors.background)
+            }.preferredColorScheme(.dark))
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(x: 0, y: 0, width: 393, height: height)
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            defer { window.isHidden = true }
+            host.view.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(500))
+            capture(window, name: name)
+        }
+        try await show(ProgressionPlanCardView(viewModel: viewModel, exerciseListViewModel: fixture.exerciseList,
+            templateViewModel: fixture.templates, proFeatureGate: nil, storeService: nil, onStartSession: { _, _, _, _ in }),
+            height: 860, name: "dashboard-plan-card")
+        try await show(WeeklyFrequencyChart(weeklyQualityScores: [82, nil, 74, nil, 91, nil, nil],
+            workoutIDs: [UUID(), nil, UUID(), nil, UUID(), nil, nil], totalWorkouts: 3, trend: 4, trendIsPositive: true, formattedTrend: "4%"),
+            height: 420, name: "dashboard-weekly-quality")
+        XCTAssertNil(viewModel.errorMessage)
+
+        // The two latest sessions were not trained after all: they are overdue.
+        let missed = Set(past.suffix(2).map(\.id))
+        fixture.plans.plans = [updating(trained) { session in
+            guard missed.contains(session.id) else { return }
+            session.completedWorkoutId = nil
+            session.completedAt = nil
+            for index in session.plannedExercises.indices { session.plannedExercises[index].outcome = nil }
+        }]
+        await viewModel.loadActivePlan()
+        var summary = PlanDashboardSummary(plan: try XCTUnwrap(viewModel.activePlan))
+        XCTAssertEqual(summary.overdueCount, 2)
+        XCTAssertTrue(summary.nextIsOverdue)
+        try await show(ProgressionPlanCardView(viewModel: viewModel, exerciseListViewModel: fixture.exerciseList,
+            templateViewModel: fixture.templates, proFeatureGate: nil, storeService: nil, onStartSession: { _, _, _, _ in }),
+            height: 860, name: "dashboard-plan-card-overdue")
+
+        // What the card's Move and Skip do: one goes to today, the other is skipped.
+        let first = try XCTUnwrap(summary.next?.id)
+        await viewModel.rescheduleSession(sessionId: first, to: Date())
+        XCTAssertNil(viewModel.errorMessage)
+        summary = PlanDashboardSummary(plan: try XCTUnwrap(viewModel.activePlan))
+        XCTAssertEqual(summary.overdueCount, 1)
+        XCTAssertEqual(ordered(viewModel.activePlan).first { $0.id == first }?.scheduledDate.map(calendar.startOfDay), today)
+        let second = try XCTUnwrap(summary.next?.id)
+        XCTAssertNotEqual(second, first)
+        await viewModel.toggleSessionSkipped(sessionId: second)
+        XCTAssertNil(viewModel.errorMessage)
+        summary = PlanDashboardSummary(plan: try XCTUnwrap(viewModel.activePlan))
+        XCTAssertEqual(summary.overdueCount, 0)
+        XCTAssertTrue(ordered(viewModel.activePlan).first { $0.id == second }?.isSkipped ?? false)
+        XCTAssertFalse(summary.nextIsOverdue, "Nothing is left behind: what comes next is today or later")
     }
 
     // MARK: - Screens

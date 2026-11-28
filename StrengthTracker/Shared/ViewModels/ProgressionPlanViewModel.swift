@@ -44,6 +44,8 @@ public final class ProgressionPlanViewModel {
 
     public var activePlan: ProgressionPlan?
     public var planProgress: PlanProgress?
+    /// How the most recently finished session of the active plan went.
+    public var lastSessionReview: PlanSessionReview?
     public var isLoading = false
     public var hasLoadedOnce = false
 
@@ -181,9 +183,11 @@ public final class ProgressionPlanViewModel {
             if let plan = activePlan {
                 planProgress = try await planAnalyticsService.generateProgress(for: plan)
                 await refreshLinkedTemplateNames(for: plan)
+                lastSessionReview = PlanSessionReview(plan: plan, workouts: (try? await workoutRepository?.fetchAll()) ?? [])
             } else {
                 planProgress = nil
                 linkedTemplateNames = [:]
+                lastSessionReview = nil
             }
             errorMessage = nil
         } catch {
